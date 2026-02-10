@@ -50,71 +50,87 @@
                         </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="priority" class="form-label">Priority</label>
-                            <input type="text" class="form-control" id="priority" name="priority" placeholder="Optional"
-                                value="{{ config.priority if config else '' }}"
-                                data-tooltip="The priority name to set on new tickets.">
-                        </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="priority" class="form-label">Priority</label>
+                        <input type="text" class="form-control" id="priority" name="priority" placeholder="Optional"
+                            value="{{ config.priority if config else '' }}"
+                            data-tooltip="The priority name to set on new tickets.">
                     </div>
-
-                    <hr class="my-4 opacity-10">
-
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="mb-0 fw-bold">Trigger Configuration</h5>
-                        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
-                            data-bs-target="#validator-tool">
-                            Test JSON Path
-                        </button>
-                    </div>
-
-                    <div class="collapse mb-4" id="validator-tool">
-                        <div class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
-                            <label class="small text-info fw-bold mb-2">JSON PATH VALIDATOR</label>
-                            <textarea id="sample-json"
-                                class="form-control bg-dark border-secondary text-info small mb-2" rows="4"
-                                placeholder='Paste sample JSON here... e.g. {"heartbeat": {"status": 0}}'></textarea>
-                            <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100"
-                                onclick="testPath()">Validate Path</button>
-                            <div id="validation-result"></div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="trigger_field" class="form-label fw-bold">JSON Trigger Field <span
-                                class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="trigger_field" name="trigger_field"
-                            placeholder="heartbeat.status"
-                            value="{{ config.trigger_field if config else 'heartbeat.status' }}" required
-                            data-tooltip="Use dot-notation to specify the field in the webhook body (e.g., monitor.status).">
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="open_value" class="form-label fw-bold">Open Value(s) <span
-                                    class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="open_value" name="open_value"
-                                placeholder="0, down" value="{{ config.open_value if config else '0' }}" required
-                                data-tooltip="Comma-separated list of values that mean 'Fail'.">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="close_value" class="form-label fw-bold">Close Value(s) <span
-                                    class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="close_value" name="close_value"
-                                placeholder="1, up" value="{{ config.close_value if config else '1' }}" required
-                                data-tooltip="Comma-separated list of values that mean 'Success'.">
-                        </div>
-                    </div>
-
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
-                        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
-                        <button type="submit" class="btn btn-primary px-4">{{ 'Save Changes' if config else 'Create
-                            Endpoint' }}</button>
-                    </div>
-                </form>
             </div>
+
+            <div class="mb-3">
+                <label for="json_mapping" class="form-label fw-bold">JSON Field Mapping (JSON)</label>
+                <textarea class="form-control font-monospace small" id="json_mapping" name="json_mapping" rows="3"
+                    placeholder='{"summary": "$.title", "description": "$.msg", "customer_id": "$.client_id"}'
+                    data-tooltip="Override ConnectWise fields using JSONPath expressions.">{{ config.json_mapping if config else '' }}</textarea>
+                <div class="form-text small opacity-75">Map payload fields to CW summary, description, or customer_id.
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="routing_rules" class="form-label fw-bold">Regex Routing Rules (JSON Array)</label>
+                <textarea class="form-control font-monospace small" id="routing_rules" name="routing_rules" rows="3"
+                    placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
+                    data-tooltip="Define regex rules to override endpoint settings based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
+                <div class="form-text small opacity-75">Overrides board, status, priority, type or subtype if regex
+                    matches.</div>
+            </div>
+
+            <hr class="my-4 opacity-10">
+
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0 fw-bold">Trigger Configuration</h5>
+                <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
+                    data-bs-target="#validator-tool">
+                    Test JSON Path
+                </button>
+            </div>
+
+            <div class="collapse mb-4" id="validator-tool">
+                <div class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
+                    <label class="small text-info fw-bold mb-2">JSON PATH VALIDATOR</label>
+                    <textarea id="sample-json" class="form-control bg-dark border-secondary text-info small mb-2"
+                        rows="4" placeholder='Paste sample JSON here... e.g. {"heartbeat": {"status": 0}}'></textarea>
+                    <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100"
+                        onclick="testPath()">Validate Path</button>
+                    <div id="validation-result"></div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="trigger_field" class="form-label fw-bold">JSON Trigger Field <span
+                        class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="trigger_field" name="trigger_field"
+                    placeholder="heartbeat.status" value="{{ config.trigger_field if config else 'heartbeat.status' }}"
+                    required
+                    data-tooltip="Use dot-notation to specify the field in the webhook body (e.g., monitor.status).">
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="open_value" class="form-label fw-bold">Open Value(s) <span
+                            class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="open_value" name="open_value" placeholder="0, down"
+                        value="{{ config.open_value if config else '0' }}" required
+                        data-tooltip="Comma-separated list of values that mean 'Fail'.">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="close_value" class="form-label fw-bold">Close Value(s) <span
+                            class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="close_value" name="close_value" placeholder="1, up"
+                        value="{{ config.close_value if config else '1' }}" required
+                        data-tooltip="Comma-separated list of values that mean 'Success'.">
+                </div>
+            </div>
+
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
+                <button type="submit" class="btn btn-primary px-4">{{ 'Save Changes' if config else 'Create
+                    Endpoint' }}</button>
+            </div>
+            </form>
         </div>
     </div>
+</div>
 </div>
 {% endblock %}

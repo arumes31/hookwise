@@ -58,3 +58,4 @@
 
 ## Deployment & Infrastructure
 94. Add a `.env.example` generator script.
+100. Update docker files and readme

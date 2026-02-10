@@ -98,3 +98,19 @@ class ConnectWiseClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error closing ticket #{ticket_id}: {e}")
             return False
+
+    def add_ticket_note(self, ticket_id: int, note_text: str) -> bool:
+        try:
+            note_payload = {
+                "text": note_text,
+                "detailDescriptionFlag": True,
+                "internalAnalysisFlag": False,
+                "resolutionFlag": False
+            }
+            response = requests.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
+            response.raise_for_status()
+            logger.info(f"Added note to ticket #{ticket_id}")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error adding note to ticket #{ticket_id}: {e}")
+            return False

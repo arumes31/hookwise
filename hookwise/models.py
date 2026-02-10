@@ -18,6 +18,9 @@ class WebhookConfig(db.Model):
     open_value = db.Column(db.String(50), default="0")
     close_value = db.Column(db.String(50), default="1")
     ticket_prefix = db.Column(db.String(100))
+    json_mapping = db.Column(db.Text)  # JSON string for field mappings
+    routing_rules = db.Column(db.Text) # JSON string for regex routing
+    maintenance_windows = db.Column(db.Text) # JSON string for maintenance intervals
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_seen_at = db.Column(db.DateTime)
 
@@ -36,6 +39,34 @@ class WebhookConfig(db.Model):
             "open_value": self.open_value,
             "close_value": self.close_value,
             "ticket_prefix": self.ticket_prefix,
+            "json_mapping": self.json_mapping,
+            "routing_rules": self.routing_rules,
+            "maintenance_windows": self.maintenance_windows,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None
+        }
+
+class WebhookLog(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_id = db.Column(db.String(36), db.ForeignKey('webhook_config.id'), nullable=False)
+    request_id = db.Column(db.String(100), nullable=False)
+    payload = db.Column(db.Text, nullable=False) # JSON string
+    status = db.Column(db.String(50), nullable=False, default="queued") # queued, processed, failed, skipped
+    error_message = db.Column(db.Text)
+    ticket_id = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    config = db.relationship('WebhookConfig', backref=db.backref('logs', lazy=True))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "config_id": self.config_id,
+            "request_id": self.request_id,
+            "payload": self.payload,
+            "status": self.status,
+            "error_message": self.error_message,
+            "ticket_id": self.ticket_id,
+            "created_at": self.created_at.isoformat(),
+            "config_name": self.config.name if self.config else "Unknown"
         }

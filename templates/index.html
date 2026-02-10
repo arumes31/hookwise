@@ -1,6 +1,42 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<div class="row g-4 mb-5">
+    <!-- Stat Cards -->
+    <div class="col-md-3">
+        <div class="card bg-dark border-0 shadow-sm accent-border-top">
+            <div class="card-body text-center p-4">
+                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Created Today</h6>
+                <h2 class="fw-bold mb-0 text-white" id="stat-created">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #10b981;">
+            <div class="card-body text-center p-4">
+                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Closed Today</h6>
+                <h2 class="fw-bold mb-0 text-white" id="stat-closed">0</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #f59e0b;">
+            <div class="card-body text-center p-4">
+                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Success Rate</h6>
+                <h2 class="fw-bold mb-0 text-white"><span id="stat-rate">100</span>%</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #ef4444;">
+            <div class="card-body text-center p-4">
+                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Failed Attempts</h6>
+                <h2 class="fw-bold mb-0 text-white" id="stat-failed">0</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
     <div class="d-flex gap-2">
@@ -139,6 +175,15 @@
                         </div>
                     </div>
                     <div class="d-flex gap-2">
+                        <button onclick="testEndpoint('{{ config.id }}')"
+                            class="btn btn-link p-0 text-secondary hover-info" data-tooltip="Test Endpoint">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor"
+                                class="bi bi-play-circle" viewBox="0 0 16 16">
+                                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
+                                <path
+                                    d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445z" />
+                            </svg>
+                        </button>
                         <a href="{{ url_for('main.edit_endpoint', id=config.id) }}"
                             class="btn btn-link p-0 text-secondary hover-primary" data-tooltip="Edit Endpoint">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor"
@@ -363,6 +408,21 @@
             showToast('URL copied to clipboard!', 'success');
         }
 
+        function testEndpoint(id) {
+            fetch(`/endpoint/test/${id}`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showToast('Test webhook queued!', 'success');
+                    } else {
+                        showToast('Error: ' + data.message, 'danger');
+                    }
+                })
+                .catch(error => {
+                    showToast('Connection error', 'danger');
+                });
+        }
+
         function toggleView(view) {
             const grid = document.getElementById('endpoint-grid');
             if (view === 'list') {
@@ -377,5 +437,23 @@
                 });
             }
         }
+
+        function refreshStats() {
+            fetch('/api/stats')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('stat-created').textContent = data.created_today;
+                    document.getElementById('stat-closed').textContent = data.closed_today;
+                    document.getElementById('stat-rate').textContent = data.success_rate;
+                    document.getElementById('stat-failed').textContent = data.failed_today;
+                })
+                .catch(err => console.error('Error fetching stats:', err));
+        }
+
+        // Initial load and periodic refresh
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshStats();
+            setInterval(refreshStats, 30000); // Every 30 seconds
+        });
     </script>
     {% endblock %}

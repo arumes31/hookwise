@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="accent-gradient fw-bold mb-0">Webhook History</h1>
+    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+</div>
+
+<div class="card bg-dark text-white shadow-lg overflow-hidden border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle small">
+                <thead class="bg-black bg-opacity-50 text-secondary">
+                    <tr>
+                        <th class="ps-4 py-3">TIMESTAMP</th>
+                        <th class="py-3">ENDPOINT</th>
+                        <th class="py-3">STATUS</th>
+                        <th class="py-3">TICKET</th>
+                        <th class="py-3">REQUEST ID</th>
+                        <th class="pe-4 py-3 text-end">ACTIONS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr class="border-bottom border-light border-opacity-5">
+                        <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
+                            %H:%M:%S') }}</td>
+                        <td class="py-3 fw-bold">{{ log.config_name }}</td>
+                        <td class="py-3">
+                            {% if log.status == 'processed' %}
+                            <span
+                                class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">PROCESSED</span>
+                            {% elif log.status == 'skipped' %}
+                            <span
+                                class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">SKIPPED</span>
+                            {% elif log.status == 'failed' %}
+                            <span
+                                class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">FAILED</span>
+                            {% else %}
+                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{
+                                log.status.upper() }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 font-monospace">
+                            {% if log.ticket_id %}
+                            <span class="text-primary">#{{ log.ticket_id }}</span>
+                            {% else %}
+                            <span class="text-muted opacity-50">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-3 text-secondary font-monospace small">{{ log.request_id[:16] }}...</td>
+                        <td class="pe-4 py-3 text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
+                                    data-payload='{{ log.payload | safe }}'>View</button>
+                                <button class="btn btn-outline-primary"
+                                    onclick="replayWebhook('{{ log.id }}')">Replay</button>
+                                <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
+                                        class="bi bi-trash" viewBox="0 0 16 16">
+                                        <path
+                                            d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z" />
+                                        <path
+                                            d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="payloadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Payload Detail</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="payload-display" class="bg-black p-3 rounded text-info"
+                    style="font-size: 0.85rem; max-height: 500px; overflow: auto;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function viewPayload(id) {
+        const btn = event.currentTarget;
+        const raw = btn.getAttribute('data-payload');
+        try {
+            const parsed = JSON.parse(raw);
+            document.getElementById('payload-display').textContent = JSON.stringify(parsed, null, 2);
+        } catch (e) {
+            document.getElementById('payload-display').textContent = raw;
+        }
+        new bootstrap.Modal(document.getElementById('payloadModal')).show();
+    }
+
+    function replayWebhook(id) {
+        if (!confirm('Re-process this webhook?')) return;
+        fetch(`/history/replay/${id}`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showToast('Replay queued!', 'success');
+                } else {
+                    showToast('Error: ' + data.message, 'danger');
+                }
+            });
+    }
+
+    function deleteHistory(id) {
+        if (!confirm('Delete this log entry?')) return;
+        fetch(`/history/delete/${id}`, { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    window.location.reload();
+                }
+            });
+    }
+</script>
+{% endblock %}

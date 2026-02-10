@@ -12,3 +12,4 @@ python-dotenv==1.2.1
 ruff==0.14.13
 mypy==1.19.1
 types-requests==2.32.4.20260107
+jsonpath-ng==1.6.1

@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter
 
 from .extensions import db, socketio
-from .models import WebhookConfig
+from .models import WebhookConfig, WebhookLog
 from .utils import log_to_web
 from .tasks import process_webhook_task, redis_client, celery
 
@@ -33,7 +33,10 @@ def new_endpoint():
             trigger_field=request.form.get('trigger_field') or "heartbeat.status",
             open_value=request.form.get('open_value') or "0",
             close_value=request.form.get('close_value') or "1",
-            ticket_prefix=request.form.get('ticket_prefix')
+            ticket_prefix=request.form.get('ticket_prefix'),
+            json_mapping=request.form.get('json_mapping'),
+            routing_rules=request.form.get('routing_rules'),
+            maintenance_windows=request.form.get('maintenance_windows')
         )
         db.session.add(config)
         db.session.commit()
@@ -56,6 +59,9 @@ def edit_endpoint(id):
         config.open_value = request.form.get('open_value') or "0"
         config.close_value = request.form.get('close_value') or "1"
         config.ticket_prefix = request.form.get('ticket_prefix')
+        config.json_mapping = request.form.get('json_mapping')
+        config.routing_rules = request.form.get('routing_rules')
+        config.maintenance_windows = request.form.get('maintenance_windows')
         
         db.session.commit()
         flash(f'Endpoint "{config.name}" updated successfully!')
@@ -109,6 +115,83 @@ def dynamic_webhook(config_id: str) -> Tuple[Response, int]:
     WEBHOOK_COUNT.labels(status='queued', config_name=config.name).inc()
     log_to_web(f"Webhook received and queued (ID: {request_id})", "info", config.name, data=data)
     return jsonify({"status": "queued", "message": "Webhook received", "request_id": request_id}), 202
+
+@main_bp.route('/history')
+def history():
+    logs = WebhookLog.query.order_by(WebhookLog.created_at.desc()).limit(100).all()
+    return render_template('history.html', logs=logs)
+
+@main_bp.route('/history/replay/<log_id>', methods=['POST'])
+def replay_webhook(log_id):
+    import json
+    log_entry = WebhookLog.query.get_or_404(log_id)
+    try:
+        data = json.loads(log_entry.payload)
+        request_id = f"replay_{int(time.time())}_{log_entry.request_id[:8]}"
+        process_webhook_task.delay(log_entry.config_id, data, request_id)
+        log_to_web(f"REPLAY triggered for {log_entry.config.name} (Original ID: {log_entry.request_id})", "info", log_entry.config.name, data=data)
+        return jsonify({"status": "success", "message": "Replay queued", "request_id": request_id})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@main_bp.route('/history/delete/<id>', methods=['POST'])
+def delete_log(id):
+    log_entry = WebhookLog.query.get_or_404(id)
+    db.session.delete(log_entry)
+    db.session.commit()
+    return jsonify({"status": "success"})
+
+    db.session.commit()
+    return jsonify({"status": "success"})
+
+@main_bp.route('/endpoint/test/<id>', methods=['POST'])
+def test_endpoint(id):
+    config = WebhookConfig.query.get_or_404(id)
+    request_id = f"test_{int(time.time())}"
+    
+    # Dummy payload for testing
+    data = {
+        "monitor": {"name": f"Test Monitor for {config.name}"},
+        "status": "0",
+        "msg": "Common test message for webhook verification",
+        "heartbeat": {"status": "0"},
+        "title": "Manual Test Trigger",
+        "message": "This is a simulated webhook payload."
+    }
+    
+    process_webhook_task.delay(id, data, request_id)
+    log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
+    return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
+
+@main_bp.route('/api/stats')
+def get_stats():
+    from datetime import datetime, time as dtime
+    today_start = datetime.combine(datetime.utcnow().date(), dtime.min)
+    
+    tickets_created = WebhookLog.query.filter(
+        WebhookLog.status == 'processed',
+        WebhookLog.ticket_id.isnot(None),
+        WebhookLog.created_at >= today_start
+    ).count()
+
+    tickets_closed = PSA_TASK_COUNT.labels(type='close', result='success')._value.get() if hasattr(PSA_TASK_COUNT, '_value') else 0
+    # Fallback to DB if metrics aren't easily accessible from Python without internal hacks
+    # For now, let's just use DB counts for everything to be safe across reboots
+    
+    failed_attempts = WebhookLog.query.filter(
+        WebhookLog.status == 'failed',
+        WebhookLog.created_at >= today_start
+    ).count()
+
+    total_today = WebhookLog.query.filter(WebhookLog.created_at >= today_start).count()
+    success_rate = (tickets_created / total_today * 100) if total_today > 0 else 100
+
+    return jsonify({
+        "created_today": tickets_created,
+        "closed_today": int(tickets_closed), # Logic for 'closed' needs tracking in logs or metrics
+        "failed_today": failed_attempts,
+        "success_rate": round(success_rate, 1)
+    })
 
 @main_bp.route('/health', methods=['GET'])
 def health() -> Tuple[Response, int]:
