@@ -4,3 +4,5 @@ test*
 .venv
 .qodo
 .pytest_cache
+*.db
+instance/

@@ -226,16 +226,18 @@ def get_stats():
     
     tickets_created = WebhookLog.query.filter(
         WebhookLog.status == 'processed',
-        WebhookLog.ticket_id.isnot(None),
+        WebhookLog.action.in_(['create', 'update']),
         WebhookLog.created_at >= today_start
     ).count()
 
-    tickets_closed = PSA_TASK_COUNT.labels(type='close', result='success')._value.get() if hasattr(PSA_TASK_COUNT, '_value') else 0
-    # Fallback to DB if metrics aren't easily accessible from Python without internal hacks
-    # For now, let's just use DB counts for everything to be safe across reboots
+    tickets_closed = WebhookLog.query.filter(
+        WebhookLog.status == 'processed',
+        WebhookLog.action == 'close',
+        WebhookLog.created_at >= today_start
+    ).count()
     
     failed_attempts = WebhookLog.query.filter(
-        WebhookLog.status == 'failed',
+        WebhookLog.status.in_(['failed', 'dlq']),
         WebhookLog.created_at >= today_start
     ).count()
 
@@ -244,7 +246,7 @@ def get_stats():
 
     return jsonify({
         "created_today": tickets_created,
-        "closed_today": int(tickets_closed), # Logic for 'closed' needs tracking in logs or metrics
+        "closed_today": tickets_closed,
         "failed_today": failed_attempts,
         "success_rate": round(success_rate, 1)
     })

@@ -194,6 +194,30 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
             if 'customer_id' in json_mapping:
                 mapped_customer_id = resolve_jsonpath(data, json_mapping['customer_id'])
 
+            if 'ticket_type' in json_mapping:
+                val = resolve_jsonpath(data, json_mapping['ticket_type'])
+                if val: ticket_type = str(val)
+            
+            if 'subtype' in json_mapping:
+                val = resolve_jsonpath(data, json_mapping['subtype'])
+                if val: subtype = str(val)
+
+            if 'item' in json_mapping:
+                val = resolve_jsonpath(data, json_mapping['item'])
+                if val: item = str(val)
+
+            if 'priority' in json_mapping:
+                val = resolve_jsonpath(data, json_mapping['priority'])
+                if val: priority = str(val)
+
+            if 'board' in json_mapping:
+                val = resolve_jsonpath(data, json_mapping['board'])
+                if val: board = str(val)
+
+            if 'status' in json_mapping:
+                val = resolve_jsonpath(data, json_mapping['status'])
+                if val: status = str(val)
+
             # 2. Apply Regex Routing Rules
             for rule in routing_rules:
                 rule_path = rule.get('path')
@@ -240,6 +264,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                     log_to_web(f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})", "warning" if alert_type == "DOWN" else "info", config_name, data=data, ticket_id=ticket_id)
                     PSA_TASK_COUNT.labels(type='create', result='updated').inc()
                     log_entry.status = "processed"
+                    log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
                     db.session.commit()
                     return
@@ -253,6 +278,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
                     PSA_TASK_COUNT.labels(type='create', result='updated').inc()
                     log_entry.status = "processed"
+                    log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
                     db.session.commit()
                     return
@@ -271,6 +297,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
                     log_to_web(f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})", "warning" if alert_type == "DOWN" else "info", config_name, data=data, ticket_id=ticket_id)
                     PSA_TASK_COUNT.labels(type='create', result='success').inc()
+                    log_entry.action = "create"
             
             elif alert_type == "UP":
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
@@ -286,6 +313,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                         redis_client.delete(cache_key)
                         log_to_web(f"UP alert: Closed ticket (ID: {ticket_id})", "success", config_name, data=data, ticket_id=ticket_id)
                         PSA_TASK_COUNT.labels(type='close', result='success').inc()
+                        log_entry.action = "close"
                 else:
                     log_to_web(f"UP alert: No open ticket to close for {monitor_name}", "success", config_name, data=data)
                     PSA_TASK_COUNT.labels(type='close', result='skipped').inc()

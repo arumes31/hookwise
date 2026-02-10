@@ -59,6 +59,7 @@ class WebhookLog(db.Model):
     request_id = db.Column(db.String(100), nullable=False)
     payload = db.Column(db.Text, nullable=False) # JSON string
     status = db.Column(db.String(50), nullable=False, default="queued") # queued, processed, failed, skipped
+    action = db.Column(db.String(50)) # create, update, close, None
     error_message = db.Column(db.Text)
     ticket_id = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -72,6 +73,7 @@ class WebhookLog(db.Model):
             "request_id": self.request_id,
             "payload": self.payload,
             "status": self.status,
+            "action": self.action,
             "error_message": self.error_message,
             "ticket_id": self.ticket_id,
             "created_at": self.created_at.isoformat(),

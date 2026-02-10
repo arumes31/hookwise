@@ -72,7 +72,7 @@
             <div class="mb-3">
                 <label for="json_mapping" class="form-label fw-bold">JSON Field Mapping (JSON)</label>
                 <textarea class="form-control font-monospace small" id="json_mapping" name="json_mapping" rows="3"
-                    placeholder='{"summary": "$.title", "description": "$.msg", "customer_id": "$.client_id"}'
+                    placeholder='{"summary": "$.title", "description": "$.msg", "customer_id": "$.client_id", "priority": "$.severity"}'
                     data-tooltip="Override ConnectWise fields using JSONPath expressions.">{{ config.json_mapping if config else '' }}</textarea>
                 <div class="form-text small opacity-75">Map payload fields to CW summary, description, or customer_id.
                 </div>
