@@ -1,26 +1,37 @@
-# Use an official Python runtime as a parent image
-FROM python:3.14-slim
+# Stage 1: Build
+FROM python:3.14-slim AS builder
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Create a non-root user and switch to it
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime
+FROM python:3.14-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 USER appuser
 
-# Copy the requirements file into the container at /app
-COPY --chown=appuser:appuser requirements.txt .
-
-# Install any needed packages specified in requirements.txt
-# User install is safer, add ~/.local/bin to PATH
-RUN pip install --no-cache-dir --user -r requirements.txt
+COPY --from=builder /root/.local /home/appuser/.local
 ENV PATH="/home/appuser/.local/bin:${PATH}"
 
-# Copy the rest of the working directory contents into the container at /app
 COPY --chown=appuser:appuser . .
 
-# Make port 5000 available to the world outside this container
+# Remove unnecessary files from production image
+RUN rm -rf tests .venv .git .pytest_cache .qodo
+
 EXPOSE 5000
 
-# Run app.py when the container launches using Gunicorn with eventlet for WebSockets
 CMD ["gunicorn", "--worker-class", "eventlet", "--workers", "1", "--bind", "0.0.0.0:5000", "app:app"]

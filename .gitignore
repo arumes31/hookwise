@@ -3,3 +3,4 @@
 test*
 .venv
 .qodo
+.pytest_cache

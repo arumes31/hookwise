@@ -2,36 +2,68 @@
 
 {% block content %}
 <div class="row g-4 mb-5">
-    <!-- Stat Cards -->
-    <div class="col-md-3">
+    <div class="col-md-8">
         <div class="card bg-dark border-0 shadow-sm accent-border-top">
-            <div class="card-body text-center p-4">
-                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Created Today</h6>
-                <h2 class="fw-bold mb-0 text-white" id="stat-created">0</h2>
+            <div class="card-body p-4">
+                <h6 class="text-secondary text-uppercase small ls-wide mb-3">Tickets Created (Last 7 Days)</h6>
+                <canvas id="historyChart" height="100"></canvas>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #10b981;">
-            <div class="card-body text-center p-4">
-                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Closed Today</h6>
-                <h2 class="fw-bold mb-0 text-white" id="stat-closed">0</h2>
+    <div class="col-md-4">
+        <div class="row g-4">
+            <div class="col-12">
+                <div class="card bg-dark border-0 shadow-sm accent-border-top">
+                    <div class="card-body text-center p-3">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Created Today</h6>
+                        <h2 class="fw-bold mb-0 text-white" id="stat-created">0</h2>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #f59e0b;">
-            <div class="card-body text-center p-4">
-                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Success Rate</h6>
-                <h2 class="fw-bold mb-0 text-white"><span id="stat-rate">100</span>%</h2>
+            <div class="col-12">
+                <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #10b981;">
+                    <div class="card-body text-center p-3">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Closed Today</h6>
+                        <h2 class="fw-bold mb-0 text-white" id="stat-closed">0</h2>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #ef4444;">
-            <div class="card-body text-center p-4">
-                <h6 class="text-secondary text-uppercase small ls-wide mb-2">Failed Attempts</h6>
-                <h2 class="fw-bold mb-0 text-white" id="stat-failed">0</h2>
+            <div class="col-12">
+                <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #f59e0b;">
+                    <div class="card-body text-center p-3">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Success Rate</h6>
+                        <h2 class="fw-bold mb-0 text-white"><span id="stat-rate">100</span>%</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #ef4444;">
+                    <div class="card-body text-center p-3">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Failed Attempts</h6>
+                        <h2 class="fw-bold mb-0 text-white" id="stat-failed">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="card bg-dark border-0 shadow-sm accent-border-top" style="--accent: #6366f1;">
+                    <div class="card-body p-3">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-3 text-center">Service Health</h6>
+                        <div class="d-flex justify-content-around">
+                            <div class="text-center">
+                                <div id="dash-health-redis" class="heartbeat-dot heartbeat-warning mb-1 mx-auto"></div>
+                                <div class="small text-secondary">Redis</div>
+                            </div>
+                            <div class="text-center">
+                                <div id="dash-health-database" class="heartbeat-dot heartbeat-warning mb-1 mx-auto"></div>
+                                <div class="small text-secondary">DB</div>
+                            </div>
+                            <div class="text-center">
+                                <div id="dash-health-celery" class="heartbeat-dot heartbeat-warning mb-1 mx-auto"></div>
+                                <div class="small text-secondary">Celery</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -39,6 +71,9 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
+    {% if debug_mode %}
+    <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
+    {% endif %}
     <div class="d-flex gap-2">
         <div class="input-group input-group-sm" style="width: 250px;">
             <span class="input-group-text bg-dark border-secondary text-secondary">
@@ -277,11 +312,13 @@
             <div class="modal-content bg-dark border-secondary">
                 <div class="modal-header border-secondary">
                     <h5 class="modal-title">Webhook Payload</h5>
+                    <div class="ms-auto me-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
+                    </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <pre id="payload-display" class="bg-black p-3 rounded text-info"
-                        style="font-size: 0.85rem; max-height: 500px; overflow: auto;"></pre>
+                    <pre class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
                 </div>
             </div>
         </div>
@@ -378,7 +415,9 @@
                     logEntry.addEventListener('click', (e) => {
                         // Prevent modal from opening if a link (ticket or help) was clicked
                         if (e.target.tagName !== 'A' && e.target.closest('A') === null) {
-                            document.getElementById('payload-display').textContent = JSON.stringify(data.payload, null, 2);
+                            const display = document.getElementById('payload-display');
+                            display.textContent = JSON.stringify(data.payload, null, 2);
+                            Prism.highlightElement(display);
                             new bootstrap.Modal(document.getElementById('payloadModal')).show();
                         }
                     });
@@ -406,6 +445,12 @@
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text);
             showToast('URL copied to clipboard!', 'success');
+        }
+
+        function copyModalPayload() {
+            const text = document.getElementById('payload-display').textContent;
+            navigator.clipboard.writeText(text);
+            showToast('Payload copied to clipboard!', 'success');
         }
 
         function testEndpoint(id) {
@@ -448,6 +493,14 @@
                     document.getElementById('stat-failed').textContent = data.failed_today;
                 })
                 .catch(err => console.error('Error fetching stats:', err));
+
+            fetch('/api/stats/history')
+                .then(res => res.json())
+                .then(data => {
+                    const labels = data.map(d => d.date);
+                    const counts = data.map(d => d.count);
+                    MiniChart.renderBar('historyChart', labels, counts);
+                });
         }
 
         // Initial load and periodic refresh

@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -9,11 +10,10 @@ import redis
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
 
+from .client import ConnectWiseClient
 from .extensions import db
 from .models import WebhookConfig, WebhookLog
-from .client import ConnectWiseClient
-from .utils import resolve_jsonpath, log_to_web
-import json
+from .utils import log_to_web, resolve_jsonpath
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,12 @@ def make_celery(app_name):
     return celery
 
 celery = make_celery("hookwise")
+celery.conf.beat_schedule = {
+    'cleanup-logs-daily': {
+        'task': 'hookwise.cleanup_logs',
+        'schedule': 86400.0, # Every 24 hours
+    },
+}
 
 _app = None
 
@@ -57,15 +63,40 @@ class ContextTask(Task):
 
 celery.Task = ContextTask
 
+@celery.task(name="hookwise.cleanup_logs")
+def cleanup_logs():
+    """Remove logs older than retention period."""
+    from datetime import datetime, timedelta
+
+    from .extensions import db
+    from .models import WebhookLog
+    
+    retention_days = int(os.environ.get('LOG_RETENTION_DAYS', 30))
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    
+    deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
+    db.session.commit()
+    logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
+
 @celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)
 def process_webhook_task(self, config_id: str, data: Dict[str, Any], request_id: str):
     """Background task to process webhook logic."""
     try:
         handle_webhook_logic(config_id, data, request_id)
     except Exception as exc:
-        # Retry for external API failures (usually caught inside handle_webhook_logic, 
-        # but if we bubble up a specific retryable error, handle it here)
-        logger.error(f"Task failed, retrying: {exc}")
+        logger.error(f"Task failed (Attempt {self.request.retries}/5): {exc}")
+        if self.request.retries >= self.max_retries:
+            # Final failure, move to DLQ in DB
+            from .extensions import db
+            from .models import WebhookLog
+            # We need to find the log entry and mark it as failed/dlq
+            # Since we don't have log_id here, we use request_id
+            log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
+            if log_entry:
+                log_entry.status = "dlq"
+                log_entry.error_message = f"Max retries exceeded: {str(exc)}"
+                db.session.commit()
+            return
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
 
 def is_in_maintenance(config: WebhookConfig) -> bool:
@@ -107,7 +138,6 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
         )
         db.session.add(log_entry)
         db.session.commit()
-        log_id = log_entry.id
 
         try:
             # 2. Check Maintenance Window
@@ -115,7 +145,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                 log_entry.status = "skipped"
                 log_entry.error_message = "Skipped: Maintenance Window Active"
                 db.session.commit()
-                log_to_web(f"Webhook skipped (Maintenance Window Active)", "info", config.name, data=data)
+                log_to_web("Webhook skipped (Maintenance Window Active)", "info", config.name, data=data)
                 return
 
             config_name = config.name
@@ -127,6 +157,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
             status = config.status
             ticket_type = config.ticket_type
             subtype = config.subtype
+            item = config.item
             priority = config.priority
             customer_id_default = config.customer_id_default
             json_mapping_str = config.json_mapping
@@ -177,6 +208,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                         if 'status' in rule_overrides: status = rule_overrides['status']
                         if 'ticket_type' in rule_overrides: ticket_type = rule_overrides['ticket_type']
                         if 'subtype' in rule_overrides: subtype = rule_overrides['subtype']
+                        if 'item' in rule_overrides: item = rule_overrides['item']
                         if 'priority' in rule_overrides: priority = rule_overrides['priority']
 
             actual_val = str(resolve_jsonpath(data, trigger_field))
@@ -233,7 +265,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                 else:
                     description = f"Source: {monitor_name}\nMessage: {msg}\nRequest ID: {request_id}\nPayload: {data}"
                 
-                new_ticket = cw_client.create_ticket(summary=ticket_summary, description=description, monitor_name=monitor_name, company_id=company_id, board=board, status=status, ticket_type=ticket_type, subtype=subtype, priority=priority)
+                new_ticket = cw_client.create_ticket(summary=ticket_summary, description=description, monitor_name=monitor_name, company_id=company_id, board=board, status=status, ticket_type=ticket_type, subtype=subtype, item=item, priority=priority)
                 if new_ticket:
                     ticket_id = new_ticket['id']
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)

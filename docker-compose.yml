@@ -20,18 +20,13 @@ services:
       - REDIS_PASSWORD=your_secure_redis_password
       - REDIS_HOST=redis
       - CELERY_BROKER_URL=redis://:your_secure_redis_password@redis:6379/0
-      - DATABASE_URL=sqlite:////app/data/hookwise.db
-      # - CW_TICKET_PREFIX=Uptime Kuma Alert:
-      # - PSA_RATE_LIMIT=60/m
-      # - WEBHOOK_SECRET=token1,token2
-      # - TRUSTED_IPS=192.168.1.5, 10.0.0.0/24 
-      # - USE_PROXY=true
-      # - PROXY_FIX_COUNT=1
-      # - USE_CLOUDFLARE=true
-    volumes:
-      - app_data:/app/data
+      - DATABASE_URL=postgresql://hookwise:hookwise_pass@postgres:5432/hookwise
+      - POSTGRES_USER=hookwise
+      - POSTGRES_PASSWORD=hookwise_pass
+      - POSTGRES_DB=hookwise
     depends_on:
       - redis
+      - postgres
 
   kumawise-worker:
     build: .
@@ -39,10 +34,9 @@ services:
     restart: unless-stopped
     command: celery -A worker.celery worker --loglevel=info -P eventlet -c 100
     environment: *env
-    volumes:
-      - app_data:/app/data
     depends_on:
       - redis
+      - postgres
 
   redis:
     image: redis:alpine
@@ -55,8 +49,19 @@ services:
     volumes:
       - redis_data:/data
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: kumawise-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=hookwise
+      - POSTGRES_PASSWORD=hookwise_pass
+      - POSTGRES_DB=hookwise
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   redis_data:
-  app_data:
+  postgres_data:
 
 

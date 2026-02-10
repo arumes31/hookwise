@@ -1,8 +1,11 @@
 import base64
 import logging
 import os
-import requests
 from typing import Any, Dict, Optional, cast
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,7 @@ class ConnectWiseClient:
             logger.warning("ConnectWise credentials (including CW_CLIENT_ID) are missing. API calls will fail.")
 
         self.headers: Dict[str, str] = self._get_headers()
+        self.session = self._get_session()
 
     def _get_headers(self) -> Dict[str, str]:
         if not self.company or not self.public_key or not self.private_key:
@@ -38,6 +42,19 @@ class ConnectWiseClient:
             headers["clientId"] = self.client_id
         return headers
 
+    def _get_session(self) -> requests.Session:
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=5,
+            backoff_factor=2, # Exponential backoff: 2, 4, 8, 16, 32 seconds
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
+
     def find_open_ticket(self, summary_contains: str) -> Optional[Dict[str, Any]]:
         try:
             conditions = f"closedFlag=false AND summary contains '{summary_contains}'"
@@ -45,7 +62,7 @@ class ConnectWiseClient:
                 "conditions": conditions,
                 "pageSize": 1
             }
-            response = requests.get(f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30)
+            response = self.session.get(f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             if isinstance(data, list) and len(data) > 0:
@@ -61,6 +78,7 @@ class ConnectWiseClient:
                       status: Optional[str] = None,
                       ticket_type: Optional[str] = None,
                       subtype: Optional[str] = None,
+                      item: Optional[str] = None,
                       priority: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:
             payload: Dict[str, Any] = {
@@ -72,12 +90,13 @@ class ConnectWiseClient:
             }
             if ticket_type: payload["type"] = {"name": ticket_type}
             if subtype: payload["subType"] = {"name": subtype}
+            if item: payload["item"] = {"name": item}
             if priority: payload["priority"] = {"name": priority}
             
             target_company_id = company_id or os.getenv('CW_DEFAULT_COMPANY_ID')
             if target_company_id: payload["company"] = {"identifier": target_company_id}
 
-            response = requests.post(f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30)
+            response = self.session.post(f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30)
             response.raise_for_status()
             ticket = response.json()
             logger.info(f"Created ticket #{ticket.get('id')} for {monitor_name}")
@@ -89,10 +108,10 @@ class ConnectWiseClient:
     def close_ticket(self, ticket_id: int, resolution: str) -> bool:
         try:
             patch_payload = [{"op": "replace", "path": "/status/name", "value": self.status_closed}]
-            response = requests.patch(f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30)
+            response = self.session.patch(f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30)
             response.raise_for_status()
             note_payload = {"text": resolution, "detailDescriptionFlag": True, "internalAnalysisFlag": False, "resolutionFlag": True}
-            requests.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
+            self.session.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
             logger.info(f"Closed ticket #{ticket_id}")
             return True
         except requests.exceptions.RequestException as e:
@@ -107,10 +126,49 @@ class ConnectWiseClient:
                 "internalAnalysisFlag": False,
                 "resolutionFlag": False
             }
-            response = requests.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
+            response = self.session.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
             response.raise_for_status()
             logger.info(f"Added note to ticket #{ticket_id}")
             return True
         except requests.exceptions.RequestException as e:
             logger.error(f"Error adding note to ticket #{ticket_id}: {e}")
             return False
+
+    def get_boards(self) -> list:
+        try:
+            response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching boards: {e}")
+            return []
+
+    def get_priorities(self) -> list:
+        try:
+            response = self.session.get(f"{self.base_url}/service/priorities", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching priorities: {e}")
+            return []
+
+    def get_board_statuses(self, board_id: int) -> list:
+        try:
+            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching statuses for board {board_id}: {e}")
+            return []
+
+    def get_companies(self, search: Optional[str] = None) -> list:
+        try:
+            params = {"pageSize": 50}
+            if search:
+                params["conditions"] = f"identifier contains '{search}' OR name contains '{search}'"
+            response = self.session.get(f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching companies: {e}")
+            return []

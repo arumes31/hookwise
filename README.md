@@ -14,13 +14,15 @@ A general-purpose webhook router that bridges various webhooks to **ConnectWise 
 - **Customizable Configuration:** Configure Service Board, Status, Type, Subtype, and Priority per endpoint.
 - **Auto-Ticketing:** Creates tickets in ConnectWise based on incoming webhook data.
 - **Smart Parsing:** Extracts Company ID from titles using the `#CW` prefix (e.g., `My Server #CW123`).
-- **Bearer Token Auth:** Every generated endpoint is secured with an auto-generated Bearer token.
-- **Persistent Storage:** Uses SQLite to store endpoint configurations and Redis/Celery for task queuing.
-- **Observability:** Built-in Prometheus metrics and health checks.
+- **Bearer Token Auth:** Every generated endpoint is secured with a unique Bearer token (stored encrypted).
+- **Security First:** Includes IP Whitelisting, Basic Auth for the GUI, and field encryption.
+- **Reliability:** Built-in retry mechanism with exponential backoff for PSA calls.
+- **Observability:** Real-time log feed, detailed Prometheus metrics, and service health dashboard.
+- **Enterprise Ready:** Uses PostgreSQL for production-grade storage and includes database migrations.
 
 ## Configuration
 
-The application is configured via environment variables.
+The application is configured via environment variables. Use `python generate_env_example.py` to create a template.
 
 | Variable | Description | Required | Default |
 |----------|-------------|:--------:|---------|
@@ -29,7 +31,10 @@ The application is configured via environment variables.
 | `CW_PUBLIC_KEY` | API Public Key | **Yes** | - |
 | `CW_PRIVATE_KEY` | API Private Key | **Yes** | - |
 | `CW_CLIENT_ID` | API Client ID | **Yes** | - |
-| `DATABASE_URL` | SQLite database URL | No | `sqlite:////app/data/hookwise.db` |
+| `DATABASE_URL` | DB URL (Postgres recommended) | No | `postgresql://hookwise:hookwise_pass@postgres:5432/hookwise` |
+| `GUI_USERNAME` | Basic Auth Username for GUI | No | - |
+| `GUI_PASSWORD` | Basic Auth Password for GUI | No | - |
+| `ENCRYPTION_KEY` | 32-byte Base64 key for data | No | auto-generated |
 | `REDIS_PASSWORD` | Password for Redis security | No | - |
 | `CELERY_BROKER_URL` | Redis connection string | No | `redis://redis:6379/0` |
 
@@ -37,9 +42,10 @@ The application is configured via environment variables.
 
 ### Docker Compose (Recommended)
 
-```bash
-docker-compose up -d
-```
+1. Generate environment file: `python generate_env_example.py`
+2. Update `.env.example` to `.env` and fill in credentials.
+3. Start services: `docker-compose up -d`
+4. Apply migrations: `docker-compose exec kumawise-proxy flask db upgrade`
 
 Access the Web GUI at `http://localhost:5000`.
 
