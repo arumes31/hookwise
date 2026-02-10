@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2C3E50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4CA1AF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="120" rx="15" fill="url(#grad1)" />
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#ffffff">
+    KumaWise
+  </text>
+  <path d="M40 60 L60 40 L60 80 Z" fill="#E74C3C" transform="translate(20, 0)"/>
+</svg>

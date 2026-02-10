@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card border-0">
+            <div class="card-header bg-primary text-white p-4">
+                <h2 class="mb-0 h4 fw-bold">{{ 'Edit' if config else 'New' }} Webhook Endpoint</h2>
+                <p class="mb-0 small opacity-75">{{ 'Update your existing webhook routing configuration.' if config else
+                    'Configure how incoming alerts are routed to ConnectWise.' }}</p>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label fw-bold">Endpoint Name <span
+                                class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name"
+                            placeholder="e.g. Uptime Kuma Production" required
+                            value="{{ config.name if config else '' }}"
+                            data-tooltip="A descriptive name for this webhook source.">
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="ticket_prefix" class="form-label">Ticket Summary Prefix</label>
+                            <input type="text" class="form-control" id="ticket_prefix" name="ticket_prefix"
+                                placeholder="e.g. Alert:" value="{{ config.ticket_prefix if config else '' }}"
+                                data-tooltip="Optional text to prepend to the ConnectWise ticket title.">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="board" class="form-label">Service Board</label>
+                            <input type="text" class="form-control" id="board" name="board"
+                                placeholder="e.g. Service Desk" value="{{ config.board if config else '' }}"
+                                data-tooltip="The ConnectWise Service Board name where tickets will be created.">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="customer_id_default" class="form-label">Default Customer ID</label>
+                            <input type="text" class="form-control" id="customer_id_default" name="customer_id_default"
+                                placeholder="Optional" value="{{ config.customer_id_default if config else '' }}"
+                                data-tooltip="The ConnectWise Company ID to use if not found in the payload.">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="status" class="form-label">Initial Status</label>
+                            <input type="text" class="form-control" id="status" name="status" placeholder="Optional"
+                                value="{{ config.status if config else '' }}"
+                                data-tooltip="The status name to set on new tickets.">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="priority" class="form-label">Priority</label>
+                            <input type="text" class="form-control" id="priority" name="priority" placeholder="Optional"
+                                value="{{ config.priority if config else '' }}"
+                                data-tooltip="The priority name to set on new tickets.">
+                        </div>
+                    </div>
+
+                    <hr class="my-4 opacity-10">
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 fw-bold">Trigger Configuration</h5>
+                        <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
+                            data-bs-target="#validator-tool">
+                            Test JSON Path
+                        </button>
+                    </div>
+
+                    <div class="collapse mb-4" id="validator-tool">
+                        <div class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
+                            <label class="small text-info fw-bold mb-2">JSON PATH VALIDATOR</label>
+                            <textarea id="sample-json"
+                                class="form-control bg-dark border-secondary text-info small mb-2" rows="4"
+                                placeholder='Paste sample JSON here... e.g. {"heartbeat": {"status": 0}}'></textarea>
+                            <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100"
+                                onclick="testPath()">Validate Path</button>
+                            <div id="validation-result"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="trigger_field" class="form-label fw-bold">JSON Trigger Field <span
+                                class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="trigger_field" name="trigger_field"
+                            placeholder="heartbeat.status"
+                            value="{{ config.trigger_field if config else 'heartbeat.status' }}" required
+                            data-tooltip="Use dot-notation to specify the field in the webhook body (e.g., monitor.status).">
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="open_value" class="form-label fw-bold">Open Value(s) <span
+                                    class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="open_value" name="open_value"
+                                placeholder="0, down" value="{{ config.open_value if config else '0' }}" required
+                                data-tooltip="Comma-separated list of values that mean 'Fail'.">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="close_value" class="form-label fw-bold">Close Value(s) <span
+                                    class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="close_value" name="close_value"
+                                placeholder="1, up" value="{{ config.close_value if config else '1' }}" required
+                                data-tooltip="Comma-separated list of values that mean 'Success'.">
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-4">{{ 'Save Changes' if config else 'Create
+                            Endpoint' }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
