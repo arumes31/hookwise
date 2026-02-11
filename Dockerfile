@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.14-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
@@ -10,23 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.14-slim AS runtime
+FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 USER appuser
 
-COPY --from=builder /root/.local /home/appuser/.local
-ENV PATH="/home/appuser/.local/bin:${PATH}"
-
+COPY --from=builder /install /usr/local
 COPY --chown=appuser:appuser . .
 
 # Remove unnecessary files from production image

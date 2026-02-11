@@ -79,7 +79,9 @@ class ConnectWiseClient:
                       ticket_type: Optional[str] = None,
                       subtype: Optional[str] = None,
                       item: Optional[str] = None,
-                      priority: Optional[str] = None) -> Optional[Dict[str, Any]]:
+                      priority: Optional[str] = None,
+                      severity: Optional[str] = None,
+                      impact: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:
             payload: Dict[str, Any] = {
                 "summary": summary,
@@ -92,6 +94,8 @@ class ConnectWiseClient:
             if subtype: payload["subType"] = {"name": subtype}
             if item: payload["item"] = {"name": item}
             if priority: payload["priority"] = {"name": priority}
+            if severity: payload["severity"] = severity
+            if impact: payload["impact"] = impact
             
             target_company_id = company_id or os.getenv('CW_DEFAULT_COMPANY_ID')
             if target_company_id: payload["company"] = {"identifier": target_company_id}

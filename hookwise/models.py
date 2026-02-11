@@ -25,6 +25,7 @@ class WebhookConfig(db.Model):
     routing_rules = db.Column(db.Text) # JSON string for regex routing
     maintenance_windows = db.Column(db.Text) # JSON string for maintenance intervals
     trusted_ips = db.Column(db.Text) # Comma-separated IPs or CIDRs
+    is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     last_rotated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_seen_at = db.Column(db.DateTime)
@@ -49,6 +50,7 @@ class WebhookConfig(db.Model):
             "routing_rules": self.routing_rules,
             "maintenance_windows": self.maintenance_windows,
             "trusted_ips": self.trusted_ips,
+            "is_enabled": self.is_enabled,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None
         }

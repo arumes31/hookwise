@@ -83,6 +83,16 @@ def edit_endpoint(id):
         return redirect(url_for('main.index'))
     return render_template('form.html', config=config)
 
+@main_bp.route('/endpoint/toggle/<id>', methods=['POST'])
+@auth_required
+def toggle_endpoint(id):
+    config = WebhookConfig.query.get_or_404(id)
+    config.is_enabled = not config.is_enabled
+    db.session.commit()
+    action = "enable" if config.is_enabled else "disable"
+    log_audit(action, id, f"Endpoint {config.name} {action}d")
+    return jsonify({"status": "success", "is_enabled": config.is_enabled})
+
 @main_bp.route('/endpoint/rotate-token/<id>', methods=['POST'])
 @auth_required
 def rotate_token(id):
@@ -121,7 +131,24 @@ def bulk_delete_endpoints():
 @main_bp.route('/endpoint/bulk/pause', methods=['POST'])
 @auth_required
 def bulk_pause_endpoints():
-    return jsonify({"status": "success", "message": "Bulk pause action triggered (Simulation)"})
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({"status": "error", "message": "No IDs provided"}), 400
+    WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": False}, synchronize_session=False)
+    db.session.commit()
+    log_audit("bulk_pause", None, f"Paused endpoints: {', '.join(ids)}")
+    return jsonify({"status": "success", "message": f"Paused {len(ids)} endpoints"})
+
+@main_bp.route('/endpoint/bulk/resume', methods=['POST'])
+@auth_required
+def bulk_resume_endpoints():
+    ids = request.json.get('ids', [])
+    if not ids:
+        return jsonify({"status": "error", "message": "No IDs provided"}), 400
+    WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": True}, synchronize_session=False)
+    db.session.commit()
+    log_audit("bulk_resume", None, f"Resumed endpoints: {', '.join(ids)}")
+    return jsonify({"status": "success", "message": f"Resumed {len(ids)} endpoints"})
 
 @main_bp.route('/w/<config_id>', methods=['POST'])
 def dynamic_webhook(config_id: str) -> Tuple[Response, int]:
@@ -129,6 +156,10 @@ def dynamic_webhook(config_id: str) -> Tuple[Response, int]:
     config = WebhookConfig.query.get(config_id)
     if not config:
         return jsonify({"status": "error", "message": "Endpoint not found"}), 404
+    
+    if not config.is_enabled:
+        WEBHOOK_COUNT.labels(status='disabled', config_name=config.name).inc()
+        return jsonify({"status": "error", "message": "Endpoint is disabled"}), 403
     
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):

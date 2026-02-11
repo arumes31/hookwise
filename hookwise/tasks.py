@@ -104,13 +104,14 @@ def is_in_maintenance(config: WebhookConfig) -> bool:
     if not config.maintenance_windows:
         return False
     try:
+        from datetime import timezone
         windows = json.loads(config.maintenance_windows)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for window in windows:
             # Simple format: {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T01:00:00Z"}
             start = datetime.fromisoformat(window['start'].replace('Z', '+00:00'))
             end = datetime.fromisoformat(window['end'].replace('Z', '+00:00'))
-            if start <= now.replace(tzinfo=None) <= end:
+            if start <= now <= end:
                 return True
     except Exception as e:
         logger.error(f"Error checking maintenance window: {e}")
@@ -182,41 +183,23 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                     logger.error(f"Failed to parse routing_rules: {e}", extra=extra)
 
             # 1. Apply JSONPath Mappings
-            mapped_summary = None
-            if 'summary' in json_mapping:
-                mapped_summary = resolve_jsonpath(data, json_mapping['summary'])
+            overridable_fields = ['summary', 'description', 'customer_id', 'ticket_type', 'subtype', 'item', 'priority', 'board', 'status', 'severity', 'impact']
+            mapped_vals = {}
+            for field in overridable_fields:
+                if field in json_mapping:
+                    val = resolve_jsonpath(data, json_mapping[field])
+                    if val is not None: mapped_vals[field] = str(val)
+
+            mapped_summary = mapped_vals.get('summary')
+            mapped_description = mapped_vals.get('description')
+            mapped_customer_id = mapped_vals.get('customer_id')
             
-            mapped_description = None
-            if 'description' in json_mapping:
-                mapped_description = resolve_jsonpath(data, json_mapping['description'])
-
-            mapped_customer_id = None
-            if 'customer_id' in json_mapping:
-                mapped_customer_id = resolve_jsonpath(data, json_mapping['customer_id'])
-
-            if 'ticket_type' in json_mapping:
-                val = resolve_jsonpath(data, json_mapping['ticket_type'])
-                if val: ticket_type = str(val)
-            
-            if 'subtype' in json_mapping:
-                val = resolve_jsonpath(data, json_mapping['subtype'])
-                if val: subtype = str(val)
-
-            if 'item' in json_mapping:
-                val = resolve_jsonpath(data, json_mapping['item'])
-                if val: item = str(val)
-
-            if 'priority' in json_mapping:
-                val = resolve_jsonpath(data, json_mapping['priority'])
-                if val: priority = str(val)
-
-            if 'board' in json_mapping:
-                val = resolve_jsonpath(data, json_mapping['board'])
-                if val: board = str(val)
-
-            if 'status' in json_mapping:
-                val = resolve_jsonpath(data, json_mapping['status'])
-                if val: status = str(val)
+            if 'ticket_type' in mapped_vals: ticket_type = mapped_vals['ticket_type']
+            if 'subtype' in mapped_vals: subtype = mapped_vals['subtype']
+            if 'item' in mapped_vals: item = mapped_vals['item']
+            if 'priority' in mapped_vals: priority = mapped_vals['priority']
+            if 'board' in mapped_vals: board = mapped_vals['board']
+            if 'status' in mapped_vals: status = mapped_vals['status']
 
             # 2. Apply Regex Routing Rules
             for rule in routing_rules:
@@ -291,7 +274,20 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                 else:
                     description = f"Source: {monitor_name}\nMessage: {msg}\nRequest ID: {request_id}\nPayload: {data}"
                 
-                new_ticket = cw_client.create_ticket(summary=ticket_summary, description=description, monitor_name=monitor_name, company_id=company_id, board=board, status=status, ticket_type=ticket_type, subtype=subtype, item=item, priority=priority)
+                new_ticket = cw_client.create_ticket(
+                    summary=ticket_summary, 
+                    description=description, 
+                    monitor_name=monitor_name, 
+                    company_id=company_id, 
+                    board=board, 
+                    status=status, 
+                    ticket_type=ticket_type, 
+                    subtype=subtype, 
+                    item=item, 
+                    priority=priority,
+                    severity=mapped_vals.get('severity'),
+                    impact=mapped_vals.get('impact')
+                )
                 if new_ticket:
                     ticket_id = new_ticket['id']
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)

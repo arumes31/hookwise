@@ -179,9 +179,45 @@ window.bulkPause = async function () {
             body: JSON.stringify({ ids: checked })
         });
         const data = await resp.json();
-        showToast(data.message, 'info');
+        if (data.status === 'success') {
+            showToast(data.message, 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        }
     } catch (e) {
         showToast('Error pausing endpoints', 'error');
+    }
+};
+
+window.bulkResume = async function () {
+    const checked = Array.from(document.querySelectorAll('.endpoint-check:checked')).map(c => c.dataset.id);
+    if (!checked.length) return;
+
+    try {
+        const resp = await fetch('/endpoint/bulk/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: checked })
+        });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            showToast(data.message, 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    } catch (e) {
+        showToast('Error resuming endpoints', 'error');
+    }
+};
+
+window.toggleEndpoint = async function (id) {
+    try {
+        const resp = await fetch(`/endpoint/toggle/${id}`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.status === 'success') {
+            showToast(`Endpoint ${data.is_enabled ? 'enabled' : 'disabled'}`, 'success');
+            setTimeout(() => window.location.reload(), 500);
+        }
+    } catch (e) {
+        showToast('Error toggling endpoint', 'error');
     }
 };
 
@@ -205,9 +241,18 @@ window.testPath = function () {
 
     try {
         const obj = JSON.parse(jsonStr);
-        const val = path.split('.').reduce((o, i) => o ? o[i] : undefined, obj);
+        // Simple path resolver that handles dots and [n]
+        const resolve = (obj, path) => {
+            // Remove $. if present
+            const cleanPath = path.startsWith('$.') ? path.substring(2) : path;
+            return cleanPath.replace(/\[(\d+)\]/g, '.$1') // convert indexes to properties
+                       .split('.')
+                       .filter(p => p !== "")
+                       .reduce((o, i) => (o && o[i] !== undefined) ? o[i] : undefined, obj);
+        };
+        const val = resolve(obj, path);
         resultEl.className = 'mt-2 small ' + (val !== undefined ? 'text-success' : 'text-danger');
-        resultEl.textContent = val !== undefined ? `Found value: ${val}` : 'Field not found in payload';
+        resultEl.textContent = val !== undefined ? `Found value: ${JSON.stringify(val)}` : 'Field not found in payload';
     } catch (e) {
         resultEl.className = 'mt-2 small text-danger';
         resultEl.textContent = 'Invalid JSON input';
@@ -221,4 +266,9 @@ window.getTroubleshootingLink = function (message) {
     if (message.includes('404')) return baseUrl + 'Resource+Not+Found';
     if (message.includes('error')) return baseUrl + 'Troubleshooting';
     return null;
+};
+
+window.copyToClipboard = function (text) {
+    navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard!', 'success');
 };
