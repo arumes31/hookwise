@@ -38,11 +38,12 @@ def call_llm(prompt: str, system_prompt: str = "You are a helpful assistant spec
 
 def check_auth(username, password):
     """Check if a username/password combination is valid."""
+    import hmac as _hmac
     expected_username = os.environ.get('GUI_USERNAME')
     expected_password = os.environ.get('GUI_PASSWORD')
     if not expected_username or not expected_password:
         return True # Auth disabled if not set
-    return username == expected_username and password == expected_password
+    return _hmac.compare_digest(username, expected_username) and _hmac.compare_digest(password, expected_password)
 
 def authenticate():
     """Sends a 401 response that enables basic auth."""
@@ -98,14 +99,19 @@ def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
 
 from cryptography.fernet import Fernet
 
+_fernet_instance = None
 
 def get_fernet():
+    global _fernet_instance
+    if _fernet_instance is not None:
+        return _fernet_instance
     key = os.environ.get('ENCRYPTION_KEY')
     if not key:
         # Fallback for dev, but should be set in prod
         key = Fernet.generate_key().decode()
-        logger.warning("ENCRYPTION_KEY not set, using a temporary key. Data will not be decryptable after restart.")
-    return Fernet(key.encode())
+        logger.critical("ENCRYPTION_KEY not set! Using a temporary key. Encrypted data will be LOST after restart.")
+    _fernet_instance = Fernet(key.encode())
+    return _fernet_instance
 
 def encrypt_string(plain_text: str) -> str:
     if not plain_text: return plain_text
@@ -122,14 +128,16 @@ def decrypt_string(cipher_text: str) -> str:
 
 def log_audit(action: str, config_id: Optional[str] = None, details: Optional[str] = None):
     """Helper to log configuration changes."""
-    from flask import request
+    from flask import request, session
 
     from .extensions import db
     from .models import AuditLog
     
-    user = "System"
-    if request.authorization:
+    user = session.get('username', None)
+    if not user and request.authorization:
         user = request.authorization.username
+    if not user:
+        user = "System"
     
     audit = AuditLog(
         config_id=config_id,

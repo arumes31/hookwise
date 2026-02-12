@@ -68,6 +68,8 @@ def create_app():
             return render_template('maintenance.html'), 503
 
     # Register blueprints
+    # Sub-modules (auth, endpoints, webhook, api) are imported at the bottom
+    # of routes.py and register their routes directly on main_bp.
     from .routes import main_bp
     app.register_blueprint(main_bp)
 
