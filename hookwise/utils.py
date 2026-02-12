@@ -28,7 +28,7 @@ def call_llm(prompt: str, system_prompt: str = "You are a helpful assistant spec
                     "temperature": 0.1
                 }
             },
-            timeout=30
+            timeout=90
         )
         response.raise_for_status()
         return response.json().get('response', '').strip()

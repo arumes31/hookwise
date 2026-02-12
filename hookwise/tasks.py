@@ -34,7 +34,13 @@ redis_client = redis.Redis(
 cw_client = ConnectWiseClient()
 
 def make_celery(app_name):
-    redis_url = f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', 6379)}/0"
+    redis_password = os.environ.get('REDIS_PASSWORD')
+    redis_host = os.environ.get('REDIS_HOST', 'localhost')
+    redis_port = os.environ.get('REDIS_PORT', 6379)
+    
+    default_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/0" if redis_password else f"redis://{redis_host}:{redis_port}/0"
+    redis_url = os.environ.get('CELERY_BROKER_URL', default_url)
+    
     celery = Celery(
         app_name,
         broker=redis_url,
