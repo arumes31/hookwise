@@ -1,6 +1,7 @@
 __pycache__
 .env
 test*
+!tests/
 .venv
 .qodo
 .pytest_cache
