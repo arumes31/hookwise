@@ -213,7 +213,25 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
             if 'board' in mapped_vals: board = mapped_vals['board']
             if 'status' in mapped_vals: status = mapped_vals['status']
 
-            # 2. Apply Regex Routing Rules
+            # 2. AI-Driven Routing (if enabled)
+            if config.ai_routing_enabled:
+                from .utils import call_llm
+                # We provide context to the LLM about what we need
+                ai_prompt = config.ai_prompt_template or f"Analyze this JSON alert and suggest the best Service Board and Priority. Return ONLY a JSON object like {{\"board\": \"name\", \"priority\": \"name\"}}. Payload: {json.dumps(data)}"
+                ai_response = call_llm(ai_prompt)
+                if ai_response:
+                    try:
+                        # Find JSON block in response if LLM added chatter
+                        json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+                        if json_match:
+                            ai_data = json.loads(json_match.group())
+                            if ai_data.get('board'): board = ai_data['board']
+                            if ai_data.get('priority'): priority = ai_data['priority']
+                            log_entry.matched_rule = (log_entry.matched_rule or "") + f" [AI: {ai_data}]"
+                    except Exception as e:
+                        logger.warning(f"Failed to parse AI response: {ai_response} | Error: {e}")
+
+            # 3. Apply Regex Routing Rules (Regex overrides AI)
             for rule in routing_rules:
                 rule_path = rule.get('path')
                 rule_regex = rule.get('regex')

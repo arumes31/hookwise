@@ -288,20 +288,53 @@
                                     data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
                             </div>
 
-                            <div class="mb-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label for="routing_rules" class="form-label fw-bold mb-0">Regex Routing (JSON
-                                        Array)</label>
-                                    <button type="button" class="btn btn-sm btn-link text-info p-0"
-                                        onclick="formatJSON('routing_rules')">Format</button>
-                                </div>
-                                <textarea class="form-control font-monospace small" id="routing_rules"
-                                    name="routing_rules" rows="3"
-                                    placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
-                                    data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
-                            </div>
+                                                        <div class="mb-3">
 
-                            <div class="mb-0">
+                                                            <div class="d-flex justify-content-between align-items-center mb-2">
+
+                                                                <label for="routing_rules" class="form-label fw-bold mb-0">Regex Routing (JSON Array)</label>
+
+                                                                <button type="button" class="btn btn-sm btn-link text-info p-0" onclick="formatJSON('routing_rules')">Format</button>
+
+                                                            </div>
+
+                                                            <textarea class="form-control font-monospace small" id="routing_rules" name="routing_rules" rows="3"
+
+                                                                placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
+
+                                                                data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
+
+                                                        </div>
+
+                            
+
+                                                        <div class="mb-3 border border-primary border-opacity-25 rounded p-3 bg-primary bg-opacity-5">
+
+                                                            <div class="form-check form-switch mb-2">
+
+                                                                <input class="form-check-input" type="checkbox" role="switch" id="ai_routing_enabled" name="ai_routing_enabled" value="true" {{ 'checked' if config and config.ai_routing_enabled else '' }} onchange="toggleAI()">
+
+                                                                <label class="form-check-label fw-bold text-primary" for="ai_routing_enabled">AI-POWERED ROUTING (BETA)</label>
+
+                                                            </div>
+
+                                                            <div id="ai-settings" class="{{ '' if config and config.ai_routing_enabled else 'd-none' }}">
+
+                                                                <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest boards and priorities based on alert context.</p>
+
+                                                                <label for="ai_prompt_template" class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT (OPTIONAL)</label>
+
+                                                                <textarea class="form-control font-monospace small bg-dark" id="ai_prompt_template" name="ai_prompt_template" rows="3" 
+
+                                                                    placeholder="Analyze this payload and select the best board... ">{{ config.ai_prompt_template if config else '' }}</textarea>
+
+                                                            </div>
+
+                                                        </div>
+
+                            
+
+                                                        <div class="mb-0">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <label class="form-label fw-bold mb-0">Maintenance Windows</label>
                                     <button type="button" class="btn btn-sm btn-outline-primary"
@@ -411,6 +444,11 @@
     function toggleAdvanced() {
         const show = document.getElementById('show-advanced').checked;
         document.getElementById('advanced-fields').classList.toggle('d-none', !show);
+    }
+
+    function toggleAI() {
+        const enabled = document.getElementById('ai_routing_enabled').checked;
+        document.getElementById('ai-settings').classList.toggle('d-none', !enabled);
     }
 
     function insertAtCursor(event, id, text) {

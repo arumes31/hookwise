@@ -14,7 +14,7 @@ All 100 UX Improvement Recommendations have been implemented.
 
 ### Category: Intelligent Automation
 - [x] **Local AI Infrastructure:** Added Ollama service to Docker Compose for CPU-based LLM support.
-- [ ] **AI-Driven Routing:** Use LLMs to suggest Service Board/Priority based on payload sentiment.
+- [x] **AI-Driven Routing:** Use LLMs to suggest Service Board/Priority based on payload sentiment.
 - [ ] **Semantic Deduplication:** Group related alerts into a single master ticket using fuzzy matching.
 - [ ] **Remediation Workflows:** Trigger outbound webhooks to attempt "self-healing" based on alert content.
 

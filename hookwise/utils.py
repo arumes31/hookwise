@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import requests
 from datetime import datetime
 from functools import wraps
 from typing import Any, Dict, Optional
@@ -11,6 +12,29 @@ from jsonpath_ng import parse
 from .extensions import socketio
 
 logger = logging.getLogger(__name__)
+
+def call_llm(prompt: str, system_prompt: str = "You are a helpful assistant specialized in ConnectWise ticketing and alert analysis. Be concise and return only the requested value.") -> Optional[str]:
+    ollama_host = os.environ.get('OLLAMA_HOST', 'http://hookwise-llm:11434')
+    try:
+        response = requests.post(
+            f"{ollama_host}/api/generate",
+            json={
+                "model": "phi3",
+                "prompt": prompt,
+                "system": system_prompt,
+                "stream": False,
+                "options": {
+                    "num_predict": 100,
+                    "temperature": 0.1
+                }
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        return response.json().get('response', '').strip()
+    except Exception as e:
+        logger.error(f"Error calling LLM: {e}")
+        return None
 
 def check_auth(username, password):
     """Check if a username/password combination is valid."""
