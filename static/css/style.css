@@ -235,30 +235,6 @@ code {
     height: calc(100vh - 150px) !important;
 }
 
-/* Light Mode Overrides */
-body.light-mode {
-    --bg-main: #f8fafc;
-    --bg-dark: #f1f5f9;
-    --bg-card: #ffffff;
-    --bg-nav: rgba(248, 250, 252, 0.85);
-    --text-primary: #1e293b;
-    --text-secondary: #475569;
-    --border: #e2e8f0;
-    --border-hover: #cbd5e1;
-    background-image: 
-        radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 0),
-        radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 0);
-}
-
-body.light-mode h1, body.light-mode .h1, body.light-mode h2, body.light-mode .h2, body.light-mode h3, body.light-mode .h3, body.light-mode h4, body.light-mode .h4, body.light-mode h5, body.light-mode .h5, body.light-mode h6, body.light-mode .h6 {
-    color: #0f172a;
-}
-
-body.light-mode .navbar-dark .navbar-nav .nav-link { color: #475569; }
-body.light-mode .navbar-dark .navbar-nav .nav-link:hover { color: #1e293b; }
-body.light-mode .card { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-body.light-mode #log-container { background-color: #f8fafc !important; color: #1e293b; }
-
 /* Confetti */
 .confetti {
     position: fixed;
@@ -278,11 +254,6 @@ body.light-mode #log-container { background-color: #f8fafc !important; color: #1
     background: rgba(22, 27, 34, 0.8) !important;
     backdrop-filter: blur(12px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
-}
-
-.light-mode .modal-content, .light-mode .dropdown-menu, .light-mode .form-select, .light-mode .form-control {
-    background: rgba(255, 255, 255, 0.8) !important;
-    border: 1px solid rgba(0, 0, 0, 0.1) !important;
 }
 
 /* Top Loading Bar */
