@@ -318,17 +318,17 @@
 
                                                             </div>
 
-                                                            <div id="ai-settings" class="{{ '' if config and config.ai_routing_enabled else 'd-none' }}">
+                                                                                            <div id="ai-settings" class="{{ '' if config and config.ai_routing_enabled else 'd-none' }}">
 
-                                                                <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest boards and priorities based on alert context.</p>
+                                                                                                <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest ticket priorities based on alert context.</p>
 
-                                                                <label for="ai_prompt_template" class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT (OPTIONAL)</label>
+                                                                                                <label for="ai_prompt_template" class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT (OPTIONAL)</label>
 
-                                                                <textarea class="form-control font-monospace small bg-dark" id="ai_prompt_template" name="ai_prompt_template" rows="3" 
+                                                                                                <textarea class="form-control font-monospace small bg-dark" id="ai_prompt_template" name="ai_prompt_template" rows="3" 
 
-                                                                    placeholder="Analyze this payload and select the best board... ">{{ config.ai_prompt_template if config else '' }}</textarea>
+                                                                                                    placeholder="Analyze this payload and select the best priority... ">{{ config.ai_prompt_template if config else '' }}</textarea>
 
-                                                            </div>
+                                                                                            </div>
 
                                                         </div>
 
