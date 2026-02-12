@@ -48,7 +48,6 @@ class WebhookConfig(db.Model):
     is_pinned = db.Column(db.Boolean, default=False, nullable=False)
     is_draft = db.Column(db.Boolean, default=False, nullable=False)
     display_order = db.Column(db.Integer, default=0)
-    ai_routing_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text) # Custom instructions for the LLM
     last_rotated_at = db.Column(db.DateTime)
@@ -77,7 +76,6 @@ class WebhookConfig(db.Model):
             "trusted_ips": self.trusted_ips,
             "is_enabled": self.is_enabled,
             "is_pinned": self.is_pinned,
-            "ai_routing_enabled": self.ai_routing_enabled,
             "ai_rca_enabled": self.ai_rca_enabled,
             "ai_prompt_template": self.ai_prompt_template,
             "created_at": self.created_at.isoformat(),

@@ -318,17 +318,6 @@
 
                                 <div class="form-check form-switch mb-2">
 
-                                    <input class="form-check-input" type="checkbox" role="switch"
-                                        id="ai_routing_enabled" name="ai_routing_enabled" value="true" {{ 'checked' if
-                                        config and config.ai_routing_enabled else '' }} onchange="toggleAI()">
-
-                                    <label class="form-check-label fw-bold text-white"
-                                        for="ai_routing_enabled">AI-POWERED ROUTING (BETA)</label>
-
-                                </div>
-
-                                <div class="form-check form-switch mb-2">
-
                                     <input class="form-check-input" type="checkbox" role="switch" id="ai_rca_enabled"
                                         name="ai_rca_enabled" value="true" {{ 'checked' if config and
                                         config.ai_rca_enabled else '' }} onchange="toggleAI()">
@@ -339,10 +328,10 @@
                                 </div>
 
                                 <div id="ai-settings"
-                                    class="{{ '' if config and (config.ai_routing_enabled or config.ai_rca_enabled) else 'd-none' }}">
+                                    class="{{ '' if config and config.ai_rca_enabled else 'd-none' }}">
 
                                     <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest
-                                        ticket priorities and suggest root causes based on alert context.</p>
+                                        root causes based on alert context.</p>
 
                                     <label for="ai_prompt_template"
                                         class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT
@@ -471,9 +460,8 @@
     }
 
     function toggleAI() {
-        const routing = document.getElementById('ai_routing_enabled').checked;
         const rca = document.getElementById('ai_rca_enabled').checked;
-        document.getElementById('ai-settings').classList.toggle('d-none', !(routing || rca));
+        document.getElementById('ai-settings').classList.toggle('d-none', !rca);
     }
 
     function insertAtCursor(event, id, text) {
