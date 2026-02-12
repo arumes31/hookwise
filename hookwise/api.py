@@ -4,6 +4,8 @@ import os
 import re
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
+from datetime import time as dtime
 from typing import Tuple
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
@@ -131,11 +133,9 @@ def _register():
     @main_bp.route('/api/stats')
     @auth_required
     def get_stats():
-        from datetime import datetime
-        from datetime import time as dtime
         from sqlalchemy import func
 
-        today_start = datetime.combine(datetime.utcnow().date(), dtime.min)
+        today_start = datetime.combine(datetime.now(timezone.utc).date(), dtime.min)
 
         tickets_created = WebhookLog.query.join(WebhookConfig).filter(
             WebhookConfig.is_draft == False,
@@ -179,17 +179,28 @@ def _register():
     @main_bp.route('/api/stats/history')
     @auth_required
     def get_stats_history():
-        from datetime import datetime, timedelta
         days = 7
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+
+        # Single query instead of 7 separate COUNT queries
+        rows = db.session.query(
+            db.func.date(WebhookLog.created_at).label('day'),
+            db.func.count(WebhookLog.id)
+        ).filter(
+            db.func.date(WebhookLog.created_at) >= cutoff,
+            WebhookLog.status == 'processed'
+        ).group_by(db.func.date(WebhookLog.created_at)).all()
+
+        counts_by_day = {str(row[0]): row[1] for row in rows}
+
         history_data = []
-        for i in range(days):
-            date = (datetime.utcnow() - timedelta(days=i)).date()
-            count = WebhookLog.query.filter(
-                db.func.date(WebhookLog.created_at) == date,
-                WebhookLog.status == 'processed'
-            ).count()
-            history_data.append({"date": date.strftime('%m-%d'), "count": count})
-        return jsonify(history_data[::-1])
+        for i in range(days - 1, -1, -1):
+            date = (datetime.now(timezone.utc) - timedelta(days=i)).date()
+            history_data.append({
+                "date": date.strftime('%m-%d'),
+                "count": counts_by_day.get(str(date), 0)
+            })
+        return jsonify(history_data)
 
     # --- ConnectWise Proxy ---
 
@@ -366,7 +377,7 @@ def _register():
     @auth_required
     def backup_config():
         configs = WebhookConfig.query.all()
-        data = [c.to_dict() for c in configs]
+        data = [c.to_dict(include_token=True) for c in configs]
         return Response(
             json.dumps(data, indent=2),
             mimetype='application/json',

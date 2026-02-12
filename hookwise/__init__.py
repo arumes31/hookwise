@@ -1,3 +1,4 @@
+import logging
 import os
 import secrets
 import uuid
@@ -7,10 +8,15 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .extensions import db, limiter, migrate, socketio
 
+_logger = logging.getLogger(__name__)
 
 def create_app():
     app = Flask(__name__, template_folder='../templates', static_folder='../static')
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+    secret_key = os.environ.get('SECRET_KEY')
+    if not secret_key:
+        secret_key = secrets.token_hex(32)
+        _logger.critical("SECRET_KEY not set! Sessions will be invalidated on restart. Set SECRET_KEY in your environment.")
+    app.config['SECRET_KEY'] = secret_key
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://hookwise:hookwise_pass@postgres:5432/hookwise')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -74,17 +80,24 @@ def create_app():
     app.register_blueprint(main_bp)
 
     from .models import User
-    from werkzeug.security import generate_password_hash
+    from werkzeug.security import check_password_hash, generate_password_hash
     with app.app_context():
         try:
-            if not User.query.filter_by(username='admin').first():
+            gui_password = os.environ.get('GUI_PASSWORD', 'admin')
+            admin = User.query.filter_by(username='admin').first()
+            if not admin:
                 admin = User(
                     username='admin',
-                    password_hash=generate_password_hash(os.environ.get('GUI_PASSWORD', 'admin')),
+                    password_hash=generate_password_hash(gui_password),
                     role='admin'
                 )
                 db.session.add(admin)
                 db.session.commit()
+            elif not check_password_hash(admin.password_hash, gui_password):
+                # A6: Sync password hash if GUI_PASSWORD env var changed
+                admin.password_hash = generate_password_hash(gui_password)
+                db.session.commit()
+                _logger.info("Admin password hash updated to match GUI_PASSWORD.")
         except Exception:
             db.session.rollback()
 

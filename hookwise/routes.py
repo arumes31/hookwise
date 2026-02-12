@@ -4,7 +4,7 @@ Each sub-module imports main_bp and registers its routes directly on it,
 so all url_for('main.xxx') references in templates continue to work.
 """
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
 from flask import Blueprint, Response, jsonify, render_template, request
@@ -24,7 +24,7 @@ main_bp = Blueprint('main', __name__)
 def index():
     configs = WebhookConfig.query.order_by(WebhookConfig.is_pinned.desc(), WebhookConfig.display_order.asc(), WebhookConfig.created_at.desc()).all()
 
-    last_24h = datetime.utcnow() - timedelta(hours=24)
+    last_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
     # Aggregated 24h counts (1 query instead of N)
     count_rows = db.session.query(
@@ -55,7 +55,7 @@ def index():
         last_errors[log.config_id] = log.error_message if log.status == 'failed' else None
 
     # Sparkline data: counts per config per day for last 7 days (1 query instead of 7*N)
-    seven_days_ago = (datetime.utcnow() - timedelta(days=7)).date()
+    seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).date()
     sparkline_rows = db.session.query(
         WebhookLog.config_id,
         func.date(WebhookLog.created_at).label('day'),
@@ -77,7 +77,7 @@ def index():
         last_errors.setdefault(cid, None)
         config_spark = []
         for i in range(6, -1, -1):
-            day = str((datetime.utcnow() - timedelta(days=i)).date())
+            day = str((datetime.now(timezone.utc) - timedelta(days=i)).date())
             config_spark.append(spark_map.get(cid, {}).get(day, 0))
         sparklines[cid] = config_spark
 

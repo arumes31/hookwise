@@ -2,7 +2,7 @@
 import json
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
@@ -119,7 +119,7 @@ def _register():
         config = WebhookConfig.query.get_or_404(id)
         new_token = secrets.token_urlsafe(32)
         config.bearer_token = encrypt_string(new_token)
-        config.last_rotated_at = datetime.utcnow()
+        config.last_rotated_at = datetime.now(timezone.utc)
         db.session.commit()
         log_audit("rotate_token", id, f"Token for {config.name} rotated")
         flash(f'Token for "{config.name}" rotated successfully!')

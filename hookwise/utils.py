@@ -2,12 +2,14 @@ import json
 import logging
 import os
 import requests
-from datetime import datetime
-from functools import wraps
+from datetime import datetime, timezone
+from functools import lru_cache, wraps
 from typing import Any, Dict, Optional
 
-from flask import Response, request
-from jsonpath_ng import parse
+import ipaddress
+
+from flask import Response, redirect, request, session, url_for
+from jsonpath_ng import parse as _jsonpath_parse
 
 from .extensions import socketio
 
@@ -52,9 +54,7 @@ def authenticate():
     'You have to login with proper credentials', 401,
     {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
-import ipaddress
 
-from flask import Response, request, session, redirect, url_for
 
 def auth_required(f):
     @wraps(f)
@@ -80,16 +80,33 @@ def auth_required(f):
             if (os.environ.get('GUI_USERNAME') and os.environ.get('GUI_PASSWORD')):
                 if not auth or not check_auth(auth.username, auth.password):
                     return authenticate()
+                # Populate session so routes reading session['user_id'] don't crash
+                from .models import User
+                user = User.query.filter_by(username=auth.username).first()
+                if user:
+                    session['user_id'] = user.id
+                    session['username'] = user.username
+                    session['role'] = user.role
+                else:
+                    # Basic Auth user not in DB — use synthetic context
+                    session['user_id'] = 'basic_auth'
+                    session['username'] = auth.username
+                    session['role'] = 'admin'
             else:
                 return redirect(url_for('main.login'))
         
         return f(*args, **kwargs)
     return decorated
 
+@lru_cache(maxsize=128)
+def _cached_jsonpath_parse(path: str):
+    """Cache parsed JSONPath expressions to avoid re-parsing the same path."""
+    return _jsonpath_parse(path)
+
 def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
     """Resolve a JSONPath expression against the data."""
     try:
-        jsonpath_expr = parse(path)
+        jsonpath_expr = _cached_jsonpath_parse(path)
         matches = jsonpath_expr.find(data)
         if matches:
             return matches[0].value
@@ -178,7 +195,7 @@ def log_to_web(message: str, level: str = "info", config_name: str = "System", d
             payload_to_send = {"raw": data}
 
     socketio.emit('new_log', {
-        'timestamp': datetime.utcnow().isoformat() + "Z",
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'message': message,
         'level': level,
         'config_name': config_name,

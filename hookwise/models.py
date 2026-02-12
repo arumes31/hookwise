@@ -1,6 +1,6 @@
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from .extensions import db
@@ -13,7 +13,7 @@ class User(db.Model):
     otp_secret = db.Column(db.String(32))
     is_2fa_enabled = db.Column(db.Boolean, default=False, nullable=False)
     role = db.Column(db.String(20), default='user') # admin, user
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -51,14 +51,13 @@ class WebhookConfig(db.Model):
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text) # Custom instructions for the LLM
     last_rotated_at = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = db.Column(db.DateTime)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
+    def to_dict(self, include_token: bool = False) -> Dict[str, Any]:
+        d = {
             "id": self.id,
             "name": self.name,
-            "bearer_token": self.bearer_token,
             "customer_id_default": self.customer_id_default,
             "board": self.board,
             "status": self.status,
@@ -70,6 +69,7 @@ class WebhookConfig(db.Model):
             "open_value": self.open_value,
             "close_value": self.close_value,
             "ticket_prefix": self.ticket_prefix,
+            "description_template": self.description_template,
             "json_mapping": self.json_mapping,
             "routing_rules": self.routing_rules,
             "maintenance_windows": self.maintenance_windows,
@@ -81,14 +81,17 @@ class WebhookConfig(db.Model):
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None
         }
+        if include_token:
+            d["bearer_token"] = self.bearer_token
+        return d
 
 class WebhookLog(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_id = db.Column(db.String(36), db.ForeignKey('webhook_config.id'), nullable=False)
-    request_id = db.Column(db.String(100), nullable=False)
+    config_id = db.Column(db.String(36), db.ForeignKey('webhook_config.id'), nullable=False, index=True)
+    request_id = db.Column(db.String(100), nullable=False, index=True)
     payload = db.Column(db.Text, nullable=False) # JSON string
     headers = db.Column(db.Text) # JSON string
-    status = db.Column(db.String(50), nullable=False, default="queued") # queued, processed, failed, skipped
+    status = db.Column(db.String(50), nullable=False, default="queued", index=True) # queued, processed, failed, skipped
     action = db.Column(db.String(50)) # create, update, close, None
     error_message = db.Column(db.Text)
     ticket_id = db.Column(db.Integer)
@@ -96,7 +99,7 @@ class WebhookLog(db.Model):
     processing_time = db.Column(db.Float) # in seconds
     source_ip = db.Column(db.String(50))
     retry_count = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     config = db.relationship('WebhookConfig', backref=db.backref('logs', lazy=True))
 
@@ -125,7 +128,7 @@ class AuditLog(db.Model):
     action = db.Column(db.String(50), nullable=False) # create, update, delete, rotate_token
     user = db.Column(db.String(100))
     details = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

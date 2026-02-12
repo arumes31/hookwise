@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, cast
 
 import redis
@@ -80,7 +80,7 @@ def cleanup_logs():
     retention_days = redis_client.get('hookwise_log_retention_days')
     retention_days = int(retention_days.decode()) if retention_days else int(os.environ.get('LOG_RETENTION_DAYS', 30))
     
-    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     
     deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
     db.session.commit()
@@ -137,8 +137,6 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
         if not config:
             logger.error(f"Config {config_id} not found", extra=extra)
             return
-        
-    with app.app_context():
         # 1. Create or update Webhook History Log
         from .utils import mask_secrets
         log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
@@ -182,7 +180,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
             json_mapping_str = config.json_mapping
             routing_rules_str = config.routing_rules
 
-            config.last_seen_at = datetime.utcnow()
+            config.last_seen_at = datetime.now(timezone.utc)
             db.session.commit()
 
             # Parse JSON mappings and routing rules
@@ -296,7 +294,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                                                      .replace('{{ msg }}', msg)\
                                                      .replace('{{ request_id }}', request_id)
                     # Handle {$.path} in template
-                    paths = re.findall(r'\{($.+?)\}', description)
+                    paths = re.findall(r'\{(\$.+?)\}', description)
                     for p in paths:
                         val = str(resolve_jsonpath(data, p))
                         description = description.replace('{' + p + '}', val)

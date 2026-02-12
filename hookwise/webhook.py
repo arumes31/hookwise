@@ -34,7 +34,8 @@ def _register():
             return jsonify({"status": "error", "message": "Missing Bearer Token"}), 401
 
         token = auth_header.split(' ')[1]
-        if token != decrypt_string(config.bearer_token):
+        import hmac as _hmac
+        if not _hmac.compare_digest(token, decrypt_string(config.bearer_token)):
             WEBHOOK_COUNT.labels(status='unauthorized', config_name=config.name).inc()
             return jsonify({"status": "error", "message": "Invalid Bearer Token"}), 401
 
