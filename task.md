@@ -15,8 +15,10 @@ All 100 UX Improvement Recommendations have been implemented.
 ### Category: Intelligent Automation
 - [x] **Local AI Infrastructure:** Added Ollama service to Docker Compose for CPU-based LLM support.
 - [x] **AI-Driven Routing:** Use LLMs to suggest Priority based on payload sentiment.
-- [ ] **Semantic Deduplication:** Group related alerts into a single master ticket using fuzzy matching.
-- [ ] **Remediation Workflows:** Trigger outbound webhooks to attempt "self-healing" based on alert content.
+- [ ] **AI Summary Generation:** Automatically create 1-sentence descriptive ticket summaries from raw JSON.
+- [ ] **Automated RCA Notes:** Suggest potential root causes and troubleshooting steps in ticket internal notes.
+- [ ] **Semantic Deduplication:** Use LLM reasoning to group related alerts even if titles differ.
+- [ ] **Smart Rule Builder:** Natural language interface to generate JSONPath/Regex routing rules.
 
 ### Category: Advanced Integration
 - [ ] **Two-Way PSA Sync:** Sync ticket status from ConnectWise back to HookWise via CW Webhooks.
