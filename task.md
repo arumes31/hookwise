@@ -16,7 +16,7 @@ All 100 UX Improvement Recommendations have been implemented.
 - [x] **Local AI Infrastructure:** Added Ollama service to Docker Compose for CPU-based LLM support.
 - [x] **AI-Driven Routing:** Use LLMs to suggest Priority based on payload sentiment.
 - [x] **AI Summary Generation:** Automatically create 1-sentence descriptive ticket summaries from raw JSON.
-- [ ] **Automated RCA Notes:** Suggest potential root causes and troubleshooting steps in ticket internal notes.
+- [x] **Automated RCA Notes:** Suggest potential root causes and troubleshooting steps in ticket internal notes.
 - [ ] **Semantic Deduplication:** Use LLM reasoning to group related alerts even if titles differ.
 - [ ] **Smart Rule Builder:** Natural language interface to generate JSONPath/Regex routing rules.
 

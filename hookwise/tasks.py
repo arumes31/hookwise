@@ -347,6 +347,16 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                     log_to_web(f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})", "warning" if alert_type == "DOWN" else "info", config_name, data=data, ticket_id=ticket_id)
                     PSA_TASK_COUNT.labels(type='create', result='success').inc()
                     log_entry.action = "create"
+
+                    # 4. Automated RCA Notes (if enabled)
+                    if config.ai_rca_enabled:
+                        from .utils import call_llm
+                        rca_prompt = f"Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting steps. Be concise and technical. Payload: {json.dumps(data)}"
+                        rca_response = call_llm(rca_prompt)
+                        if rca_response:
+                            note_text = f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}"
+                            cw_client.add_ticket_note(ticket_id, note_text, is_internal=True)
+                            log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
             
             elif alert_type == "UP":
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))

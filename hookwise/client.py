@@ -122,12 +122,12 @@ class ConnectWiseClient:
             logger.error(f"Error closing ticket #{ticket_id}: {e}")
             return False
 
-    def add_ticket_note(self, ticket_id: int, note_text: str) -> bool:
+    def add_ticket_note(self, ticket_id: int, note_text: str, is_internal: bool = False) -> bool:
         try:
             note_payload = {
                 "text": note_text,
                 "detailDescriptionFlag": True,
-                "internalAnalysisFlag": False,
+                "internalAnalysisFlag": is_internal,
                 "resolutionFlag": False
             }
             response = self.session.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)

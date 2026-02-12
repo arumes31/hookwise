@@ -203,6 +203,7 @@ def new_endpoint():
             is_draft=request.form.get('is_draft') == 'true',
             ai_routing_enabled=request.form.get('ai_routing_enabled') == 'true',
             ai_summary_enabled=request.form.get('ai_summary_enabled') == 'true',
+            ai_rca_enabled=request.form.get('ai_rca_enabled') == 'true',
             ai_prompt_template=request.form.get('ai_prompt_template')
         )
         db.session.add(config)
@@ -239,6 +240,7 @@ def edit_endpoint(id):
         config.is_draft = request.form.get('is_draft') == 'true'
         config.ai_routing_enabled = request.form.get('ai_routing_enabled') == 'true'
         config.ai_summary_enabled = request.form.get('ai_summary_enabled') == 'true'
+        config.ai_rca_enabled = request.form.get('ai_rca_enabled') == 'true'
         config.ai_prompt_template = request.form.get('ai_prompt_template')
 
         db.session.commit()
@@ -829,7 +831,7 @@ def restore_config():
                 config = WebhookConfig(id=c['id'])
                 db.session.add(config)
             
-            fields = ['name', 'customer_id_default', 'board', 'status', 'ticket_type', 'subtype', 'item', 'priority', 'trigger_field', 'open_value', 'close_value', 'ticket_prefix', 'json_mapping', 'routing_rules', 'maintenance_windows', 'trusted_ips', 'is_enabled', 'is_pinned', 'is_draft', 'ai_routing_enabled', 'ai_summary_enabled', 'ai_prompt_template']
+            fields = ['name', 'customer_id_default', 'board', 'status', 'ticket_type', 'subtype', 'item', 'priority', 'trigger_field', 'open_value', 'close_value', 'ticket_prefix', 'json_mapping', 'routing_rules', 'maintenance_windows', 'trusted_ips', 'is_enabled', 'is_pinned', 'is_draft', 'ai_routing_enabled', 'ai_summary_enabled', 'ai_rca_enabled', 'ai_prompt_template']
             for f in fields:
                 if f in c: setattr(config, f, c[f])
         
