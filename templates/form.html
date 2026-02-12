@@ -174,11 +174,14 @@
                                 <div class="collapse mb-3" id="debugger-tool">
                                     <div
                                         class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
-                                        <label class="small preview-text fw-bold mb-2 text-info">STEP-THROUGH DEBUGGER</label>
-                                        <p class="small text-secondary mb-3">Paste a sample JSON payload below to simulate how HookWise would process this alert using your current configuration.</p>
+                                        <label class="small preview-text fw-bold mb-2 text-info">STEP-THROUGH
+                                            DEBUGGER</label>
+                                        <p class="small text-secondary mb-3">Paste a sample JSON payload below to
+                                            simulate how HookWise would process this alert using your current
+                                            configuration.</p>
                                         <textarea id="sample-json"
-                                            class="form-control bg-dark border-secondary text-info small mb-2 font-monospace" rows="5"
-                                            placeholder='Paste sample JSON here...'></textarea>
+                                            class="form-control bg-dark border-secondary text-info small mb-2 font-monospace"
+                                            rows="5" placeholder='Paste sample JSON here...'></textarea>
                                         <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100 mb-3"
                                             onclick="runDebugger()">Run Simulation</button>
                                         <div id="debugger-result" class="small"></div>
@@ -289,61 +292,73 @@
                                     data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
                             </div>
 
-                                                        <div class="mb-3">
+                            <div class="mb-3">
 
-                                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
 
-                                                                <label for="routing_rules" class="form-label fw-bold mb-0">Regex Routing (JSON Array)</label>
+                                    <label for="routing_rules" class="form-label fw-bold mb-0">Regex Routing (JSON
+                                        Array)</label>
 
-                                                                <button type="button" class="btn btn-sm btn-link text-info p-0" onclick="formatJSON('routing_rules')">Format</button>
+                                    <button type="button" class="btn btn-sm btn-link text-info p-0"
+                                        onclick="formatJSON('routing_rules')">Format</button>
 
-                                                            </div>
+                                </div>
 
-                                                            <textarea class="form-control font-monospace small" id="routing_rules" name="routing_rules" rows="3"
+                                <textarea class="form-control font-monospace small" id="routing_rules"
+                                    name="routing_rules" rows="3"
+                                    placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
+                                    data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
 
-                                                                placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
+                            </div>
 
-                                                                data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
 
-                                                        </div>
 
-                            
+                            <div
+                                class="mb-3 border border-primary border-opacity-25 rounded p-3 bg-primary bg-opacity-5">
 
-                                                        <div class="mb-3 border border-primary border-opacity-25 rounded p-3 bg-primary bg-opacity-5">
+                                <div class="form-check form-switch mb-2">
 
-                                                                                                                            <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                        id="ai_routing_enabled" name="ai_routing_enabled" value="true" {{ 'checked' if
+                                        config and config.ai_routing_enabled else '' }} onchange="toggleAI()">
 
-                                                                                                                                <input class="form-check-input" type="checkbox" role="switch" id="ai_routing_enabled" name="ai_routing_enabled" value="true" {{ 'checked' if config and config.ai_routing_enabled else '' }} onchange="toggleAI()">
+                                    <label class="form-check-label fw-bold text-white"
+                                        for="ai_routing_enabled">AI-POWERED ROUTING (BETA)</label>
 
-                                                                                                                                <label class="form-check-label fw-bold text-primary" for="ai_routing_enabled">AI-POWERED ROUTING (BETA)</label>
+                                </div>
 
-                                                                                                                            </div>
+                                <div class="form-check form-switch mb-2">
 
-                                                                                                                            <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="ai_rca_enabled"
+                                        name="ai_rca_enabled" value="true" {{ 'checked' if config and
+                                        config.ai_rca_enabled else '' }} onchange="toggleAI()">
 
-                                                                                                                                <input class="form-check-input" type="checkbox" role="switch" id="ai_rca_enabled" name="ai_rca_enabled" value="true" {{ 'checked' if config and config.ai_rca_enabled else '' }} onchange="toggleAI()">
+                                    <label class="form-check-label fw-bold text-white" for="ai_rca_enabled">AUTOMATED
+                                        RCA NOTES</label>
 
-                                                                                                                                <label class="form-check-label fw-bold text-primary" for="ai_rca_enabled">AUTOMATED RCA NOTES</label>
+                                </div>
 
-                                                                                                                            </div>
+                                <div id="ai-settings"
+                                    class="{{ '' if config and (config.ai_routing_enabled or config.ai_rca_enabled) else 'd-none' }}">
 
-                                                                                                                            <div id="ai-settings" class="{{ '' if config and (config.ai_routing_enabled or config.ai_rca_enabled) else 'd-none' }}">
+                                    <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest
+                                        ticket priorities and suggest root causes based on alert context.</p>
 
-                                                                                                                                <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest ticket priorities and suggest root causes based on alert context.</p>
+                                    <label for="ai_prompt_template"
+                                        class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT
+                                        (OPTIONAL)</label>
 
-                                                                                                <label for="ai_prompt_template" class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT (OPTIONAL)</label>
+                                    <textarea class="form-control font-monospace small bg-dark" id="ai_prompt_template"
+                                        name="ai_prompt_template" rows="3"
+                                        placeholder="Analyze this payload and select the best priority... ">{{ config.ai_prompt_template if config else '' }}</textarea>
 
-                                                                                                <textarea class="form-control font-monospace small bg-dark" id="ai_prompt_template" name="ai_prompt_template" rows="3" 
+                                </div>
 
-                                                                                                    placeholder="Analyze this payload and select the best priority... ">{{ config.ai_prompt_template if config else '' }}</textarea>
+                            </div>
 
-                                                                                            </div>
 
-                                                        </div>
 
-                            
-
-                                                        <div class="mb-0">
+                            <div class="mb-0">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <label class="form-label fw-bold mb-0">Maintenance Windows</label>
                                     <button type="button" class="btn btn-sm btn-outline-primary"
@@ -546,7 +561,7 @@
     async function runDebugger() {
         const payloadText = document.getElementById('sample-json').value;
         const resultDiv = document.getElementById('debugger-result');
-        
+
         if (!payloadText.trim()) {
             return showToast('Please enter a sample JSON payload', 'warning');
         }
@@ -582,12 +597,12 @@
                     </div>`;
                 });
                 html += '</div>';
-                
+
                 html += '<div class="mt-3 p-2 rounded bg-dark border border-secondary border-opacity-25">';
                 html += '<div class="fw-bold text-success mb-1 small">FINAL RESULT:</div>';
                 html += `<pre class="mb-0 text-white font-monospace small" style="font-size: 0.7rem;">${JSON.stringify(data.results, null, 2)}</pre>`;
                 html += '</div>';
-                
+
                 resultDiv.innerHTML = html;
             } else {
                 resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">${data.message}</div>`;
