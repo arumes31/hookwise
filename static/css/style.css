@@ -117,7 +117,7 @@ h1, .h1, h2, .h2, h3, .h3, h4, .h4, h5, .h5, h6, .h6 {
 .text-info { color: var(--primary) !important; }
 
 .preview-text {
-    color: #d5d8de !important;
+    color: #f5f6f7 !important;
 }
 
 /* Code & Tokens */

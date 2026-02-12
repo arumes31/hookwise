@@ -61,6 +61,15 @@ Access the Web GUI at `http://localhost:5000`. Default login is `admin` / `admin
 4. **Configure Source:** Set your alert source (e.g., Uptime Kuma) to send webhooks to that URL.
 5. **Security:** Add the `Authorization: Bearer <your-token>` header in your source settings. For added security, configure an **HMAC Secret** and check for the `X-HookWise-Signature` header.
 
+### Custom Templates & Placeholders
+
+You can customize ticket descriptions and field mappings using placeholders:
+
+- `{{ monitor_name }}`: The name of the monitoring resource.
+- `{{ msg }}`: The alert message.
+- `{{ request_id }}`: Unique ID for the webhook request.
+- `{$.path.to.field}`: Use JSONPath to extract any value from the payload.
+
 ### Monitor Naming Convention
 
 Include `#CW<CompanyIdentifier>` in your monitor or alert title to automatically route the ticket to a specific company in ConnectWise.

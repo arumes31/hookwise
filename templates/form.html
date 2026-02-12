@@ -189,10 +189,10 @@
                                     <div class="dropdown">
                                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2" style="font-size: 0.7rem;" type="button" data-bs-toggle="dropdown">Insert Placeholder</button>
                                         <ul class="dropdown-menu dropdown-menu-dark small" style="font-size: 0.75rem;">
-                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{{ monitor_name }}')">Monitor Name</a></li>
-                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{{ msg }}')">Message</a></li>
-                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{{ request_id }}')">Request ID</a></li>
-                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{$.path.to.field}')">JSONPath Field</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'description_template', '{{ monitor_name }}')">Monitor Name</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'description_template', '{{ msg }}')">Message</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'description_template', '{{ request_id }}')">Request ID</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'description_template', '{$.path.to.field}')">JSONPath Field</a></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -208,10 +208,10 @@
                                         <div class="dropdown">
                                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2" style="font-size: 0.7rem;" type="button" data-bs-toggle="dropdown">Insert Placeholder</button>
                                             <ul class="dropdown-menu dropdown-menu-dark small" style="font-size: 0.75rem;">
-                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '{{ monitor_name }}')">Monitor Name</a></li>
-                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '{{ msg }}')">Message</a></li>
-                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '{{ request_id }}')">Request ID</a></li>
-                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '$.path.to.field')">JSONPath Path</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'json_mapping', '{{ monitor_name }}')">Monitor Name</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'json_mapping', '{{ msg }}')">Message</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'json_mapping', '{{ request_id }}')">Request ID</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="return insertAtCursor(event, 'json_mapping', '$.path.to.field')">JSONPath Path</a></li>
                                             </ul>
                                         </div>
                                         <select class="form-select form-select-sm bg-dark border-secondary text-info py-0 px-2" style="font-size: 0.7rem; width: auto;" onchange="applyTemplate(this.value)">
@@ -342,13 +342,22 @@
         document.getElementById('advanced-fields').classList.toggle('d-none', !show);
     }
 
-    function insertAtCursor(id, text) {
+    function insertAtCursor(event, id, text) {
+        if (event) event.preventDefault();
         const el = document.getElementById(id);
+        if (!el) return;
+        
         const start = el.selectionStart;
         const end = el.selectionEnd;
-        el.value = el.value.substring(0, start) + text + el.value.substring(end);
+        const val = el.value;
+        
+        el.value = val.substring(0, start) + text + val.substring(end);
         el.selectionStart = el.selectionEnd = start + text.length;
         el.focus();
+        
+        // Trigger input event for autosave/preview
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return false;
     }
 
     function addMaintenanceWindow(start = '', end = '') {
