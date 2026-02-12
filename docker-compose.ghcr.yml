@@ -8,34 +8,61 @@ services:
     ports:
       - "5000:5000"
     environment: &env
+      # ConnectWise API Configuration
       - CW_URL=https://api-na.myconnectwise.net/v4_6_release/apis/3.0
       - CW_COMPANY=your_company_id
       - CW_PUBLIC_KEY=your_public_key
       - CW_PRIVATE_KEY=your_private_key
       - CW_CLIENT_ID=your_client_id
+      - CW_TICKET_PREFIX=Alert:
+
+      # ConnectWise Ticket Defaults
       - CW_SERVICE_BOARD=Service Board
       - CW_STATUS_NEW=New
       - CW_STATUS_CLOSED=Closed
       - CW_DEFAULT_COMPANY_ID=ConnectWise_Company_ID_For_Tickets
+
+      # Redis & Celery Configuration
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - REDIS_PASSWORD=your_secure_redis_password
       - CELERY_BROKER_URL=redis://:your_secure_redis_password@redis:6379/0
-      # - CW_TICKET_PREFIX=Uptime Kuma Alert:
-      # - PSA_RATE_LIMIT=60/m
-      # - WEBHOOK_SECRET=token1,token2
-      # - USE_PROXY=true
-      # - PROXY_FIX_COUNT=1
-      # - USE_CLOUDFLARE=true
+
+      # Database Configuration
+      - DATABASE_URL=postgresql://hookwise:hookwise_pass@postgres:5432/hookwise
+      - POSTGRES_USER=hookwise
+      - POSTGRES_PASSWORD=hookwise_pass
+      - POSTGRES_DB=hookwise
+
+      # Flask & Security Configuration
+      - SECRET_KEY=your_very_secret_key
+      - PORT=5000
+      - DEBUG_MODE=false
+      - FORCE_HTTPS=false
+      - USE_PROXY=false
+      - PROXY_FIX_COUNT=1
+      - ENCRYPTION_KEY=your_32_byte_base64_encryption_key
+
+      # Web GUI Auth
+      - GUI_USERNAME=admin
+      - GUI_PASSWORD=admin
+      - GUI_TRUSTED_IPS=
+
+      # Other Configuration
+      - LOG_RETENTION_DAYS=30
     depends_on:
       - redis
+      - postgres
 
   kumawise-worker:
     image: ghcr.io/arumes31/kumawise:latest
     container_name: kumawise-worker
     restart: unless-stopped
-    command: celery -A app.celery worker --loglevel=info
+    command: celery -A worker.celery worker --loglevel=info -P eventlet -c 100
     environment: *env
     depends_on:
       - redis
+      - postgres
 
   redis:
     image: redis:alpine
@@ -48,5 +75,17 @@ services:
     volumes:
       - redis_data:/data
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: kumawise-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=hookwise
+      - POSTGRES_PASSWORD=hookwise_pass
+      - POSTGRES_DB=hookwise
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   redis_data:
+  postgres_data:
