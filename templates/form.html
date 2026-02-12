@@ -166,21 +166,22 @@
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <label class="form-label fw-bold mb-0">Trigger Logic</label>
                                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
-                                        data-bs-target="#validator-tool">
-                                        Test Path
+                                        data-bs-target="#debugger-tool">
+                                        Open Step-through Debugger
                                     </button>
                                 </div>
 
-                                <div class="collapse mb-3" id="validator-tool">
+                                <div class="collapse mb-3" id="debugger-tool">
                                     <div
                                         class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
-                                        <label class="small preview-text fw-bold mb-2">JSON PATH VALIDATOR</label>
+                                        <label class="small preview-text fw-bold mb-2 text-info">STEP-THROUGH DEBUGGER</label>
+                                        <p class="small text-secondary mb-3">Paste a sample JSON payload below to simulate how HookWise would process this alert using your current configuration.</p>
                                         <textarea id="sample-json"
-                                            class="form-control bg-dark border-secondary text-info small mb-2" rows="3"
+                                            class="form-control bg-dark border-secondary text-info small mb-2 font-monospace" rows="5"
                                             placeholder='Paste sample JSON here...'></textarea>
-                                        <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100"
-                                            onclick="testPath()">Validate Path</button>
-                                        <div id="validation-result"></div>
+                                        <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100 mb-3"
+                                            onclick="runDebugger()">Run Simulation</button>
+                                        <div id="debugger-result" class="small"></div>
                                     </div>
                                 </div>
 
@@ -549,6 +550,60 @@
         document.getElementById('open_value').value = t.open_value;
         document.getElementById('close_value').value = t.close_value;
         showToast('Applied ' + type.replace('_', ' ') + ' template', 'info');
+    }
+
+    async function runDebugger() {
+        const payloadText = document.getElementById('sample-json').value;
+        const resultDiv = document.getElementById('debugger-result');
+        
+        if (!payloadText.trim()) {
+            return showToast('Please enter a sample JSON payload', 'warning');
+        }
+
+        let payload;
+        try {
+            payload = JSON.parse(payloadText);
+        } catch (e) {
+            return showToast('Invalid JSON in sample payload', 'danger');
+        }
+
+        resultDiv.innerHTML = '<div class="text-center py-2"><span class="spinner-border spinner-border-sm text-info"></span> Simulation running...</div>';
+
+        // Collect current form state
+        const form = document.getElementById('endpoint-form');
+        const formData = new FormData(form);
+        const config = {};
+        formData.forEach((value, key) => config[key] = value);
+
+        try {
+            const res = await fetch('/api/debug/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ payload, config })
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                let html = '<div class="list-group list-group-flush bg-transparent">';
+                data.steps.forEach(step => {
+                    html += `<div class="list-group-item bg-transparent border-secondary border-opacity-10 text-secondary py-1 px-0">
+                        <span class="text-info me-2">→</span> ${step}
+                    </div>`;
+                });
+                html += '</div>';
+                
+                html += '<div class="mt-3 p-2 rounded bg-dark border border-secondary border-opacity-25">';
+                html += '<div class="fw-bold text-success mb-1 small">FINAL RESULT:</div>';
+                html += `<pre class="mb-0 text-white font-monospace small" style="font-size: 0.7rem;">${JSON.stringify(data.results, null, 2)}</pre>`;
+                html += '</div>';
+                
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">${data.message}</div>`;
+            }
+        } catch (e) {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">Error communicating with server</div>`;
+        }
     }
 
     function formatJSON(id) {

@@ -849,6 +849,89 @@ def submit_feedback():
     log_audit("feedback_submitted", None, f"Feedback: {message} | UA: {data.get('ua')}")
     return jsonify({"status": "success"})
 
+@main_bp.route('/api/debug/process', methods=['POST'])
+@auth_required
+def debug_process():
+    from .utils import resolve_jsonpath
+    import re
+    
+    data = request.json.get('payload')
+    config_data = request.json.get('config', {})
+    
+    if not data:
+        return jsonify({"status": "error", "message": "No sample payload provided"}), 400
+        
+    steps = []
+    results = {}
+    
+    # 1. Trigger Logic
+    trigger_field = config_data.get('trigger_field', 'heartbeat.status')
+    actual_val = str(resolve_jsonpath(data, trigger_field))
+    steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
+    
+    open_val = config_data.get('open_value', '0')
+    close_val = config_data.get('close_value', '1')
+    
+    if actual_val in [v.strip() for v in open_val.split(',')]:
+        results['alert_type'] = "OPEN (DOWN)"
+    elif actual_val in [v.strip() for v in close_val.split(',')]:
+        results['alert_type'] = "CLOSE (UP)"
+    else:
+        results['alert_type'] = "GENERIC"
+    steps.append(f"Alert type determined as: {results['alert_type']}")
+
+    # 2. JSON Mapping
+    mapping_str = config_data.get('json_mapping')
+    if mapping_str:
+        try:
+            mapping = json.loads(mapping_str)
+            for field, path in mapping.items():
+                val = resolve_jsonpath(data, path)
+                if val is not None:
+                    results[field] = str(val)
+                    steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
+        except Exception as e:
+            steps.append(f"Error parsing JSON Mapping: {e}")
+
+    # 3. Regex Routing
+    rules_str = config_data.get('routing_rules')
+    if rules_str:
+        try:
+            rules = json.loads(rules_str)
+            for i, rule in enumerate(rules):
+                path = rule.get('path')
+                regex = rule.get('regex')
+                if path and regex:
+                    val = str(resolve_jsonpath(data, path))
+                    if re.search(regex, val, re.IGNORECASE):
+                        steps.append(f"Rule {i+1} matched: '{regex}' on '{path}' (value: '{val}')")
+                        overrides = rule.get('overrides', {})
+                        for k, v in overrides.items():
+                            results[k] = v
+                            steps.append(f"Override applied: {k} -> {v}")
+                    else:
+                        steps.append(f"Rule {i+1} did NOT match: '{regex}' on '{path}'")
+        except Exception as e:
+            steps.append(f"Error parsing Routing Rules: {e}")
+
+    # 4. Source & Summary
+    monitor = data.get('monitor', {})
+    monitor_name = monitor.get('name', data.get('title', data.get('name', 'Unknown Source')))
+    prefix = config_data.get('ticket_prefix', 'Alert:')
+    results['summary'] = results.get('summary') or (f"{prefix} {monitor_name}" if prefix else monitor_name)
+    steps.append(f"Final Ticket Summary: '{results['summary']}'")
+
+    # 5. Company Mapping
+    company_id_match = re.search(r'#CW(\w+)', monitor_name)
+    results['company'] = results.get('customer_id') or (company_id_match.group(1) if company_id_match else config_data.get('customer_id_default'))
+    steps.append(f"Target Company Identifier: '{results['company']}'")
+
+    return jsonify({
+        "status": "success",
+        "steps": steps,
+        "results": results
+    })
+
 @main_bp.route('/metrics', methods=['GET'])
 def metrics() -> Response:
     try:
