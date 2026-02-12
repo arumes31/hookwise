@@ -776,66 +776,7 @@ def settings():
     
     user = User.query.get(session['user_id'])
     
-    sso_settings = {
-        "provider_url": redis_client.get('hookwise_sso_provider_url').decode() if redis_client.get('hookwise_sso_provider_url') else '',
-        "client_id": redis_client.get('hookwise_sso_client_id').decode() if redis_client.get('hookwise_sso_client_id') else '',
-        "client_secret": "********" if redis_client.get('hookwise_sso_client_secret') else '',
-        "enabled": redis_client.get('hookwise_sso_enabled').decode() if redis_client.get('hookwise_sso_enabled') else 'false'
-    }
-    
-    return render_template('settings.html', log_retention_days=retention, master_api_key=api_key, health_webhook=health_webhook, user_2fa_enabled=user.is_2fa_enabled, sso_settings=sso_settings)
-
-@main_bp.route('/settings/sso/update', methods=['POST'])
-@auth_required
-def update_sso_settings():
-    provider_url = request.form.get('sso_provider_url')
-    client_id = request.form.get('sso_client_id')
-    client_secret = request.form.get('sso_client_secret')
-    enabled = 'true' if request.form.get('sso_enabled') else 'false'
-    
-    if provider_url: redis_client.set('hookwise_sso_provider_url', provider_url)
-    if client_id: redis_client.set('hookwise_sso_client_id', client_id)
-    if client_secret and client_secret != "********": 
-        redis_client.set('hookwise_sso_client_secret', client_secret)
-    redis_client.set('hookwise_sso_enabled', enabled)
-    
-    flash('SSO settings updated successfully!', 'success')
-    return redirect(url_for('main.settings'))
-
-@main_bp.route('/login/sso')
-def login_sso():
-    enabled = redis_client.get('hookwise_sso_enabled')
-    if not enabled or enabled.decode() != 'true':
-        flash('SSO login is not enabled', 'warning')
-        return redirect(url_for('main.login'))
-    
-    # Redirect to Provider (Simplified OIDC logic)
-    provider_url = redis_client.get('hookwise_sso_provider_url').decode()
-    client_id = redis_client.get('hookwise_sso_client_id').decode()
-    
-    # In a real app, use a library like Authlib
-    redirect_uri = url_for('main.login_sso_callback', _external=True)
-    auth_url = f"{provider_url}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=openid+email+profile"
-    
-    return redirect(auth_url)
-
-@main_bp.route('/login/sso/callback')
-def login_sso_callback():
-    # Handle Callback (Skeleton for SSO completion)
-    code = request.args.get('code')
-    if not code:
-        flash('SSO Login failed: No code provided', 'danger')
-        return redirect(url_for('main.login'))
-    
-    # Normally we would exchange code for token and get user info
-    # For this prototype, we'll assume success if code exists
-    flash('SSO Login Successful (Prototype - User mapped by email)', 'success')
-    # Find user by email from SSO (using 'admin' for demo)
-    user = User.query.filter_by(username='admin').first()
-    session['user_id'] = user.id
-    session['username'] = user.username
-    session['role'] = user.role
-    return redirect(url_for('main.index'))
+    return render_template('settings.html', log_retention_days=retention, master_api_key=api_key, health_webhook=health_webhook, user_2fa_enabled=user.is_2fa_enabled)
 
 @main_bp.route('/settings/update', methods=['POST'])
 @auth_required

@@ -69,53 +69,6 @@
 
         <div class="card border-0 shadow-lg mb-4">
             <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
-                <h5 class="mb-0 fw-bold">Security Utility</h5>
-            </div>
-            <div class="card-body p-4">
-                <p class="text-secondary small mb-4">Use this tool to test the strength of passwords intended for your <code>.env</code> file.</p>
-                <div class="mb-3">
-                    <input type="password" id="test-password" class="form-control bg-dark border-secondary text-white" placeholder="Type a password..." oninput="checkStrength(this.value)">
-                </div>
-                <div class="progress bg-black bg-opacity-50" style="height: 5px;">
-                    <div id="strength-bar" class="progress-bar" style="width: 0%;"></div>
-                </div>
-                <div id="strength-text" class="small mt-2 text-secondary font-monospace" style="font-size: 0.7rem;">STRENGTH: NONE</div>
-            </div>
-        </div>
-
-        <div class="card border-0 shadow-lg mb-4">
-            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
-                <h5 class="mb-0 fw-bold">SAML / SSO Integration</h5>
-            </div>
-            <div class="card-body p-4">
-                <form action="{{ url_for('main.update_sso_settings') }}" method="POST">
-                    <div class="mb-3">
-                        <label for="sso_provider_url" class="form-label small fw-bold">IDP PROVIDER URL</label>
-                        <input type="url" class="form-control bg-dark border-secondary text-white" id="sso_provider_url" name="sso_provider_url" value="{{ sso_settings.get('provider_url', '') }}" placeholder="https://auth.example.com/...">
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="sso_client_id" class="form-label small fw-bold">CLIENT ID</label>
-                            <input type="text" class="form-control bg-dark border-secondary text-white" id="sso_client_id" name="sso_client_id" value="{{ sso_settings.get('client_id', '') }}">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="sso_client_secret" class="form-label small fw-bold">CLIENT SECRET</label>
-                            <input type="password" class="form-control bg-dark border-secondary text-white" id="sso_client_secret" name="sso_client_secret" value="{{ sso_settings.get('client_secret', '') }}">
-                        </div>
-                    </div>
-                    <div class="form-check form-switch mb-4">
-                        <input class="form-check-input" type="checkbox" role="switch" id="sso_enabled" name="sso_enabled" {{ 'checked' if sso_settings.get('enabled') == 'true' else '' }}>
-                        <label class="form-check-label small text-secondary fw-bold" for="sso_enabled">ENABLE SSO LOGIN</label>
-                    </div>
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                        <button type="submit" class="btn btn-outline-primary px-4">Update SSO Config</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <div class="card border-0 shadow-lg mb-4">
-            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
                 <h5 class="mb-0 fw-bold">Two-Factor Authentication (2FA)</h5>
             </div>
             <div class="card-body p-4">
@@ -171,24 +124,6 @@
 </div>
 
 <script>
-    function checkStrength(pwd) {
-        let strength = 0;
-        if (pwd.length > 8) strength += 25;
-        if (pwd.match(/[a-z]/) && pwd.match(/[A-Z]/)) strength += 25;
-        if (pwd.match(/\d/)) strength += 25;
-        if (pwd.match(/[^a-zA-Z\d]/)) strength += 25;
-
-        const bar = document.getElementById('strength-bar');
-        const text = document.getElementById('strength-text');
-        bar.style.width = strength + '%';
-        
-        if (strength <= 25) { bar.className = 'progress-bar bg-danger'; text.textContent = 'STRENGTH: WEAK'; }
-        else if (strength <= 50) { bar.className = 'progress-bar bg-warning'; text.textContent = 'STRENGTH: FAIR'; }
-        else if (strength <= 75) { bar.className = 'progress-bar bg-info'; text.textContent = 'STRENGTH: GOOD'; }
-        else { bar.className = 'progress-bar bg-success'; text.textContent = 'STRENGTH: STRONG'; }
-        if (!pwd) { bar.style.width = '0%'; text.textContent = 'STRENGTH: NONE'; }
-    }
-
     async function generateApiKey() {
         if (!confirm('Are you sure you want to generate a new master API key?')) return;
         try {
