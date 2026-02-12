@@ -41,6 +41,7 @@ The application is configured via environment variables. An example file is prov
 | **App** | `DEBUG_MODE` | Enable debug logging and visual aids | `false` |
 | | `FORCE_HTTPS` | Force redirect to HTTPS | `false` |
 | | `LOG_RETENTION_DAYS`| Days to keep webhook history | `30` |
+| `OLLAMA_HOST` | URL for the local AI service | `http://hookwise-llm:11434` |
 
 ## Deployment
 
@@ -50,6 +51,8 @@ The application is configured via environment variables. An example file is prov
 2. Update `.env` with your ConnectWise credentials and secure passwords.
 3. Start services: `docker-compose up -d`
 4. Apply migrations: `docker-compose exec hookwise-proxy flask db upgrade`
+5. **Pull the AI Model (Optional):**
+   `docker exec -it hookwise-llm ollama pull phi3`
 
 Access the Web GUI at `http://localhost:5000`. Default login is `admin` / `admin` (can be changed via `GUI_PASSWORD`).
 

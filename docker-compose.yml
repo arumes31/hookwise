@@ -38,9 +38,11 @@ services:
       - "GUI_PASSWORD=admin"
       - "GUI_TRUSTED_IPS="
       - "LOG_RETENTION_DAYS=30"
+      - "OLLAMA_HOST=http://hookwise-llm:11434"
     depends_on:
       - redis
       - postgres
+      - hookwise-llm
 
   hookwise-worker:
     build: .
@@ -51,6 +53,15 @@ services:
     depends_on:
       - redis
       - postgres
+      - hookwise-llm
+
+  hookwise-llm:
+    image: ollama/ollama:latest
+    container_name: hookwise-llm
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    # Ollama automatically uses CPU if no GPU is detected
 
   redis:
     image: redis:alpine
@@ -77,3 +88,4 @@ services:
 volumes:
   redis_data:
   postgres_data:
+  ollama_data:
