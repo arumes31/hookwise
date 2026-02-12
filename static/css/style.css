@@ -116,6 +116,10 @@ h1, .h1, h2, .h2, h3, .h3, h4, .h4, h5, .h5, h6, .h6 {
 .text-warning { color: var(--warning) !important; }
 .text-info { color: var(--primary) !important; }
 
+.preview-text {
+    color: #d5d8de !important;
+}
+
 /* Code & Tokens */
 code {
     background-color: rgba(110, 118, 129, 0.2);
