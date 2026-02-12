@@ -718,6 +718,7 @@ def health() -> Tuple[Response, int]:
         return jsonify({"status": "error", "message": "Service unreachable"}), 503
 
 @main_bp.route('/health/services', methods=['GET'])
+@limiter.exempt
 def health_services() -> Tuple[Response, int]:
     health_data = {"redis": "down", "database": "down", "celery": "down", "timestamp": time.time()}
     status_code = 200
