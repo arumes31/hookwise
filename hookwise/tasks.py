@@ -324,7 +324,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                     PSA_TASK_COUNT.labels(type='create', result='success').inc()
                     log_entry.action = "create"
 
-                    # 4. Automated RCA Notes (if enabled)
+                    # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
                     if config.ai_rca_enabled:
                         from .utils import call_llm
                         rca_prompt = f"Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting steps. Be concise and technical. Payload: {json.dumps(data)}"
