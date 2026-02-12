@@ -310,17 +310,25 @@
 
                                                         <div class="mb-3 border border-primary border-opacity-25 rounded p-3 bg-primary bg-opacity-5">
 
-                                                            <div class="form-check form-switch mb-2">
+                                                                                            <div class="form-check form-switch mb-2">
 
-                                                                <input class="form-check-input" type="checkbox" role="switch" id="ai_routing_enabled" name="ai_routing_enabled" value="true" {{ 'checked' if config and config.ai_routing_enabled else '' }} onchange="toggleAI()">
+                                                                                                <input class="form-check-input" type="checkbox" role="switch" id="ai_routing_enabled" name="ai_routing_enabled" value="true" {{ 'checked' if config and config.ai_routing_enabled else '' }} onchange="toggleAI()">
 
-                                                                <label class="form-check-label fw-bold text-primary" for="ai_routing_enabled">AI-POWERED ROUTING (BETA)</label>
+                                                                                                <label class="form-check-label fw-bold text-primary" for="ai_routing_enabled">AI-POWERED ROUTING (BETA)</label>
 
-                                                            </div>
+                                                                                            </div>
 
-                                                                                            <div id="ai-settings" class="{{ '' if config and config.ai_routing_enabled else 'd-none' }}">
+                                                                                                                            <div class="form-check form-switch mb-2">
 
-                                                                                                <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest ticket priorities based on alert context.</p>
+                                                                                                                                <input class="form-check-input" type="checkbox" role="switch" id="ai_summary_enabled" name="ai_summary_enabled" value="true" {{ 'checked' if config and config.ai_summary_enabled else '' }} onchange="toggleAI()">
+
+                                                                                                                                <label class="form-check-label fw-bold text-primary" for="ai_summary_enabled">AI-GENERATED SUMMARIES</label>
+
+                                                                                                                            </div>
+
+                                                                                            <div id="ai-settings" class="{{ '' if config and (config.ai_routing_enabled or config.ai_summary_enabled) else 'd-none' }}">
+
+                                                                                                <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest ticket priorities and generate concise summaries based on alert context.</p>
 
                                                                                                 <label for="ai_prompt_template" class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT (OPTIONAL)</label>
 
@@ -447,8 +455,9 @@
     }
 
     function toggleAI() {
-        const enabled = document.getElementById('ai_routing_enabled').checked;
-        document.getElementById('ai-settings').classList.toggle('d-none', !enabled);
+        const routing = document.getElementById('ai_routing_enabled').checked;
+        const summary = document.getElementById('ai_summary_enabled').checked;
+        document.getElementById('ai-settings').classList.toggle('d-none', !(routing || summary));
     }
 
     function insertAtCursor(event, id, text) {

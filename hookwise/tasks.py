@@ -264,7 +264,21 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                 alert_type = "GENERIC"
 
             prefix = ticket_prefix or os.environ.get('CW_TICKET_PREFIX', 'Alert:')
-            ticket_summary = mapped_summary or (f"{prefix} {monitor_name}" if prefix else monitor_name)
+            
+            # AI Summary Generation (if enabled)
+            if config.ai_summary_enabled and not mapped_summary:
+                from .utils import call_llm
+                ai_prompt = f"Summarize this JSON alert into a single concise sentence (max 15 words) suitable for a technical ticket title. Payload: {json.dumps(data)}"
+                ai_summary = call_llm(ai_prompt)
+                if ai_summary:
+                    # Strip quotes if LLM added them
+                    ticket_summary = ai_summary.strip('"').strip("'")
+                    log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI Summary]"
+                else:
+                    ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
+            else:
+                ticket_summary = mapped_summary or (f"{prefix} {monitor_name}" if prefix else monitor_name)
+
             cache_key = f"{CACHE_PREFIX}{config_id}:{monitor_name}"
 
             ticket_id = None
