@@ -8,54 +8,58 @@ A general-purpose webhook router that bridges various webhooks to **ConnectWise 
 
 ## Features
 
-- **Web GUI:** Easily create and manage webhook endpoints.
+- **Web GUI:** Easily create and manage webhook endpoints with advanced search, filters, and drag-and-drop reordering.
 - **Dynamic Endpoints:** Generate unique URLs for different monitoring sources.
-- **General Webhook Router:** Receives alerts from any source and routes them to ConnectWise.
-- **Customizable Configuration:** Configure Service Board, Status, Type, Subtype, and Priority per endpoint.
-- **Auto-Ticketing:** Creates tickets in ConnectWise based on incoming webhook data.
+- **Advanced UX:** Sparklines, live activity feed, skeleton loading, and keyboard shortcuts (press `/` to search).
+- **Customizable Configuration:** Configure Service Board, Status, Type, Subtype, and Priority per endpoint with JSONPath mapping support.
+- **Auto-Ticketing:** Creates tickets in ConnectWise based on incoming webhook data with duplicate detection.
 - **Smart Parsing:** Extracts Company ID from titles using the `#CW` prefix (e.g., `My Server #CW123`).
-- **Bearer Token Auth:** Every generated endpoint is secured with a unique Bearer token (stored encrypted).
-- **Security First:** Includes IP Whitelisting, Basic Auth for the GUI, and field encryption.
+- **Security First:** 2FA with TOTP/QR, IP Whitelisting, HMAC signature verification, and field encryption.
 - **Reliability:** Built-in retry mechanism with exponential backoff for PSA calls.
-- **Observability:** Real-time log feed, detailed Prometheus metrics, and service health dashboard.
-- **Enterprise Ready:** Uses PostgreSQL for production-grade storage and includes database migrations.
+- **Observability:** Service health dashboard, detailed Prometheus metrics, and audit logging.
+- **Enterprise Ready:** PostgreSQL storage, Alembic migrations, and maintenance mode support.
 
 ## Configuration
 
-The application is configured via environment variables. Use `python generate_env_example.py` to create a template.
+The application is configured via environment variables. An example file is provided in `.env.example`.
 
-| Variable | Description | Required | Default |
-|----------|-------------|:--------:|---------|
-| `CW_URL` | ConnectWise API Base URL | No | `https://api-na.myconnectwise.net/v4_6_release/apis/3.0` |
-| `CW_COMPANY` | Your ConnectWise Company ID | **Yes** | - |
-| `CW_PUBLIC_KEY` | API Public Key | **Yes** | - |
-| `CW_PRIVATE_KEY` | API Private Key | **Yes** | - |
-| `CW_CLIENT_ID` | API Client ID | **Yes** | - |
-| `DATABASE_URL` | DB URL (Postgres recommended) | No | `postgresql://hookwise:hookwise_pass@postgres:5432/hookwise` |
-| `GUI_USERNAME` | Basic Auth Username for GUI | No | - |
-| `GUI_PASSWORD` | Basic Auth Password for GUI | No | - |
-| `ENCRYPTION_KEY` | 32-byte Base64 key for data | No | auto-generated |
-| `REDIS_PASSWORD` | Password for Redis security | No | - |
-| `CELERY_BROKER_URL` | Redis connection string | No | `redis://redis:6379/0` |
+| Category | Variable | Description | Default |
+|----------|----------|-------------|---------|
+| **ConnectWise** | `CW_URL` | ConnectWise API Base URL | `https://api-na.../3.0` |
+| | `CW_COMPANY` | Your ConnectWise Company ID | **Required** |
+| | `CW_PUBLIC_KEY` | API Public Key | **Required** |
+| | `CW_PRIVATE_KEY` | API Private Key | **Required** |
+| | `CW_CLIENT_ID` | API Client ID | **Required** |
+| | `CW_TICKET_PREFIX` | Default prefix for ticket summaries | `Alert:` |
+| **Database** | `DATABASE_URL` | DB URL (Postgres recommended) | `postgresql://...` |
+| | `POSTGRES_PASSWORD`| Password for the PostgreSQL container | `hookwise_pass` |
+| **Redis/Celery** | `REDIS_PASSWORD` | Password for Redis and Celery broker | **Required** |
+| | `REDIS_HOST` | Redis hostname | `redis` |
+| **Security** | `SECRET_KEY` | Flask session secret key | auto-generated |
+| | `ENCRYPTION_KEY` | 32-byte Base64 key for encrypting tokens | **Recommended** |
+| | `GUI_TRUSTED_IPS` | Comma-separated list of allowed IPs for GUI | - |
+| **App** | `DEBUG_MODE` | Enable debug logging and visual aids | `false` |
+| | `FORCE_HTTPS` | Force redirect to HTTPS | `false` |
+| | `LOG_RETENTION_DAYS`| Days to keep webhook history | `30` |
 
 ## Deployment
 
 ### Docker Compose (Recommended)
 
-1. Generate environment file: `python generate_env_example.py`
-2. Update `.env.example` to `.env` and fill in credentials.
+1. Copy the example environment file: `cp .env.example .env`
+2. Update `.env` with your ConnectWise credentials and secure passwords.
 3. Start services: `docker-compose up -d`
 4. Apply migrations: `docker-compose exec kumawise-proxy flask db upgrade`
 
-Access the Web GUI at `http://localhost:5000`.
+Access the Web GUI at `http://localhost:5000`. Default login is `admin` / `admin` (can be changed via `GUI_PASSWORD`).
 
 ## Usage
 
-1. **Access the Web GUI:** Open HookWise in your browser.
-2. **Create Endpoint:** Click "New Endpoint", fill in the details (Board, Status, etc.), and save.
-3. **Get Endpoint URL:** Copy the auto-generated URL and Bearer Token.
-4. **Configure Source:** Set your source (e.g., Uptime Kuma) to send webhooks to that URL.
-5. **Authenticate:** Ensure your source sends the `Authorization: Bearer <your-token>` header.
+1. **Access the Web GUI:** Open HookWise and log in.
+2. **Create Endpoint:** Click "New Endpoint", fill in the details, and use the "Test Path" tool to verify your JSON mapping.
+3. **Get Endpoint URL:** Copy the generated URL and Bearer Token from the dashboard.
+4. **Configure Source:** Set your alert source (e.g., Uptime Kuma) to send webhooks to that URL.
+5. **Security:** Add the `Authorization: Bearer <your-token>` header in your source settings. For added security, configure an **HMAC Secret** and check for the `X-HookWise-Signature` header.
 
 ### Monitor Naming Convention
 
