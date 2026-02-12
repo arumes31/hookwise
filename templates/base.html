@@ -32,14 +32,6 @@
                 <a class="nav-link" href="{{ url_for('main.login') }}">Login</a>
                 {% endif %}
                 <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">Docs</a>
-                <div class="dropdown nav-link">
-                    <a class="dropdown-toggle text-decoration-none text-secondary" href="#" data-bs-toggle="dropdown" id="lang-picker">EN</a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li><a class="dropdown-item small" href="#" onclick="setLang('en')">English</a></li>
-                        <li><a class="dropdown-item small" href="#" onclick="setLang('es')">Español</a></li>
-                        <li><a class="dropdown-item small" href="#" onclick="setLang('fr')">Français</a></li>
-                    </ul>
-                </div>
                 <a class="nav-link" href="{{ url_for('main.new_endpoint') }}">New Endpoint</a>
             </div>
         </div>

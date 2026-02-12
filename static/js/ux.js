@@ -658,13 +658,6 @@ function initOnboarding() {
     }
 }
 
-function setLang(lang) {
-    localStorage.setItem('lang', lang);
-    const picker = document.getElementById('lang-picker');
-    if (picker) picker.textContent = lang.toUpperCase();
-    showToast('Language set to ' + lang.toUpperCase(), 'info');
-}
-
 function initNotifications() {
     if ('Notification' in window && Notification.permission === 'default') {
         const btn = document.createElement('button');
