@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  kumawise-proxy:
+  hookwise-proxy:
     build: .
-    container_name: kumawise-proxy
+    container_name: hookwise-proxy
     restart: unless-stopped
     command: sh -c "flask db upgrade && gunicorn --worker-class eventlet --workers 1 --bind 0.0.0.0:5000 app:app"
     ports:
@@ -42,9 +42,9 @@ services:
       - redis
       - postgres
 
-  kumawise-worker:
+  hookwise-worker:
     build: .
-    container_name: kumawise-worker
+    container_name: hookwise-worker
     restart: unless-stopped
     command: celery -A worker.celery worker --loglevel=info -P eventlet -c 100
     environment: *env
@@ -54,7 +54,7 @@ services:
 
   redis:
     image: redis:alpine
-    container_name: kumawise-redis
+    container_name: hookwise-redis
     restart: unless-stopped
     command: >
       sh -c "redis-server --requirepass $$REDIS_PASSWORD"
@@ -65,7 +65,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: kumawise-db
+    container_name: hookwise-db
     restart: unless-stopped
     environment:
       - "POSTGRES_USER=hookwise"

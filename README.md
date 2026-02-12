@@ -49,7 +49,7 @@ The application is configured via environment variables. An example file is prov
 1. Copy the example environment file: `cp .env.example .env`
 2. Update `.env` with your ConnectWise credentials and secure passwords.
 3. Start services: `docker-compose up -d`
-4. Apply migrations: `docker-compose exec kumawise-proxy flask db upgrade`
+4. Apply migrations: `docker-compose exec hookwise-proxy flask db upgrade`
 
 Access the Web GUI at `http://localhost:5000`. Default login is `admin` / `admin` (can be changed via `GUI_PASSWORD`).
 
