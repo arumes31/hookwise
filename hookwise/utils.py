@@ -38,7 +38,7 @@ def call_llm(prompt: str, system_prompt: str = "You are a helpful assistant spec
         logger.error(f"Error calling LLM: {e}")
         return None
 
-def check_auth(username, password):
+def check_auth(username: str, password: str) -> bool:
     """Check if a username/password combination is valid."""
     import hmac as _hmac
     expected_username = os.environ.get('GUI_USERNAME')
@@ -47,7 +47,7 @@ def check_auth(username, password):
         return True # Auth disabled if not set
     return _hmac.compare_digest(username, expected_username) and _hmac.compare_digest(password, expected_password)
 
-def authenticate():
+def authenticate() -> Response:
     """Sends a 401 response that enables basic auth."""
     return Response(
     'Could not verify your access level for that URL.\n'
@@ -143,7 +143,7 @@ def decrypt_string(cipher_text: str) -> str:
     except Exception:
         return cipher_text # Return as is if decryption fails (might be unencrypted)
 
-def log_audit(action: str, config_id: Optional[str] = None, details: Optional[str] = None):
+def log_audit(action: str, config_id: Optional[str] = None, details: Optional[str] = None) -> None:
     """Helper to log configuration changes."""
     from flask import request, session
 

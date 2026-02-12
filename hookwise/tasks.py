@@ -33,7 +33,7 @@ redis_client = redis.Redis(
 )
 cw_client = ConnectWiseClient()
 
-def make_celery(app_name):
+def make_celery(app_name: str) -> Celery:
     redis_password = os.environ.get('REDIS_PASSWORD')
     redis_host = os.environ.get('REDIS_HOST', 'localhost')
     redis_port = os.environ.get('REDIS_PORT', 6379)
@@ -65,12 +65,17 @@ class ContextTask(Task):
             from . import create_app
             _app = create_app()
         with _app.app_context():
-            return self.run(*args, **kwargs)
+            try:
+                return self.run(*args, **kwargs)
+            except Exception:
+                db.session.rollback()
+                logger.exception("Celery task %s failed", self.name)
+                raise
 
 celery.Task = ContextTask
 
 @celery.task(name="hookwise.cleanup_logs")
-def cleanup_logs():
+def cleanup_logs() -> None:
     """Remove logs older than retention period."""
     from datetime import datetime, timedelta
 

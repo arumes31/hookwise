@@ -14,4 +14,4 @@ _limiter_storage = f"redis://:{_redis_password}@{_redis_host}:{_redis_port}/0" i
 db = SQLAlchemy()
 migrate = Migrate()
 limiter = Limiter(key_func=get_remote_address, storage_uri=_limiter_storage, default_limits=["2000 per day", "500 per hour"])
-socketio = SocketIO(cors_allowed_origins="*")
+socketio = SocketIO(cors_allowed_origins="*", async_mode='gevent')

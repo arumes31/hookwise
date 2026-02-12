@@ -1,7 +1,7 @@
 import base64
 import logging
 import os
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -138,7 +138,7 @@ class ConnectWiseClient:
             logger.error(f"Error adding note to ticket #{ticket_id}: {e}")
             return False
 
-    def get_boards(self) -> list:
+    def get_boards(self) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -147,7 +147,7 @@ class ConnectWiseClient:
             logger.error(f"Error fetching boards: {e}")
             return []
 
-    def get_priorities(self) -> list:
+    def get_priorities(self) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/priorities", headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -156,7 +156,7 @@ class ConnectWiseClient:
             logger.error(f"Error fetching priorities: {e}")
             return []
 
-    def get_board_statuses(self, board_id: int) -> list:
+    def get_board_statuses(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -165,7 +165,7 @@ class ConnectWiseClient:
             logger.error(f"Error fetching statuses for board {board_id}: {e}")
             return []
 
-    def get_board_types(self, board_id: int) -> list:
+    def get_board_types(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -174,7 +174,7 @@ class ConnectWiseClient:
             logger.error(f"Error fetching types for board {board_id}: {e}")
             return []
 
-    def get_board_subtypes(self, board_id: int) -> list:
+    def get_board_subtypes(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -183,7 +183,7 @@ class ConnectWiseClient:
             logger.error(f"Error fetching subtypes for board {board_id}: {e}")
             return []
 
-    def get_board_items(self, board_id: int) -> list:
+    def get_board_items(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30)
             response.raise_for_status()
@@ -192,7 +192,7 @@ class ConnectWiseClient:
             logger.error(f"Error fetching items for board {board_id}: {e}")
             return []
 
-    def get_companies(self, search: Optional[str] = None) -> list:
+    def get_companies(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
             params = {"pageSize": 50}
             if search:

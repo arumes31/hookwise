@@ -19,8 +19,7 @@ signal.signal(signal.SIGINT, graceful_shutdown)
 signal.signal(signal.SIGTERM, graceful_shutdown)
 
 if __name__ == '__main__':
-    import eventlet
-    # Patch only when running directly (e.g. for local dev)
-    eventlet.monkey_patch()
+    from gevent import monkey
+    monkey.patch_all()
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port)

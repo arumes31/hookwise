@@ -5,7 +5,7 @@ services:
     build: .
     container_name: hookwise-proxy
     restart: unless-stopped
-    command: sh -c "flask db upgrade && gunicorn --worker-class eventlet --workers 1 --bind 0.0.0.0:5000 app:app"
+    command: sh -c "flask db upgrade && gunicorn --worker-class gevent --workers 1 --bind 0.0.0.0:5000 app:app"
     ports:
       - "5000:5000"
     environment: &env
@@ -48,7 +48,7 @@ services:
     build: .
     container_name: hookwise-worker
     restart: unless-stopped
-    command: celery -A worker.celery worker --loglevel=info -P eventlet -c 100
+    command: celery -A worker.celery worker --loglevel=info -P gevent -c 100
     environment: *env
     depends_on:
       - redis
