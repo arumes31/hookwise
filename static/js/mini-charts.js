@@ -32,5 +32,38 @@ window.MiniChart = {
             ctx.fillText(labels[i], x + barWidth / 2, height - 10);
             ctx.fillText(val, x + barWidth / 2, y - 5);
         });
+    },
+    renderLine: function(canvasId, data, color = '#3b82f6') {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        ctx.clearRect(0, 0, width, height);
+        if (!data || data.length < 2) return;
+
+        const max = Math.max(...data, 1);
+        const step = width / (data.length - 1);
+        
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        
+        data.forEach((val, i) => {
+            const x = i * step;
+            const y = height - (val / max) * height;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        
+        ctx.stroke();
+        
+        // Fill area
+        ctx.lineTo(width, height);
+        ctx.lineTo(0, height);
+        ctx.fillStyle = color + '22'; // 13% opacity
+        ctx.fill();
     }
 };

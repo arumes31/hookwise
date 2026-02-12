@@ -6,3 +6,5 @@ test*
 .pytest_cache
 *.db
 instance/
+task.md
+.ruff_cache

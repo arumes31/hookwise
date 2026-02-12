@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="accent-gradient fw-bold mb-0">Audit Logs</h1>
+    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+</div>
+
+<div class="card bg-dark text-white shadow-lg overflow-hidden border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle small">
+                <thead class="bg-black bg-opacity-50 text-secondary">
+                    <tr>
+                        <th class="ps-4 py-3">TIMESTAMP</th>
+                        <th class="py-3">ACTION</th>
+                        <th class="py-3">USER</th>
+                        <th class="py-3">ENDPOINT ID</th>
+                        <th class="pe-4 py-3">DETAILS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr class="border-bottom border-light border-opacity-5">
+                        <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td class="py-3">
+                            <span class="badge bg-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} bg-opacity-10 text-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} border border-opacity-25 uppercase">{{ log.action.upper() }}</span>
+                        </td>
+                        <td class="py-3 text-secondary">{{ log.user or 'System' }}</td>
+                        <td class="py-3 font-monospace small text-muted">{{ log.config_id[:8] if log.config_id else '-' }}</td>
+                        <td class="pe-4 py-3">{{ log.details }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.audit_logs', page=pagination.prev_num) }}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item active"><span class="page-link bg-primary border-primary">{{ pagination.page }} of {{ pagination.pages }}</span></li>
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.audit_logs', page=pagination.next_num) }}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endblock %}

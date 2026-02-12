@@ -1,0 +1,237 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <h1 class="accent-gradient fw-bold mb-4">System Settings</h1>
+        
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">General Configuration</h5>
+            </div>
+            <div class="card-body p-4">
+                <form action="{{ url_for('main.update_settings') }}" method="POST">
+                    <div class="mb-4">
+                        <label for="log_retention_days" class="form-label fw-bold">Log Retention (Days)</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="log_retention_days" name="log_retention_days" value="{{ log_retention_days }}" min="1" max="365">
+                            <span class="input-group-text bg-dark border-secondary text-secondary">Days</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="health_webhook" class="form-label fw-bold">System Health Alerts (Discord/Slack)</label>
+                        <input type="url" class="form-control bg-dark border-secondary text-white" id="health_webhook" name="health_webhook" value="{{ health_webhook }}" placeholder="https://discord.com/api/webhooks/...">
+                        <div class="form-text small opacity-75">Receive notifications when system services (Redis, DB, Worker) go down.</div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="submit" class="btn btn-primary px-5">Save Settings</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">API Management</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-secondary small mb-4">Generate a master API key for programmatic management of HookWise.</p>
+                <div class="input-group">
+                    <input type="text" id="master-api-key" class="form-control bg-dark border-secondary text-info font-monospace small" value="{{ master_api_key }}" readonly>
+                    <button class="btn btn-outline-warning" onclick="generateApiKey()">Generate New Key</button>
+                    <button class="btn btn-outline-primary" onclick="copyToClipboard(document.getElementById('master-api-key').value)">Copy</button>
+                </div>
+                <div class="form-text small text-danger mt-2"><strong>Warning:</strong> Generating a new key will immediately invalidate the previous one.</div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">Backup & Restore</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-secondary small mb-4">Export your entire system configuration to a JSON file for backup or migration.</p>
+                <div class="d-flex gap-3 align-items-center">
+                    <a href="{{ url_for('main.backup_config') }}" class="btn btn-outline-info">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-cloud-download me-2" viewBox="0 0 16 16"><path d="M4.406 1.342A5.53 5.53 0 0 1 8 0c2.69 0 4.923 2 5.166 4.579C14.758 4.804 16 6.137 16 7.773 16 9.569 14.502 11 12.687 11H10a.5.5 0 0 1 0-1h2.688C13.979 10 15 8.988 15 7.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 2.825 10.328 1 8 1a4.53 4.53 0 0 0-2.941 1.1c-.757.652-1.153 1.438-1.153 2.055v.448l-.445.049C2.064 4.805 1 5.952 1 7.318 1 8.785 2.23 10 3.781 10H6a.5.5 0 0 1 0 1H3.781C1.708 11 0 9.366 0 7.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383z"/><path d="M7.646 15.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 14.293V5.5a.5.5 0 0 0-1 0v8.793l-2.146-2.147a.5.5 0 0 0-.708.708l3 3z"/></svg>
+                        Download Backup
+                    </a>
+                    <div class="vr bg-secondary opacity-25" style="height: 30px;"></div>
+                    <div class="input-group input-group-sm" style="width: auto;">
+                        <input type="file" id="backup-file" class="form-control bg-dark border-secondary text-white" accept=".json">
+                        <button class="btn btn-primary" onclick="restoreConfig()">Upload & Restore</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">Security Utility</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-secondary small mb-4">Use this tool to test the strength of passwords intended for your <code>.env</code> file.</p>
+                <div class="mb-3">
+                    <input type="password" id="test-password" class="form-control bg-dark border-secondary text-white" placeholder="Type a password..." oninput="checkStrength(this.value)">
+                </div>
+                <div class="progress bg-black bg-opacity-50" style="height: 5px;">
+                    <div id="strength-bar" class="progress-bar" style="width: 0%;"></div>
+                </div>
+                <div id="strength-text" class="small mt-2 text-secondary font-monospace" style="font-size: 0.7rem;">STRENGTH: NONE</div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">SAML / SSO Integration</h5>
+            </div>
+            <div class="card-body p-4">
+                <form action="{{ url_for('main.update_sso_settings') }}" method="POST">
+                    <div class="mb-3">
+                        <label for="sso_provider_url" class="form-label small fw-bold">IDP PROVIDER URL</label>
+                        <input type="url" class="form-control bg-dark border-secondary text-white" id="sso_provider_url" name="sso_provider_url" value="{{ sso_settings.get('provider_url', '') }}" placeholder="https://auth.example.com/...">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="sso_client_id" class="form-label small fw-bold">CLIENT ID</label>
+                            <input type="text" class="form-control bg-dark border-secondary text-white" id="sso_client_id" name="sso_client_id" value="{{ sso_settings.get('client_id', '') }}">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="sso_client_secret" class="form-label small fw-bold">CLIENT SECRET</label>
+                            <input type="password" class="form-control bg-dark border-secondary text-white" id="sso_client_secret" name="sso_client_secret" value="{{ sso_settings.get('client_secret', '') }}">
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-4">
+                        <input class="form-check-input" type="checkbox" role="switch" id="sso_enabled" name="sso_enabled" {{ 'checked' if sso_settings.get('enabled') == 'true' else '' }}>
+                        <label class="form-check-label small text-secondary fw-bold" for="sso_enabled">ENABLE SSO LOGIN</label>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="submit" class="btn btn-outline-primary px-4">Update SSO Config</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">Two-Factor Authentication (2FA)</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="h6 mb-1">Status: 
+                            {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
+                            <span class="text-success fw-bold">ENABLED</span>
+                            {% else %}
+                            <span class="text-secondary">DISABLED</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-secondary small mb-0">Protect your account with an additional layer of security.</p>
+                    </div>
+                    <div>
+                        {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
+                        <form action="{{ url_for('main.disable_2fa') }}" method="POST" onsubmit="return confirm('Disable 2FA? This will reduce your account security.')">
+                            <button type="submit" class="btn btn-outline-danger">Disable 2FA</button>
+                        </form>
+                        {% else %}
+                        <a href="{{ url_for('main.setup_2fa') }}" class="btn btn-primary">Set Up 2FA</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg mb-4">
+            <div class="card-header bg-dark border-secondary border-opacity-10 py-3">
+                <h5 class="mb-0 fw-bold">Active Session</h5>
+            </div>
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold text-primary">{{ session.username }}</div>
+                        <div class="small text-secondary">Logged in as: {{ session.role }}</div>
+                    </div>
+                    <a href="{{ url_for('main.logout') }}" class="btn btn-sm btn-outline-danger">Sign Out of all devices</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-lg border-danger border-opacity-25">
+            <div class="card-header bg-danger bg-opacity-10 py-3 border-danger border-opacity-10">
+                <h5 class="mb-0 fw-bold text-danger">Danger Zone</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-secondary small mb-3">Proceed with extreme caution. These actions cannot be undone.</p>
+                <button class="btn btn-outline-danger" onclick="deleteAllLogs()">Purge All Webhook Logs</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function checkStrength(pwd) {
+        let strength = 0;
+        if (pwd.length > 8) strength += 25;
+        if (pwd.match(/[a-z]/) && pwd.match(/[A-Z]/)) strength += 25;
+        if (pwd.match(/\d/)) strength += 25;
+        if (pwd.match(/[^a-zA-Z\d]/)) strength += 25;
+
+        const bar = document.getElementById('strength-bar');
+        const text = document.getElementById('strength-text');
+        bar.style.width = strength + '%';
+        
+        if (strength <= 25) { bar.className = 'progress-bar bg-danger'; text.textContent = 'STRENGTH: WEAK'; }
+        else if (strength <= 50) { bar.className = 'progress-bar bg-warning'; text.textContent = 'STRENGTH: FAIR'; }
+        else if (strength <= 75) { bar.className = 'progress-bar bg-info'; text.textContent = 'STRENGTH: GOOD'; }
+        else { bar.className = 'progress-bar bg-success'; text.textContent = 'STRENGTH: STRONG'; }
+        if (!pwd) { bar.style.width = '0%'; text.textContent = 'STRENGTH: NONE'; }
+    }
+
+    async function generateApiKey() {
+        if (!confirm('Are you sure you want to generate a new master API key?')) return;
+        try {
+            const res = await fetch('/admin/generate-api-key', { method: 'POST' });
+            const data = await res.json();
+            if (data.status === 'success') {
+                document.getElementById('master-api-key').value = data.api_key;
+                showToast('New API key generated', 'success');
+            }
+        } catch (e) { showToast('Error generating API key', 'danger'); }
+    }
+
+    async function restoreConfig() {
+        const file = document.getElementById('backup-file').files[0];
+        if (!file) return showToast('Please select a file', 'danger');
+        
+        const formData = new FormData();
+        formData.append('backup_file', file);
+        
+        try {
+            const res = await fetch('/admin/restore', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('Configuration restored!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showToast('Restore failed: ' + data.message, 'danger');
+            }
+        } catch (e) { showToast('Error uploading file', 'danger'); }
+    }
+
+    function deleteAllLogs() {
+        if (!confirm('Are you SURE you want to delete ALL history logs? This cannot be undone.')) return;
+        fetch('/history/delete-all', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showToast('All logs deleted', 'success');
+                }
+            });
+    }
+</script>
+{% endblock %}

@@ -2,211 +2,594 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-md-8">
-        <div class="card border-0">
+    <div class="col-xl-10">
+        <nav aria-label="breadcrumb" class="mb-4">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}" class="text-decoration-none">Dashboard</a></li>
+                <li class="breadcrumb-item active text-secondary" aria-current="page">{{ 'Edit' if config else 'New' }} Endpoint</li>
+            </ol>
+        </nav>
+        <div class="card border-0 shadow-lg">
             <div class="card-header bg-primary text-white p-4">
-                <h2 class="mb-0 h4 fw-bold">{{ 'Edit' if config else 'New' }} Webhook Endpoint</h2>
-                <p class="mb-0 small opacity-75">{{ 'Update your existing webhook routing configuration.' if config else
-                    'Configure how incoming alerts are routed to ConnectWise.' }}</p>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2 class="mb-0 h4 fw-bold">{{ 'Edit' if config else 'New' }} Webhook Endpoint</h2>
+                        <p class="mb-0 small opacity-75">{{ 'Update your existing webhook routing configuration.' if config else
+                            'Configure how incoming alerts are routed to ConnectWise.' }}</p>
+                    </div>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-light btn-sm">Back to Dashboard</a>
+                </div>
             </div>
             <div class="card-body p-4">
-                <form method="POST">
-                    <div class="mb-3">
-                        <label for="name" class="form-label fw-bold">Endpoint Name <span
-                                class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="name" name="name"
-                            placeholder="e.g. Uptime Kuma Production" required
-                            value="{{ config.name if config else '' }}"
-                            data-tooltip="A descriptive name for this webhook source.">
+                <form method="POST" id="endpoint-form">
+                    <div class="row g-4">
+                        <!-- Left Column: Core Configuration -->
+                        <div class="col-lg-6">
+                            <div class="card bg-black bg-opacity-25 border-0 mb-4">
+                                <div class="card-body p-3">
+                                    <small class="text-secondary d-block mb-1 fw-bold ls-wide">PREVIEW: CW TICKET SUMMARY</small>
+                                    <div id="summary-preview" class="h5 mb-0 text-info font-monospace">Prefix: Source Name</div>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2 border-secondary border-opacity-10">
+                                <h5 class="fw-bold mb-0">Core Settings</h5>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="undo()" id="undo-btn" disabled>Undo</button>
+                                    <button type="button" class="btn btn-outline-secondary" onclick="redo()" id="redo-btn" disabled>Redo</button>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="name" class="form-label fw-bold">Endpoint Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="name" name="name"
+                                    placeholder="e.g. Uptime Kuma Production" required
+                                    value="{{ config.name if config else '' }}"
+                                    data-tooltip="A descriptive name for this webhook source.">
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="board" class="form-label fw-bold">Service Board</label>
+                                    <select class="form-select" id="board" name="board" data-tooltip="The ConnectWise Service Board where tickets will be created.">
+                                        <option value="">Loading...</option>
+                                    </select>
+                                    <input type="hidden" id="board_hidden" value="{{ config.board if config else '' }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="priority" class="form-label fw-bold">Priority</label>
+                                    <select class="form-select" id="priority" name="priority" data-tooltip="The priority name to set on new tickets.">
+                                        <option value="">Loading...</option>
+                                    </select>
+                                    <input type="hidden" id="priority_hidden" value="{{ config.priority if config else '' }}">
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="customer_id_default" class="form-label fw-bold">Default Company</label>
+                                    <input class="form-control" list="company_list" id="customer_id_default" name="customer_id_default" 
+                                        placeholder="Search Identifier" value="{{ config.customer_id_default if config else '' }}"
+                                        data-tooltip="The ConnectWise Company ID to use if not found in the payload.">
+                                    <datalist id="company_list"></datalist>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="status" class="form-label fw-bold">Initial Status</label>
+                                    <select class="form-select" id="status" name="status" data-tooltip="The status to set on new tickets.">
+                                        <option value="">-- Select Board First --</option>
+                                    </select>
+                                    <input type="hidden" id="status_hidden" value="{{ config.status if config else '' }}">
+                                </div>
+                            </div>
+
+                            <div class="form-check form-switch mb-3 mt-2">
+                                <input class="form-check-input" type="checkbox" id="show-advanced" onchange="toggleAdvanced()">
+                                <label class="form-check-label small text-secondary fw-bold" for="show-advanced">SHOW ADVANCED TICKET FIELDS</label>
+                            </div>
+
+                            <div id="advanced-fields" class="d-none">
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label for="ticket_type" class="form-label fw-bold">Type</label>
+                                        <select class="form-select" id="ticket_type" name="ticket_type">
+                                            <option value="">-- Select Board --</option>
+                                        </select>
+                                        <input type="hidden" id="type_hidden" value="{{ config.ticket_type if config else '' }}">
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label for="subtype" class="form-label fw-bold">Subtype</label>
+                                        <select class="form-select" id="subtype" name="subtype">
+                                            <option value="">-- Select Board --</option>
+                                        </select>
+                                        <input type="hidden" id="subtype_hidden" value="{{ config.subtype if config else '' }}">
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label for="item" class="form-label fw-bold">Item</label>
+                                        <select class="form-select" id="item" name="item">
+                                            <option value="">-- Select Board --</option>
+                                        </select>
+                                        <input type="hidden" id="item_hidden" value="{{ config.item if config else '' }}">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="ticket_prefix" class="form-label fw-bold">Summary Prefix</label>
+                                <input type="text" class="form-control" id="ticket_prefix" name="ticket_prefix"
+                                    placeholder="e.g. Alert:" value="{{ config.ticket_prefix if config else '' }}"
+                                    data-tooltip="Text to prepend to the ConnectWise ticket title.">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="trusted_ips" class="form-label fw-bold">Trusted IPs (Optional)</label>
+                                <input type="text" class="form-control font-monospace" id="trusted_ips" name="trusted_ips" placeholder="e.g. 192.168.1.0/24, 10.0.0.1"
+                                    value="{{ config.trusted_ips if config else '' }}"
+                                    data-tooltip="Comma-separated list of allowed IPs or CIDRs.">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="hmac_secret" class="form-label fw-bold">HMAC Secret (Optional)</label>
+                                <input type="text" class="form-control font-monospace" id="hmac_secret" name="hmac_secret" placeholder="Optional shared secret"
+                                    value="{{ config.hmac_secret if config else '' }}"
+                                    data-tooltip="If set, incoming webhooks must include a valid X-HookWise-Signature header.">
+                            </div>
+                        </div>
+
+                        <!-- Right Column: Advanced & Automation -->
+                        <div class="col-lg-6">
+                            <h5 class="fw-bold mb-3 border-bottom pb-2 border-secondary border-opacity-10">Automation & Logic</h5>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label fw-bold mb-0">Trigger Logic</label>
+                                    <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse" data-bs-target="#validator-tool">
+                                        Test Path
+                                    </button>
+                                </div>
+                                
+                                <div class="collapse mb-3" id="validator-tool">
+                                    <div class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
+                                        <label class="small text-info fw-bold mb-2">JSON PATH VALIDATOR</label>
+                                        <textarea id="sample-json" class="form-control bg-dark border-secondary text-info small mb-2"
+                                            rows="3" placeholder='Paste sample JSON here...'></textarea>
+                                        <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100"
+                                            onclick="testPath()">Validate Path</button>
+                                        <div id="validation-result"></div>
+                                    </div>
+                                </div>
+
+                                <div class="input-group mb-2">
+                                    <span class="input-group-text bg-dark border-secondary text-secondary small">Field</span>
+                                    <input type="text" class="form-control font-monospace" id="trigger_field" name="trigger_field"
+                                        placeholder="heartbeat.status" value="{{ config.trigger_field if config else 'heartbeat.status' }}" required
+                                        data-tooltip="Dot-notation path to the status field in webhook payload.">
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-dark border-secondary text-danger small">Open</span>
+                                            <input type="text" class="form-control" id="open_value" name="open_value" placeholder="0"
+                                                value="{{ config.open_value if config else '0' }}" required
+                                                data-tooltip="Values that trigger a TICKET OPEN.">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-dark border-secondary text-success small">Close</span>
+                                            <input type="text" class="form-control" id="close_value" name="close_value" placeholder="1"
+                                                value="{{ config.close_value if config else '1' }}" required
+                                                data-tooltip="Values that trigger a TICKET CLOSE.">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label for="description_template" class="form-label fw-bold mb-0">Description Template</label>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2" style="font-size: 0.7rem;" type="button" data-bs-toggle="dropdown">Insert Placeholder</button>
+                                        <ul class="dropdown-menu dropdown-menu-dark small" style="font-size: 0.75rem;">
+                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{{ monitor_name }}')">Monitor Name</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{{ msg }}')">Message</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{{ request_id }}')">Request ID</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="insertAtCursor('description_template', '{$.path.to.field}')">JSONPath Field</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <textarea class="form-control font-monospace small" id="description_template" name="description_template" rows="4"
+                                    placeholder="Resource {{ monitor_name }} is experiencing issues.&#10;Message: {{ msg }}&#10;Path: {$.some.field}"
+                                    data-tooltip="Custom ticket description using placeholders.">{{ config.description_template if config else '' }}</textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label for="json_mapping" class="form-label fw-bold mb-0">Field Mapping (JSON)</label>
+                                    <div class="d-flex gap-2">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2" style="font-size: 0.7rem;" type="button" data-bs-toggle="dropdown">Insert Placeholder</button>
+                                            <ul class="dropdown-menu dropdown-menu-dark small" style="font-size: 0.75rem;">
+                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '{{ monitor_name }}')">Monitor Name</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '{{ msg }}')">Message</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '{{ request_id }}')">Request ID</a></li>
+                                                <li><a class="dropdown-item" href="#" onclick="insertAtCursor('json_mapping', '$.path.to.field')">JSONPath Path</a></li>
+                                            </ul>
+                                        </div>
+                                        <select class="form-select form-select-sm bg-dark border-secondary text-info py-0 px-2" style="font-size: 0.7rem; width: auto;" onchange="applyTemplate(this.value)">
+                                            <option value="">Apply Template...</option>
+                                            <option value="uptime_kuma">Uptime Kuma</option>
+                                            <option value="grafana">Grafana</option>
+                                            <option value="zabbix">Zabbix</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-link text-info p-0" onclick="formatJSON('json_mapping')">Format</button>
+                                    </div>
+                                </div>
+                                <textarea class="form-control font-monospace small" id="json_mapping" name="json_mapping" rows="3"
+                                    placeholder='{"summary": "$.title", "description": "$.msg"}'
+                                    data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label for="routing_rules" class="form-label fw-bold mb-0">Regex Routing (JSON Array)</label>
+                                    <button type="button" class="btn btn-sm btn-link text-info p-0" onclick="formatJSON('routing_rules')">Format</button>
+                                </div>
+                                <textarea class="form-control font-monospace small" id="routing_rules" name="routing_rules" rows="3"
+                                    placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
+                                    data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
+                            </div>
+
+                            <div class="mb-0">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label fw-bold mb-0">Maintenance Windows</label>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addMaintenanceWindow()">Add Window</button>
+                                </div>
+                                <div id="maintenance-list" class="mb-2">
+                                    <!-- Windows will be added here -->
+                                </div>
+                                <textarea class="d-none" id="maintenance_windows" name="maintenance_windows">{{ config.maintenance_windows if config else '' }}</textarea>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="ticket_prefix" class="form-label">Ticket Summary Prefix</label>
-                            <input type="text" class="form-control" id="ticket_prefix" name="ticket_prefix"
-                                placeholder="e.g. Alert:" value="{{ config.ticket_prefix if config else '' }}"
-                                data-tooltip="Optional text to prepend to the ConnectWise ticket title.">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="board" class="form-label">Service Board</label>
-                            <select class="form-select" id="board" name="board" data-tooltip="The ConnectWise Service Board name where tickets will be created.">
-                                <option value="">Loading...</option>
-                            </select>
-                            <input type="hidden" id="board_hidden" value="{{ config.board if config else '' }}">
-                        </div>
+                    <hr class="my-4 opacity-10">
+
+                    <div class="d-flex justify-content-end gap-3">
+                        <input type="hidden" name="create_another" id="create_another" value="false">
+                        <input type="hidden" name="is_draft" id="is_draft" value="{{ 'true' if config and config.is_draft else 'false' }}">
+                        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
+                        <button type="button" class="btn btn-outline-warning px-4" id="draft-btn" onclick="saveAsDraft()">{{ 'Keep as Draft' if config and config.is_draft else 'Save as Draft' }}</button>
+                        {% if not config %}
+                        <button type="button" class="btn btn-outline-primary px-4" onclick="saveAndAnother()">Save & Create Another</button>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary px-5 fw-bold" onclick="document.getElementById('is_draft').value='false'">{{ 'Update Endpoint' if config else 'Create Endpoint' }}</button>
                     </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="customer_id_default" class="form-label">Default Customer ID</label>
-                            <input class="form-control" list="company_list" id="customer_id_default" name="customer_id_default" 
-                                placeholder="Search or type Identifier" value="{{ config.customer_id_default if config else '' }}"
-                                data-tooltip="The ConnectWise Company ID to use if not found in the payload.">
-                            <datalist id="company_list"></datalist>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="status" class="form-label">Initial Status</label>
-                            <input type="text" class="form-control" id="status" name="status" placeholder="Optional"
-                                value="{{ config.status if config else '' }}"
-                                data-tooltip="The status name to set on new tickets.">
-                        </div>
-                    </div>
+<script>
+    const undoStack = [];
+    const redoStack = [];
+    let isUndoing = false;
 
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label for="priority" class="form-label">Priority</label>
-                    <select class="form-select" id="priority" name="priority" data-tooltip="The priority name to set on new tickets.">
-                        <option value="">Loading...</option>
-                    </select>
-                    <input type="hidden" id="priority_hidden" value="{{ config.priority if config else '' }}">
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label for="trusted_ips" class="form-label">Trusted IPs (Optional)</label>
-                    <input type="text" class="form-control" id="trusted_ips" name="trusted_ips" placeholder="e.g. 192.168.1.0/24, 10.0.0.1"
-                        value="{{ config.trusted_ips if config else '' }}"
-                        data-tooltip="Comma-separated list of allowed IPs or CIDRs. Leave empty for all.">
-                </div>
-            </div>
-            </div>
+    function saveState() {
+        if (isUndoing) return;
+        const form = document.getElementById('endpoint-form');
+        const formData = new FormData(form);
+        const state = {};
+        formData.forEach((value, key) => state[key] = value);
+        
+        const stateStr = JSON.stringify(state);
+        if (undoStack.length > 0 && undoStack[undoStack.length - 1] === stateStr) return;
+        
+        undoStack.push(stateStr);
+        if (undoStack.length > 50) undoStack.shift();
+        
+        document.getElementById('undo-btn').disabled = undoStack.length < 2;
+        redoStack.length = 0; // Clear redo on new action
+        document.getElementById('redo-btn').disabled = true;
+    }
 
-            <div class="mb-3">
-                <label for="json_mapping" class="form-label fw-bold">JSON Field Mapping (JSON)</label>
-                <textarea class="form-control font-monospace small" id="json_mapping" name="json_mapping" rows="3"
-                    placeholder='{"summary": "$.title", "description": "$.msg", "customer_id": "$.client_id", "priority": "$.severity"}'
-                    data-tooltip="Override ConnectWise fields using JSONPath expressions.">{{ config.json_mapping if config else '' }}</textarea>
-                <div class="form-text small opacity-75">Map payload fields to CW summary, description, or customer_id.
-                </div>
-            </div>
+    function undo() {
+        if (undoStack.length < 2) return;
+        isUndoing = true;
+        const currentState = undoStack.pop();
+        redoStack.push(currentState);
+        const prevState = JSON.parse(undoStack[undoStack.length - 1]);
+        applyState(prevState);
+        document.getElementById('redo-btn').disabled = false;
+        document.getElementById('undo-btn').disabled = undoStack.length < 2;
+        isUndoing = false;
+    }
 
-            <div class="mb-3">
-                <label for="maintenance_windows" class="form-label fw-bold">Maintenance Windows (JSON Array)</label>
-                <textarea class="form-control font-monospace small" id="maintenance_windows" name="maintenance_windows" rows="2"
-                    placeholder='[{"start": "2026-01-01T00:00:00Z", "end": "2026-01-01T01:00:00Z"}]'
-                    data-tooltip="Define periods where webhooks are received but not forwarded to ConnectWise.">{{ config.maintenance_windows if config else '' }}</textarea>
-                <div class="form-text small opacity-75">JSON array of start/end ISO timestamps.</div>
-            </div>
+    function redo() {
+        if (!redoStack.length) return;
+        isUndoing = true;
+        const nextStateStr = redoStack.pop();
+        undoStack.push(nextStateStr);
+        applyState(JSON.parse(nextStateStr));
+        document.getElementById('redo-btn').disabled = redoStack.length === 0;
+        document.getElementById('undo-btn').disabled = false;
+        isUndoing = false;
+    }
 
-            <div class="mb-3">
-                <label for="routing_rules" class="form-label fw-bold">Regex Routing Rules (JSON Array)</label>
-                <textarea class="form-control font-monospace small" id="routing_rules" name="routing_rules" rows="3"
-                    placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
-                    data-tooltip="Define regex rules to override endpoint settings based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
-                <div class="form-text small opacity-75">Overrides board, status, priority, type or subtype if regex
-                    matches.</div>
-            </div>
-
-            <hr class="my-4 opacity-10">
-
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0 fw-bold">Trigger Configuration</h5>
-                <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
-                    data-bs-target="#validator-tool">
-                    Test JSON Path
-                </button>
-            </div>
-
-            <div class="collapse mb-4" id="validator-tool">
-                <div class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
-                    <label class="small text-info fw-bold mb-2">JSON PATH VALIDATOR</label>
-                    <textarea id="sample-json" class="form-control bg-dark border-secondary text-info small mb-2"
-                        rows="4" placeholder='Paste sample JSON here... e.g. {"heartbeat": {"status": 0}}'></textarea>
-                    <button type="button" class="btn btn-sm btn-info text-dark fw-bold w-100"
-                        onclick="testPath()">Validate Path</button>
-                    <div id="validation-result"></div>
-                </div>
-            </div>
-
-            <div class="mb-3">
-                <label for="trigger_field" class="form-label fw-bold">JSON Trigger Field <span
-                        class="text-danger">*</span></label>
-                <input type="text" class="form-control" id="trigger_field" name="trigger_field"
-                    placeholder="heartbeat.status" value="{{ config.trigger_field if config else 'heartbeat.status' }}"
-                    required
-                    data-tooltip="Use dot-notation to specify the field in the webhook body (e.g., monitor.status).">
-            </div>
-
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label for="open_value" class="form-label fw-bold">Open Value(s) <span
-                            class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="open_value" name="open_value" placeholder="0, down"
-                        value="{{ config.open_value if config else '0' }}" required
-                        data-tooltip="Comma-separated list of values that mean 'Fail'.">
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label for="close_value" class="form-label fw-bold">Close Value(s) <span
-                            class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="close_value" name="close_value" placeholder="1, up"
-                        value="{{ config.close_value if config else '1' }}" required
-                        data-tooltip="Comma-separated list of values that mean 'Success'.">
-                </div>
-            </div>
-
-            <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
-                <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
-                <button type="submit" class="btn btn-primary px-4">{{ 'Save Changes' if config else 'Create
-                    Endpoint' }}</button>
-            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            </div>
-            
-            <script>
-                document.addEventListener('DOMContentLoaded', async () => {
-                    const boardSelect = document.getElementById('board');
-                    const prioritySelect = document.getElementById('priority');
-                    const boardHidden = document.getElementById('board_hidden').value;
-                    const priorityHidden = document.getElementById('priority_hidden').value;
-            
-                    // Fetch Boards
-                    try {
-                        const res = await fetch('/api/cw/boards');
-                        const boards = await res.json();
-                        boardSelect.innerHTML = '<option value="">-- Use Default --</option>';
-                        boards.forEach(b => {
-                            const opt = document.createElement('option');
-                            opt.value = b.name;
-                            opt.textContent = b.name;
-                            if (b.name === boardHidden) opt.selected = true;
-                            boardSelect.appendChild(opt);
-                        });
-                    } catch (e) {
-                        boardSelect.innerHTML = '<option value="">Error loading boards</option>';
-                    }
-            
-                    // Fetch Priorities
-                    try {
-                        const res = await fetch('/api/cw/priorities');
-                        const priorities = await res.json();
-                        prioritySelect.innerHTML = '<option value="">-- Use Default --</option>';
-                        priorities.forEach(p => {
-                            const opt = document.createElement('option');
-                            opt.value = p.name;
-                            opt.textContent = p.name;
-                            if (p.name === priorityHidden) opt.selected = true;
-                            prioritySelect.appendChild(opt);
-                        });
-                    } catch (e) {
-                        prioritySelect.innerHTML = '<option value="">Error loading priorities</option>';
-                    }
-            
-                    // Fetch Companies (first 50)
-                    try {
-                        const res = await fetch('/api/cw/companies');
-                        const companies = await res.json();
-                        const datalist = document.getElementById('company_list');
-                        companies.forEach(c => {
-                            const opt = document.createElement('option');
-                            opt.value = c.identifier;
-                            opt.textContent = c.name;
-                            datalist.appendChild(opt);
-                        });
-                    } catch (e) {
-                        console.error('Error loading companies', e);
-                    }
+    function applyState(state) {
+        const form = document.getElementById('endpoint-form');
+        Object.keys(state).forEach(key => {
+            const el = form.elements[key];
+            if (el && el.type !== 'file') el.value = state[key];
+        });
+        if (window.updatePreview) window.updatePreview();
+        // Also sync maintenance windows if they changed
+        const list = document.getElementById('maintenance-list');
+        list.innerHTML = '';
+        if (state.maintenance_windows) {
+            try {
+                const windows = JSON.parse(state.maintenance_windows);
+                windows.forEach(w => {
+                    const start = new Date(w.start).toISOString().substring(0, 16);
+                    const end = new Date(w.end).toISOString().substring(0, 16);
+                    addMaintenanceWindow(start, end);
                 });
-            </script>
-            {% endblock %}
+            } catch(e){}
+        }
+    }
+
+    function toggleAdvanced() {
+        const show = document.getElementById('show-advanced').checked;
+        document.getElementById('advanced-fields').classList.toggle('d-none', !show);
+    }
+
+    function insertAtCursor(id, text) {
+        const el = document.getElementById(id);
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        el.value = el.value.substring(0, start) + text + el.value.substring(end);
+        el.selectionStart = el.selectionEnd = start + text.length;
+        el.focus();
+    }
+
+    function addMaintenanceWindow(start = '', end = '') {
+        const list = document.getElementById('maintenance-list');
+        const div = document.createElement('div');
+        div.className = 'row g-2 mb-2 maintenance-entry';
+        div.innerHTML = `
+            <div class="col-5">
+                <input type="datetime-local" class="form-control form-control-sm mw-start" value="${start}" onchange="syncMaintenance()">
+            </div>
+            <div class="col-5">
+                <input type="datetime-local" class="form-control form-control-sm mw-end" value="${end}" onchange="syncMaintenance()">
+            </div>
+            <div class="col-2">
+                <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="this.closest('.row').remove(); syncMaintenance();">&times;</button>
+            </div>
+        `;
+        list.appendChild(div);
+    }
+
+    function syncMaintenance() {
+        const windows = [];
+        document.querySelectorAll('.maintenance-entry').forEach(entry => {
+            const start = entry.querySelector('.mw-start').value;
+            const end = entry.querySelector('.mw-end').value;
+            if (start && end) {
+                windows.push({ 
+                    start: new Date(start).toISOString(), 
+                    end: new Date(end).toISOString() 
+                });
+            }
+        });
+        document.getElementById('maintenance_windows').value = JSON.stringify(windows);
+    }
+
+    const templates = {
+        uptime_kuma: {
+            json_mapping: '{\n  "summary": "$.monitor.name",\n  "description": "$.msg",\n  "status": "$.monitor.status"\n}',
+            trigger_field: 'heartbeat.status',
+            open_value: '0',
+            close_value: '1'
+        },
+        grafana: {
+            json_mapping: '{\n  "summary": "$.title",\n  "description": "$.message",\n  "severity": "$.ruleName"\n}',
+            trigger_field: 'state',
+            open_value: 'alerting',
+            close_value: 'ok'
+        },
+        zabbix: {
+            json_mapping: '{\n  "summary": "$.event_name",\n  "description": "$.event_nseverity",\n  "priority": "$.event_severity"\n}',
+            trigger_field: 'event_value',
+            open_value: '1',
+            close_value: '0'
+        }
+    };
+
+    function applyTemplate(type) {
+        if (!type || !templates[type]) return;
+        const t = templates[type];
+        document.getElementById('json_mapping').value = t.json_mapping;
+        document.getElementById('trigger_field').value = t.trigger_field;
+        document.getElementById('open_value').value = t.open_value;
+        document.getElementById('close_value').value = t.close_value;
+        showToast('Applied ' + type.replace('_', ' ') + ' template', 'info');
+    }
+
+    function formatJSON(id) {
+        const el = document.getElementById(id);
+        try {
+            const obj = JSON.parse(el.value);
+            el.value = JSON.stringify(obj, null, 2);
+        } catch (e) {
+            showToast('Invalid JSON in field', 'danger');
+        }
+    }
+
+    function saveAsDraft() {
+        document.getElementById('is_draft').value = 'true';
+        document.getElementById('endpoint-form').submit();
+    }
+
+    function saveAndAnother() {
+        document.getElementById('create_another').value = 'true';
+        document.getElementById('endpoint-form').submit();
+    }
+
+    document.getElementById('endpoint-form').addEventListener('submit', (e) => {
+        const requiredFields = ['name'];
+        for (const id of requiredFields) {
+            const el = document.getElementById(id);
+            if (!el.value.trim()) {
+                e.preventDefault();
+                showToast(`${id.charAt(0).toUpperCase() + id.slice(1)} is required`, 'danger');
+                el.focus();
+                return;
+            }
+        }
+
+        const jsonFields = ['json_mapping', 'routing_rules', 'maintenance_windows'];
+        for (const id of jsonFields) {
+            const val = document.getElementById(id).value.trim();
+            if (val) {
+                try {
+                    JSON.parse(val);
+                } catch (err) {
+                    e.preventDefault();
+                    showToast(`Invalid JSON in ${id.replace('_', ' ')}`, 'danger');
+                    document.getElementById(id).focus();
+                    return;
+                }
+            }
+        }
+    });
+
+    function updatePreview() {
+        const prefix = document.getElementById('ticket_prefix').value;
+        const preview = document.getElementById('summary-preview');
+        preview.textContent = (prefix ? prefix + ' ' : '') + 'Source Name';
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const form = document.getElementById('endpoint-form');
+        form.addEventListener('input', () => {
+            clearTimeout(window.saveStateTimeout);
+            window.saveStateTimeout = setTimeout(saveState, 500);
+        });
+        saveState(); // Initial state
+
+        document.getElementById('ticket_prefix').addEventListener('input', updatePreview);
+        updatePreview();
+
+        const boardSelect = document.getElementById('board');
+        const statusSelect = document.getElementById('status');
+        const typeSelect = document.getElementById('ticket_type');
+        const subtypeSelect = document.getElementById('subtype');
+        const itemSelect = document.getElementById('item');
+        const prioritySelect = document.getElementById('priority');
+        
+        const boardHidden = document.getElementById('board_hidden').value;
+        const statusHidden = document.getElementById('status_hidden').value;
+        const typeHidden = document.getElementById('type_hidden').value;
+        const subtypeHidden = document.getElementById('subtype_hidden').value;
+        const itemHidden = document.getElementById('item_hidden').value;
+        const priorityHidden = document.getElementById('priority_hidden').value;
+
+        const loadBoardDetails = async (boardName) => {
+            if (!boardName) {
+                [statusSelect, typeSelect, subtypeSelect, itemSelect].forEach(s => s.innerHTML = '<option value="">-- Select Board --</option>');
+                return;
+            }
             
+            try {
+                const boardsRes = await fetch('/api/cw/boards');
+                const boards = await boardsRes.json();
+                const board = boards.find(b => b.name === boardName);
+                if (!board) return;
+
+                const fetchAndPopulate = async (url, select, hiddenVal) => {
+                    select.innerHTML = '<option value="">Loading...</option>';
+                    const res = await fetch(url);
+                    const items = await res.json();
+                    select.innerHTML = '<option value="">-- Use Default --</option>';
+                    items.forEach(i => {
+                        const opt = document.createElement('option');
+                        opt.value = i.name;
+                        opt.textContent = i.name;
+                        if (i.name === hiddenVal) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                };
+
+                fetchAndPopulate(`/api/cw/statuses/${board.id}`, statusSelect, statusHidden);
+                fetchAndPopulate(`/api/cw/types/${board.id}`, typeSelect, typeHidden);
+                fetchAndPopulate(`/api/cw/subtypes/${board.id}`, subtypeSelect, subtypeHidden);
+                fetchAndPopulate(`/api/cw/items/${board.id}`, itemSelect, itemHidden);
+
+            } catch (e) { console.error('Error loading board details', e); }
+        };
+
+        boardSelect.addEventListener('change', (e) => loadBoardDetails(e.target.value));
+
+        // Initialize Maintenance Windows
+        const mwRaw = document.getElementById('maintenance_windows').value;
+        if (mwRaw) {
+            try {
+                const windows = JSON.parse(mwRaw);
+                windows.forEach(w => {
+                    const start = new Date(w.start).toISOString().substring(0, 16);
+                    const end = new Date(w.end).toISOString().substring(0, 16);
+                    addMaintenanceWindow(start, end);
+                });
+            } catch (e) { console.error('Error parsing maintenance windows', e); }
+        }
+
+        // Fetch Boards
+        try {
+            const res = await fetch('/api/cw/boards');
+            const boards = await res.json();
+            boardSelect.innerHTML = '<option value="">-- Use Default --</option>';
+            boards.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.name;
+                opt.textContent = b.name;
+                if (b.name === boardHidden) opt.selected = true;
+                boardSelect.appendChild(opt);
+            });
+            if (boardHidden) loadBoardDetails(boardHidden);
+        } catch (e) {
+            boardSelect.innerHTML = '<option value="">Error loading boards</option>';
+        }
+
+        // Fetch Priorities
+        try {
+            const res = await fetch('/api/cw/priorities');
+            const priorities = await res.json();
+            prioritySelect.innerHTML = '<option value="">-- Use Default --</option>';
+            priorities.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.textContent = p.name;
+                if (p.name === priorityHidden) opt.selected = true;
+                prioritySelect.appendChild(opt);
+            });
+        } catch (e) {
+            prioritySelect.innerHTML = '<option value="">Error loading priorities</option>';
+        }
+
+        // Fetch Companies (first 50)
+        try {
+            const res = await fetch('/api/cw/companies');
+            const companies = await res.json();
+            const datalist = document.getElementById('company_list');
+            companies.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.identifier;
+                opt.textContent = `${c.name} (${c.identifier})`;
+                datalist.appendChild(opt);
+            });
+        } catch (e) {
+            console.error('Error loading companies', e);
+        }
+    });
+</script>
+{% endblock %}

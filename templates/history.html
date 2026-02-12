@@ -3,7 +3,41 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Webhook History</h1>
-    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+    <div class="d-flex gap-2">
+        <div class="form-check form-switch d-flex align-items-center me-3">
+            <input class="form-check-input me-2" type="checkbox" role="switch" id="live-tail-toggle">
+            <label class="form-check-label small text-secondary fw-bold" for="live-tail-toggle">LIVE TAIL</label>
+        </div>
+        <button class="btn btn-outline-danger btn-sm d-flex align-items-center" onclick="deleteAllLogs()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash-fill me-2" viewBox="0 0 16 16">
+                <path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z"/>
+            </svg>
+            Delete All
+        </button>
+        <button class="btn btn-outline-success btn-sm d-flex align-items-center" onclick="exportCSV()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-download me-2" viewBox="0 0 16 16">
+                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+            </svg>
+            Export CSV
+        </button>
+        <input type="date" id="date-from" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 130px;" onchange="searchHistory()">
+        <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 130px;" onchange="searchHistory()">
+        <div class="input-group input-group-sm" style="width: 250px;">
+            <input type="text" id="history-search" class="form-control bg-dark border-secondary text-white"
+                placeholder="Search Ticket or Request ID...">
+            <button class="btn btn-outline-secondary" type="button" onclick="searchHistory()">Search</button>
+        </div>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm d-flex align-items-center">Back to Dashboard</a>
+    </div>
+</div>
+
+<div id="bulk-history-controls" class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
+    <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary" onclick="bulkReplay()">Replay Selected</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteLogs()">Delete Selected</button>
+    </div>
 </div>
 
 <div class="card bg-dark text-white shadow-lg overflow-hidden border-0">
@@ -12,18 +46,23 @@
             <table class="table table-dark table-hover mb-0 align-middle small">
                 <thead class="bg-black bg-opacity-50 text-secondary">
                     <tr>
-                        <th class="ps-4 py-3">TIMESTAMP</th>
+                        <th class="ps-4 py-3"><input type="checkbox" id="check-all-logs" onchange="toggleAllLogs()"></th>
+                        <th class="py-3">TIMESTAMP</th>
                         <th class="py-3">ENDPOINT</th>
                         <th class="py-3">STATUS</th>
+                        <th class="py-3">SOURCE IP</th>
+                        <th class="py-3">RETRY</th>
                         <th class="py-3">TICKET</th>
                         <th class="py-3">REQUEST ID</th>
+                        <th class="py-3">MATCHED RULE</th>
                         <th class="pe-4 py-3 text-end">ACTIONS</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for log in logs %}
                     <tr class="border-bottom border-light border-opacity-5">
-                        <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
+                        <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}" onchange="updateBulkHistory()"></td>
+                        <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
                             %H:%M:%S') }}</td>
                         <td class="py-3 fw-bold">{{ log.config_name }}</td>
                         <td class="py-3">
@@ -41,9 +80,23 @@
                                 log.status.upper() }}</span>
                             {% endif %}
                         </td>
+                        <td class="py-3 text-secondary font-monospace small">{{ log.source_ip or '-' }}</td>
+                        <td class="py-3">
+                            {% if log.retry_count > 0 %}
+                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ log.retry_count }}</span>
+                            {% else %}
+                            <span class="text-muted opacity-50">-</span>
+                            {% endif %}
+                        </td>
                         <td class="py-3 font-monospace">
                             {% if log.ticket_id %}
-                            <span class="text-primary">#{{ log.ticket_id }}</span>
+                            <a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/{{ log.ticket_id }}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
+                                    <path fill-rule="evenodd" d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
+                                    <path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
+                                </svg>
+                                #{{ log.ticket_id }}
+                            </a>
                             {% else %}
                             <span class="text-muted opacity-50">-</span>
                             {% endif %}
@@ -57,12 +110,18 @@
                                 </svg>
                             </button>
                         </td>
-                        <td class="pe-4 py-3 text-end">
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
-                                    data-payload='{{ log.payload | safe }}'>View</button>
-                                <button class="btn btn-outline-primary"
-                                    onclick="replayWebhook('{{ log.id }}')">Replay</button>
+                            <td class="py-3">
+                            {% if log.matched_rule %}
+                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25" data-tooltip="{{ log.matched_rule }}">RULE MATCH</span>
+                            {% else %}
+                            <span class="text-muted opacity-50">-</span>
+                            {% endif %}
+                        </td>
+                                                <td class="pe-4 py-3 text-end">
+                                                    <div class="btn-group btn-group-sm">
+                                                        <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
+                                                            data-payload='{{ log.payload | safe }}' data-headers='{{ log.headers | safe }}' data-rule="{{ log.matched_rule or '' }}">View</button>
+                                                        <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}')" data-payload='{{ log.payload | safe }}'>Compare</button>                                    <button class="btn btn-outline-primary" onclick="replayWebhook('{{ log.id }}')">Replay</button>
                                 <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
                                         class="bi bi-trash" viewBox="0 0 16 16">
@@ -82,9 +141,14 @@
     </div>
 </div>
 
-<nav class="mt-4">
-    <ul class="pagination justify-content-center">
-        {% if pagination.has_prev %}
+    <div id="infinite-sentinel" class="text-center py-4 d-none">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading more...</span>
+        </div>
+    </div>
+
+    <nav id="standard-pagination" class="mt-4">
+        <ul class="pagination justify-content-center">        {% if pagination.has_prev %}
         <li class="page-item">
             <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a>
         </li>
@@ -117,34 +181,302 @@
             <div class="modal-header border-secondary">
                 <h5 class="modal-title">Payload Detail</h5>
                 <div class="ms-auto me-2">
+                    <button id="pretty-toggle" class="btn btn-sm btn-outline-info me-2">Minified</button>
+                    <button id="headers-toggle" class="btn btn-sm btn-outline-secondary me-2">Show Headers</button>
                     <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <pre class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
-            </div>
-        </div>
+                            <div class="modal-body">
+                                <div id="matched-rule-info" class="alert alert-info bg-opacity-10 border-info border-opacity-25 py-2 mb-3 d-none">
+                                    <small class="fw-bold">Matched Rule:</small> <span id="rule-text" class="small"></span>
+                                </div>
+                                <pre class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
+                            </div>        </div>
     </div>
 </div>
 
-<script>
+    <!-- Comparison Modal -->
+    <div class="modal fade" id="compareModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content bg-dark border-warning">
+                <div class="modal-header border-warning border-opacity-25">
+                    <h5 class="modal-title text-warning">Compare Payloads</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-secondary mb-2">Original</h6>
+                            <pre class="bg-black p-2 rounded small" id="compare-left"></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-secondary mb-2">Current</h6>
+                            <pre class="bg-black p-2 rounded small" id="compare-right"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let compareLeft = null;
+
+    function comparePayload(id) {
+        const payload = JSON.parse(event.target.dataset.payload);
+        if (!compareLeft) {
+            compareLeft = payload;
+            showToast('Selected for comparison. Now click Compare on another entry.', 'info');
+        } else {
+            const leftStr = JSON.stringify(compareLeft, null, 2);
+            const rightStr = JSON.stringify(payload, null, 2);
+            
+            document.getElementById('compare-left').innerHTML = highlightDiff(leftStr, rightStr);
+            document.getElementById('compare-right').innerHTML = highlightDiff(rightStr, leftStr);
+            
+            new bootstrap.Modal(document.getElementById('compareModal')).show();
+            compareLeft = null; // Reset
+        }
+    }
+
+    function highlightDiff(str, other) {
+        const lines = str.split('\n');
+        const otherLines = other.split('\n');
+        return lines.map((line, i) => {
+            const isDiff = line !== otherLines[i];
+            return `<div class="${isDiff ? 'bg-danger bg-opacity-25' : ''}">${escapeHtml(line)}</div>`;
+        }).join('');
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }    function toggleAllLogs() {
+        const checkAll = document.getElementById('check-all-logs');
+        document.querySelectorAll('.log-check').forEach(c => c.checked = checkAll.checked);
+        updateBulkHistory();
+    }
+
+    function updateBulkHistory() {
+        const checked = document.querySelectorAll('.log-check:checked').length;
+        document.getElementById('bulk-history-controls').classList.toggle('d-none', checked === 0);
+    }
+
+    async function bulkReplay() {
+        const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
+        if (!ids.length) return;
+        
+        showToast(`Queuing ${ids.length} replays...`, 'info');
+        for (const id of ids) {
+            await fetch(`/history/replay/${id}`, { method: 'POST' });
+        }
+        showToast('All replays queued', 'success');
+        setTimeout(() => window.location.reload(), 1000);
+    }
+
+    async function bulkDeleteLogs() {
+        const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
+        if (!ids.length) return;
+        
+        if (!confirm(`Delete ${ids.length} log entries?`)) return;
+        
+        try {
+            await fetch('/history/bulk-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+            showToast('Logs deleted', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (e) { showToast('Error deleting logs', 'danger'); }
+    }
+
+    function deleteAllLogs() {
+        if (!confirm('Are you SURE you want to delete ALL history logs? This cannot be undone.')) return;
+        fetch('/history/delete-all', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showToast('All logs deleted', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
+                }
+            });
+    }
+
+    function exportCSV() {
+        const rows = [];
+        const headers = ['Timestamp', 'Endpoint', 'Status', 'Ticket ID', 'Request ID'];
+        rows.push(headers.join(','));
+
+        document.querySelectorAll('table tbody tr').forEach(tr => {
+            const cells = Array.from(tr.querySelectorAll('td')).slice(0, 5).map(td => {
+                let text = td.textContent.trim().replace(/\s+/g, ' ');
+                if (text.includes(',')) text = `"${text}"`;
+                return text;
+            });
+            rows.push(cells.join(','));
+        });
+
+        const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `hookwise_history_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function searchHistory() {
+        const term = document.getElementById('history-search').value;
+        const from = document.getElementById('date-from').value;
+        const to = document.getElementById('date-to').value;
+        window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${from}&date_to=${to}`;
+    }
+
+    document.getElementById('history-search').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            searchHistory();
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('history-search').value = "{{ search or '' }}";
+        document.getElementById('date-from').value = "{{ date_from or '' }}";
+        document.getElementById('date-to').value = "{{ date_to or '' }}";
+
+        // Infinite Scroll Logic
+        let currentPage = {{ pagination.page }};
+        const hasNext = {{ pagination.has_next | tojson }};
+        const sentinel = document.getElementById('infinite-sentinel');
+        const standardPagination = document.getElementById('standard-pagination');
+        const tableBody = document.querySelector('table tbody');
+
+        if (hasNext) {
+            sentinel.classList.remove('d-none');
+            standardPagination.classList.add('d-none');
+
+            const observer = new IntersectionObserver(async (entries) => {
+                if (entries[0].isIntersecting) {
+                    currentPage++;
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('page', currentPage);
+                    url.searchParams.set('partial', 'true');
+
+                    try {
+                        const res = await fetch(url);
+                        const html = await res.text();
+                        if (html.trim()) {
+                            tableBody.insertAdjacentHTML('beforeend', html);
+                        } else {
+                            observer.unobserve(sentinel);
+                            sentinel.classList.add('d-none');
+                        }
+                    } catch (e) {
+                        console.error('Error fetching next page', e);
+                    }
+                }
+            }, { threshold: 1.0 });
+
+            observer.observe(sentinel);
+        }
+
+        const socket = io();
+        const liveToggle = document.getElementById('live-tail-toggle');
+        const tableBody = document.querySelector('table tbody');
+
+        socket.on('new_log', (data) => {
+            if (!liveToggle.checked) return;
+
+            const tr = document.createElement('tr');
+            tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
+            
+            const ts = new Date(data.timestamp).toLocaleString();
+            const statusBadge = `<span class="badge bg-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} bg-opacity-10 text-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} border border-opacity-25">${data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase()}</span>`;
+            const ticketLink = data.ticket_id ? `<a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">#${data.ticket_id}</a>` : '<span class="text-muted opacity-50">-</span>';
+
+            tr.innerHTML = `
+                <td class="ps-4 py-3 text-secondary font-monospace">${ts}</td>
+                <td class="py-3 fw-bold">${data.config_name}</td>
+                <td class="py-3">${statusBadge}</td>
+                <td class="py-3 text-secondary font-monospace small">-</td>
+                <td class="py-3">-</td>
+                <td class="py-3 font-monospace">${ticketLink}</td>
+                <td class="py-3 text-secondary font-monospace small">${data.payload ? 'realtime' : '-'}</td>
+                <td class="pe-4 py-3 text-end">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-info" onclick="window.location.reload()">Refresh to View</button>
+                    </div>
+                </td>
+            `;
+            tableBody.insertBefore(tr, tableBody.firstChild);
+            if (tableBody.children.length > 50) tableBody.lastChild.remove();
+        });
+    });
+
+    let currentRawPayload = '';
+    let currentRawHeaders = '';
+    let isPretty = true;
+    let showingHeaders = false;
+
     function viewPayload(id) {
         const btn = event.currentTarget;
-        const raw = btn.getAttribute('data-payload');
-        const display = document.getElementById('payload-display');
-        try {
-            const parsed = JSON.parse(raw);
-            display.textContent = JSON.stringify(parsed, null, 2);
-        } catch (e) {
-            display.textContent = raw;
+        currentRawPayload = btn.getAttribute('data-payload');
+        currentRawHeaders = btn.getAttribute('data-headers');
+        const matchedRule = btn.getAttribute('data-rule');
+        
+        const ruleInfo = document.getElementById('matched-rule-info');
+        if (matchedRule) {
+            ruleInfo.classList.remove('d-none');
+            document.getElementById('rule-text').textContent = matchedRule;
+        } else {
+            ruleInfo.classList.add('d-none');
         }
-        Prism.highlightElement(display);
+
+        isPretty = true;
+        showingHeaders = false;
+        updatePayloadDisplay();
         new bootstrap.Modal(document.getElementById('payloadModal')).show();
     }
 
+    function updatePayloadDisplay() {
+        const display = document.getElementById('payload-display');
+        const toggleBtn = document.getElementById('pretty-toggle');
+        const headersBtn = document.getElementById('headers-toggle');
+        
+        const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
+        
+        try {
+            const parsed = JSON.parse(dataToDisplay || '{}');
+            if (isPretty) {
+                display.textContent = JSON.stringify(parsed, null, 2);
+                toggleBtn.textContent = 'Minified';
+            } else {
+                display.textContent = JSON.stringify(parsed);
+                toggleBtn.textContent = 'Pretty';
+            }
+        } catch (e) {
+            display.textContent = dataToDisplay;
+            toggleBtn.style.display = 'none';
+        }
+        headersBtn.textContent = showingHeaders ? 'Show Payload' : 'Show Headers';
+        Prism.highlightElement(display);
+    }
+
+    document.getElementById('pretty-toggle').addEventListener('click', () => {
+        isPretty = !isPretty;
+        updatePayloadDisplay();
+    });
+
+    document.getElementById('headers-toggle').addEventListener('click', () => {
+        showingHeaders = !showingHeaders;
+        updatePayloadDisplay();
+    });
+
     function replayWebhook(id) {
-        if (!confirm('Re-process this webhook?')) return;
+        if (!{{ debug_mode | tojson }} && !confirm('Re-process this webhook?')) return;
         fetch(`/history/replay/${id}`, { method: 'POST' })
             .then(res => res.json())
             .then(data => {

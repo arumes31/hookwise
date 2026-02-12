@@ -6,6 +6,23 @@ from typing import Any, Dict
 from .extensions import db
 
 
+class User(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = db.Column(db.String(100), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    otp_secret = db.Column(db.String(32))
+    is_2fa_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    role = db.Column(db.String(20), default='user') # admin, user
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "created_at": self.created_at.isoformat()
+        }
+
 class WebhookConfig(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False)
@@ -21,11 +38,16 @@ class WebhookConfig(db.Model):
     open_value = db.Column(db.String(50), default="0")
     close_value = db.Column(db.String(50), default="1")
     ticket_prefix = db.Column(db.String(100))
+    description_template = db.Column(db.Text)
     json_mapping = db.Column(db.Text)  # JSON string for field mappings
     routing_rules = db.Column(db.Text) # JSON string for regex routing
     maintenance_windows = db.Column(db.Text) # JSON string for maintenance intervals
     trusted_ips = db.Column(db.Text) # Comma-separated IPs or CIDRs
+    hmac_secret = db.Column(db.String(256))
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    is_pinned = db.Column(db.Boolean, default=False, nullable=False)
+    is_draft = db.Column(db.Boolean, default=False, nullable=False)
+    display_order = db.Column(db.Integer, default=0)
     last_rotated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_seen_at = db.Column(db.DateTime)
@@ -51,6 +73,7 @@ class WebhookConfig(db.Model):
             "maintenance_windows": self.maintenance_windows,
             "trusted_ips": self.trusted_ips,
             "is_enabled": self.is_enabled,
+            "is_pinned": self.is_pinned,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None
         }
@@ -60,10 +83,15 @@ class WebhookLog(db.Model):
     config_id = db.Column(db.String(36), db.ForeignKey('webhook_config.id'), nullable=False)
     request_id = db.Column(db.String(100), nullable=False)
     payload = db.Column(db.Text, nullable=False) # JSON string
+    headers = db.Column(db.Text) # JSON string
     status = db.Column(db.String(50), nullable=False, default="queued") # queued, processed, failed, skipped
     action = db.Column(db.String(50)) # create, update, close, None
     error_message = db.Column(db.Text)
     ticket_id = db.Column(db.Integer)
+    matched_rule = db.Column(db.Text)
+    processing_time = db.Column(db.Float) # in seconds
+    source_ip = db.Column(db.String(50))
+    retry_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     config = db.relationship('WebhookConfig', backref=db.backref('logs', lazy=True))
@@ -74,10 +102,15 @@ class WebhookLog(db.Model):
             "config_id": self.config_id,
             "request_id": self.request_id,
             "payload": self.payload,
+            "headers": self.headers,
             "status": self.status,
             "action": self.action,
             "error_message": self.error_message,
             "ticket_id": self.ticket_id,
+            "matched_rule": self.matched_rule,
+            "processing_time": self.processing_time,
+            "source_ip": self.source_ip,
+            "retry_count": self.retry_count,
             "created_at": self.created_at.isoformat(),
             "config_name": self.config.name if self.config else "Unknown"
         }

@@ -71,7 +71,9 @@ def cleanup_logs():
     from .extensions import db
     from .models import WebhookLog
     
-    retention_days = int(os.environ.get('LOG_RETENTION_DAYS', 30))
+    retention_days = redis_client.get('hookwise_log_retention_days')
+    retention_days = int(retention_days.decode()) if retention_days else int(os.environ.get('LOG_RETENTION_DAYS', 30))
+    
     cutoff = datetime.utcnow() - timedelta(days=retention_days)
     
     deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
@@ -79,10 +81,10 @@ def cleanup_logs():
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
 @celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)
-def process_webhook_task(self, config_id: str, data: Dict[str, Any], request_id: str):
+def process_webhook_task(self, config_id: str, data: Dict[str, Any], request_id: str, source_ip: str = None, headers: Dict[str, str] = None):
     """Background task to process webhook logic."""
     try:
-        handle_webhook_logic(config_id, data, request_id)
+        handle_webhook_logic(config_id, data, request_id, source_ip=source_ip, retry_count=self.request.retries, headers=headers)
     except Exception as exc:
         logger.error(f"Task failed (Attempt {self.request.retries}/5): {exc}")
         if self.request.retries >= self.max_retries:
@@ -95,6 +97,7 @@ def process_webhook_task(self, config_id: str, data: Dict[str, Any], request_id:
             if log_entry:
                 log_entry.status = "dlq"
                 log_entry.error_message = f"Max retries exceeded: {str(exc)}"
+                log_entry.retry_count = self.request.retries
                 db.session.commit()
             return
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
@@ -117,7 +120,7 @@ def is_in_maintenance(config: WebhookConfig) -> bool:
         logger.error(f"Error checking maintenance window: {e}")
     return False
 
-def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
+def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, source_ip: str = None, retry_count: int = 0, headers: Dict[str, str] = None):
     """Core logic: process webhook payload and route to ConnectWise."""
     from flask import current_app as app
     extra = {'request_id': request_id, 'config_id': config_id}
@@ -130,14 +133,21 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
             return
         
     with app.app_context():
-        # 1. Create Webhook History Log
-        log_entry = WebhookLog(
-            config_id=config_id,
-            request_id=request_id,
-            payload=json.dumps(data),
-            status="processing"
-        )
-        db.session.add(log_entry)
+        # 1. Create or update Webhook History Log
+        from .utils import mask_secrets
+        log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
+        if not log_entry:
+            log_entry = WebhookLog(
+                config_id=config_id,
+                request_id=request_id,
+                payload=json.dumps(mask_secrets(data)),
+                headers=json.dumps(headers) if headers else None,
+                source_ip=source_ip,
+                status="processing"
+            )
+            db.session.add(log_entry)
+        
+        log_entry.retry_count = retry_count
         db.session.commit()
 
         try:
@@ -145,6 +155,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
             if is_in_maintenance(config):
                 log_entry.status = "skipped"
                 log_entry.error_message = "Skipped: Maintenance Window Active"
+                log_entry.processing_time = time.time() - start_time
                 db.session.commit()
                 log_to_web("Webhook skipped (Maintenance Window Active)", "info", config.name, data=data)
                 return
@@ -161,6 +172,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
             item = config.item
             priority = config.priority
             customer_id_default = config.customer_id_default
+            description_template = config.description_template
             json_mapping_str = config.json_mapping
             routing_rules_str = config.routing_rules
 
@@ -211,6 +223,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                     val = str(resolve_jsonpath(data, rule_path))
                     if re.search(rule_regex, val, re.IGNORECASE):
                         logger.info(f"Routing rule matched: {rule_regex} on {rule_path}", extra=extra)
+                        log_entry.matched_rule = f"Match: {rule_regex} on {rule_path}"
                         if 'board' in rule_overrides: board = rule_overrides['board']
                         if 'status' in rule_overrides: status = rule_overrides['status']
                         if 'ticket_type' in rule_overrides: ticket_type = rule_overrides['ticket_type']
@@ -271,6 +284,15 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
                 
                 if mapped_description:
                     description = mapped_description
+                elif description_template:
+                    description = description_template.replace('{{ monitor_name }}', monitor_name)\
+                                                     .replace('{{ msg }}', msg)\
+                                                     .replace('{{ request_id }}', request_id)
+                    # Handle {$.path} in template
+                    paths = re.findall(r'\{($.+?)\}', description)
+                    for p in paths:
+                        val = str(resolve_jsonpath(data, p))
+                        description = description.replace('{' + p + '}', val)
                 else:
                     description = f"Source: {monitor_name}\nMessage: {msg}\nRequest ID: {request_id}\nPayload: {data}"
                 
@@ -319,12 +341,14 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str):
             # Finalize SUCCESS
             log_entry.status = "processed"
             log_entry.ticket_id = ticket_id
+            log_entry.processing_time = time.time() - start_time
             db.session.commit()
 
         except Exception as e:
             db.session.rollback()
             log_entry.status = "failed"
             log_entry.error_message = str(e)
+            log_entry.processing_time = time.time() - start_time
             db.session.commit()
             logger.error(f"Error handling webhook: {e}", extra=extra)
             raise e

@@ -1,4 +1,3 @@
-import eventlet
 import os
 import signal
 import sys
@@ -20,6 +19,7 @@ signal.signal(signal.SIGINT, graceful_shutdown)
 signal.signal(signal.SIGTERM, graceful_shutdown)
 
 if __name__ == '__main__':
+    import eventlet
     # Patch only when running directly (e.g. for local dev)
     eventlet.monkey_patch()
     port = int(os.environ.get('PORT', 5000))

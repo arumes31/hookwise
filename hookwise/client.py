@@ -165,6 +165,33 @@ class ConnectWiseClient:
             logger.error(f"Error fetching statuses for board {board_id}: {e}")
             return []
 
+    def get_board_types(self, board_id: int) -> list:
+        try:
+            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching types for board {board_id}: {e}")
+            return []
+
+    def get_board_subtypes(self, board_id: int) -> list:
+        try:
+            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching subtypes for board {board_id}: {e}")
+            return []
+
+    def get_board_items(self, board_id: int) -> list:
+        try:
+            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching items for board {board_id}: {e}")
+            return []
+
     def get_companies(self, search: Optional[str] = None) -> list:
         try:
             params = {"pageSize": 50}

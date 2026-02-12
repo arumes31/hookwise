@@ -12,6 +12,7 @@
 </head>
 
 <body>
+    <div id="loading-bar" style="width: 0%;"></div>
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('main.index') }}">
@@ -19,13 +20,64 @@
                     class="d-inline-block align-top me-2">
                 HookWise
             </a>
-            <div class="navbar-nav">
+            <div class="navbar-nav ms-auto">
+                {% if session.user_id %}
+                <span class="nav-link small text-muted me-2">Hi, {{ session.username }}</span>
                 <a class="nav-link" href="{{ url_for('main.index') }}">Endpoints</a>
                 <a class="nav-link" href="{{ url_for('main.history') }}">History</a>
+                <a class="nav-link" href="{{ url_for('main.audit_logs') }}">Audit</a>
+                <a class="nav-link" href="{{ url_for('main.settings') }}">Settings</a>
+                <a class="nav-link" href="{{ url_for('main.logout') }}">Logout</a>
+                {% else %}
+                <a class="nav-link" href="{{ url_for('main.login') }}">Login</a>
+                {% endif %}
+                <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">Docs</a>
+                <div class="dropdown nav-link">
+                    <a class="dropdown-toggle text-decoration-none text-secondary" href="#" data-bs-toggle="dropdown" id="lang-picker">EN</a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li><a class="dropdown-item small" href="#" onclick="setLang('en')">English</a></li>
+                        <li><a class="dropdown-item small" href="#" onclick="setLang('es')">Español</a></li>
+                        <li><a class="dropdown-item small" href="#" onclick="setLang('fr')">Français</a></li>
+                    </ul>
+                </div>
                 <a class="nav-link" href="{{ url_for('main.new_endpoint') }}">New Endpoint</a>
+                <button id="theme-toggle" class="btn btn-link nav-link px-2" data-tooltip="Toggle Dark/Light Mode">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-sun-fill d-none" id="sun-icon" viewBox="0 0 16 16">
+                        <path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2a.5.5 0 0 1 .5-.5zM0 8a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2A.5.5 0 0 1 0 8zm13 0a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1h-2a.5.5 0 0 1-.5-.5zM2.828 2.828a.5.5 0 0 1 .707 0l1.414 1.414a.5.5 0 0 1-.707.707L2.828 3.536a.5.5 0 0 1 0-.707zm9.193 9.193a.5.5 0 0 1 .707 0l1.414 1.414a.5.5 0 0 1-.707.707l-1.414-1.414a.5.5 0 0 1 0-.707zm-9.193 0a.5.5 0 0 1 0 .707l-1.414 1.414a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193-9.193a.5.5 0 0 1 0 .707L14.464 3.536a.5.5 0 0 1-.707.707L12.343 2.828a.5.5 0 0 1 0-.707z"/>
+                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-moon-fill" id="moon-icon" viewBox="0 0 16 16">
+                        <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06a.752.752 0 0 1 .876.218z"/>
+                    </svg>
+                </button>
             </div>
         </div>
     </nav>
+
+    <!-- Documentation Sidebar -->
+    <div class="offcanvas offcanvas-end bg-dark text-white border-start border-secondary border-opacity-25" tabindex="-1" id="docsSidebar" style="width: 400px;">
+        <div class="offcanvas-header border-bottom border-secondary border-opacity-10">
+            <h5 class="offcanvas-title fw-bold text-primary">Documentation</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+        </div>
+        <div class="offcanvas-body">
+            <h6 class="fw-bold text-info mb-3">Getting Started</h6>
+            <p class="small text-secondary">To start routing alerts, create an endpoint and use the generated URL in your monitoring tool (e.g. Uptime Kuma).</p>
+            
+            <h6 class="fw-bold text-info mt-4 mb-3">Authentication</h6>
+            <p class="small text-secondary">Every request must include the <code>Authorization: Bearer &lt;token&gt;</code> header.</p>
+            
+            <h6 class="fw-bold text-info mt-4 mb-3">Smart Parsing</h6>
+            <p class="small text-secondary">Include <code>#CW&lt;CompanyIdentifier&gt;</code> in your alert title to automatically route to a specific client.</p>
+            
+            <h6 class="fw-bold text-info mt-4 mb-3">JSONPath Mappings</h6>
+            <p class="small text-secondary">Use dot notation (e.g. <code>$.monitor.status</code>) to map payload fields to ticket fields.</p>
+            
+            <hr class="my-4 border-secondary border-opacity-10">
+            <div class="alert alert-info bg-opacity-10 border-info border-opacity-25 py-2">
+                <p class="mb-0 small text-info">Need more help? Check the <a href="https://github.com/hookwise/hookwise" target="_blank" class="fw-bold">GitHub Repository</a>.</p>
+            </div>
+        </div>
+    </div>
 
     <div id="toast-container"></div>
 
@@ -43,6 +95,45 @@
 
         {% block content %}{% endblock %}
     </div>
+
+    <button id="feedback-button" class="btn btn-outline-info position-fixed bottom-0 start-0 m-4 rounded-pill shadow-lg" style="z-index: 1050;" data-bs-toggle="modal" data-bs-target="#feedbackModal">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chat-left-text me-2" viewBox="0 0 16 16">
+            <path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+            <path d="M5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1zm0 2h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1zm0 2h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1z"/>
+        </svg>
+        Feedback
+    </button>
+
+    <!-- Feedback Modal -->
+    <div class="modal fade" id="feedbackModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark border-info">
+                <div class="modal-header border-info border-opacity-25">
+                    <h5 class="modal-title text-info">Send Feedback</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="feedback-form">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">MESSAGE</label>
+                            <textarea class="form-control" name="message" rows="4" placeholder="Report a bug or suggest an improvement..." required></textarea>
+                        </div>
+                        <p class="small text-secondary mb-0">Your system info (browser, OS) will be sent to help us debug.</p>
+                    </div>
+                    <div class="modal-footer border-info border-opacity-25">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-info text-dark fw-bold">Submit Feedback</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <button id="back-to-top" class="btn btn-primary position-fixed bottom-0 end-0 m-4 rounded-circle shadow-lg d-none" style="z-index: 1050; width: 45px; height: 45px;" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-arrow-up" viewBox="0 0 16 16">
+            <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z"/>
+        </svg>
+    </button>
 
     <footer class="footer mt-auto py-3 bg-dark bg-opacity-50 border-top border-secondary border-opacity-10">
         <div class="container d-flex justify-content-between align-items-center">

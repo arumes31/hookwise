@@ -17,3 +17,5 @@ ruff==0.15.0
 mypy==1.19.1
 types-requests==2.32.4.20260107
 jsonpath-ng==1.7.0
+pyotp==2.9.0
+segno==1.6.6
