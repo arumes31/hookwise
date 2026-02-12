@@ -761,6 +761,9 @@ def maintenance_mode():
     mode = redis_client.get('hookwise_maintenance_mode')
     return jsonify({"maintenance_mode": mode and mode.decode() == 'true'})
 
+@main_bp.route('/settings')
+@auth_required
+def settings():
     retention = redis_client.get('hookwise_log_retention_days')
     retention = retention.decode() if retention else os.environ.get('LOG_RETENTION_DAYS', '30')
     
