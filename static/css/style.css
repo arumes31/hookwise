@@ -151,6 +151,12 @@ code {
     color: var(--text-primary);
 }
 
+.form-control::placeholder,
+.form-select::placeholder {
+    color: #6e7681 !important;
+    opacity: 1;
+}
+
 /* Buttons */
 .btn-primary {
     background-color: #238636;
