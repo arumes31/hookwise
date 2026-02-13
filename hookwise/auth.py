@@ -2,10 +2,10 @@
 
 import base64
 import io
+from typing import Any, cast
 
 import pyotp
 import segno
-from typing import Any, cast
 from flask import flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 

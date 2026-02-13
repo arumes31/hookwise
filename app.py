@@ -1,10 +1,9 @@
 import os
 import signal
 import sys
-
-from dotenv import load_dotenv
 from typing import Any
 
+from dotenv import load_dotenv
 
 from hookwise import create_app, socketio
 

@@ -5,7 +5,6 @@ from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
-from typing import cast
 
 _redis_password = os.environ.get("REDIS_PASSWORD")
 _redis_host = os.environ.get("REDIS_HOST", "localhost")

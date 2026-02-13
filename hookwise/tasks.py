@@ -4,13 +4,11 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
+from typing import Any, Dict, Optional, cast
 
 import redis
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
-
-from celery import Celery, Task
 
 from .client import ConnectWiseClient
 from .extensions import db
@@ -91,7 +89,11 @@ def cleanup_logs() -> None:
     from .models import WebhookLog
 
     retention_days_raw = redis_client.get("hookwise_log_retention_days")
-    retention_days = int(cast(bytes, retention_days_raw).decode()) if retention_days_raw else int(os.environ.get("LOG_RETENTION_DAYS", 30))
+    retention_days = (
+        int(cast(bytes, retention_days_raw).decode())
+        if retention_days_raw
+        else int(os.environ.get("LOG_RETENTION_DAYS", 30))
+    )
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 

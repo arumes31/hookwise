@@ -3,8 +3,8 @@
 import json
 import secrets
 from datetime import datetime, timezone
-
 from typing import Any
+
 from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db

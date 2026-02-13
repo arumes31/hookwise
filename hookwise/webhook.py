@@ -1,9 +1,9 @@
 """Webhook ingestion route."""
 
 import ipaddress
-from typing import Any, Tuple
+from typing import Any
 
-from flask import Response, g, jsonify, request
+from flask import g, jsonify, request
 from prometheus_client import Counter
 
 from .extensions import limiter

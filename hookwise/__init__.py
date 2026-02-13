@@ -2,12 +2,13 @@ import logging
 import os
 import secrets
 import uuid
-
 from typing import Any, cast
+
 from flask import Flask, Response, g, redirect, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .extensions import db, limiter, migrate, socketio as socketio
+from .extensions import db, limiter, migrate
+from .extensions import socketio as socketio
 
 _logger = logging.getLogger(__name__)
 
