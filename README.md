@@ -4,24 +4,58 @@
 
 # HookWise
 
-A general-purpose webhook router that bridges various webhooks to **ConnectWise Manage** tickets with a user-friendly Web GUI.
+**Webhook Router & ConnectWise Bridge**
 
-## Features
+HookWise is a powerful, general-purpose webhook router designed to bridge various monitoring sources (Uptime Kuma, Zabbix, Grafana, etc.) to **ConnectWise Manage** tickets. It features a modern Web GUI, intelligent duplicate detection, and locally-hosted AI for automated root cause analysis.
 
-- **Web GUI:** Easily create and manage webhook endpoints with advanced search, filters, and drag-and-drop reordering.
-- **Dynamic Endpoints:** Generate unique URLs for different monitoring sources.
-- **Advanced UX:** Sparklines, live activity feed, skeleton loading, and keyboard shortcuts (press `/` to search).
-- **Customizable Configuration:** Configure Service Board, Status, Type, Subtype, and Priority per endpoint with JSONPath mapping support.
-- **Auto-Ticketing:** Creates tickets in ConnectWise based on incoming webhook data with duplicate detection.
-- **Smart Parsing:** Extracts Company ID from titles using the `#CW` prefix (e.g., `My Server #CW123`).
-- **Security First:** 2FA with TOTP/QR, IP Whitelisting, HMAC signature verification, and field encryption.
-- **Reliability:** Built-in retry mechanism with exponential backoff for PSA calls.
-- **Observability:** Service health dashboard, detailed Prometheus metrics, and audit logging.
-- **Enterprise Ready:** PostgreSQL storage, Alembic migrations, and maintenance mode support.
+---
 
-## Configuration
+## 🚀 Key Features
 
-The application is configured via environment variables. An example file is provided in `.env.example`.
+### 🛠️ Advanced Routing & Mapping
+- **Dynamic Endpoints:** Generate unique URLs and Bearer tokens for every monitoring source.
+- **JSONPath Mapping:** Flexible extraction of any field from incoming payloads to map to ticket summaries, descriptions, or custom fields.
+- **Regex Routing Rules:** Apply complex logic to override ticket fields (Board, Status, Priority) based on payload content.
+- **Duplicate Detection:** Smart caching and PSA lookups prevent duplicate tickets for the same event.
+- **Automatic Company Resolution:** Extract ConnectWise Company IDs directly from alert titles using the `#CW` prefix or mapped JSON fields.
+
+### 🧠 Intelligent Automation
+- **AI Root Cause Analysis:** Integrates with local LLMs (via Ollama) to automatically analyze alerts and provide troubleshooting suggestions as internal ticket notes.
+- **Auto-Resolution:** Automatically closes open tickets when a recovery (UP) webhook is received.
+- **Maintenance Windows:** Schedule quiet periods per endpoint to silence alerts during planned maintenance.
+
+### 📋 Observability & Admin
+- **Web GUI:** Modern interface with live activity feed (Socket.io), skeleton loading, and keyboard shortcuts (`/` to search).
+- **Audit Logging:** Comprehensive tracking of all configuration changes and admin actions.
+- **Webhook Replay:** Effortlessly re-trigger any received webhook for debugging or recovery.
+- **Debug Processor:** Built-in tool to test JSONPath and Routing Rules against sample payloads with step-by-step resolution logs.
+- **Metrics & Health:** Native Prometheus `/metrics` endpoint and detailed `/health/services` reporting.
+
+### 🔒 Enterprise Security
+- **2FA Support:** Secure admin access with TOTP (Google Authenticator, etc.).
+- **IP Whitelisting:** Restrict GUI access or individual webhook endpoints to trusted IP ranges.
+- **HMAC Verification:** Validate incoming webhooks using secret-key signatures.
+- **Field Encryption:** Sensitive configuration tokens and keys are encrypted at rest.
+- **Local Assets:** All JS/CSS dependencies are hosted locally for privacy and air-gapped support.
+
+---
+
+## 🏗️ Technical Architecture
+
+HookWise is built for reliability and scale:
+
+- **Frontend:** Flask with a responsive, premium UI.
+- **Backend:** Python + Gevent for high-concurrency webhook handling.
+- **Task Queue:** Celery + Redis for reliable background processing and retries.
+- **Database:** PostgreSQL for robust configuration and log storage.
+- **AI Engine:** Ollama integration for local, private LLM execution.
+- **Monitoring:** Prometheus integration for real-time performance tracking.
+
+---
+
+## ⚙️ Configuration
+
+The application is configured via environment variables.
 
 | Category | Variable | Description | Default |
 |----------|----------|-------------|---------|
@@ -30,67 +64,84 @@ The application is configured via environment variables. An example file is prov
 | | `CW_PUBLIC_KEY` | API Public Key | **Required** |
 | | `CW_PRIVATE_KEY` | API Private Key | **Required** |
 | | `CW_CLIENT_ID` | API Client ID | **Required** |
-| | `CW_TICKET_PREFIX` | Default prefix for ticket summaries | `Alert:` |
-| **Database** | `DATABASE_URL` | DB URL (Postgres recommended) | `postgresql://...` |
-| | `POSTGRES_PASSWORD`| Password for the PostgreSQL container | `hookwise_pass` |
-| **Redis/Celery** | `REDIS_PASSWORD` | Password for Redis and Celery broker | **Required** |
+| **Database** | `DATABASE_URL` | PostgreSQL Connection String | **Required** |
+| **Redis** | `REDIS_PASSWORD`| Password for Redis and Celery | **Required** |
 | | `REDIS_HOST` | Redis hostname | `redis` |
 | **Security** | `SECRET_KEY` | Flask session secret key | auto-generated |
-| | `ENCRYPTION_KEY` | 32-byte Base64 key for encrypting tokens | **Recommended** |
-| | `GUI_TRUSTED_IPS` | Comma-separated list of allowed IPs for GUI | - |
-| **App** | `DEBUG_MODE` | Enable debug logging and visual aids | `false` |
-| | `FORCE_HTTPS` | Force redirect to HTTPS | `false` |
+| | `ENCRYPTION_KEY` | 32-byte Base64 key for encryption | **Recommended** |
+| | `GUI_PASSWORD` | Admin password | `admin` |
+| **Integrations**| `OLLAMA_HOST` | URL for local AI service | `http://hookwise-llm:11434`|
 | | `LOG_RETENTION_DAYS`| Days to keep webhook history | `30` |
-| `OLLAMA_HOST` | URL for the local AI service | `http://hookwise-llm:11434` |
 
-## Deployment
+---
+
+## 📦 Deployment
 
 ### Docker Compose (Recommended)
 
-1. Copy the example environment file: `cp .env.example .env`
-2. Update `.env` with your ConnectWise credentials and secure passwords.
-3. Start services: `docker-compose up -d`
-4. Apply migrations: `docker-compose exec hookwise-proxy flask db upgrade`
-5. **Pull the AI Model (Optional):**
-   `docker exec -it hookwise-llm ollama pull phi3`
+1. **Prepare Environment:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
 
-Access the Web GUI at `http://localhost:5000`. Default login is `admin` / `admin` (can be changed via `GUI_PASSWORD`).
+2. **Launch Services:**
+   ```bash
+   docker-compose up -d
+   ```
 
-## Usage
+3. **Initialize Database:**
+   ```bash
+   docker-compose exec hookwise-proxy flask db upgrade
+   ```
 
-1. **Access the Web GUI:** Open HookWise and log in.
-2. **Create Endpoint:** Click "New Endpoint", fill in the details, and use the "Test Path" tool to verify your JSON mapping.
-3. **Get Endpoint URL:** Copy the generated URL and Bearer Token from the dashboard.
-4. **Configure Source:** Set your alert source (e.g., Uptime Kuma) to send webhooks to that URL.
-5. **Security:** Add the `Authorization: Bearer <your-token>` header in your source settings. For added security, configure an **HMAC Secret** and check for the `X-HookWise-Signature` header.
+4. **Enable AI Analysis (Optional):**
+   ```bash
+   docker exec -it hookwise-llm ollama pull phi3
+   ```
 
-### Custom Templates & Placeholders
+Access the Web GUI at `http://localhost:5000`. Default: `admin` / `admin`.
 
-You can customize ticket descriptions and field mappings using placeholders:
+---
 
-- `{{ monitor_name }}`: The name of the monitoring resource.
-- `{{ msg }}`: The alert message.
-- `{{ request_id }}`: Unique ID for the webhook request.
-- `{$.path.to.field}`: Use JSONPath to extract any value from the payload.
+## 📖 Usage Guide
 
-### Monitor Naming Convention
+1. **Create Endpoint:** Go to "Endpoints" -> "New Endpoint". Define your Service Board and mapping.
+2. **Configure JSONPath:** Use the "Debug Tool" to paste a sample payload and verify your mappings.
+3. **Set Up Source:** Copy the unique URL and Bearer token into your monitoring software (e.g., Uptime Kuma).
+4. **Advanced Routing:** Add Regex rules if you need to route specific alerts (e.g., "Critical") to different boards or priorities.
+5. **Monitor:** Watch the "Live Activity" feed on the dashboard for real-time processing updates.
 
-Include `#CW<CompanyIdentifier>` in your monitor or alert title to automatically route the ticket to a specific company in ConnectWise.
+---
 
-**Example:** `Server Down #CWClientA`
+## 🛠️ Development
 
-## Security
-
-- **Local Assets:** All JS and CSS files are hosted locally to ensure privacy and offline capability.
-- **Bearer Tokens:** Each endpoint is protected by a unique, secure token.
-
-## Development
-
-### Running Tests
+### Local Setup
 ```bash
-pytest
+pip install -r requirements.txt
+flask db upgrade
+python app.py
 ```
 
-## License
+### Testing & Quality
+```bash
+# Run Unit Tests
+pytest
 
-This project is licensed under the MIT License.
+# Linting
+ruff check .
+```
+
+---
+
+## 🛡️ Security
+Security is a core pillar of HookWise. We recommend:
+- Rotating the `ENCRYPTION_KEY` annually.
+- Enabling TOTP for all admin accounts.
+- Restricting `GUI_TRUSTED_IPS` to your management subnet.
+
+---
+
+## 📄 License
+MIT License - Copyright (c) 2024 HookWise Team.
+
