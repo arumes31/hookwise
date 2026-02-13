@@ -4,11 +4,13 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, TYPE_CHECKING, cast
 
 import redis
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
+
+from celery import Celery, Task
 
 from .client import ConnectWiseClient
 from .extensions import db
@@ -61,8 +63,8 @@ celery.conf.beat_schedule = {
 _app = None
 
 
-class ContextTask(Task):
-    def __call__(self, *args, **kwargs):
+class ContextTask(Task):  # type: ignore[misc]
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         global _app
         if _app is None:
             from . import create_app
@@ -80,7 +82,7 @@ class ContextTask(Task):
 celery.Task = ContextTask
 
 
-@celery.task(name="hookwise.cleanup_logs")
+@celery.task(name="hookwise.cleanup_logs")  # type: ignore[untyped-decorator]
 def cleanup_logs() -> None:
     """Remove logs older than retention period."""
     from datetime import datetime
@@ -88,8 +90,8 @@ def cleanup_logs() -> None:
     from .extensions import db
     from .models import WebhookLog
 
-    retention_days = redis_client.get("hookwise_log_retention_days")
-    retention_days = int(retention_days.decode()) if retention_days else int(os.environ.get("LOG_RETENTION_DAYS", 30))
+    retention_days_raw = redis_client.get("hookwise_log_retention_days")
+    retention_days = int(cast(bytes, retention_days_raw).decode()) if retention_days_raw else int(os.environ.get("LOG_RETENTION_DAYS", 30))
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
@@ -98,10 +100,15 @@ def cleanup_logs() -> None:
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
 
-@celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)
+@celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)  # type: ignore[untyped-decorator]
 def process_webhook_task(
-    self, config_id: str, data: Dict[str, Any], request_id: str, source_ip: str = None, headers: Dict[str, str] = None
-):
+    self: Any,
+    config_id: str,
+    data: Dict[str, Any],
+    request_id: str,
+    source_ip: Optional[str] = None,
+    headers: Optional[Dict[str, str]] = None,
+) -> None:
     """Background task to process webhook logic."""
     try:
         handle_webhook_logic(
@@ -150,10 +157,10 @@ def handle_webhook_logic(
     config_id: str,
     data: Dict[str, Any],
     request_id: str,
-    source_ip: str = None,
+    source_ip: Optional[str] = None,
     retry_count: int = 0,
-    headers: Dict[str, str] = None,
-):
+    headers: Optional[Dict[str, str]] = None,
+) -> None:
     """Core logic: process webhook payload and route to ConnectWise."""
     from flask import current_app as app
 

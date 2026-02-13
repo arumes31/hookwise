@@ -7,7 +7,7 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from datetime import time as dtime
-from typing import Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
@@ -20,14 +20,14 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
-def _register():
+def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
 
     @main_bp.route("/history")
     @auth_required
-    def history():
+    def history() -> Any:
         page = request.args.get("page", 1, type=int)
         search = request.args.get("search", "")
         date_from = request.args.get("date_from", "")
@@ -78,7 +78,7 @@ def _register():
 
     @main_bp.route("/audit")
     @auth_required
-    def audit_logs():
+    def audit_logs() -> Any:
         page = request.args.get("page", 1, type=int)
         per_page = 50
         pagination = AuditLog.query.order_by(AuditLog.created_at.desc()).paginate(
@@ -88,7 +88,7 @@ def _register():
 
     @main_bp.route("/history/replay/<log_id>", methods=["POST"])
     @auth_required
-    def replay_webhook(log_id):
+    def replay_webhook(log_id: str) -> Any:
         log_entry = WebhookLog.query.get_or_404(log_id)
         try:
             data = json.loads(log_entry.payload)
@@ -103,7 +103,7 @@ def _register():
 
     @main_bp.route("/history/delete/<id>", methods=["POST"])
     @auth_required
-    def delete_log(id):
+    def delete_log(id: str) -> Any:
         log_entry = WebhookLog.query.get_or_404(id)
         db.session.delete(log_entry)
         db.session.commit()
@@ -111,14 +111,14 @@ def _register():
 
     @main_bp.route("/history/delete-all", methods=["POST"])
     @auth_required
-    def delete_all_logs():
+    def delete_all_logs() -> Any:
         WebhookLog.query.delete()
         db.session.commit()
         return jsonify({"status": "success", "message": "All logs deleted"})
 
     @main_bp.route("/history/bulk-delete", methods=["POST"])
     @auth_required
-    def bulk_delete_logs():
+    def bulk_delete_logs() -> Any:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
@@ -130,7 +130,7 @@ def _register():
 
     @main_bp.route("/endpoint/test/<id>", methods=["POST"])
     @auth_required
-    def test_endpoint(id):
+    def test_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         request_id = f"test_{int(time.time())}"
         data = {
@@ -149,7 +149,7 @@ def _register():
 
     @main_bp.route("/api/stats")
     @auth_required
-    def get_stats():
+    def get_stats() -> Any:
         from sqlalchemy import func
 
         today_start = datetime.combine(datetime.now(timezone.utc).date(), dtime.min)
@@ -212,7 +212,7 @@ def _register():
 
     @main_bp.route("/api/stats/history")
     @auth_required
-    def get_stats_history():
+    def get_stats_history() -> Response:
         days = 7
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
 
@@ -236,79 +236,79 @@ def _register():
 
     @main_bp.route("/api/cw/boards")
     @auth_required
-    def get_cw_boards():
+    def get_cw_boards() -> Any:
         cache_key = "hookwise_cw_boards"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached.decode(), 200, {"Content-Type": "application/json"}
+            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
         boards = cw_client.get_boards()
         redis_client.set(cache_key, json.dumps(boards), ex=3600)
         return jsonify(boards)
 
     @main_bp.route("/api/cw/priorities")
     @auth_required
-    def get_cw_priorities():
+    def get_cw_priorities() -> Any:
         cache_key = "hookwise_cw_priorities"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached.decode(), 200, {"Content-Type": "application/json"}
+            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
         priorities = cw_client.get_priorities()
         redis_client.set(cache_key, json.dumps(priorities), ex=86400)
         return jsonify(priorities)
 
     @main_bp.route("/api/cw/statuses/<board_id>")
     @auth_required
-    def get_cw_statuses(board_id):
+    def get_cw_statuses(board_id: str) -> Any:
         cache_key = f"hookwise_cw_statuses_{board_id}"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached.decode(), 200, {"Content-Type": "application/json"}
-        statuses = cw_client.get_board_statuses(board_id)
+            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        statuses = cw_client.get_board_statuses(int(board_id))
         redis_client.set(cache_key, json.dumps(statuses), ex=3600)
         return jsonify(statuses)
 
     @main_bp.route("/api/cw/types/<board_id>")
     @auth_required
-    def get_cw_types(board_id):
+    def get_cw_types(board_id: str) -> Any:
         cache_key = f"hookwise_cw_types_{board_id}"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached.decode(), 200, {"Content-Type": "application/json"}
-        types = cw_client.get_board_types(board_id)
+            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        types = cw_client.get_board_types(int(board_id))
         redis_client.set(cache_key, json.dumps(types), ex=3600)
         return jsonify(types)
 
     @main_bp.route("/api/cw/subtypes/<board_id>")
     @auth_required
-    def get_cw_subtypes(board_id):
+    def get_cw_subtypes(board_id: str) -> Any:
         cache_key = f"hookwise_cw_subtypes_{board_id}"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached.decode(), 200, {"Content-Type": "application/json"}
-        subtypes = cw_client.get_board_subtypes(board_id)
+            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        subtypes = cw_client.get_board_subtypes(int(board_id))
         redis_client.set(cache_key, json.dumps(subtypes), ex=3600)
         return jsonify(subtypes)
 
     @main_bp.route("/api/cw/items/<board_id>")
     @auth_required
-    def get_cw_items(board_id):
+    def get_cw_items(board_id: str) -> Any:
         cache_key = f"hookwise_cw_items_{board_id}"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached.decode(), 200, {"Content-Type": "application/json"}
-        items = cw_client.get_board_items(board_id)
+            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        items = cw_client.get_board_items(int(board_id))
         redis_client.set(cache_key, json.dumps(items), ex=3600)
         return jsonify(items)
 
     @main_bp.route("/api/cw/companies")
     @auth_required
-    def get_cw_companies():
+    def get_cw_companies() -> Any:
         search = request.args.get("search")
         if not search:
             cache_key = "hookwise_cw_companies_default"
             cached = redis_client.get(cache_key)
             if cached:
-                return cached.decode(), 200, {"Content-Type": "application/json"}
+                return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
         companies = cw_client.get_companies(search=search)
         if not search:
             redis_client.set("hookwise_cw_companies_default", json.dumps(companies), ex=3600)
@@ -370,25 +370,25 @@ def _register():
 
     @main_bp.route("/admin/maintenance", methods=["GET", "POST"])
     @auth_required
-    def maintenance_mode():
+    def maintenance_mode() -> Response:
         if request.method == "POST":
             current = redis_client.get("hookwise_maintenance_mode")
-            new_state = "true" if not current or current.decode() != "true" else "false"
+            new_state = "true" if not current or cast(bytes, current).decode() != "true" else "false"
             redis_client.set("hookwise_maintenance_mode", new_state)
             log_audit("maintenance_toggle", None, f"Maintenance mode set to {new_state}")
             return jsonify({"status": "success", "maintenance_mode": new_state == "true"})
         mode = redis_client.get("hookwise_maintenance_mode")
-        return jsonify({"maintenance_mode": mode and mode.decode() == "true"})
+        return jsonify({"maintenance_mode": mode and cast(bytes, mode).decode() == "true"})
 
     @main_bp.route("/settings")
     @auth_required
-    def settings():
+    def settings() -> Any:
         retention = redis_client.get("hookwise_log_retention_days")
-        retention = retention.decode() if retention else os.environ.get("LOG_RETENTION_DAYS", "30")
+        retention = cast(bytes, retention).decode() if retention else os.environ.get("LOG_RETENTION_DAYS", "30")
         health_webhook = redis_client.get("hookwise_health_webhook")
-        health_webhook = health_webhook.decode() if health_webhook else ""
+        health_webhook = cast(bytes, health_webhook).decode() if health_webhook else ""
         api_key = redis_client.get("hookwise_master_api_key")
-        api_key = api_key.decode() if api_key else "Not Generated"
+        api_key = cast(bytes, api_key).decode() if api_key else "Not Generated"
         user = User.query.get(session["user_id"])
         return render_template(
             "settings.html",
@@ -400,7 +400,7 @@ def _register():
 
     @main_bp.route("/settings/update", methods=["POST"])
     @auth_required
-    def update_settings():
+    def update_settings() -> Any:
         retention = request.form.get("log_retention_days")
         health_webhook = request.form.get("health_webhook")
         if retention:
@@ -412,7 +412,7 @@ def _register():
 
     @main_bp.route("/admin/generate-api-key", methods=["POST"])
     @auth_required
-    def generate_api_key():
+    def generate_api_key() -> Any:
         new_key = secrets.token_urlsafe(64)
         redis_client.set("hookwise_master_api_key", new_key)
         log_audit("generate_master_api_key", None, "New master API key generated")
@@ -420,7 +420,7 @@ def _register():
 
     @main_bp.route("/admin/backup", methods=["GET"])
     @auth_required
-    def backup_config():
+    def backup_config() -> Any:
         configs = WebhookConfig.query.all()
         data = [c.to_dict(include_token=True) for c in configs]
         return Response(
@@ -431,7 +431,7 @@ def _register():
 
     @main_bp.route("/admin/restore", methods=["POST"])
     @auth_required
-    def restore_config():
+    def restore_config() -> Any:
         file = request.files.get("backup_file")
         if not file:
             return jsonify({"status": "error", "message": "No file"}), 400
@@ -475,7 +475,7 @@ def _register():
 
     @main_bp.route("/api/feedback", methods=["POST"])
     @auth_required
-    def submit_feedback():
+    def submit_feedback() -> Any:
         data = request.json
         message = data.get("message")
         log_audit("feedback_submitted", None, f"Feedback: {message} | UA: {data.get('ua')}")
@@ -483,7 +483,7 @@ def _register():
 
     @main_bp.route("/api/debug/process", methods=["POST"])
     @auth_required
-    def debug_process():
+    def debug_process() -> Any:
         data = request.json.get("payload")
         config_data = request.json.get("config", {})
         if not data:
@@ -554,9 +554,10 @@ def _register():
         return jsonify({"status": "success", "steps": steps, "results": results})
 
     @main_bp.route("/metrics", methods=["GET"])
-    def metrics() -> Response:
+    def metrics() -> Any:
         try:
-            size = redis_client.llen("celery")
+            size_raw = redis_client.llen("celery")
+            size = float(cast(Any, size_raw))
             QUEUE_SIZE.set(size)
         except Exception:
             pass

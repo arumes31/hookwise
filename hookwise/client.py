@@ -169,7 +169,7 @@ class ConnectWiseClient:
         try:
             response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=30)
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching boards: {e}")
             return []
@@ -178,7 +178,7 @@ class ConnectWiseClient:
         try:
             response = self.session.get(f"{self.base_url}/service/priorities", headers=self.headers, timeout=30)
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching priorities: {e}")
             return []
@@ -189,7 +189,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30
             )
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching statuses for board {board_id}: {e}")
             return []
@@ -200,7 +200,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30
             )
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching types for board {board_id}: {e}")
             return []
@@ -211,7 +211,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30
             )
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching subtypes for board {board_id}: {e}")
             return []
@@ -222,21 +222,21 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30
             )
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching items for board {board_id}: {e}")
             return []
 
     def get_companies(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
-            params = {"pageSize": 50}
+            params: Dict[str, Any] = {"pageSize": 50}
             if search:
                 params["conditions"] = f"identifier contains '{search}' OR name contains '{search}'"
             response = self.session.get(
                 f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=30
             )
             response.raise_for_status()
-            return response.json()
+            return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching companies: {e}")
             return []

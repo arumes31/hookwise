@@ -1,7 +1,7 @@
 """Webhook ingestion route."""
 
 import ipaddress
-from typing import Tuple
+from typing import Any, Tuple
 
 from flask import Response, g, jsonify, request
 from prometheus_client import Counter
@@ -14,12 +14,12 @@ from .utils import decrypt_string, log_to_web
 WEBHOOK_COUNT = Counter("hookwise_webhooks_received_total", "Total webhooks received", ["status", "config_name"])
 
 
-def _register():
+def _register() -> None:
     from .routes import main_bp
 
     @main_bp.route("/w/<config_id>", methods=["POST"])
     @limiter.limit("60 per minute")
-    def dynamic_webhook(config_id: str) -> Tuple[Response, int]:
+    def dynamic_webhook(config_id: str) -> Any:
         request_id = g.request_id
         config = WebhookConfig.query.get(config_id)
         if not config:
@@ -60,7 +60,7 @@ def _register():
             trusted = False
             for trusted_range in [ip.strip() for ip in config.trusted_ips.split(",")]:
                 try:
-                    if ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
+                    if client_ip and ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
                         trusted = True
                         break
                 except ValueError:

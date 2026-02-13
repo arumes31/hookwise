@@ -3,6 +3,8 @@ import signal
 import sys
 
 from dotenv import load_dotenv
+from typing import Any
+
 
 from hookwise import create_app, socketio
 
@@ -11,7 +13,7 @@ load_dotenv()
 app = create_app()
 
 
-def graceful_shutdown(sig, frame):
+def graceful_shutdown(sig: int, frame: Any) -> None:
     print("Shutting down gracefully...")
     # Add any cleanup logic here
     sys.exit(0)

@@ -3,15 +3,16 @@ import os
 import secrets
 import uuid
 
-from flask import Flask, g, redirect, render_template, request
+from typing import Any, cast
+from flask import Flask, Response, g, redirect, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from .extensions import db, limiter, migrate, socketio
+from .extensions import db, limiter, migrate, socketio as socketio
 
 _logger = logging.getLogger(__name__)
 
 
-def create_app():
+def create_app() -> Flask:
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
@@ -43,7 +44,7 @@ def create_app():
     socketio.init_app(app)
 
     @app.after_request
-    def add_header(response):
+    def add_header(response: Response) -> Response:
         # Content Security Policy
         csp = (
             "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
@@ -57,7 +58,7 @@ def create_app():
         return response
 
     @app.before_request
-    def force_https():
+    def force_https() -> Any:
         if os.environ.get("FORCE_HTTPS") == "true":
             if not request.is_secure and request.headers.get("X-Forwarded-Proto", "http") != "https":
                 url = request.url.replace("http://", "https://", 1)
@@ -66,17 +67,17 @@ def create_app():
     # ProxyFix
     if os.environ.get("USE_PROXY") == "true":
         num_proxies = int(os.environ.get("PROXY_FIX_COUNT", 1))
-        app.wsgi_app = ProxyFix(
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
             app.wsgi_app, x_for=num_proxies, x_proto=num_proxies, x_host=num_proxies, x_port=num_proxies
         )
 
     # Request ID middleware
     @app.before_request
-    def add_request_id():
+    def add_request_id() -> None:
         g.request_id = str(uuid.uuid4())
 
     @app.before_request
-    def check_maintenance():
+    def check_maintenance() -> Any:
         from flask import jsonify
 
         from .tasks import redis_client
@@ -86,7 +87,7 @@ def create_app():
             return
 
         mode = redis_client.get("hookwise_maintenance_mode")
-        if mode and mode.decode() == "true":
+        if mode and cast(bytes, mode).decode() == "true":
             if request.path.startswith("/w/"):
                 return jsonify({"status": "error", "message": "Service under maintenance"}), 503
             return render_template("maintenance.html"), 503
@@ -119,11 +120,11 @@ def create_app():
             db.session.rollback()
 
     @app.errorhandler(404)
-    def page_not_found(e):
+    def page_not_found(e: Any) -> Any:
         return render_template("404.html"), 404
 
     @app.errorhandler(500)
-    def internal_server_error(e):
+    def internal_server_error(e: Any) -> Any:
         return render_template("500.html"), 500
 
     return app

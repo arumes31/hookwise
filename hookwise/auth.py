@@ -5,6 +5,7 @@ import io
 
 import pyotp
 import segno
+from typing import Any, cast
 from flask import flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
@@ -13,7 +14,7 @@ from .models import User
 from .utils import auth_required, log_audit
 
 
-def _bp():
+def _bp() -> Any:
     """Lazy import to avoid circular dependency."""
     from .routes import main_bp
 
@@ -24,17 +25,17 @@ def _bp():
 # This module is imported at the bottom of routes.py, so main_bp already exists.
 
 
-def _register():
+def _register() -> None:
     from .routes import main_bp
 
     @main_bp.route("/login", methods=["GET", "POST"])
-    def login():
+    def login() -> Any:
         if request.method == "POST":
             username = request.form.get("username")
             password = request.form.get("password")
 
             user = User.query.filter_by(username=username).first()
-            if user and check_password_hash(user.password_hash, password):
+            if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
                 if user.is_2fa_enabled:
                     session["pending_user_id"] = user.id
                     return redirect(url_for("main.login_2fa"))
@@ -49,7 +50,7 @@ def _register():
         return render_template("login.html")
 
     @main_bp.route("/login/2fa", methods=["GET", "POST"])
-    def login_2fa():
+    def login_2fa() -> Any:
         if "pending_user_id" not in session:
             return redirect(url_for("main.login"))
 
@@ -57,7 +58,7 @@ def _register():
             otp = request.form.get("otp")
             user = User.query.get(session["pending_user_id"])
 
-            if user and pyotp.TOTP(user.otp_secret).verify(otp):
+            if user and pyotp.TOTP(cast(str, user.otp_secret)).verify(cast(str, otp)):
                 session["user_id"] = user.id
                 session["username"] = user.username
                 session["role"] = user.role
@@ -71,7 +72,7 @@ def _register():
 
     @main_bp.route("/settings/2fa/setup", methods=["GET", "POST"])
     @auth_required
-    def setup_2fa():
+    def setup_2fa() -> Any:
         user = User.query.get(session["user_id"])
         if user.is_2fa_enabled:
             flash("2FA is already enabled", "info")
@@ -80,7 +81,7 @@ def _register():
         if request.method == "POST":
             otp = request.form.get("otp")
             secret = session.get("pending_otp_secret")
-            if secret and pyotp.TOTP(secret).verify(otp):
+            if secret and pyotp.TOTP(cast(str, secret)).verify(cast(str, otp)):
                 user.otp_secret = secret
                 user.is_2fa_enabled = True
                 db.session.commit()
@@ -104,7 +105,7 @@ def _register():
 
     @main_bp.route("/settings/2fa/disable", methods=["POST"])
     @auth_required
-    def disable_2fa():
+    def disable_2fa() -> Any:
         user = User.query.get(session["user_id"])
         user.is_2fa_enabled = False
         user.otp_secret = None
@@ -114,7 +115,7 @@ def _register():
         return redirect(url_for("main.settings"))
 
     @main_bp.route("/logout")
-    def logout():
+    def logout() -> Any:
         username = session.get("username")
         session.clear()
         log_audit("logout", None, f"User {username} logged out")

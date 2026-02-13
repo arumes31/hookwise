@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from functools import lru_cache, wraps
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import requests
 from cryptography.fernet import Fernet
@@ -37,7 +37,7 @@ def call_llm(
             timeout=90,
         )
         response.raise_for_status()
-        return response.json().get("response", "").strip()
+        return cast(str, response.json().get("response", "").strip())
     except Exception as e:
         logger.error(f"Error calling LLM: {e}")
         return None
@@ -63,9 +63,9 @@ def authenticate() -> Response:
     )
 
 
-def auth_required(f):
+def auth_required(f: Any) -> Any:
     @wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Any:
         # 1. IP Whitelist Check (Global)
         trusted_ips = os.environ.get("GUI_TRUSTED_IPS")
         if trusted_ips:
@@ -73,7 +73,7 @@ def auth_required(f):
             trusted = False
             for trusted_range in [ip.strip() for ip in trusted_ips.split(",")]:
                 try:
-                    if ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
+                    if client_ip and ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
                         trusted = True
                         break
                 except ValueError:
@@ -82,11 +82,12 @@ def auth_required(f):
                 return Response("Your IP is not authorized to access this GUI.", 403)
 
         # 2. Session Check
-        if "user_id" not in session:
             # Fallback to Basic Auth if set (for backward compatibility/headless access)
             auth = request.authorization
-            if os.environ.get("GUI_USERNAME") and os.environ.get("GUI_PASSWORD"):
-                if not auth or not check_auth(auth.username, auth.password):
+            gui_user = os.environ.get("GUI_USERNAME")
+            gui_pass = os.environ.get("GUI_PASSWORD")
+            if gui_user and gui_pass:
+                if not auth or not auth.username or not auth.password or not check_auth(auth.username, auth.password):
                     return authenticate()
                 # Populate session so routes reading session['user_id'] don't crash
                 from .models import User
@@ -110,13 +111,15 @@ def auth_required(f):
 
 
 @lru_cache(maxsize=128)
-def _cached_jsonpath_parse(path: str):
+def _cached_jsonpath_parse(path: str) -> Any:
     """Cache parsed JSONPath expressions to avoid re-parsing the same path."""
     return _jsonpath_parse(path)
 
 
 def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
     """Resolve a JSONPath expression against the data."""
+    if not path:
+        return None
     try:
         jsonpath_expr = _cached_jsonpath_parse(path)
         matches = jsonpath_expr.find(data)
@@ -130,7 +133,7 @@ def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
 _fernet_instance = None
 
 
-def get_fernet():
+def get_fernet() -> Fernet:
     global _fernet_instance
     if _fernet_instance is not None:
         return _fernet_instance
@@ -205,7 +208,7 @@ def log_to_web(
     config_name: str = "System",
     data: Optional[Dict[str, Any]] = None,
     ticket_id: Optional[int] = None,
-):
+) -> None:
     """Helper to send logs to the web GUI via WebSockets."""
     payload_to_send = mask_secrets(data) if data else None
     if isinstance(data, str):

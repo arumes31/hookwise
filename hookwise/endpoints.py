@@ -4,6 +4,7 @@ import json
 import secrets
 from datetime import datetime, timezone
 
+from typing import Any
 from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db
@@ -11,12 +12,12 @@ from .models import WebhookConfig
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 
-def _register():
+def _register() -> None:
     from .routes import main_bp
 
     @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
     @auth_required
-    def toggle_pin(id):
+    def toggle_pin(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         config.is_pinned = not config.is_pinned
         db.session.commit()
@@ -26,7 +27,7 @@ def _register():
 
     @main_bp.route("/endpoint/reorder", methods=["POST"])
     @auth_required
-    def reorder_endpoints():
+    def reorder_endpoints() -> Any:
         order = request.json.get("order", [])
         for index, config_id in enumerate(order):
             config = WebhookConfig.query.get(config_id)
@@ -37,7 +38,7 @@ def _register():
 
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
-    def new_endpoint():
+    def new_endpoint() -> Any:
         if request.method == "POST":
             config = WebhookConfig(
                 name=request.form.get("name"),
@@ -73,7 +74,7 @@ def _register():
 
     @main_bp.route("/endpoint/edit/<id>", methods=["GET", "POST"])
     @auth_required
-    def edit_endpoint(id):
+    def edit_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         if request.method == "POST":
             config.name = request.form.get("name")
@@ -105,7 +106,7 @@ def _register():
 
     @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
     @auth_required
-    def toggle_endpoint(id):
+    def toggle_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         config.is_enabled = not config.is_enabled
         db.session.commit()
@@ -115,7 +116,7 @@ def _register():
 
     @main_bp.route("/endpoint/rotate-token/<id>", methods=["POST"])
     @auth_required
-    def rotate_token(id):
+    def rotate_token(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         new_token = secrets.token_urlsafe(32)
         config.bearer_token = encrypt_string(new_token)
@@ -127,7 +128,7 @@ def _register():
 
     @main_bp.route("/endpoint/quick-update/<id>", methods=["POST"])
     @auth_required
-    def quick_update_endpoint(id):
+    def quick_update_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         field = request.json.get("field")
         value = request.json.get("value")
@@ -141,7 +142,7 @@ def _register():
 
     @main_bp.route("/endpoint/clone/<id>", methods=["POST"])
     @auth_required
-    def clone_endpoint(id):
+    def clone_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         new_config = WebhookConfig(
             name=f"{config.name} (Copy)",
@@ -174,13 +175,13 @@ def _register():
 
     @main_bp.route("/endpoint/token/<id>")
     @auth_required
-    def get_endpoint_token(id):
+    def get_endpoint_token(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         return jsonify({"token": decrypt_string(config.bearer_token)})
 
     @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
     @auth_required
-    def delete_endpoint(id):
+    def delete_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         name = config.name
         db.session.delete(config)
@@ -191,7 +192,7 @@ def _register():
 
     @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
     @auth_required
-    def bulk_delete_endpoints():
+    def bulk_delete_endpoints() -> Any:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
@@ -202,7 +203,7 @@ def _register():
 
     @main_bp.route("/endpoint/bulk/pause", methods=["POST"])
     @auth_required
-    def bulk_pause_endpoints():
+    def bulk_pause_endpoints() -> Any:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
@@ -213,7 +214,7 @@ def _register():
 
     @main_bp.route("/endpoint/bulk/resume", methods=["POST"])
     @auth_required
-    def bulk_resume_endpoints():
+    def bulk_resume_endpoints() -> Any:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
@@ -224,7 +225,7 @@ def _register():
 
     @main_bp.route("/endpoint/bulk/export", methods=["POST"])
     @auth_required
-    def bulk_export_endpoints():
+    def bulk_export_endpoints() -> Any:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400

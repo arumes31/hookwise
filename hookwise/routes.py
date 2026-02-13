@@ -6,6 +6,7 @@ so all url_for('main.xxx') references in templates continue to work.
 
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from flask import Blueprint, render_template, request
 from sqlalchemy import func
@@ -21,7 +22,7 @@ main_bp = Blueprint("main", __name__)
 
 @main_bp.route("/")
 @auth_required
-def index():
+def index() -> Any:
     configs = WebhookConfig.query.order_by(
         WebhookConfig.is_pinned.desc(), WebhookConfig.display_order.asc(), WebhookConfig.created_at.desc()
     ).all()
@@ -69,7 +70,7 @@ def index():
     )
 
     # Build sparkline lookup: {config_id: {date: count}}
-    spark_map = {}
+    spark_map: Dict[str, Dict[str, int]] = {}
     for config_id, day, cnt in sparkline_rows:
         spark_map.setdefault(config_id, {})[str(day)] = cnt
 

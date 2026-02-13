@@ -1,12 +1,19 @@
 import secrets
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, TYPE_CHECKING
 
 from .extensions import db
 
+if TYPE_CHECKING:
+    class Base:
+        query: Any
+        def __init__(self, **kwargs: Any) -> None: ...
+else:
+    Base = db.Model
 
-class User(db.Model):
+
+class User(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     username = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
@@ -19,7 +26,7 @@ class User(db.Model):
         return {"id": self.id, "username": self.username, "role": self.role, "created_at": self.created_at.isoformat()}
 
 
-class WebhookConfig(db.Model):
+class WebhookConfig(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False)
     bearer_token = db.Column(
@@ -88,7 +95,7 @@ class WebhookConfig(db.Model):
         return d
 
 
-class WebhookLog(db.Model):
+class WebhookLog(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     config_id = db.Column(db.String(36), db.ForeignKey("webhook_config.id"), nullable=False, index=True)
     request_id = db.Column(db.String(100), nullable=False, index=True)
@@ -128,7 +135,7 @@ class WebhookLog(db.Model):
         }
 
 
-class AuditLog(db.Model):
+class AuditLog(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     config_id = db.Column(db.String(36))
     action = db.Column(db.String(50), nullable=False)  # create, update, delete, rotate_token

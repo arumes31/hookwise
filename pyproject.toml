@@ -10,7 +10,7 @@ ignore = []
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
-exclude = ["tests/"]
+exclude = ["tests/", "migrations/"]
 
 [[tool.mypy.overrides]]
 module = [
