@@ -44,7 +44,7 @@ function showToast(message, type = 'info') {
     toast.style.backdropFilter = 'blur(10px)';
     toast.style.background = 'rgba(15, 23, 42, 0.9)';
     toast.style.color = 'white';
-    
+
     let iconSvg = '';
     if (type === 'success') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle-fill" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>';
     else if (type === 'danger' || type === 'error') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>';
@@ -145,12 +145,12 @@ function initServiceHealth() {
         canvas.width = 32;
         canvas.height = 32;
         const ctx = canvas.getContext('2d');
-        
+
         ctx.beginPath();
         ctx.arc(16, 16, 14, 0, 2 * Math.PI);
         ctx.fillStyle = status === 'up' ? '#3fb950' : status === 'warning' ? '#d29922' : '#f85149';
         ctx.fill();
-        
+
         ctx.fillStyle = 'white';
         ctx.font = 'bold 20px Inter';
         ctx.textAlign = 'center';
@@ -165,7 +165,7 @@ function initServiceHealth() {
         try {
             const resp = await fetch('/health/services');
             const data = await resp.json();
-            
+
             let overall = 'up';
             Object.keys(data).forEach(service => {
                 if (data[service] === 'down') overall = 'down';
@@ -403,14 +403,14 @@ window.testPath = function () {
         const resolve = (obj, path) => {
             const cleanPath = path.startsWith('$.') ? path.substring(2) : path;
             return cleanPath.replace(/\[(\d+)\]/g, '.$1')
-                       .split('.')
-                       .filter(p => p !== "")
-                       .reduce((o, i) => (o && o[i] !== undefined) ? o[i] : undefined, obj);
+                .split('.')
+                .filter(p => p !== "")
+                .reduce((o, i) => (o && o[i] !== undefined) ? o[i] : undefined, obj);
         };
         const val = resolve(obj, path);
         resultEl.className = 'mt-2 small ' + (val !== undefined ? 'text-success' : 'text-danger');
         resultEl.textContent = val !== undefined ? `Found value: ${JSON.stringify(val)}` : 'Field not found in payload';
-        
+
         if (val !== undefined && !document.getElementById('trigger_field').value.includes(path)) {
             const autofillBtn = document.createElement('button');
             autofillBtn.className = 'btn btn-sm btn-link text-info p-0 ms-2';
@@ -521,7 +521,7 @@ function initContextMenu() {
 
             document.getElementById('ctx-edit').href = '/endpoint/edit/' + id;
             document.getElementById('ctx-test').onclick = () => { window.testEndpoint(id); menu.style.display = 'none'; };
-            document.getElementById('ctx-clone').onclick = () => { 
+            document.getElementById('ctx-clone').onclick = () => {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.action = '/endpoint/clone/' + id;
@@ -547,7 +547,7 @@ function initContextMenu() {
     });
 }
 
-window.startLoading = function() {
+window.startLoading = function () {
     const bar = document.getElementById('loading-bar');
     if (!bar) return;
     bar.style.width = '0%';
@@ -555,7 +555,7 @@ window.startLoading = function() {
     setTimeout(() => bar.style.width = '70%', 200);
 };
 
-window.stopLoading = function() {
+window.stopLoading = function () {
     const bar = document.getElementById('loading-bar');
     if (!bar) return;
     bar.style.width = '100%';
@@ -563,7 +563,7 @@ window.stopLoading = function() {
 };
 
 const originalFetch = window.fetch;
-window.fetch = function() {
+window.fetch = function () {
     startLoading();
     return originalFetch.apply(this, arguments).finally(() => stopLoading());
 };
@@ -575,13 +575,15 @@ function initAutoSave() {
     const formId = window.location.pathname;
     const saved = localStorage.getItem('autosave_' + formId);
     if (saved) {
-        if (confirm('Restore unsaved changes?')) {
+        const isEditPage = window.location.pathname.includes('/endpoint/edit/');
+        if (isEditPage || confirm('Restore unsaved changes?')) {
             const data = JSON.parse(saved);
             Object.keys(data).forEach(key => {
                 const el = form.elements[key];
                 if (el) el.value = data[key];
             });
             if (window.updatePreview) window.updatePreview();
+            if (isEditPage) showToast('Auto-restored unsaved changes', 'info');
         }
     }
 
@@ -607,7 +609,7 @@ function initFeedback() {
             await fetch('/api/feedback', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     message,
                     ua: navigator.userAgent,
                     url: window.location.href
@@ -626,7 +628,7 @@ function initFeedback() {
 function initPullToRefresh() {
     let touchStart = 0;
     let touchEnd = 0;
-    
+
     window.addEventListener('touchstart', (e) => {
         if (window.scrollY === 0) touchStart = e.touches[0].clientY;
     }, { passive: true });
@@ -674,7 +676,7 @@ function initNotifications() {
     }
 }
 
-window.notifyFailure = function(data) {
+window.notifyFailure = function (data) {
     if (data.level === 'danger' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('HookWise Alert: ' + data.config_name, {
             body: data.message,
