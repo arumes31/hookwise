@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" alt="HookWise Logo" width="400">
+  <img src="docs/logo.png" alt="HookWise Logo" width="200">
 </p>
 
 # HookWise
