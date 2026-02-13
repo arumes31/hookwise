@@ -28,3 +28,6 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 pythonpath = ["."]
 filterwarnings = ["ignore::DeprecationWarning"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
