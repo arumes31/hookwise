@@ -1,4 +1,5 @@
 """Webhook ingestion route."""
+
 import ipaddress
 from typing import Tuple
 
@@ -10,13 +11,13 @@ from .models import WebhookConfig
 from .tasks import process_webhook_task
 from .utils import decrypt_string, log_to_web
 
-WEBHOOK_COUNT = Counter('hookwise_webhooks_received_total', 'Total webhooks received', ['status', 'config_name'])
+WEBHOOK_COUNT = Counter("hookwise_webhooks_received_total", "Total webhooks received", ["status", "config_name"])
 
 
 def _register():
     from .routes import main_bp
 
-    @main_bp.route('/w/<config_id>', methods=['POST'])
+    @main_bp.route("/w/<config_id>", methods=["POST"])
     @limiter.limit("60 per minute")
     def dynamic_webhook(config_id: str) -> Tuple[Response, int]:
         request_id = g.request_id
@@ -25,25 +26,27 @@ def _register():
             return jsonify({"status": "error", "message": "Endpoint not found"}), 404
 
         if not config.is_enabled:
-            WEBHOOK_COUNT.labels(status='disabled', config_name=config.name).inc()
+            WEBHOOK_COUNT.labels(status="disabled", config_name=config.name).inc()
             return jsonify({"status": "error", "message": "Endpoint is disabled"}), 403
 
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            WEBHOOK_COUNT.labels(status='unauthorized', config_name=config.name).inc()
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            WEBHOOK_COUNT.labels(status="unauthorized", config_name=config.name).inc()
             return jsonify({"status": "error", "message": "Missing Bearer Token"}), 401
 
-        token = auth_header.split(' ')[1]
+        token = auth_header.split(" ")[1]
         import hmac as _hmac
+
         if not _hmac.compare_digest(token, decrypt_string(config.bearer_token)):
-            WEBHOOK_COUNT.labels(status='unauthorized', config_name=config.name).inc()
+            WEBHOOK_COUNT.labels(status="unauthorized", config_name=config.name).inc()
             return jsonify({"status": "error", "message": "Invalid Bearer Token"}), 401
 
         # HMAC Signature Verification
         if config.hmac_secret:
-            import hmac
             import hashlib
-            signature = request.headers.get('X-HookWise-Signature')
+            import hmac
+
+            signature = request.headers.get("X-HookWise-Signature")
             if not signature:
                 return jsonify({"status": "error", "message": "Missing HMAC Signature"}), 401
 
@@ -55,7 +58,7 @@ def _register():
         if config.trusted_ips:
             client_ip = request.remote_addr
             trusted = False
-            for trusted_range in [ip.strip() for ip in config.trusted_ips.split(',')]:
+            for trusted_range in [ip.strip() for ip in config.trusted_ips.split(",")]:
                 try:
                     if ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
                         trusted = True
@@ -63,20 +66,20 @@ def _register():
                 except ValueError:
                     continue
             if not trusted:
-                WEBHOOK_COUNT.labels(status='forbidden', config_name=config.name).inc()
+                WEBHOOK_COUNT.labels(status="forbidden", config_name=config.name).inc()
                 return jsonify({"status": "error", "message": f"IP {client_ip} not allowed"}), 403
 
         data = request.json
         if not data:
-            WEBHOOK_COUNT.labels(status='bad_request', config_name=config.name).inc()
+            WEBHOOK_COUNT.labels(status="bad_request", config_name=config.name).inc()
             return jsonify({"status": "error", "message": "No JSON payload", "request_id": request_id}), 400
 
         headers = dict(request.headers)
-        headers.pop('Authorization', None)
-        headers.pop('Cookie', None)
+        headers.pop("Authorization", None)
+        headers.pop("Cookie", None)
 
         process_webhook_task.delay(config_id, data, request_id, source_ip=request.remote_addr, headers=headers)
-        WEBHOOK_COUNT.labels(status='queued', config_name=config.name).inc()
+        WEBHOOK_COUNT.labels(status="queued", config_name=config.name).inc()
         log_to_web(f"Webhook received and queued (ID: {request_id})", "info", config.name, data=data)
         return jsonify({"status": "queued", "message": "Webhook received", "request_id": request_id}), 202
 

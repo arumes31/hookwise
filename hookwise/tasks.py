@@ -18,51 +18,55 @@ from .utils import log_to_web, resolve_jsonpath
 logger = logging.getLogger(__name__)
 
 # Prometheus Metrics
-WEBHOOK_TOTAL = Counter('hookwise_webhooks_total', 'Total webhooks received', ['config_id', 'status'])
-PSA_TASK_COUNT = Counter('hookwise_psa_tasks_total', 'Total PSA tasks (ticket creation/resolution)', ['type', 'result'])
-PSA_TASK_DURATION = Histogram('hookwise_psa_task_seconds', 'Time spent on PSA tasks', ['type'])
+WEBHOOK_TOTAL = Counter("hookwise_webhooks_total", "Total webhooks received", ["config_id", "status"])
+PSA_TASK_COUNT = Counter("hookwise_psa_tasks_total", "Total PSA tasks (ticket creation/resolution)", ["type", "result"])
+PSA_TASK_DURATION = Histogram("hookwise_psa_task_seconds", "Time spent on PSA tasks", ["type"])
 
 # Redis Cache setup
 CACHE_PREFIX = "hookwise_ticket:"
-CACHE_TTL = 3600 * 24 # 24 hours
+CACHE_TTL = 3600 * 24  # 24 hours
 redis_client = redis.Redis(
-    host=os.environ.get('REDIS_HOST', 'localhost'), 
-    port=int(os.environ.get('REDIS_PORT', 6379)), 
+    host=os.environ.get("REDIS_HOST", "localhost"),
+    port=int(os.environ.get("REDIS_PORT", 6379)),
     db=0,
-    password=os.environ.get('REDIS_PASSWORD')
+    password=os.environ.get("REDIS_PASSWORD"),
 )
 cw_client = ConnectWiseClient()
 
+
 def make_celery(app_name: str) -> Celery:
-    redis_password = os.environ.get('REDIS_PASSWORD')
-    redis_host = os.environ.get('REDIS_HOST', 'localhost')
-    redis_port = os.environ.get('REDIS_PORT', 6379)
-    
-    default_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/0" if redis_password else f"redis://{redis_host}:{redis_port}/0"
-    redis_url = os.environ.get('CELERY_BROKER_URL', default_url)
-    
-    celery = Celery(
-        app_name,
-        broker=redis_url,
-        backend=redis_url
+    redis_password = os.environ.get("REDIS_PASSWORD")
+    redis_host = os.environ.get("REDIS_HOST", "localhost")
+    redis_port = os.environ.get("REDIS_PORT", 6379)
+
+    default_url = (
+        f"redis://:{redis_password}@{redis_host}:{redis_port}/0"
+        if redis_password
+        else f"redis://{redis_host}:{redis_port}/0"
     )
+    redis_url = os.environ.get("CELERY_BROKER_URL", default_url)
+
+    celery = Celery(app_name, broker=redis_url, backend=redis_url)
     return celery
+
 
 celery = make_celery("hookwise")
 celery.conf.beat_schedule = {
-    'cleanup-logs-daily': {
-        'task': 'hookwise.cleanup_logs',
-        'schedule': 86400.0, # Every 24 hours
+    "cleanup-logs-daily": {
+        "task": "hookwise.cleanup_logs",
+        "schedule": 86400.0,  # Every 24 hours
     },
 }
 
 _app = None
+
 
 class ContextTask(Task):
     def __call__(self, *args, **kwargs):
         global _app
         if _app is None:
             from . import create_app
+
             _app = create_app()
         with _app.app_context():
             try:
@@ -72,36 +76,44 @@ class ContextTask(Task):
                 logger.exception("Celery task %s failed", self.name)
                 raise
 
+
 celery.Task = ContextTask
+
 
 @celery.task(name="hookwise.cleanup_logs")
 def cleanup_logs() -> None:
     """Remove logs older than retention period."""
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     from .extensions import db
     from .models import WebhookLog
-    
-    retention_days = redis_client.get('hookwise_log_retention_days')
-    retention_days = int(retention_days.decode()) if retention_days else int(os.environ.get('LOG_RETENTION_DAYS', 30))
-    
+
+    retention_days = redis_client.get("hookwise_log_retention_days")
+    retention_days = int(retention_days.decode()) if retention_days else int(os.environ.get("LOG_RETENTION_DAYS", 30))
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-    
+
     deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
     db.session.commit()
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
+
 @celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)
-def process_webhook_task(self, config_id: str, data: Dict[str, Any], request_id: str, source_ip: str = None, headers: Dict[str, str] = None):
+def process_webhook_task(
+    self, config_id: str, data: Dict[str, Any], request_id: str, source_ip: str = None, headers: Dict[str, str] = None
+):
     """Background task to process webhook logic."""
     try:
-        handle_webhook_logic(config_id, data, request_id, source_ip=source_ip, retry_count=self.request.retries, headers=headers)
+        handle_webhook_logic(
+            config_id, data, request_id, source_ip=source_ip, retry_count=self.request.retries, headers=headers
+        )
     except Exception as exc:
         logger.error(f"Task failed (Attempt {self.request.retries}/5): {exc}")
         if self.request.retries >= self.max_retries:
             # Final failure, move to DLQ in DB
             from .extensions import db
             from .models import WebhookLog
+
             # We need to find the log entry and mark it as failed/dlq
             # Since we don't have log_id here, we use request_id
             log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
@@ -111,7 +123,8 @@ def process_webhook_task(self, config_id: str, data: Dict[str, Any], request_id:
                 log_entry.retry_count = self.request.retries
                 db.session.commit()
             return
-        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+        raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+
 
 def is_in_maintenance(config: WebhookConfig) -> bool:
     """Check if current time is within a maintenance window."""
@@ -119,24 +132,34 @@ def is_in_maintenance(config: WebhookConfig) -> bool:
         return False
     try:
         from datetime import timezone
+
         windows = json.loads(config.maintenance_windows)
         now = datetime.now(timezone.utc)
         for window in windows:
             # Simple format: {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T01:00:00Z"}
-            start = datetime.fromisoformat(window['start'].replace('Z', '+00:00'))
-            end = datetime.fromisoformat(window['end'].replace('Z', '+00:00'))
+            start = datetime.fromisoformat(window["start"].replace("Z", "+00:00"))
+            end = datetime.fromisoformat(window["end"].replace("Z", "+00:00"))
             if start <= now <= end:
                 return True
     except Exception as e:
         logger.error(f"Error checking maintenance window: {e}")
     return False
 
-def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, source_ip: str = None, retry_count: int = 0, headers: Dict[str, str] = None):
+
+def handle_webhook_logic(
+    config_id: str,
+    data: Dict[str, Any],
+    request_id: str,
+    source_ip: str = None,
+    retry_count: int = 0,
+    headers: Dict[str, str] = None,
+):
     """Core logic: process webhook payload and route to ConnectWise."""
     from flask import current_app as app
-    extra = {'request_id': request_id, 'config_id': config_id}
+
+    extra = {"request_id": request_id, "config_id": config_id}
     start_time = time.time()
-    
+
     with app.app_context():
         config = WebhookConfig.query.get(config_id)
         if not config:
@@ -144,6 +167,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
             return
         # 1. Create or update Webhook History Log
         from .utils import mask_secrets
+
         log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
         if not log_entry:
             log_entry = WebhookLog(
@@ -152,10 +176,10 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                 payload=json.dumps(mask_secrets(data)),
                 headers=json.dumps(headers) if headers else None,
                 source_ip=source_ip,
-                status="processing"
+                status="processing",
             )
             db.session.add(log_entry)
-        
+
         log_entry.retry_count = retry_count
         db.session.commit()
 
@@ -204,49 +228,74 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                     logger.error(f"Failed to parse routing_rules: {e}", extra=extra)
 
             # 1. Apply JSONPath Mappings
-            overridable_fields = ['summary', 'description', 'customer_id', 'ticket_type', 'subtype', 'item', 'priority', 'board', 'status', 'severity', 'impact']
+            overridable_fields = [
+                "summary",
+                "description",
+                "customer_id",
+                "ticket_type",
+                "subtype",
+                "item",
+                "priority",
+                "board",
+                "status",
+                "severity",
+                "impact",
+            ]
             mapped_vals = {}
             for field in overridable_fields:
                 if field in json_mapping:
                     val = resolve_jsonpath(data, json_mapping[field])
-                    if val is not None: mapped_vals[field] = str(val)
+                    if val is not None:
+                        mapped_vals[field] = str(val)
 
-            mapped_summary = mapped_vals.get('summary')
-            mapped_description = mapped_vals.get('description')
-            mapped_customer_id = mapped_vals.get('customer_id')
-            
-            if 'ticket_type' in mapped_vals: ticket_type = mapped_vals['ticket_type']
-            if 'subtype' in mapped_vals: subtype = mapped_vals['subtype']
-            if 'item' in mapped_vals: item = mapped_vals['item']
-            if 'priority' in mapped_vals: priority = mapped_vals['priority']
-            if 'board' in mapped_vals: board = mapped_vals['board']
-            if 'status' in mapped_vals: status = mapped_vals['status']
+            mapped_summary = mapped_vals.get("summary")
+            mapped_description = mapped_vals.get("description")
+            mapped_customer_id = mapped_vals.get("customer_id")
+
+            if "ticket_type" in mapped_vals:
+                ticket_type = mapped_vals["ticket_type"]
+            if "subtype" in mapped_vals:
+                subtype = mapped_vals["subtype"]
+            if "item" in mapped_vals:
+                item = mapped_vals["item"]
+            if "priority" in mapped_vals:
+                priority = mapped_vals["priority"]
+            if "board" in mapped_vals:
+                board = mapped_vals["board"]
+            if "status" in mapped_vals:
+                status = mapped_vals["status"]
 
             # 2. Apply Regex Routing Rules
             for rule in routing_rules:
-                rule_path = rule.get('path')
-                rule_regex = rule.get('regex')
-                rule_overrides = rule.get('overrides', {})
-                
+                rule_path = rule.get("path")
+                rule_regex = rule.get("regex")
+                rule_overrides = rule.get("overrides", {})
+
                 if rule_path and rule_regex:
                     val = str(resolve_jsonpath(data, rule_path))
                     if re.search(rule_regex, val, re.IGNORECASE):
                         logger.info(f"Routing rule matched: {rule_regex} on {rule_path}", extra=extra)
                         log_entry.matched_rule = f"Match: {rule_regex} on {rule_path}"
-                        if 'board' in rule_overrides: board = rule_overrides['board']
-                        if 'status' in rule_overrides: status = rule_overrides['status']
-                        if 'ticket_type' in rule_overrides: ticket_type = rule_overrides['ticket_type']
-                        if 'subtype' in rule_overrides: subtype = rule_overrides['subtype']
-                        if 'item' in rule_overrides: item = rule_overrides['item']
-                        if 'priority' in rule_overrides: priority = rule_overrides['priority']
+                        if "board" in rule_overrides:
+                            board = rule_overrides["board"]
+                        if "status" in rule_overrides:
+                            status = rule_overrides["status"]
+                        if "ticket_type" in rule_overrides:
+                            ticket_type = rule_overrides["ticket_type"]
+                        if "subtype" in rule_overrides:
+                            subtype = rule_overrides["subtype"]
+                        if "item" in rule_overrides:
+                            item = rule_overrides["item"]
+                        if "priority" in rule_overrides:
+                            priority = rule_overrides["priority"]
 
             actual_val = str(resolve_jsonpath(data, trigger_field))
-            monitor = data.get('monitor', {})
-            monitor_name = monitor.get('name', data.get('title', data.get('name', 'Unknown Source')))
-            msg = data.get('msg', data.get('message', 'No message'))
-            
-            open_triggers = [v.strip() for v in open_value.split(',') if v.strip()]
-            close_triggers = [v.strip() for v in close_value.split(',') if v.strip()]
+            monitor = data.get("monitor", {})
+            monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
+            msg = data.get("msg", data.get("message", "No message"))
+
+            open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
+            close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
 
             if actual_val in open_triggers:
                 alert_type = "DOWN"
@@ -255,7 +304,7 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
             else:
                 alert_type = "GENERIC"
 
-            prefix = ticket_prefix or os.environ.get('CW_TICKET_PREFIX', 'Alert:')
+            prefix = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
             ticket_summary = mapped_summary or (f"{prefix} {monitor_name}" if prefix else monitor_name)
 
             cache_key = f"{CACHE_PREFIX}{config_id}:{monitor_name}"
@@ -265,10 +314,19 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
                 if cached_val:
                     ticket_id = int(cached_val.decode())
-                    note_text = f"Duplicate {alert_type} alert detected. Updated details:\nMessage: {msg}\nRequest ID: {request_id}"
+                    note_text = (
+                        f"Duplicate {alert_type} alert detected. Updated details:\n"
+                        f"Message: {msg}\nRequest ID: {request_id}"
+                    )
                     cw_client.add_ticket_note(ticket_id, note_text)
-                    log_to_web(f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})", "warning" if alert_type == "DOWN" else "info", config_name, data=data, ticket_id=ticket_id)
-                    PSA_TASK_COUNT.labels(type='create', result='updated').inc()
+                    log_to_web(
+                        f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})",
+                        "warning" if alert_type == "DOWN" else "info",
+                        config_name,
+                        data=data,
+                        ticket_id=ticket_id,
+                    )
+                    PSA_TASK_COUNT.labels(type="create", result="updated").inc()
                     log_entry.status = "processed"
                     log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
@@ -277,87 +335,119 @@ def handle_webhook_logic(config_id: str, data: Dict[str, Any], request_id: str, 
 
                 existing_ticket = cw_client.find_open_ticket(ticket_summary)
                 if existing_ticket:
-                    ticket_id = existing_ticket['id']
-                    note_text = f"Duplicate {alert_type} alert found in CW. Updated details:\nMessage: {msg}\nRequest ID: {request_id}"
+                    ticket_id = existing_ticket["id"]
+                    note_text = (
+                        f"Duplicate {alert_type} alert found in CW. Updated details:\n"
+                        f"Message: {msg}\nRequest ID: {request_id}"
+                    )
                     cw_client.add_ticket_note(ticket_id, note_text)
-                    log_to_web(f"{alert_type} alert: Found and updated open ticket (ID: {ticket_id})", "warning" if alert_type == "DOWN" else "info", config_name, data=data, ticket_id=ticket_id)
+                    log_to_web(
+                        f"{alert_type} alert: Found and updated open ticket (ID: {ticket_id})",
+                        "warning" if alert_type == "DOWN" else "info",
+                        config_name,
+                        data=data,
+                        ticket_id=ticket_id,
+                    )
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
-                    PSA_TASK_COUNT.labels(type='create', result='updated').inc()
+                    PSA_TASK_COUNT.labels(type="create", result="updated").inc()
                     log_entry.status = "processed"
                     log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
                     db.session.commit()
                     return
-                
-                company_id_match = re.search(r'#CW(\w+)', monitor_name)
-                company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else customer_id_default)
-                
+
+                company_id_match = re.search(r"#CW(\w+)", monitor_name)
+                company_id = mapped_customer_id or (
+                    company_id_match.group(1) if company_id_match else customer_id_default
+                )
+
                 if mapped_description:
                     description = mapped_description
                 elif description_template:
-                    description = description_template.replace('{{ monitor_name }}', monitor_name)\
-                                                     .replace('{{ msg }}', msg)\
-                                                     .replace('{{ request_id }}', request_id)
+                    description = (
+                        description_template.replace("{{ monitor_name }}", monitor_name)
+                        .replace("{{ msg }}", msg)
+                        .replace("{{ request_id }}", request_id)
+                    )
                     # Handle {$.path} in template
-                    paths = re.findall(r'\{(\$.+?)\}', description)
+                    paths = re.findall(r"\{(\$.+?)\}", description)
                     for p in paths:
                         val = str(resolve_jsonpath(data, p))
-                        description = description.replace('{' + p + '}', val)
+                        description = description.replace("{" + p + "}", val)
                 else:
                     description = f"Source: {monitor_name}\nMessage: {msg}\nRequest ID: {request_id}\nPayload: {data}"
-                
+
                 new_ticket = cw_client.create_ticket(
-                    summary=ticket_summary, 
-                    description=description, 
-                    monitor_name=monitor_name, 
-                    company_id=company_id, 
-                    board=board, 
-                    status=status, 
-                    ticket_type=ticket_type, 
-                    subtype=subtype, 
-                    item=item, 
+                    summary=ticket_summary,
+                    description=description,
+                    monitor_name=monitor_name,
+                    company_id=company_id,
+                    board=board,
+                    status=status,
+                    ticket_type=ticket_type,
+                    subtype=subtype,
+                    item=item,
                     priority=priority,
-                    severity=mapped_vals.get('severity'),
-                    impact=mapped_vals.get('impact')
+                    severity=mapped_vals.get("severity"),
+                    impact=mapped_vals.get("impact"),
                 )
                 if new_ticket:
-                    ticket_id = new_ticket['id']
+                    ticket_id = new_ticket["id"]
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
-                    log_to_web(f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})", "warning" if alert_type == "DOWN" else "info", config_name, data=data, ticket_id=ticket_id)
-                    PSA_TASK_COUNT.labels(type='create', result='success').inc()
+                    log_to_web(
+                        f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})",
+                        "warning" if alert_type == "DOWN" else "info",
+                        config_name,
+                        data=data,
+                        ticket_id=ticket_id,
+                    )
+                    PSA_TASK_COUNT.labels(type="create", result="success").inc()
                     log_entry.action = "create"
 
                     # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
                     if config.ai_rca_enabled:
                         from .utils import call_llm
-                        rca_prompt = f"Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting steps. Be concise and technical. Payload: {json.dumps(data)}"
+
+                        rca_prompt = (
+                            "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
+                            f"steps. Be concise and technical. Payload: {json.dumps(data)}"
+                        )
                         rca_response = call_llm(rca_prompt)
                         if rca_response:
                             note_text = f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}"
                             cw_client.add_ticket_note(ticket_id, note_text, is_internal=True)
                             log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
-            
+
             elif alert_type == "UP":
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
                 if cached_val:
                     ticket_id = int(cached_val.decode())
                 else:
                     existing_ticket = cw_client.find_open_ticket(ticket_summary)
-                    if existing_ticket: ticket_id = existing_ticket['id']
+                    if existing_ticket:
+                        ticket_id = existing_ticket["id"]
 
                 if ticket_id:
                     resolution = f"Resource {monitor_name} is back UP.\nMessage: {msg}\nID: {request_id}"
                     if cw_client.close_ticket(ticket_id, resolution):
                         redis_client.delete(cache_key)
-                        log_to_web(f"UP alert: Closed ticket (ID: {ticket_id})", "success", config_name, data=data, ticket_id=ticket_id)
-                        PSA_TASK_COUNT.labels(type='close', result='success').inc()
+                        log_to_web(
+                            f"UP alert: Closed ticket (ID: {ticket_id})",
+                            "success",
+                            config_name,
+                            data=data,
+                            ticket_id=ticket_id,
+                        )
+                        PSA_TASK_COUNT.labels(type="close", result="success").inc()
                         log_entry.action = "close"
                 else:
-                    log_to_web(f"UP alert: No open ticket to close for {monitor_name}", "success", config_name, data=data)
-                    PSA_TASK_COUNT.labels(type='close', result='skipped').inc()
+                    log_to_web(
+                        f"UP alert: No open ticket to close for {monitor_name}", "success", config_name, data=data
+                    )
+                    PSA_TASK_COUNT.labels(type="close", result="skipped").inc()
 
             PSA_TASK_DURATION.labels(type=alert_type).observe(time.time() - start_time)
-            
+
             # Finalize SUCCESS
             log_entry.status = "processed"
             log_entry.ticket_id = ticket_id

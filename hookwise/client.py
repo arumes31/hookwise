@@ -9,18 +9,19 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
+
 class ConnectWiseClient:
     def __init__(self) -> None:
-        self.base_url: str = os.getenv('CW_URL', 'https://api-na.myconnectwise.net/v4_6_release/apis/3.0')
-        self.company: Optional[str] = os.getenv('CW_COMPANY')
-        self.public_key: Optional[str] = os.getenv('CW_PUBLIC_KEY')
-        self.private_key: Optional[str] = os.getenv('CW_PRIVATE_KEY')
-        self.client_id: Optional[str] = os.getenv('CW_CLIENT_ID')
-        
-        self.service_board_name: str = os.getenv('CW_SERVICE_BOARD', 'Service Board')
-        self.status_new: str = os.getenv('CW_STATUS_NEW', 'New')
-        self.status_closed: str = os.getenv('CW_STATUS_CLOSED', 'Closed')
-        
+        self.base_url: str = os.getenv("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0")
+        self.company: Optional[str] = os.getenv("CW_COMPANY")
+        self.public_key: Optional[str] = os.getenv("CW_PUBLIC_KEY")
+        self.private_key: Optional[str] = os.getenv("CW_PRIVATE_KEY")
+        self.client_id: Optional[str] = os.getenv("CW_CLIENT_ID")
+
+        self.service_board_name: str = os.getenv("CW_SERVICE_BOARD", "Service Board")
+        self.status_new: str = os.getenv("CW_STATUS_NEW", "New")
+        self.status_closed: str = os.getenv("CW_STATUS_CLOSED", "Closed")
+
         if not all([self.base_url, self.company, self.public_key, self.private_key, self.client_id]):
             logger.warning("ConnectWise credentials (including CW_CLIENT_ID) are missing. API calls will fail.")
 
@@ -30,14 +31,10 @@ class ConnectWiseClient:
     def _get_headers(self) -> Dict[str, str]:
         if not self.company or not self.public_key or not self.private_key:
             return {}
-            
+
         auth_string = f"{self.company}+{self.public_key}:{self.private_key}"
         auth_header = f"Basic {base64.b64encode(auth_string.encode()).decode()}"
-        headers = {
-            "Authorization": auth_header,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
+        headers = {"Authorization": auth_header, "Content-Type": "application/json", "Accept": "application/json"}
         if self.client_id:
             headers["clientId"] = self.client_id
         return headers
@@ -46,9 +43,9 @@ class ConnectWiseClient:
         session = requests.Session()
         retry_strategy = Retry(
             total=5,
-            backoff_factor=2, # Exponential backoff: 2, 4, 8, 16, 32 seconds
+            backoff_factor=2,  # Exponential backoff: 2, 4, 8, 16, 32 seconds
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"]
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
@@ -58,11 +55,10 @@ class ConnectWiseClient:
     def find_open_ticket(self, summary_contains: str) -> Optional[Dict[str, Any]]:
         try:
             conditions = f"closedFlag=false AND summary contains '{summary_contains}'"
-            params: Dict[str, Any] = {
-                "conditions": conditions,
-                "pageSize": 1
-            }
-            response = self.session.get(f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30)
+            params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
+            response = self.session.get(
+                f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30
+            )
             response.raise_for_status()
             data = response.json()
             if isinstance(data, list) and len(data) > 0:
@@ -72,16 +68,21 @@ class ConnectWiseClient:
             logger.error(f"Error finding ticket: {e}")
             return None
 
-    def create_ticket(self, summary: str, description: str, monitor_name: str, 
-                      company_id: Optional[str] = None,
-                      board: Optional[str] = None,
-                      status: Optional[str] = None,
-                      ticket_type: Optional[str] = None,
-                      subtype: Optional[str] = None,
-                      item: Optional[str] = None,
-                      priority: Optional[str] = None,
-                      severity: Optional[str] = None,
-                      impact: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def create_ticket(
+        self,
+        summary: str,
+        description: str,
+        monitor_name: str,
+        company_id: Optional[str] = None,
+        board: Optional[str] = None,
+        status: Optional[str] = None,
+        ticket_type: Optional[str] = None,
+        subtype: Optional[str] = None,
+        item: Optional[str] = None,
+        priority: Optional[str] = None,
+        severity: Optional[str] = None,
+        impact: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         try:
             payload: Dict[str, Any] = {
                 "summary": summary,
@@ -90,17 +91,26 @@ class ConnectWiseClient:
                 "status": {"name": status or self.status_new},
                 "initialDescription": description,
             }
-            if ticket_type: payload["type"] = {"name": ticket_type}
-            if subtype: payload["subType"] = {"name": subtype}
-            if item: payload["item"] = {"name": item}
-            if priority: payload["priority"] = {"name": priority}
-            if severity: payload["severity"] = severity
-            if impact: payload["impact"] = impact
-            
-            target_company_id = company_id or os.getenv('CW_DEFAULT_COMPANY_ID')
-            if target_company_id: payload["company"] = {"identifier": target_company_id}
+            if ticket_type:
+                payload["type"] = {"name": ticket_type}
+            if subtype:
+                payload["subType"] = {"name": subtype}
+            if item:
+                payload["item"] = {"name": item}
+            if priority:
+                payload["priority"] = {"name": priority}
+            if severity:
+                payload["severity"] = severity
+            if impact:
+                payload["impact"] = impact
 
-            response = self.session.post(f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30)
+            target_company_id = company_id or os.getenv("CW_DEFAULT_COMPANY_ID")
+            if target_company_id:
+                payload["company"] = {"identifier": target_company_id}
+
+            response = self.session.post(
+                f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30
+            )
             response.raise_for_status()
             ticket = response.json()
             logger.info(f"Created ticket #{ticket.get('id')} for {monitor_name}")
@@ -112,10 +122,22 @@ class ConnectWiseClient:
     def close_ticket(self, ticket_id: int, resolution: str) -> bool:
         try:
             patch_payload = [{"op": "replace", "path": "/status/name", "value": self.status_closed}]
-            response = self.session.patch(f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30)
+            response = self.session.patch(
+                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
+            )
             response.raise_for_status()
-            note_payload = {"text": resolution, "detailDescriptionFlag": True, "internalAnalysisFlag": False, "resolutionFlag": True}
-            self.session.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
+            note_payload = {
+                "text": resolution,
+                "detailDescriptionFlag": True,
+                "internalAnalysisFlag": False,
+                "resolutionFlag": True,
+            }
+            self.session.post(
+                f"{self.base_url}/service/tickets/{ticket_id}/notes",
+                headers=self.headers,
+                json=note_payload,
+                timeout=30,
+            )
             logger.info(f"Closed ticket #{ticket_id}")
             return True
         except requests.exceptions.RequestException as e:
@@ -128,9 +150,14 @@ class ConnectWiseClient:
                 "text": note_text,
                 "detailDescriptionFlag": True,
                 "internalAnalysisFlag": is_internal,
-                "resolutionFlag": False
+                "resolutionFlag": False,
             }
-            response = self.session.post(f"{self.base_url}/service/tickets/{ticket_id}/notes", headers=self.headers, json=note_payload, timeout=30)
+            response = self.session.post(
+                f"{self.base_url}/service/tickets/{ticket_id}/notes",
+                headers=self.headers,
+                json=note_payload,
+                timeout=30,
+            )
             response.raise_for_status()
             logger.info(f"Added note to ticket #{ticket_id}")
             return True
@@ -158,7 +185,9 @@ class ConnectWiseClient:
 
     def get_board_statuses(self, board_id: int) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30
+            )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -167,7 +196,9 @@ class ConnectWiseClient:
 
     def get_board_types(self, board_id: int) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30
+            )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -176,7 +207,9 @@ class ConnectWiseClient:
 
     def get_board_subtypes(self, board_id: int) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30
+            )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -185,7 +218,9 @@ class ConnectWiseClient:
 
     def get_board_items(self, board_id: int) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30
+            )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -197,7 +232,9 @@ class ConnectWiseClient:
             params = {"pageSize": 50}
             if search:
                 params["conditions"] = f"identifier contains '{search}' OR name contains '{search}'"
-            response = self.session.get(f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=30
+            )
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:

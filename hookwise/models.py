@@ -12,21 +12,23 @@ class User(db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     otp_secret = db.Column(db.String(32))
     is_2fa_enabled = db.Column(db.Boolean, default=False, nullable=False)
-    role = db.Column(db.String(20), default='user') # admin, user
+    role = db.Column(db.String(20), default="user")  # admin, user
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "username": self.username,
-            "role": self.role,
-            "created_at": self.created_at.isoformat()
-        }
+        return {"id": self.id, "username": self.username, "role": self.role, "created_at": self.created_at.isoformat()}
+
 
 class WebhookConfig(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False)
-    bearer_token = db.Column(db.String(512), nullable=False, default=lambda: __import__('hookwise.utils', fromlist=['encrypt_string']).encrypt_string(secrets.token_urlsafe(32)))
+    bearer_token = db.Column(
+        db.String(512),
+        nullable=False,
+        default=lambda: __import__("hookwise.utils", fromlist=["encrypt_string"]).encrypt_string(
+            secrets.token_urlsafe(32)
+        ),
+    )
     customer_id_default = db.Column(db.String(50))
     board = db.Column(db.String(100))
     status = db.Column(db.String(100))
@@ -40,16 +42,16 @@ class WebhookConfig(db.Model):
     ticket_prefix = db.Column(db.String(100))
     description_template = db.Column(db.Text)
     json_mapping = db.Column(db.Text)  # JSON string for field mappings
-    routing_rules = db.Column(db.Text) # JSON string for regex routing
-    maintenance_windows = db.Column(db.Text) # JSON string for maintenance intervals
-    trusted_ips = db.Column(db.Text) # Comma-separated IPs or CIDRs
+    routing_rules = db.Column(db.Text)  # JSON string for regex routing
+    maintenance_windows = db.Column(db.Text)  # JSON string for maintenance intervals
+    trusted_ips = db.Column(db.Text)  # Comma-separated IPs or CIDRs
     hmac_secret = db.Column(db.String(256))
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     is_pinned = db.Column(db.Boolean, default=False, nullable=False)
     is_draft = db.Column(db.Boolean, default=False, nullable=False)
     display_order = db.Column(db.Integer, default=0)
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
-    ai_prompt_template = db.Column(db.Text) # Custom instructions for the LLM
+    ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
     last_rotated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = db.Column(db.DateTime)
@@ -79,29 +81,32 @@ class WebhookConfig(db.Model):
             "ai_rca_enabled": self.ai_rca_enabled,
             "ai_prompt_template": self.ai_prompt_template,
             "created_at": self.created_at.isoformat(),
-            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
         }
         if include_token:
             d["bearer_token"] = self.bearer_token
         return d
 
+
 class WebhookLog(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_id = db.Column(db.String(36), db.ForeignKey('webhook_config.id'), nullable=False, index=True)
+    config_id = db.Column(db.String(36), db.ForeignKey("webhook_config.id"), nullable=False, index=True)
     request_id = db.Column(db.String(100), nullable=False, index=True)
-    payload = db.Column(db.Text, nullable=False) # JSON string
-    headers = db.Column(db.Text) # JSON string
-    status = db.Column(db.String(50), nullable=False, default="queued", index=True) # queued, processed, failed, skipped
-    action = db.Column(db.String(50)) # create, update, close, None
+    payload = db.Column(db.Text, nullable=False)  # JSON string
+    headers = db.Column(db.Text)  # JSON string
+    status = db.Column(
+        db.String(50), nullable=False, default="queued", index=True
+    )  # queued, processed, failed, skipped
+    action = db.Column(db.String(50))  # create, update, close, None
     error_message = db.Column(db.Text)
     ticket_id = db.Column(db.Integer)
     matched_rule = db.Column(db.Text)
-    processing_time = db.Column(db.Float) # in seconds
+    processing_time = db.Column(db.Float)  # in seconds
     source_ip = db.Column(db.String(50))
     retry_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
-    config = db.relationship('WebhookConfig', backref=db.backref('logs', lazy=True))
+    config = db.relationship("WebhookConfig", backref=db.backref("logs", lazy=True))
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -119,13 +124,14 @@ class WebhookLog(db.Model):
             "source_ip": self.source_ip,
             "retry_count": self.retry_count,
             "created_at": self.created_at.isoformat(),
-            "config_name": self.config.name if self.config else "Unknown"
+            "config_name": self.config.name if self.config else "Unknown",
         }
+
 
 class AuditLog(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     config_id = db.Column(db.String(36))
-    action = db.Column(db.String(50), nullable=False) # create, update, delete, rotate_token
+    action = db.Column(db.String(50), nullable=False)  # create, update, delete, rotate_token
     user = db.Column(db.String(100))
     details = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
@@ -137,5 +143,5 @@ class AuditLog(db.Model):
             "action": self.action,
             "user": self.user,
             "details": self.details,
-            "created_at": self.created_at.isoformat()
+            "created_at": self.created_at.isoformat(),
         }
