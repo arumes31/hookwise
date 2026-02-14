@@ -183,7 +183,7 @@ def handle_webhook_logic(
                 config_id=config_id,
                 request_id=request_id,
                 payload=json.dumps(mask_secrets(data)),
-                headers=json.dumps(headers) if headers else None,
+                headers=json.dumps(mask_secrets(headers)) if headers else None,
                 source_ip=source_ip,
                 status="processing",
             )
@@ -370,6 +370,9 @@ def handle_webhook_logic(
                     company_id_match.group(1) if company_id_match else customer_id_default
                 )
 
+                # Sanitize data for substitution/logging
+                safe_data = mask_secrets(data)
+
                 if mapped_description:
                     description = mapped_description
                 elif description_template:
@@ -381,10 +384,15 @@ def handle_webhook_logic(
                     # Handle {$.path} in template
                     paths = re.findall(r"\{(\$.+?)\}", description)
                     for p in paths:
-                        val = str(resolve_jsonpath(data, p))
+                        val = str(resolve_jsonpath(safe_data, p))
                         description = description.replace("{" + p + "}", val)
                 else:
-                    description = f"Source: {monitor_name}\nMessage: {msg}\nRequest ID: {request_id}\nPayload: {data}"
+                    description = (
+                        f"Source: {monitor_name}\n"
+                        f"Message: {msg}\n"
+                        f"Request ID: {request_id}\n"
+                        f"Payload: {json.dumps(safe_data)}"
+                    )
 
                 new_ticket = cw_client.create_ticket(
                     summary=ticket_summary,

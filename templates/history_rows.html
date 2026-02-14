@@ -1,17 +1,20 @@
 {% for log in logs %}
 <tr class="border-bottom border-light border-opacity-5">
-    <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}" onchange="updateBulkHistory()"></td>
+    <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}"
+            onchange="updateBulkHistory()"></td>
     <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
     <td class="py-3 fw-bold">{{ log.config_name }}</td>
     <td class="py-3">
         {% if log.status == 'processed' %}
-        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">PROCESSED</span>
+        <span
+            class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">PROCESSED</span>
         {% elif log.status == 'skipped' %}
         <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">SKIPPED</span>
         {% elif log.status == 'failed' %}
         <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">FAILED</span>
         {% else %}
-        <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ log.status.upper() }}</span>
+        <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{ log.status.upper()
+            }}</span>
         {% endif %}
     </td>
     <td class="py-3 text-secondary font-monospace small">{{ log.source_ip or '-' }}</td>
@@ -24,10 +27,14 @@
     </td>
     <td class="py-3 font-monospace">
         {% if log.ticket_id %}
-        <a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/{{ log.ticket_id }}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
-                <path fill-rule="evenodd" d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
-                <path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
+        <a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/{{ log.ticket_id }}"
+            target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
+                class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
+                <path fill-rule="evenodd"
+                    d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z" />
+                <path fill-rule="evenodd"
+                    d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z" />
             </svg>
             #{{ log.ticket_id }}
         </a>
@@ -37,22 +44,30 @@
     </td>
     <td class="py-3 text-secondary font-monospace small">
         <span class="user-select-all">{{ log.request_id[:16] }}...</span>
-        <button class="btn btn-sm btn-link p-0 ms-1 opacity-50" onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID">
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
-                <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+        <button class="btn btn-sm btn-link p-0 ms-1 opacity-50" onclick="copyToClipboard('{{ log.request_id }}')"
+            data-tooltip="Copy Full ID">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" class="bi bi-clipboard"
+                viewBox="0 0 16 16">
+                <path
+                    d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
+                <path
+                    d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
             </svg>
         </button>
     </td>
     <td class="pe-4 py-3 text-end">
         <div class="btn-group btn-group-sm">
             <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
-                data-payload='{{ log.payload | safe }}' data-headers='{{ log.headers | safe }}' data-rule="{{ log.matched_rule or '' }}">View</button>
+                data-payload='{{ log.payload | tojson | safe }}' data-headers='{{ log.headers | tojson | safe }}'
+                data-rule="{{ log.matched_rule or '' }}">View</button>
             <button class="btn btn-outline-primary" onclick="replayWebhook('{{ log.id }}')">Replay</button>
             <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
-                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z" />
-                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-trash"
+                    viewBox="0 0 16 16">
+                    <path
+                        d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z" />
+                    <path
+                        d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z" />
                 </svg>
             </button>
         </div>

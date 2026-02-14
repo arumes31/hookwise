@@ -333,17 +333,19 @@ window.toggleView = function (view) {
     if (!grid) return;
 
     const buttons = document.querySelectorAll('[onclick^="toggleView"]');
-    buttons.forEach(btn => btn.classList.toggle('active', btn.getAttribute('onclick').includes(view)));
+    buttons.forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick').includes(view));
+    });
 
     if (view === 'list') {
-        grid.querySelectorAll('.col-md-6').forEach(col => {
-            col.classList.remove('col-md-6');
+        grid.querySelectorAll('.col-xl-6, .col-lg-12').forEach(col => {
+            col.classList.remove('col-xl-6', 'col-lg-12');
             col.classList.add('col-12');
         });
     } else {
         grid.querySelectorAll('.col-12').forEach(col => {
             col.classList.remove('col-12');
-            col.classList.add('col-md-6');
+            col.classList.add('col-xl-6', 'col-lg-12');
         });
     }
     localStorage.setItem('endpoint-view', view);
@@ -525,6 +527,11 @@ function initContextMenu() {
                 const form = document.createElement('form');
                 form.method = 'POST';
                 form.action = '/endpoint/clone/' + id;
+                const csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = 'csrf_token';
+                csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                form.appendChild(csrfInput);
                 document.body.appendChild(form);
                 form.submit();
             };
@@ -533,6 +540,11 @@ function initContextMenu() {
                     const form = document.createElement('form');
                     form.method = 'POST';
                     form.action = '/endpoint/delete/' + id;
+                    const csrfInput = document.createElement('input');
+                    csrfInput.type = 'hidden';
+                    csrfInput.name = 'csrf_token';
+                    csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                    form.appendChild(csrfInput);
                     document.body.appendChild(form);
                     form.submit();
                 }
@@ -563,7 +575,11 @@ window.stopLoading = function () {
 };
 
 const originalFetch = window.fetch;
-window.fetch = function () {
+window.fetch = function (resource, options) {
+    if (options && ['POST', 'PUT', 'DELETE'].includes(options.method)) {
+        if (!options.headers) options.headers = {};
+        options.headers['X-CSRFToken'] = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    }
     startLoading();
     return originalFetch.apply(this, arguments).finally(() => stopLoading());
 };

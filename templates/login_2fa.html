@@ -10,8 +10,10 @@
             <div class="card-body p-4">
                 <p class="text-secondary small text-center mb-4">Enter the 6-digit code from your authenticator app.</p>
                 <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                     <div class="mb-4">
-                        <input type="text" class="form-control form-control-lg text-center font-monospace ls-wide" id="otp" name="otp" placeholder="000000" required autofocus autocomplete="one-time-code">
+                        <input type="text" class="form-control form-control-lg text-center font-monospace ls-wide"
+                            id="otp" name="otp" placeholder="000000" required autofocus autocomplete="one-time-code">
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary fw-bold">Verify Code</button>

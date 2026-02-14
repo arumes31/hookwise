@@ -9,30 +9,39 @@
             <label class="form-check-label small text-secondary fw-bold" for="live-tail-toggle">LIVE TAIL</label>
         </div>
         <button class="btn btn-outline-danger btn-sm d-flex align-items-center" onclick="deleteAllLogs()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash-fill me-2" viewBox="0 0 16 16">
-                <path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                class="bi bi-trash-fill me-2" viewBox="0 0 16 16">
+                <path
+                    d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
             </svg>
             Delete All
         </button>
         <button class="btn btn-outline-success btn-sm d-flex align-items-center" onclick="exportCSV()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-download me-2" viewBox="0 0 16 16">
-                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                class="bi bi-download me-2" viewBox="0 0 16 16">
+                <path
+                    d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z" />
+                <path
+                    d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z" />
             </svg>
             Export CSV
         </button>
-        <input type="date" id="date-from" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 130px;" onchange="searchHistory()">
-        <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 130px;" onchange="searchHistory()">
+        <input type="date" id="date-from" class="form-control form-control-sm bg-dark border-secondary text-white"
+            style="width: 130px;" onchange="searchHistory()">
+        <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white"
+            style="width: 130px;" onchange="searchHistory()">
         <div class="input-group input-group-sm" style="width: 250px;">
             <input type="text" id="history-search" class="form-control bg-dark border-secondary text-white"
                 placeholder="Search Ticket or Request ID...">
             <button class="btn btn-outline-secondary" type="button" onclick="searchHistory()">Search</button>
         </div>
-        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm d-flex align-items-center">Back to Dashboard</a>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm d-flex align-items-center">Back to
+            Dashboard</a>
     </div>
 </div>
 
-<div id="bulk-history-controls" class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
+<div id="bulk-history-controls"
+    class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
     <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
     <div class="d-flex gap-2">
         <button class="btn btn-sm btn-outline-primary" onclick="bulkReplay()">Replay Selected</button>
@@ -46,7 +55,8 @@
             <table class="table table-dark table-hover mb-0 align-middle small">
                 <thead class="bg-black bg-opacity-50 text-secondary">
                     <tr>
-                        <th class="ps-4 py-3"><input type="checkbox" id="check-all-logs" onchange="toggleAllLogs()"></th>
+                        <th class="ps-4 py-3"><input type="checkbox" id="check-all-logs" onchange="toggleAllLogs()">
+                        </th>
                         <th class="py-3">TIMESTAMP</th>
                         <th class="py-3">ENDPOINT</th>
                         <th class="py-3">STATUS</th>
@@ -61,7 +71,8 @@
                 <tbody>
                     {% for log in logs %}
                     <tr class="border-bottom border-light border-opacity-5">
-                        <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}" onchange="updateBulkHistory()"></td>
+                        <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}"
+                                onchange="updateBulkHistory()"></td>
                         <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
                             %H:%M:%S') }}</td>
                         <td class="py-3 fw-bold">{{ log.config_name }}</td>
@@ -83,17 +94,23 @@
                         <td class="py-3 text-secondary font-monospace small">{{ log.source_ip or '-' }}</td>
                         <td class="py-3">
                             {% if log.retry_count > 0 %}
-                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ log.retry_count }}</span>
+                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ log.retry_count
+                                }}</span>
                             {% else %}
                             <span class="text-muted opacity-50">-</span>
                             {% endif %}
                         </td>
                         <td class="py-3 font-monospace">
                             {% if log.ticket_id %}
-                            <a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/{{ log.ticket_id }}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
-                                    <path fill-rule="evenodd" d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
-                                    <path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
+                            <a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/{{ log.ticket_id }}"
+                                target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold"
+                                style="font-size: 0.7rem;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
+                                    class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
+                                    <path fill-rule="evenodd"
+                                        d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z" />
+                                    <path fill-rule="evenodd"
+                                        d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z" />
                                 </svg>
                                 #{{ log.ticket_id }}
                             </a>
@@ -103,25 +120,35 @@
                         </td>
                         <td class="py-3 text-secondary font-monospace small">
                             <span class="user-select-all">{{ log.request_id[:16] }}...</span>
-                            <button class="btn btn-sm btn-link p-0 ms-1 opacity-50" onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16">
-                                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                            <button class="btn btn-sm btn-link p-0 ms-1 opacity-50"
+                                onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor"
+                                    class="bi bi-clipboard" viewBox="0 0 16 16">
+                                    <path
+                                        d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
+                                    <path
+                                        d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
                                 </svg>
                             </button>
                         </td>
-                            <td class="py-3">
+                        <td class="py-3">
                             {% if log.matched_rule %}
-                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25" data-tooltip="{{ log.matched_rule }}">RULE MATCH</span>
+                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25"
+                                data-tooltip="{{ log.matched_rule }}">RULE MATCH</span>
                             {% else %}
                             <span class="text-muted opacity-50">-</span>
                             {% endif %}
                         </td>
-                                                <td class="pe-4 py-3 text-end">
-                                                    <div class="btn-group btn-group-sm">
-                                                        <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
-                                                            data-payload='{{ log.payload | safe }}' data-headers='{{ log.headers | safe }}' data-rule="{{ log.matched_rule or '' }}">View</button>
-                                                        <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}')" data-payload='{{ log.payload | safe }}'>Compare</button>                                    <button class="btn btn-outline-primary" onclick="replayWebhook('{{ log.id }}')">Replay</button>
+                        <td class="pe-4 py-3 text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
+                                    data-payload='{{ log.payload | tojson | safe }}'
+                                    data-headers='{{ log.headers | tojson | safe }}'
+                                    data-rule="{{ log.matched_rule or '' }}">View</button>
+                                <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}')"
+                                    data-payload='{{ log.payload | tojson | safe }}'>Compare</button> <button
+                                    class="btn btn-outline-primary"
+                                    onclick="replayWebhook('{{ log.id }}')">Replay</button>
                                 <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
                                         class="bi bi-trash" viewBox="0 0 16 16">
@@ -141,16 +168,17 @@
     </div>
 </div>
 
-    <div id="infinite-sentinel" class="text-center py-4 d-none">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading more...</span>
-        </div>
+<div id="infinite-sentinel" class="text-center py-4 d-none">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading more...</span>
     </div>
+</div>
 
-    <nav id="standard-pagination" class="mt-4">
-        <ul class="pagination justify-content-center">        {% if pagination.has_prev %}
+<nav id="standard-pagination" class="mt-4">
+    <ul class="pagination justify-content-center"> {% if pagination.has_prev %}
         <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a>
+            <a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a>
         </li>
         {% else %}
         <li class="page-item disabled">
@@ -164,7 +192,8 @@
 
         {% if pagination.has_next %}
         <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a>
+            <a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a>
         </li>
         {% else %}
         <li class="page-item disabled">
@@ -187,54 +216,57 @@
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-                            <div class="modal-body">
-                                <div id="matched-rule-info" class="alert alert-info bg-opacity-10 border-info border-opacity-25 py-2 mb-3 d-none">
-                                    <small class="fw-bold">Matched Rule:</small> <span id="rule-text" class="small"></span>
-                                </div>
-                                <pre class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
-                            </div>        </div>
+            <div class="modal-body">
+                <div id="matched-rule-info"
+                    class="alert alert-info bg-opacity-10 border-info border-opacity-25 py-2 mb-3 d-none">
+                    <small class="fw-bold">Matched Rule:</small> <span id="rule-text" class="small"></span>
+                </div>
+                <pre
+                    class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
+            </div>
+        </div>
     </div>
 </div>
 
-    <!-- Comparison Modal -->
-    <div class="modal fade" id="compareModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content bg-dark border-warning">
-                <div class="modal-header border-warning border-opacity-25">
-                    <h5 class="modal-title text-warning">Compare Payloads</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6 class="text-secondary mb-2">Original</h6>
-                            <pre class="bg-black p-2 rounded small" id="compare-left"></pre>
-                        </div>
-                        <div class="col-md-6">
-                            <h6 class="text-secondary mb-2">Current</h6>
-                            <pre class="bg-black p-2 rounded small" id="compare-right"></pre>
-                        </div>
+<!-- Comparison Modal -->
+<div class="modal fade" id="compareModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark border-warning">
+            <div class="modal-header border-warning border-opacity-25">
+                <h5 class="modal-title text-warning">Compare Payloads</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-secondary mb-2">Original</h6>
+                        <pre class="bg-black p-2 rounded small" id="compare-left"></pre>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-secondary mb-2">Current</h6>
+                        <pre class="bg-black p-2 rounded small" id="compare-right"></pre>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <script>
+<script>
     let compareLeft = null;
 
     function comparePayload(id) {
-        const payload = JSON.parse(event.target.dataset.payload);
+        const payload = JSON.parse(JSON.parse(event.target.dataset.payload));
         if (!compareLeft) {
             compareLeft = payload;
             showToast('Selected for comparison. Now click Compare on another entry.', 'info');
         } else {
             const leftStr = JSON.stringify(compareLeft, null, 2);
             const rightStr = JSON.stringify(payload, null, 2);
-            
+
             document.getElementById('compare-left').innerHTML = highlightDiff(leftStr, rightStr);
             document.getElementById('compare-right').innerHTML = highlightDiff(rightStr, leftStr);
-            
+
             new bootstrap.Modal(document.getElementById('compareModal')).show();
             compareLeft = null; // Reset
         }
@@ -253,7 +285,7 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
-    }    function toggleAllLogs() {
+    } function toggleAllLogs() {
         const checkAll = document.getElementById('check-all-logs');
         document.querySelectorAll('.log-check').forEach(c => c.checked = checkAll.checked);
         updateBulkHistory();
@@ -267,7 +299,7 @@
     async function bulkReplay() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-        
+
         showToast(`Queuing ${ids.length} replays...`, 'info');
         for (const id of ids) {
             await fetch(`/history/replay/${id}`, { method: 'POST' });
@@ -279,9 +311,9 @@
     async function bulkDeleteLogs() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-        
+
         if (!confirm(`Delete ${ids.length} log entries?`)) return;
-        
+
         try {
             await fetch('/history/bulk-delete', {
                 method: 'POST',
@@ -348,56 +380,56 @@
         document.getElementById('date-to').value = "{{ date_to or '' }}";
 
         // Infinite Scroll Logic
-        let currentPage = {{ pagination.page }};
-        const hasNext = {{ pagination.has_next | tojson }};
-        const sentinel = document.getElementById('infinite-sentinel');
-        const standardPagination = document.getElementById('standard-pagination');
-        const tableBody = document.querySelector('table tbody');
+        let currentPage = {{ pagination.page }
+    };
+    const hasNext = {{ pagination.has_next | tojson }};
+    const sentinel = document.getElementById('infinite-sentinel');
+    const standardPagination = document.getElementById('standard-pagination');
 
-        if (hasNext) {
-            sentinel.classList.remove('d-none');
-            standardPagination.classList.add('d-none');
+    if (hasNext) {
+        sentinel.classList.remove('d-none');
+        standardPagination.classList.add('d-none');
 
-            const observer = new IntersectionObserver(async (entries) => {
-                if (entries[0].isIntersecting) {
-                    currentPage++;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('page', currentPage);
-                    url.searchParams.set('partial', 'true');
+        const observer = new IntersectionObserver(async (entries) => {
+            if (entries[0].isIntersecting) {
+                currentPage++;
+                const url = new URL(window.location.href);
+                url.searchParams.set('page', currentPage);
+                url.searchParams.set('partial', 'true');
 
-                    try {
-                        const res = await fetch(url);
-                        const html = await res.text();
-                        if (html.trim()) {
-                            tableBody.insertAdjacentHTML('beforeend', html);
-                        } else {
-                            observer.unobserve(sentinel);
-                            sentinel.classList.add('d-none');
-                        }
-                    } catch (e) {
-                        console.error('Error fetching next page', e);
+                try {
+                    const res = await fetch(url);
+                    const html = await res.text();
+                    if (html.trim()) {
+                        tableBody.insertAdjacentHTML('beforeend', html);
+                    } else {
+                        observer.unobserve(sentinel);
+                        sentinel.classList.add('d-none');
                     }
+                } catch (e) {
+                    console.error('Error fetching next page', e);
                 }
-            }, { threshold: 1.0 });
+            }
+        }, { threshold: 1.0 });
 
-            observer.observe(sentinel);
-        }
+        observer.observe(sentinel);
+    }
 
-        const socket = io();
-        const liveToggle = document.getElementById('live-tail-toggle');
-        const tableBody = document.querySelector('table tbody');
+    const socket = io();
+    const liveToggle = document.getElementById('live-tail-toggle');
+    const tableBody = document.querySelector('table tbody');
 
-        socket.on('new_log', (data) => {
-            if (!liveToggle.checked) return;
+    socket.on('new_log', (data) => {
+        if (!liveToggle.checked) return;
 
-            const tr = document.createElement('tr');
-            tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
-            
-            const ts = new Date(data.timestamp).toLocaleString();
-            const statusBadge = `<span class="badge bg-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} bg-opacity-10 text-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} border border-opacity-25">${data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase()}</span>`;
-            const ticketLink = data.ticket_id ? `<a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">#${data.ticket_id}</a>` : '<span class="text-muted opacity-50">-</span>';
+        const tr = document.createElement('tr');
+        tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
 
-            tr.innerHTML = `
+        const ts = new Date(data.timestamp).toLocaleString();
+        const statusBadge = `<span class="badge bg-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} bg-opacity-10 text-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} border border-opacity-25">${data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase()}</span>`;
+        const ticketLink = data.ticket_id ? `<a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">#${data.ticket_id}</a>` : '<span class="text-muted opacity-50">-</span>';
+
+        tr.innerHTML = `
                 <td class="ps-4 py-3 text-secondary font-monospace">${ts}</td>
                 <td class="py-3 fw-bold">${data.config_name}</td>
                 <td class="py-3">${statusBadge}</td>
@@ -411,9 +443,9 @@
                     </div>
                 </td>
             `;
-            tableBody.insertBefore(tr, tableBody.firstChild);
-            if (tableBody.children.length > 50) tableBody.lastChild.remove();
-        });
+        tableBody.insertBefore(tr, tableBody.firstChild);
+        if (tableBody.children.length > 50) tableBody.lastChild.remove();
+    });
     });
 
     let currentRawPayload = '';
@@ -426,7 +458,7 @@
         currentRawPayload = btn.getAttribute('data-payload');
         currentRawHeaders = btn.getAttribute('data-headers');
         const matchedRule = btn.getAttribute('data-rule');
-        
+
         const ruleInfo = document.getElementById('matched-rule-info');
         if (matchedRule) {
             ruleInfo.classList.remove('d-none');
@@ -445,11 +477,11 @@
         const display = document.getElementById('payload-display');
         const toggleBtn = document.getElementById('pretty-toggle');
         const headersBtn = document.getElementById('headers-toggle');
-        
+
         const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
-        
+
         try {
-            const parsed = JSON.parse(dataToDisplay || '{}');
+            const parsed = JSON.parse(JSON.parse(dataToDisplay || '{}'));
             if (isPretty) {
                 display.textContent = JSON.stringify(parsed, null, 2);
                 toggleBtn.textContent = 'Minified';
@@ -476,16 +508,17 @@
     });
 
     function replayWebhook(id) {
-        if (!{{ debug_mode | tojson }} && !confirm('Re-process this webhook?')) return;
-        fetch(`/history/replay/${id}`, { method: 'POST' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('Replay queued!', 'success');
-                } else {
-                    showToast('Error: ' + data.message, 'danger');
-                }
-            });
+        if (!{{ debug_mode | tojson }
+    } && !confirm('Re-process this webhook?')) return;
+    fetch(`/history/replay/${id}`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Replay queued!', 'success');
+            } else {
+                showToast('Error: ' + data.message, 'danger');
+            }
+        });
     }
 
     function deleteHistory(id) {

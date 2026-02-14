@@ -33,7 +33,7 @@ services:
       - "FORCE_HTTPS=false"
       - "USE_PROXY=false"
       - "PROXY_FIX_COUNT=1"
-      - "ENCRYPTION_KEY=OV0PcQMSRDhDsggpvMAukyXoc8Q2vZXo74KjSSLRnsk="
+      - "ENCRYPTION_KEY=<your-base64-key-here>"
       - "GUI_USERNAME=admin"
       - "GUI_PASSWORD=admin"
       - "GUI_TRUSTED_IPS="

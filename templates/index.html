@@ -198,26 +198,32 @@
 <div class="row mb-5">
     <div class="col-12">
         <div class="card glass-card shadow-lg border-0 overflow-hidden terminal-window">
-        <div class="card-header bg-transparent border-bottom border-light border-opacity-10 d-flex justify-content-between align-items-center py-2 px-3">
-            <div class="d-flex gap-2">
-                <div class="terminal-dot bg-danger"></div>
-                <div class="terminal-dot bg-warning"></div>
-                <div class="terminal-dot bg-success"></div>
+            <div
+                class="card-header bg-transparent border-bottom border-light border-opacity-10 d-flex justify-content-between align-items-center py-2 px-3">
+                <div class="d-flex gap-2">
+                    <div class="terminal-dot bg-danger"></div>
+                    <div class="terminal-dot bg-warning"></div>
+                    <div class="terminal-dot bg-success"></div>
+                </div>
+                <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
+                    ACTIVITY STREAM</div>
+                <button class="btn btn-sm btn-link p-0 text-secondary" onclick="clearLog()" data-tooltip="Clear Stream">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                        class="bi bi-trash-fill" viewBox="0 0 16 16">
+                        <path
+                            d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
+                    </svg>
+                </button>
             </div>
-            <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE ACTIVITY STREAM</div>
-            <button class="btn btn-sm btn-link p-0 text-secondary" onclick="clearLog()" data-tooltip="Clear Stream">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash-fill" viewBox="0 0 16 16"><path d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z"/></svg>
-            </button>
-        </div>
-        <div class="card-body p-0">
-            <div id="log-container" class="bg-transparent text-white font-monospace p-3"
-                style="height: 250px; overflow-y: auto; font-size: 0.8rem; scrollbar-width: thin; scrollbar-color: var(--border) transparent;">
-                <div class="text-secondary opacity-50 italic">Initializing secure socket connection...</div>
+            <div class="card-body p-0">
+                <div id="log-container" class="bg-transparent text-white font-monospace p-3"
+                    style="height: 250px; overflow-y: auto; font-size: 0.8rem; scrollbar-width: thin; scrollbar-color: var(--border) transparent;">
+                    <div class="text-secondary opacity-50 italic">Initializing secure socket connection...</div>
+                </div>
             </div>
         </div>
     </div>
-        </div>
-    </div>
+</div>
 </div>
 
 <div class="mb-3 d-flex justify-content-between align-items-center">
@@ -253,20 +259,48 @@
                 <!-- Action Toolbar Overlay -->
                 <div class="endpoint-actions">
                     <button onclick="togglePin('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning" data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}">
-                        {% if config.is_pinned %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pin-fill" viewBox="0 0 16 16"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224.5-.5.5s-.5-.224-.5-.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 0 1 5 6.708V2.277a2.77 2.77 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg>{% else %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pin" viewBox="0 0 16 16"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224.5-.5.5s-.5-.224-.5-.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 0 1 5 6.708V2.277a2.77 2.77 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354zm1.58 1.408-.002-.001.002.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447L5.048 8H10.952l-.676-.353A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .146-.354c.14-.14.343-.311.55-.515C10.983 1.112 11.246 1 11.5 1h-7c.254 0 .517.112.804.401.207.204.41.375.55.515z"/></svg>{% endif %}
+                        class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
+                        data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}">
+                        {% if config.is_pinned %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                            fill="currentColor" class="bi bi-pin-fill" viewBox="0 0 16 16">
+                            <path
+                                d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224.5-.5.5s-.5-.224-.5-.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 0 1 5 6.708V2.277a2.77 2.77 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z" />
+                        </svg>{% else %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                            fill="currentColor" class="bi bi-pin" viewBox="0 0 16 16">
+                            <path
+                                d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224.5-.5.5s-.5-.224-.5-.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 0 1 5 6.708V2.277a2.77 2.77 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354zm1.58 1.408-.002-.001.002.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447L5.048 8H10.952l-.676-.353A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .146-.354c.14-.14.343-.311.55-.515C10.983 1.112 11.246 1 11.5 1h-7c.254 0 .517.112.804.401.207.204.41.375.55.515z" />
+                        </svg>{% endif %}
                     </button>
                     <button onclick="toggleEndpoint('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}" data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}">
-                        {% if config.is_enabled %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pause-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5 6.25a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5zm3.5 0a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5z"/></svg>{% else %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445z"/></svg>{% endif %}
+                        class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
+                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}">
+                        {% if config.is_enabled %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                            fill="currentColor" class="bi bi-pause-circle" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
+                            <path
+                                d="M5 6.25a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5zm3.5 0a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5z" />
+                        </svg>{% else %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                            fill="currentColor" class="bi bi-play-circle" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
+                            <path
+                                d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445z" />
+                        </svg>{% endif %}
                     </button>
                     <button onclick="testEndpoint('{{ config.id }}')"
                         class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-fill" viewBox="0 0 16 16"><path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            class="bi bi-play-fill" viewBox="0 0 16 16">
+                            <path
+                                d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
+                        </svg>
                     </button>
                     <a href="{{ url_for('main.edit_endpoint', id=config.id) }}"
                         class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-gear-fill" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            class="bi bi-gear-fill" viewBox="0 0 16 16">
+                            <path
+                                d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z" />
+                        </svg>
                     </a>
                 </div>
 
@@ -277,8 +311,10 @@
                         <div>
                             <h4 class="mb-1 text-white fw-bold">{{ config.name }}</h4>
                             <div class="d-flex gap-2">
-                                <span class="heartbeat-dot pulse-success" style="background-color: {{ 'var(--success)' if last_statuses.get(config.id) == 'processed' else 'var(--danger)' if last_statuses.get(config.id) == 'failed' else 'var(--warning)' if last_statuses.get(config.id) == 'skipped' else 'var(--text-secondary)' }}"></span>
-                                <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID: {{ config.id[:12] }}</small>
+                                <span class="heartbeat-dot pulse-success"
+                                    style="background-color: {{ 'var(--success)' if last_statuses.get(config.id) == 'processed' else 'var(--danger)' if last_statuses.get(config.id) == 'failed' else 'var(--warning)' if last_statuses.get(config.id) == 'skipped' else 'var(--text-secondary)' }}"></span>
+                                <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
+                                    {{ config.id[:12] }}</small>
                             </div>
                         </div>
                     </div>
@@ -290,8 +326,15 @@
                     <div class="tech-label">Endpoint URL</div>
                     <div class="copyable-field">
                         <code class="user-select-all text-truncate flex-grow-1">{{ base_url }}/w/{{ config.id }}</code>
-                        <button class="btn btn-sm btn-link text-primary p-0" onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                        <button class="btn btn-sm btn-link text-primary p-0"
+                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                                class="bi bi-clipboard" viewBox="0 0 16 16">
+                                <path
+                                    d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
+                                <path
+                                    d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
+                            </svg>
                         </button>
                     </div>
                 </div>
@@ -299,12 +342,27 @@
                 <div class="mb-4">
                     <div class="tech-label">Bearer Token</div>
                     <div class="copyable-field">
-                        <code id="token-{{ config.id }}" class="user-select-all text-truncate flex-grow-1 text-secondary">••••••••••••••••••••••••••••••••</code>
-                        <button class="btn btn-sm btn-link text-warning p-0" onclick="revealToken('{{ config.id }}')" data-tooltip="Reveal">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-eye" viewBox="0 0 16 16"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.05-1.465 1.687C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/></svg>
+                        <code id="token-{{ config.id }}"
+                            class="user-select-all text-truncate flex-grow-1 text-secondary">••••••••••••••••••••••••••••••••</code>
+                        <button class="btn btn-sm btn-link text-warning p-0" onclick="revealToken('{{ config.id }}')"
+                            data-tooltip="Reveal">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                                class="bi bi-eye" viewBox="0 0 16 16">
+                                <path
+                                    d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.05-1.465 1.687C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z" />
+                                <path
+                                    d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z" />
+                            </svg>
                         </button>
-                        <button class="btn btn-sm btn-link text-primary p-0" onclick="copyToken('{{ config.id }}')" data-tooltip="Copy Token">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-clipboard" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                        <button class="btn btn-sm btn-link text-primary p-0" onclick="copyToken('{{ config.id }}')"
+                            data-tooltip="Copy Token">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                                class="bi bi-clipboard" viewBox="0 0 16 16">
+                                <path
+                                    d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
+                                <path
+                                    d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
+                            </svg>
                         </button>
                     </div>
                 </div>
@@ -318,20 +376,28 @@
                     <div class="tech-item">
                         <div class="tech-label">Status Mapping</div>
                         <div class="d-flex gap-2">
-                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25">{{ config.open_value }}</span>
-                            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">{{ config.close_value }}</span>
+                            <span
+                                class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25">{{
+                                config.open_value }}</span>
+                            <span
+                                class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">{{
+                                config.close_value }}</span>
                         </div>
                     </div>
                     <div class="tech-item">
                         <div class="tech-label">Board</div>
-                        <select class="form-select form-select-sm bg-transparent border-0 text-white p-0 small fw-bold" style="box-shadow: none; cursor: pointer;" onchange="quickUpdate('{{ config.id }}', 'board', this.value)">
+                        <select class="form-select form-select-sm bg-transparent border-0 text-white p-0 small fw-bold"
+                            style="box-shadow: none; cursor: pointer;"
+                            onchange="quickUpdate('{{ config.id }}', 'board', this.value)">
                             <option value="{{ config.board or '' }}">{{ config.board or 'Default' }}</option>
                             <option value="LOAD">Load Boards...</option>
                         </select>
                     </div>
                     <div class="tech-item">
                         <div class="tech-label">ConnectWise Status</div>
-                        <select class="form-select form-select-sm bg-transparent border-0 text-info p-0 small fw-bold" style="box-shadow: none; cursor: pointer;" onchange="quickUpdate('{{ config.id }}', 'status', this.value)">
+                        <select class="form-select form-select-sm bg-transparent border-0 text-info p-0 small fw-bold"
+                            style="box-shadow: none; cursor: pointer;"
+                            onchange="quickUpdate('{{ config.id }}', 'status', this.value)">
                             <option value="{{ config.status or '' }}">{{ config.status or 'Default' }}</option>
                             <option value="LOAD">Load Statuses...</option>
                         </select>
@@ -346,7 +412,7 @@
                         {{ counts.get(config.id, 0) }} TICKETS (24H)
                     </span>
                 </div>
-</div>
+            </div>
         </div>
     </div>
     {% endfor %}
@@ -457,7 +523,8 @@
                             <div class="card-body">
                                 <div class="h6 text-info">1. API Keys</div>
                                 <p class="small text-muted">Ensure your ConnectWise API keys are set in your
-                                    <code>.env</code> file.</p>
+                                    <code>.env</code> file.
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -672,11 +739,18 @@
                 `;
             }
 
+            function escapeHtml(text) {
+                if (!text) return '';
+                return text.replace(/[&<>"']/g, function (m) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+                });
+            }
+
             logEntry.dataset.timestamp = data.timestamp;
             logEntry.innerHTML = `
                 <span class="text-secondary me-2">${displayTime}</span>
-                <span class="fw-bold me-2">${data.config_name}:</span>
-                <span style="cursor: ${data.payload ? 'pointer' : 'default'}">${data.message}</span>
+                <span class="fw-bold me-2">${escapeHtml(data.config_name)}:</span>
+                <span style="cursor: ${data.payload ? 'pointer' : 'default'}">${escapeHtml(data.message)}</span>
                 ${ticketHtml}
                 ${helpLink ? `<a href="${helpLink}" target="_blank" class="ms-2 small text-secondary" title="Troubleshoot this error"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.94 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/></svg></a>` : ''}
                 ${data.payload ? '<span class="float-end opacity-50 clickable-payload"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-code" viewBox="0 0 16 16"><path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z"/></svg></span>' : ''}

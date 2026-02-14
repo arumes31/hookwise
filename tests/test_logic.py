@@ -15,6 +15,7 @@ from hookwise.utils import resolve_jsonpath
 def app():
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
     app = create_app()
+    app.config['WTF_CSRF_ENABLED'] = False
     with app.app_context():
         db.create_all()
         yield app

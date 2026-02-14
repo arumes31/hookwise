@@ -168,7 +168,7 @@ def _register() -> None:
         tickets_closed = (
             WebhookLog.query.join(WebhookConfig)
             .filter(
-                not WebhookConfig.is_draft,
+                WebhookConfig.is_draft.is_(False),
                 WebhookLog.status == "processed",
                 WebhookLog.action == "close",
                 WebhookLog.created_at >= today_start,
@@ -179,7 +179,7 @@ def _register() -> None:
         failed_attempts = (
             WebhookLog.query.join(WebhookConfig)
             .filter(
-                not WebhookConfig.is_draft,
+                WebhookConfig.is_draft.is_(False),
                 WebhookLog.status.in_(["failed", "dlq"]),
                 WebhookLog.created_at >= today_start,
             )
@@ -464,6 +464,9 @@ def _register() -> None:
                     "is_draft",
                     "ai_rca_enabled",
                     "ai_prompt_template",
+                    "bearer_token",
+                    "description_template",
+                    "hmac_secret",
                 ]
                 for f in fields:
                     if f in c:

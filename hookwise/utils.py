@@ -82,28 +82,28 @@ def auth_required(f: Any) -> Any:
                 return Response("Your IP is not authorized to access this GUI.", 403)
 
         # 2. Session Check
-            # Fallback to Basic Auth if set (for backward compatibility/headless access)
-            auth = request.authorization
-            gui_user = os.environ.get("GUI_USERNAME")
-            gui_pass = os.environ.get("GUI_PASSWORD")
-            if gui_user and gui_pass:
-                if not auth or not auth.username or not auth.password or not check_auth(auth.username, auth.password):
-                    return authenticate()
-                # Populate session so routes reading session['user_id'] don't crash
-                from .models import User
+        # Fallback to Basic Auth if set (for backward compatibility/headless access)
+        auth = request.authorization
+        gui_user = os.environ.get("GUI_USERNAME")
+        gui_pass = os.environ.get("GUI_PASSWORD")
+        if gui_user and gui_pass:
+            if not auth or not auth.username or not auth.password or not check_auth(auth.username, auth.password):
+                return authenticate()
+            # Populate session so routes reading session['user_id'] don't crash
+            from .models import User
 
-                user = User.query.filter_by(username=auth.username).first()
-                if user:
-                    session["user_id"] = user.id
-                    session["username"] = user.username
-                    session["role"] = user.role
-                else:
-                    # Basic Auth user not in DB — use synthetic context
-                    session["user_id"] = "basic_auth"
-                    session["username"] = auth.username
-                    session["role"] = "admin"
+            user = User.query.filter_by(username=auth.username).first()
+            if user:
+                session["user_id"] = user.id
+                session["username"] = user.username
+                session["role"] = user.role
             else:
-                return redirect(url_for("main.login"))
+                # Basic Auth user not in DB — use synthetic context
+                session["user_id"] = "basic_auth"
+                session["username"] = auth.username
+                session["role"] = "admin"
+        else:
+            return redirect(url_for("main.login"))
 
         return f(*args, **kwargs)
 
@@ -215,7 +215,9 @@ def log_to_web(
         try:
             payload_to_send = mask_secrets(json.loads(data))
         except Exception:
-            payload_to_send = {"raw": data}
+            # If we can't parse it as JSON, it might contain secrets we can't easily identify.
+            # Safer to redact than to leak.
+            payload_to_send = {"raw": "[Redacted] Data could not be parsed safely."}
 
     socketio.emit(
         "new_log",

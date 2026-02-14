@@ -25,6 +25,7 @@
             </div>
             <div class="card-body p-4">
                 <form method="POST" id="endpoint-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                     <div class="row g-4">
                         <!-- Left Column: Core Configuration -->
                         <div class="col-lg-6">

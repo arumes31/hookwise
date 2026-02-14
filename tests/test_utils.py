@@ -17,10 +17,12 @@ from hookwise.utils import (
 
 @pytest.fixture
 def app():
+    from cryptography.fernet import Fernet
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ.setdefault('ENCRYPTION_KEY', 'OV0PcQMSRDhDsggpvMAukyXoc8Q2vZXo74KjSSLRnsk=')
+    os.environ.setdefault('ENCRYPTION_KEY', Fernet.generate_key().decode())
     app = create_app()
     app.config['TESTING'] = True
+    app.config['WTF_CSRF_ENABLED'] = False
     with app.app_context():
         db.create_all()
         yield app

@@ -100,13 +100,24 @@ def create_app() -> Flask:
 
     app.register_blueprint(main_bp)
 
+    from flask_wtf.csrf import CSRFProtect
     from werkzeug.security import check_password_hash, generate_password_hash
 
     from .models import User
 
+    CSRFProtect(app)
+
     with app.app_context():
         try:
-            gui_password = os.environ.get("GUI_PASSWORD", "admin")
+            gui_password = os.environ.get("GUI_PASSWORD")
+            if not gui_password:
+                if os.environ.get("DEBUG_MODE", "false").lower() == "true":
+                    gui_password = "admin"
+                    _logger.warning("GUI_PASSWORD not set, using default 'admin' for development.")
+                else:
+                    _logger.critical("GUI_PASSWORD must be set in production!")
+                    raise RuntimeError("GUI_PASSWORD env var is required")
+
             admin = User.query.filter_by(username="admin").first()
             if not admin:
                 admin = User(username="admin", password_hash=generate_password_hash(gui_password), role="admin")
@@ -127,5 +138,9 @@ def create_app() -> Flask:
     @app.errorhandler(500)
     def internal_server_error(e: Any) -> Any:
         return render_template("500.html"), 500
+    
+    @app.errorhandler(400)
+    def bad_request(e: Any) -> Any:
+        return render_template("500.html"), 400
 
     return app

@@ -9,6 +9,7 @@
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/prism.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 
 <body>
@@ -38,27 +39,33 @@
     </nav>
 
     <!-- Documentation Sidebar -->
-    <div class="offcanvas offcanvas-end bg-dark text-white border-start border-secondary border-opacity-25" tabindex="-1" id="docsSidebar" style="width: 400px;">
+    <div class="offcanvas offcanvas-end bg-dark text-white border-start border-secondary border-opacity-25"
+        tabindex="-1" id="docsSidebar" style="width: 400px;">
         <div class="offcanvas-header border-bottom border-secondary border-opacity-10">
             <h5 class="offcanvas-title fw-bold text-primary">Documentation</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
         </div>
         <div class="offcanvas-body">
             <h6 class="fw-bold text-info mb-3">Getting Started</h6>
-            <p class="small text-secondary">To start routing alerts, create an endpoint and use the generated URL in your monitoring tool (e.g. Uptime Kuma).</p>
-            
+            <p class="small text-secondary">To start routing alerts, create an endpoint and use the generated URL in
+                your monitoring tool (e.g. Uptime Kuma).</p>
+
             <h6 class="fw-bold text-info mt-4 mb-3">Authentication</h6>
-            <p class="small text-secondary">Every request must include the <code>Authorization: Bearer &lt;token&gt;</code> header.</p>
-            
+            <p class="small text-secondary">Every request must include the
+                <code>Authorization: Bearer &lt;token&gt;</code> header.</p>
+
             <h6 class="fw-bold text-info mt-4 mb-3">Smart Parsing</h6>
-            <p class="small text-secondary">Include <code>#CW&lt;CompanyIdentifier&gt;</code> in your alert title to automatically route to a specific client.</p>
-            
+            <p class="small text-secondary">Include <code>#CW&lt;CompanyIdentifier&gt;</code> in your alert title to
+                automatically route to a specific client.</p>
+
             <h6 class="fw-bold text-info mt-4 mb-3">JSONPath Mappings</h6>
-            <p class="small text-secondary">Use dot notation (e.g. <code>$.monitor.status</code>) to map payload fields to ticket fields.</p>
-            
+            <p class="small text-secondary">Use dot notation (e.g. <code>$.monitor.status</code>) to map payload fields
+                to ticket fields.</p>
+
             <hr class="my-4 border-secondary border-opacity-10">
             <div class="alert alert-info bg-opacity-10 border-info border-opacity-25 py-2">
-                <p class="mb-0 small text-info">Need more help? Check the <a href="https://github.com/hookwise/hookwise" target="_blank" class="fw-bold">GitHub Repository</a>.</p>
+                <p class="mb-0 small text-info">Need more help? Check the <a href="https://github.com/hookwise/hookwise"
+                        target="_blank" class="fw-bold">GitHub Repository</a>.</p>
             </div>
         </div>
     </div>
@@ -80,10 +87,14 @@
         {% block content %}{% endblock %}
     </div>
 
-    <button id="feedback-button" class="btn btn-outline-info position-fixed bottom-0 start-0 m-4 rounded-pill shadow-lg" style="z-index: 1050;" data-bs-toggle="modal" data-bs-target="#feedbackModal">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chat-left-text me-2" viewBox="0 0 16 16">
-            <path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
-            <path d="M5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1zm0 2h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1zm0 2h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1z"/>
+    <button id="feedback-button" class="btn btn-outline-info position-fixed bottom-0 start-0 m-4 rounded-pill shadow-lg"
+        style="z-index: 1050;" data-bs-toggle="modal" data-bs-target="#feedbackModal">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+            class="bi bi-chat-left-text me-2" viewBox="0 0 16 16">
+            <path
+                d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4.414A2 2 0 0 0 3 11.586l-2 2V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12.793a.5.5 0 0 0 .854.353l2.853-2.853A1 1 0 0 1 4.414 12H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z" />
+            <path
+                d="M5 4h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1zm0 2h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1zm0 2h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1 0-1z" />
         </svg>
         Feedback
     </button>
@@ -100,12 +111,15 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label class="form-label small fw-bold">MESSAGE</label>
-                            <textarea class="form-control" name="message" rows="4" placeholder="Report a bug or suggest an improvement..." required></textarea>
+                            <textarea class="form-control" name="message" rows="4"
+                                placeholder="Report a bug or suggest an improvement..." required></textarea>
                         </div>
-                        <p class="small text-secondary mb-0">Your system info (browser, OS) will be sent to help us debug.</p>
+                        <p class="small text-secondary mb-0">Your system info (browser, OS) will be sent to help us
+                            debug.</p>
                     </div>
                     <div class="modal-footer border-info border-opacity-25">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-sm btn-info text-dark fw-bold">Submit Feedback</button>
                     </div>
                 </form>
@@ -113,9 +127,12 @@
         </div>
     </div>
 
-    <button id="back-to-top" class="btn btn-primary position-fixed bottom-0 end-0 m-4 rounded-circle shadow-lg d-none" style="z-index: 1050; width: 45px; height: 45px;" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-arrow-up" viewBox="0 0 16 16">
-            <path fill-rule="evenodd" d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z"/>
+    <button id="back-to-top" class="btn btn-primary position-fixed bottom-0 end-0 m-4 rounded-circle shadow-lg d-none"
+        style="z-index: 1050; width: 45px; height: 45px;" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-arrow-up"
+            viewBox="0 0 16 16">
+            <path fill-rule="evenodd"
+                d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z" />
         </svg>
     </button>
 

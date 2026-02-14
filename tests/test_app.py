@@ -12,6 +12,7 @@ from hookwise.tasks import handle_webhook_logic
 def app():
     app = create_app()
     app.config['TESTING'] = True
+    app.config['WTF_CSRF_ENABLED'] = False
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
     return app
 
@@ -36,8 +37,8 @@ def sample_config(app, client):
         db.session.commit()
         return config.id
 
-@patch('hookwise.tasks.redis_client.ping')
-@patch('hookwise.tasks.cw_client')
+@patch('hookwise.api.redis_client.ping')
+@patch('hookwise.api.cw_client')
 def test_health(mock_cw, mock_ping, client):
     """Test the health endpoint."""
     mock_ping.return_value = True
@@ -45,14 +46,14 @@ def test_health(mock_cw, mock_ping, client):
     assert response.status_code == 200
     assert response.json['status'] == "ok"
 
-@patch('hookwise.tasks.cw_client')
+@patch('hookwise.api.cw_client')
 def test_metrics(mock_cw, client):
     """Test the metrics endpoint."""
     response = client.get('/metrics')
     assert response.status_code == 200
     assert b"hookwise_webhooks_total" in response.data
 
-@patch('hookwise.tasks.process_webhook_task.delay')
+@patch('hookwise.webhook.process_webhook_task.delay')
 def test_dynamic_webhook_queues_task(mock_delay, client, sample_config):
     """Test that the dynamic webhook queues the celery task."""
     payload = {
@@ -94,7 +95,7 @@ def test_handle_webhook_logic_with_company_id_extraction(mock_cw, mock_redis, ap
     assert kwargs['company_id'] == "COMPANY_ABC"
     assert kwargs['board'] == "Test Board"
 
-@patch('hookwise.tasks.redis_client.ping')
+@patch('hookwise.api.redis_client.ping')
 @patch('hookwise.tasks.celery.control.inspect')
 def test_health_services(mock_inspect, mock_ping, client):
     """Test the detailed health services endpoint."""
