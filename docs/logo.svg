@@ -7,7 +7,7 @@
   </defs>
   <rect width="400" height="120" rx="15" fill="url(#grad1)" />
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="bold" fill="#ffffff">
-    KumaWise
+    HookWise
   </text>
   <path d="M40 60 L60 40 L60 80 Z" fill="#E74C3C" transform="translate(20, 0)"/>
 </svg>

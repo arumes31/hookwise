@@ -1,74 +1,163 @@
 <p align="center">
-  <img src="docs/logo.png" alt="HookWise Logo" width="400">
+  <img src="docs/logo.png" alt="HookWise Logo" width="200">
 </p>
 
 # HookWise
 
-A general-purpose webhook router that bridges various webhooks to **ConnectWise Manage** tickets with a user-friendly Web GUI.
+**Enterprise-Grade Webhook Router & ConnectWise Bridge**
 
-## Features
+HookWise is a highly performant, general-purpose webhook router designed to bridge various monitoring sources (Uptime Kuma, Zabbix, Grafana, Datadog) to **ConnectWise Manage** tickets. Featuring intelligent duplicate detection, asynchronous processing, and local AI-driven analysis.
 
-- **Web GUI:** Easily create and manage webhook endpoints.
-- **Dynamic Endpoints:** Generate unique URLs for different monitoring sources.
-- **General Webhook Router:** Receives alerts from any source and routes them to ConnectWise.
-- **Customizable Configuration:** Configure Service Board, Status, Type, Subtype, and Priority per endpoint.
-- **Auto-Ticketing:** Creates tickets in ConnectWise based on incoming webhook data.
-- **Smart Parsing:** Extracts Company ID from titles using the `#CW` prefix (e.g., `My Server #CW123`).
-- **Bearer Token Auth:** Every generated endpoint is secured with an auto-generated Bearer token.
-- **Persistent Storage:** Uses SQLite to store endpoint configurations and Redis/Celery for task queuing.
-- **Observability:** Built-in Prometheus metrics and health checks.
+---
 
-## Configuration
+## 🏗️ Architecture & Flow
 
-The application is configured via environment variables.
+### System Overview
+HookWise uses a distributed architecture to ensure reliability and low-latency webhook ingestion.
 
-| Variable | Description | Required | Default |
-|----------|-------------|:--------:|---------|
-| `CW_URL` | ConnectWise API Base URL | No | `https://api-na.myconnectwise.net/v4_6_release/apis/3.0` |
-| `CW_COMPANY` | Your ConnectWise Company ID | **Yes** | - |
-| `CW_PUBLIC_KEY` | API Public Key | **Yes** | - |
-| `CW_PRIVATE_KEY` | API Private Key | **Yes** | - |
-| `CW_CLIENT_ID` | API Client ID | **Yes** | - |
-| `DATABASE_URL` | SQLite database URL | No | `sqlite:////app/data/hookwise.db` |
-| `REDIS_PASSWORD` | Password for Redis security | No | - |
-| `CELERY_BROKER_URL` | Redis connection string | No | `redis://redis:6379/0` |
-
-## Deployment
-
-### Docker Compose (Recommended)
-
-```bash
-docker-compose up -d
+```mermaid
+graph TD
+    Client[Monitoring Source] -->|HTTPS Webhook| Proxy[Flask / Gevent Proxy]
+    Proxy -->|Queue Task| Redis[(Redis Broker)]
+    Redis -->|Process| Worker[Celery Worker]
+    Worker -->|Analyze| AI[Ollama / phi3]
+    Worker -->|PSA API| CW[ConnectWise Manage]
+    Worker -->|Logs| DB[(PostgreSQL)]
+    Proxy -->|Live Feed| GUI[Web GUI / Socket.io]
 ```
 
-Access the Web GUI at `http://localhost:5000`.
+### Webhook Processing Pipeline
+1.  **Ingestion**: Proxy receives payload, validates source IP and HMAC signature.
+2.  **Queuing**: Request is assigned a `request_id` and pushed to Redis.
+3.  **Processing**: Celery worker pulls the task.
+4.  **Resolution**: JSONPath mappings and Regex routing rules are applied.
+5.  **Deduplication**: PSA is queried for existing open tickets with the same summary.
+6.  **Action**: Ticket is Created, Updated, or Closed in ConnectWise.
+7.  **AI Insights**: For new tickets, Ollama generates an automated RCA note.
 
-## Usage
+---
 
-1. **Access the Web GUI:** Open HookWise in your browser.
-2. **Create Endpoint:** Click "New Endpoint", fill in the details (Board, Status, etc.), and save.
-3. **Get Endpoint URL:** Copy the auto-generated URL and Bearer Token.
-4. **Configure Source:** Set your source (e.g., Uptime Kuma) to send webhooks to that URL.
-5. **Authenticate:** Ensure your source sends the `Authorization: Bearer <your-token>` header.
+## 🚀 Advanced Features
 
-### Monitor Naming Convention
+### 🛠️ Intelligent Routing
+- **Regex Rule Engine:** Route `CRITICAL` alerts to the "Emergency" board and `WARN` alerts to "Tiling" automatically.
+- **Maintenance Awareness:** Define ISO8601 maintenance windows to suppress tickets during scheduled downtime.
+- **Company Mapping:** Supports `#CW<ID>` in titles or dynamic lookups from payload fields.
 
-Include `#CW<CompanyIdentifier>` in your monitor or alert title to automatically route the ticket to a specific company in ConnectWise.
+### 🧠 AI-Powered Insights
+HookWise can generate automated troubleshoot guides using local LLMs. It analyzes the raw payload and adds an **internal note** to the ticket with:
+- Potential root causes.
+- Suggested troubleshooting steps.
+- Technical summary of the alert.
 
-**Example:** `Server Down #CWClientA`
+### 📋 Observability
+- **Live Activity Hub:** Real-time Socket.io feed of all incoming webhooks.
+- **Audit Trail:** Every configuration change is logged with the user and timestamp.
+- **Prometheus Metrics:** Native Export for scrapers like Grafana.
 
-## Security
+---
 
-- **Local Assets:** All JS and CSS files are hosted locally to ensure privacy and offline capability.
-- **Bearer Tokens:** Each endpoint is protected by a unique, secure token.
+## 📋 API Reference
 
-## Development
+All GUI/Admin endpoints require Session Auth or Basic Auth (if configured). Webhook endpoints require Bearer tokens.
 
-### Running Tests
+### Webhook Ingestion
+- `POST /webhook/<endpoint_id>`
+  - **Auth**: `Authorization: Bearer <token>`
+  - **Returns**: `202 Accepted` with `request_id`.
+
+### Internal API (Admin)
+- `GET /api/stats`: Returns daily performance data.
+- `POST /history/replay/<log_id>`: Re-processes a historic webhook.
+- `GET /api/cw/boards`: Cached proxy to ConnectWise boards.
+- `GET /health/services`: Real-time health check for Redis, DB, and Celery.
+- `POST /admin/maintenance`: Toggle global maintenance mode.
+
+---
+
+## ⚙️ Extensive Configuration
+
+### PSA Integration
+| Variable | Usage |
+|----------|-------|
+| `CW_TICKET_PREFIX` | Prefix for all summaries (Default: `Alert:`). |
+| `CW_SERVICE_BOARD` | Primary board if not overridden. |
+| `CW_STATUS_NEW` | Initial status for new tickets. |
+| `CW_STATUS_CLOSED` | Status used when an `UP` alert is received. |
+
+### System & Security
+| Variable | Usage |
+|----------|-------|
+| `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** |
+| `GUI_TRUSTED_IPS`| CIDR list (e.g., `10.0.0.0/24, 192.168.1.5`). |
+| `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
+| `FORCE_HTTPS` | Redirects all traffic to TLS. |
+
+---
+
+## 📖 Deep-Dive Usage
+
+### JSONPath Mapping Examples
+| Destination | Path Example | Result |
+|-------------|--------------|--------|
+| **Summary** | `$.monitor.name` | Extracts Uptime Kuma monitor name. |
+| **Description**| `$.msg` | Extracts the alert body. |
+| **Company** | `$.tags.client_id` | Maps dynamic client IDs. |
+
+### Placeholder Templates
+Use these in your "Ticket Description Template":
+- `{{ monitor_name }}`: The alert source name.
+- `{{ msg }}`: The alert message.
+- `{{ request_id }}`: Internal tracking ID.
+- `{$..field}`: Any valid JSONPath (e.g., `{$..heartbeat.status}`).
+
+### Web GUI Shortcuts
+- ` / ` : Focus Search bar.
+- `Esc` : Close any open modal.
+- `Drag & Drop` : Reorder endpoint priority on the dashboard.
+
+---
+
+## 🛠️ Troubleshooting & FAQ
+
+**Q: Why are tickets not closing automatically?**
+- Verify that your `Close Value` in the endpoint config matches the payload exactly (e.g., `1` vs `UP`).
+- Check if the ticket summary has been manually changed in ConnectWise.
+
+**Q: "Redis connection refused" in logs?**
+- Ensure the `redis` container is running and the `REDIS_PASSWORD` matches in both the `redis` and `hookwise` services.
+
+**Q: AI RCA is too slow?**
+- LLM inference is CPU-heavy. Ensure the `hookwise-llm` container has at least 4 cores and 8GB RAM assigned.
+
+---
+
+## 🛡️ Security & Compliance
+- **Data Privacy**: Webhook payloads are masked (`********`) in audit logs if they contain sensitive keys like `token` or `password`.
+- **Encryption**: Bearer tokens and HMAC secrets are encrypted using AES-128 via the Fernet protocol.
+- **Air-Gap Support**: All assets (Bootstrap, Socket.io, Prism.js) are bundled locally. No external CDNs are used.
+
+---
+
+## 📄 Development & Contributing
+
+### Linting & Formatting
+We use `ruff` for code quality:
 ```bash
-pytest
+ruff check .
+ruff format .
 ```
 
-## License
+### Database Migrations
+When changing `models.py`:
+```bash
+flask db migrate -m "Description"
+flask db upgrade
+```
 
-This project is licensed under the MIT License.
+---
+
+## 📄 License
+MIT License - Copyright (c) 2026 HookWise Team.
+
+

@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center" style="min-height: 70vh;">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-lg bg-dark">
+            <div class="card-header bg-primary text-white text-center py-4 border-0">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="50" class="mb-2">
+                <h4 class="mb-0 fw-bold">Login to HookWise</h4>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <div class="mb-3">
+                        <label for="username" class="form-label small fw-bold">USERNAME</label>
+                        <input type="text" class="form-control" id="username" name="username" required autofocus>
+                    </div>
+                    <div class="mb-4">
+                        <label for="password" class="form-label small fw-bold">PASSWORD</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary fw-bold">Sign In</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <p class="text-center mt-4 small text-secondary">
+            Default credentials can be set via environment variables.
+        </p>
+    </div>
+</div>
+{% endblock %}

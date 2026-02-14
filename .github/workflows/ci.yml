@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, v2_test ]
+  pull_request:
+    branches: [ main, v2_test ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: hookwise_test
+          POSTGRES_USER: hookwise
+          POSTGRES_PASSWORD: hookwise_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -e .
+
+    - name: Lint with ruff
+      run: ruff check .
+
+    - name: Type check with mypy
+      run: mypy .
+
+    - name: Run tests
+      env:
+        DATABASE_URL: postgresql://hookwise:hookwise_pass@localhost:5432/hookwise_test
+        REDIS_URL: redis://localhost:6379/0
+        SECRET_KEY: test-secret-key
+        TESTING: "true"
+      run: |
+        ls -R
+        pytest tests/ -v

@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-lg">
+            <div class="card-header bg-primary text-white p-4">
+                <h4 class="mb-0 fw-bold">Set Up Two-Factor Auth</h4>
+            </div>
+            <div class="card-body p-4 text-center">
+                <p class="text-secondary small mb-4">Scan the QR code below with your authenticator app (e.g. Google
+                    Authenticator, Authy).</p>
+
+                <div class="mb-4 bg-white p-3 d-inline-block rounded">
+                    <img src="{{ qr_data }}" alt="2FA QR Code">
+                </div>
+
+                <div class="mb-4">
+                    <small class="text-secondary d-block mb-1">UNABLE TO SCAN? USE THIS KEY:</small>
+                    <code class="user-select-all font-monospace">{{ secret }}</code>
+                </div>
+
+                <hr class="my-4 border-secondary border-opacity-10">
+
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <div class="mb-3">
+                        <label for="otp" class="form-label small fw-bold">ENTER CODE TO VERIFY</label>
+                        <input type="text" class="form-control text-center font-monospace" id="otp" name="otp"
+                            placeholder="000000" required>
+                    </div>
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                        <a href="{{ url_for('main.settings') }}" class="btn btn-outline-secondary px-4">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-5 fw-bold">Enable 2FA</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

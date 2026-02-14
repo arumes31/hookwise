@@ -1,3 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hookwise"
+version = "0.1.0"
+description = "A webhook management system"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+dependencies = [
+    "flask",
+    "celery",
+    "redis",
+    "requests",
+    "flask-sqlalchemy",
+    "flask-migrate",
+    "flask-limiter",
+    "flask-socketio",
+    "prometheus-client",
+    "cryptography",
+    "python-dotenv",
+    "gunicorn",
+    "segno"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hookwise*"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py313"
@@ -10,7 +39,7 @@ ignore = []
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
-exclude = ["tests/"]
+exclude = ["tests/", "migrations/"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -23,3 +52,11 @@ module = [
     "flask_sqlalchemy.*"
 ]
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"

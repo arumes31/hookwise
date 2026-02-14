@@ -1,3 +1,10 @@
-/__pycache__
+__pycache__
 .env
-test*
+# test*
+.venv
+.qodo
+.pytest_cache
+*.db
+instance/
+task.md
+.ruff_cache
