@@ -10,6 +10,7 @@ from hookwise.models import WebhookConfig
 from hookwise.tasks import handle_webhook_logic
 from hookwise.utils import resolve_jsonpath
 
+
 @pytest.fixture
 def app():
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'

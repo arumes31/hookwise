@@ -7,6 +7,7 @@ from hookwise.extensions import db
 from hookwise.models import WebhookConfig
 from hookwise.tasks import handle_webhook_logic
 
+
 @pytest.fixture
 def app():
     app = create_app()
