@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    timeout-minutes: 5
     
     services:
       postgres:
@@ -62,4 +62,4 @@ jobs:
         REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: test-secret-key
         TESTING: "true"
-      run: pytest
+      run: pytest tests/ -v
