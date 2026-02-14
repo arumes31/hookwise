@@ -57,7 +57,7 @@ python-engineio==4.13.1
 python-socketio==5.16.1
 redis==7.1.1
 requests==2.32.5
-rich==13.9.4
+rich==14.3.2
 ruff==0.15.0
 segno==1.6.1
 simple-websocket==1.1.0
