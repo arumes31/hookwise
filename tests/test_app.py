@@ -37,25 +37,31 @@ def sample_config(app, client):
         db.session.commit()
         return config.id
 
-@patch('hookwise.api.redis_client.ping')
+@patch('hookwise.tasks.redis_client')
+@patch('hookwise.api.redis_client')
 @patch('hookwise.api.cw_client')
-def test_health(mock_cw, mock_ping, client):
+def test_health(mock_cw, mock_api_redis, mock_tasks_redis, client):
     """Test the health endpoint."""
-    mock_ping.return_value = True
+    mock_api_redis.ping.return_value = True
+    mock_tasks_redis.get.return_value = None
     response = client.get('/health')
     assert response.status_code == 200
     assert response.json['status'] == "ok"
 
+@patch('hookwise.tasks.redis_client')
 @patch('hookwise.api.cw_client')
-def test_metrics(mock_cw, client):
+def test_metrics(mock_cw, mock_tasks_redis, client):
     """Test the metrics endpoint."""
+    mock_tasks_redis.get.return_value = None
     response = client.get('/metrics')
     assert response.status_code == 200
     assert b"hookwise_webhooks_total" in response.data
 
+@patch('hookwise.tasks.redis_client')
 @patch('hookwise.webhook.process_webhook_task.delay')
-def test_dynamic_webhook_queues_task(mock_delay, client, sample_config):
+def test_dynamic_webhook_queues_task(mock_delay, mock_tasks_redis, client, sample_config):
     """Test that the dynamic webhook queues the celery task."""
+    mock_tasks_redis.get.return_value = None
     payload = {
         "heartbeat": {"status": 0},
         "monitor": {"name": "Test Monitor"},
@@ -69,8 +75,10 @@ def test_dynamic_webhook_queues_task(mock_delay, client, sample_config):
     assert response.json['status'] == "queued"
     mock_delay.assert_called_once_with(sample_config, payload, ANY, source_ip=ANY, headers=ANY)
 
-def test_dynamic_webhook_unauthorized(client, sample_config):
+@patch('hookwise.tasks.redis_client')
+def test_dynamic_webhook_unauthorized(mock_tasks_redis, client, sample_config):
     """Test that unauthorized webhook fails."""
+    mock_tasks_redis.get.return_value = None
     response = client.post(f'/w/{sample_config}', json={"test": "data"})
     assert response.status_code == 401
 
@@ -95,11 +103,13 @@ def test_handle_webhook_logic_with_company_id_extraction(mock_cw, mock_redis, ap
     assert kwargs['company_id'] == "COMPANY_ABC"
     assert kwargs['board'] == "Test Board"
 
-@patch('hookwise.api.redis_client.ping')
+@patch('hookwise.tasks.redis_client')
+@patch('hookwise.api.redis_client')
 @patch('hookwise.tasks.celery.control.inspect')
-def test_health_services(mock_inspect, mock_ping, client):
+def test_health_services(mock_inspect, mock_api_redis, mock_tasks_redis, client):
     """Test the detailed health services endpoint."""
-    mock_ping.return_value = True
+    mock_tasks_redis.get.return_value = None
+    mock_api_redis.ping.return_value = True
     mock_inspect.return_value.stats.return_value = {"worker1": {}}
     
     response = client.get('/health/services')

@@ -9,11 +9,13 @@ from flask_sqlalchemy import SQLAlchemy
 _redis_password = os.environ.get("REDIS_PASSWORD")
 _redis_host = os.environ.get("REDIS_HOST", "localhost")
 _redis_port = os.environ.get("REDIS_PORT", 6379)
-_limiter_storage = (
-    f"redis://:{_redis_password}@{_redis_host}:{_redis_port}/0"
-    if _redis_password
-    else f"redis://{_redis_host}:{_redis_port}/0"
-)
+_limiter_storage = os.environ.get("LIMITER_STORAGE_URI")
+if not _limiter_storage:
+    _limiter_storage = (
+        f"redis://:{_redis_password}@{_redis_host}:{_redis_port}/0"
+        if _redis_password
+        else f"redis://{_redis_host}:{_redis_port}/0"
+    )
 
 
 db = SQLAlchemy()
