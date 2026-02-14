@@ -1,14 +1,15 @@
 """Tests for utility functions: encryption, jsonpath, masking, auth."""
 import os
-os.environ['SOCKETIO_ASYNC_MODE'] = 'threading'
-import pytest
 from unittest.mock import patch
+
+import pytest
+
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.utils import (
     check_auth,
-    encrypt_string,
     decrypt_string,
+    encrypt_string,
     mask_secrets,
     resolve_jsonpath,
 )

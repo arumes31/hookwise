@@ -1,6 +1,7 @@
 from unittest.mock import ANY, patch
+
 import pytest
-import uuid
+
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig

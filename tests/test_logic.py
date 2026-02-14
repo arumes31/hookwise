@@ -1,12 +1,14 @@
-import pytest
-import os
 import json
-from unittest.mock import patch, MagicMock
+import os
+from unittest.mock import patch
+
+import pytest
+
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig
-from hookwise.utils import resolve_jsonpath
 from hookwise.tasks import handle_webhook_logic
+from hookwise.utils import resolve_jsonpath
 
 @pytest.fixture
 def app():
