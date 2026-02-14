@@ -63,4 +63,6 @@ jobs:
         REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: test-secret-key
         TESTING: "true"
-      run: pytest tests/ -v
+      run: |
+        ls -R
+        pytest tests/ -v
