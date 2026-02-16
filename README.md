@@ -50,6 +50,12 @@ HookWise can generate automated troubleshoot guides using local LLMs. It analyze
 - Suggested troubleshooting steps.
 - Technical summary of the alert.
 
+**Managing the Model:**
+By default, HookWise uses `phi3`. To pull the latest version or update the model manually:
+```bash
+docker exec -it hookwise-llm ollama pull phi3
+```
+
 ### 📋 Observability
 - **Live Activity Hub:** Real-time Socket.io feed of all incoming webhooks.
 - **Audit Trail:** Every configuration change is logged with the user and timestamp.
