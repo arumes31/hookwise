@@ -118,7 +118,7 @@
                             <span class="text-muted opacity-50">-</span>
                             {% endif %}
                         </td>
-                        <td class="py-3 text-secondary font-monospace small">
+                        <td class="py-3 text-secondary font-monospace small" data-request-id="{{ log.request_id }}">
                             <span class="user-select-all">{{ log.request_id[:16] }}...</span>
                             <button class="btn btn-sm btn-link p-0 ms-1 opacity-50"
                                 onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID">
@@ -337,7 +337,7 @@
             cells.push(`"${tds[2].textContent.trim()}"`);
             cells.push(`"${tds[3].textContent.trim()}"`);
             cells.push(`"${tds[6].textContent.trim()}"`);
-            cells.push(`"${tds[7].textContent.trim()}"`);
+            cells.push(`"${tds[7].dataset.requestId || tds[7].textContent.trim()}"`);
             rows.push(cells.join(','));
         });
         const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
@@ -382,6 +382,7 @@
         const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
         try {
             const parsed = JSON.parse(JSON.parse(dataToDisplay || '{}'));
+            toggleBtn.style.display = '';
             if (isPretty) {
                 display.textContent = JSON.stringify(parsed, null, 2);
                 toggleBtn.textContent = 'Minified';
@@ -393,13 +394,14 @@
             display.textContent = dataToDisplay;
             toggleBtn.style.display = 'none';
         }
-        headersBtn.textContent = showingHeaders ? 'Show Headers' : 'Show Payload';
+        headersBtn.textContent = showingHeaders ? 'Show Payload' : 'Show Headers';
         Prism.highlightElement(display);
     }
 
     function replayWebhook(id) {
-        const debugMode = {{ debug_mode | tojson }};
-        if (!debugMode && !confirm('Re-process this webhook?')) return;
+        const debugMode = {{ debug_mode | tojson
+    }};
+    if (!debugMode && !confirm('Re-process this webhook?')) return;
     fetch(`/history/replay/${id}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
@@ -483,24 +485,115 @@
         if (!liveToggle.checked) return;
         const tr = document.createElement('tr');
         tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
-        const ts = new Date(data.timestamp).toLocaleString();
-        const statusBadge = `<span class="badge bg-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} bg-opacity-10 text-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} border border-opacity-25">${data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase()}</span>`;
-        const ticketLink = data.ticket_id ? `<a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">#${data.ticket_id}</a>` : '<span class="text-muted opacity-50">-</span>';
-        tr.innerHTML = `
-                <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="${data.id}" onchange="updateBulkHistory()"></td>
-                <td class="py-3 text-secondary font-monospace">${ts}</td>
-                <td class="py-3 fw-bold">${data.config_name}</td>
-                <td class="py-3">${statusBadge}</td>
-                <td class="py-3 text-secondary font-monospace small">-</td>
-                <td class="py-3">-</td>
-                <td class="py-3 font-monospace">${ticketLink}</td>
-                <td class="py-3 text-secondary font-monospace small">${data.payload ? 'realtime' : '-'}</td>
-                <td class="pe-4 py-3 text-end">
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-info" onclick="window.location.reload()">Refresh to View</button>
-                    </div>
-                </td>
-            `;
+
+        // Checkbox
+        const tdCheck = document.createElement('td');
+        tdCheck.className = 'ps-4 py-3';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'log-check';
+        input.dataset.id = data.id;
+        input.onchange = updateBulkHistory;
+        tdCheck.appendChild(input);
+
+        // Timestamp
+        const tdTs = document.createElement('td');
+        tdTs.className = 'py-3 text-secondary font-monospace';
+        tdTs.textContent = new Date(data.timestamp).toLocaleString();
+
+        // Endpoint
+        const tdConfig = document.createElement('td');
+        tdConfig.className = 'py-3 fw-bold';
+        tdConfig.textContent = data.config_name;
+
+        // Status
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'py-3';
+        const badge = document.createElement('span');
+        const levelClass = data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger';
+        badge.className = `badge bg-${levelClass} bg-opacity-10 text-${levelClass} border border-opacity-25`;
+        badge.textContent = data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase();
+        tdStatus.appendChild(badge);
+
+        // Source IP
+        const tdIp = document.createElement('td');
+        tdIp.className = 'py-3 text-secondary font-monospace small';
+        tdIp.textContent = data.source_ip || '-';
+
+        // Retry
+        const tdRetry = document.createElement('td');
+        tdRetry.className = 'py-3';
+        if (data.retry_count > 0) {
+            const retryBadge = document.createElement('span');
+            retryBadge.className = 'badge bg-warning text-dark';
+            retryBadge.style.fontSize = '0.65rem';
+            retryBadge.textContent = data.retry_count;
+            tdRetry.appendChild(retryBadge);
+        } else {
+            const span = document.createElement('span');
+            span.className = 'text-muted opacity-50';
+            span.textContent = '-';
+            tdRetry.appendChild(span);
+        }
+
+        // Ticket
+        const tdTicket = document.createElement('td');
+        tdTicket.className = 'py-3 font-monospace';
+        if (data.ticket_id) {
+            const a = document.createElement('a');
+            a.href = `https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}`;
+            a.target = '_blank';
+            a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold';
+            a.style.fontSize = '0.7rem';
+            a.textContent = `#${data.ticket_id}`;
+            tdTicket.appendChild(a);
+        } else {
+            const span = document.createElement('span');
+            span.className = 'text-muted opacity-50';
+            span.textContent = '-';
+            tdTicket.appendChild(span);
+        }
+
+        // Request ID
+        const tdReqId = document.createElement('td');
+        tdReqId.className = 'py-3 text-secondary font-monospace small';
+        tdReqId.dataset.requestId = data.id; // Corrected: request_id usually from data
+        const reqSpan = document.createElement('span');
+        reqSpan.className = 'user-select-all';
+        reqSpan.textContent = (data.request_id ? data.request_id.substring(0, 16) : (data.id || '').toString().substring(0, 16)) + '...';
+        tdReqId.appendChild(reqSpan);
+
+        // Matched Rule
+        const tdRule = document.createElement('td');
+        tdRule.className = 'py-3';
+        if (data.matched_rule) {
+            const ruleBadge = document.createElement('span');
+            ruleBadge.className = 'badge bg-info bg-opacity-10 text-info border border-info border-opacity-25';
+            ruleBadge.dataset.tooltip = data.matched_rule;
+            ruleBadge.textContent = 'RULE MATCH';
+            tdRule.appendChild(ruleBadge);
+        } else {
+            const span = document.createElement('span');
+            span.className = 'text-muted opacity-50';
+            span.textContent = '-';
+            tdRule.appendChild(span);
+        }
+
+        // Actions
+        const tdActions = document.createElement('td');
+        tdActions.className = 'pe-4 py-3 text-end';
+        const group = document.createElement('div');
+        group.className = 'btn-group btn-group-sm';
+        const reloadBtn = document.createElement('button');
+        reloadBtn.className = 'btn btn-outline-info';
+        reloadBtn.onclick = () => window.location.reload();
+        reloadBtn.textContent = 'Refresh to View';
+        group.appendChild(reloadBtn);
+        tdActions.appendChild(group);
+
+        // Append cells in order
+        [tdCheck, tdTs, tdConfig, tdStatus, tdIp, tdRetry, tdTicket, tdReqId, tdRule, tdActions].forEach(td => tr.appendChild(td));
+
         tableBody.insertBefore(tr, tableBody.firstChild);
         if (tableBody.children.length > 50) tableBody.lastChild.remove();
     });
