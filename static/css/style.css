@@ -399,50 +399,6 @@ h4,
     shape-rendering: crispEdges;
 }
 
-/* Phase 1: Falling Garbage (Aggressive bounce) */
-.falling-piece {
-    opacity: 0;
-    animation: retro-fall-v2 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-@keyframes retro-fall-v2 {
-    0% {
-        transform: translateY(-120px) rotate(15deg);
-        opacity: 0;
-    }
-
-    60% {
-        transform: translateY(0) rotate(0);
-        opacity: 1;
-    }
-
-    75% {
-        transform: translateY(-30px);
-    }
-
-    100% {
-        transform: translateY(0);
-        opacity: 0;
-    }
-}
-
-/* Phase 2: CRT Scanline (Sharp sweep) */
-.retro-scanline {
-    fill: var(--retro-cyan);
-    opacity: 0.6;
-    animation: retro-scan-v2 1.5s ease-in-out infinite;
-}
-
-@keyframes retro-scan-v2 {
-    0% {
-        transform: translateY(-100%) scaleY(2);
-    }
-
-    100% {
-        transform: translateY(200%) scaleY(1);
-    }
-}
-
 /* Phase 3: High-Fidelity Letter Snap */
 .snap-letter {
     opacity: 0;
@@ -460,96 +416,6 @@ h4,
         transform: scale(1) translateY(0);
         opacity: 1;
         filter: brightness(1) blur(0);
-    }
-}
-
-.w-bounce {
-    animation: retro-w-v2 0.8s ease-in-out 3.2s forwards;
-}
-
-@keyframes retro-w-v2 {
-
-    0%,
-    100% {
-        transform: scale(1);
-    }
-
-    40% {
-        transform: scale(1.3) translateY(-4px);
-    }
-
-    60% {
-        transform: scale(0.8) translateY(2px);
-    }
-
-    80% {
-        transform: scale(1.1);
-    }
-}
-
-.i-dot-fall {
-    opacity: 0;
-    animation: retro-dot-v2 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 3.6s forwards;
-}
-
-@keyframes retro-dot-v2 {
-    0% {
-        transform: translateY(-60px);
-        opacity: 0;
-    }
-
-    100% {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-/* Phase 5: Rubbery Tug with Skew */
-.word-group.tugged {
-    animation: retro-tug-v2 1.2s ease-in-out 6s forwards;
-}
-
-@keyframes retro-tug-v2 {
-    0% {
-        transform: translateX(0) skewX(0);
-    }
-
-    30% {
-        transform: translateX(25px) skewX(-12deg) scaleX(1.1);
-    }
-
-    50% {
-        transform: translateX(-10px) skewX(6deg);
-    }
-
-    70% {
-        transform: translateX(4px) skewX(-2deg);
-    }
-
-    90% {
-        transform: translateX(-1px);
-    }
-
-    100% {
-        transform: translateX(0) skewX(0);
-    }
-}
-
-/* Phase 4: Precise Hook entrance */
-.retro-hook {
-    opacity: 0;
-    animation: retro-hook-v2 1.2s ease-out 5s forwards;
-}
-
-@keyframes retro-hook-v2 {
-    0% {
-        transform: translateX(120px) translateY(-40px);
-        opacity: 0;
-    }
-
-    100% {
-        transform: translateX(0) translateY(0);
-        opacity: 1;
     }
 }
 
@@ -578,7 +444,7 @@ h4,
 }
 
 .logo-settled {
-    animation: retro-idle-breath 4s ease-in-out infinite 8s;
+    animation: retro-idle-breath 4s ease-in-out infinite 3s;
 }
 
 @keyframes retro-idle-breath {
