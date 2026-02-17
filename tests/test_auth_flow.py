@@ -1,6 +1,7 @@
-import pytest
 from unittest.mock import patch
+
 import pyotp
+import pytest
 from werkzeug.security import generate_password_hash
 
 from hookwise import create_app
