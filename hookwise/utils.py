@@ -81,31 +81,36 @@ def auth_required(f: Any) -> Any:
             if not trusted:
                 return Response("Your IP is not authorized to access this GUI.", 403)
 
-        # 2. Session Check
-        # Fallback to Basic Auth if set (for backward compatibility/headless access)
+        # 2. Session Check (Primary for GUI)
+        if "user_id" in session:
+            return f(*args, **kwargs)
+
+        # 3. Basic Auth Check (Fallback for API/Headless)
         auth = request.authorization
         gui_user = os.environ.get("GUI_USERNAME")
         gui_pass = os.environ.get("GUI_PASSWORD")
-        if gui_user and gui_pass:
-            if not auth or not auth.username or not auth.password or not check_auth(auth.username, auth.password):
-                return authenticate()
-            # Populate session so routes reading session['user_id'] don't crash
-            from .models import User
 
-            user = User.query.filter_by(username=auth.username).first()
-            if user:
-                session["user_id"] = user.id
-                session["username"] = user.username
-                session["role"] = user.role
+        if auth and gui_user and gui_pass:
+            # Only check Basic Auth if the client sent the header
+            if check_auth(auth.username, auth.password):
+                # Valid Basic Auth - populate synthetic session
+                from .models import User
+                user = User.query.filter_by(username=auth.username).first()
+                if user:
+                    session["user_id"] = user.id
+                    session["username"] = user.username
+                    session["role"] = user.role
+                else:
+                    session["user_id"] = "basic_auth"
+                    session["username"] = auth.username
+                    session["role"] = "admin"
+                return f(*args, **kwargs)
             else:
-                # Basic Auth user not in DB — use synthetic context
-                session["user_id"] = "basic_auth"
-                session["username"] = auth.username
-                session["role"] = "admin"
-        else:
-            return redirect(url_for("main.login"))
+                # Client sent invalid Basic Auth credentials
+                return authenticate()
 
-        return f(*args, **kwargs)
+        # 4. No valid auth found -> Redirect to Login
+        return redirect(url_for("main.login"))
 
     return decorated
 

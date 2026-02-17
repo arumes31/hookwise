@@ -1,7 +1,8 @@
-import os
-import requests
 import base64
 import logging
+import os
+
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

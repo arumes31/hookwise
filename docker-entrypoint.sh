@@ -16,5 +16,8 @@ else
     exit 1
 fi
 
+echo "Clearing ConnectWise API cache..."
+flask clear-cw-cache || echo "Cache clear failed, continuing..."
+
 echo "Starting Gunicorn..."
 exec "$@"
