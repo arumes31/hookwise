@@ -310,8 +310,9 @@
                         <div>
                             <h4 class="mb-1 text-white fw-bold">{{ config.name }}</h4>
                             <div class="d-flex gap-2">
-                                <span class="heartbeat-dot pulse-success"
-                                    style="background-color: {{ 'var(--success)' if last_statuses.get(config.id) == 'processed' else 'var(--danger)' if last_statuses.get(config.id) == 'failed' else 'var(--warning)' if last_statuses.get(config.id) == 'skipped' else 'var(--text-secondary)' }}"></span>
+                                <span
+                                    class="heartbeat-dot pulse-success {{ 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
+
                                 <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
                                     {{ config.id[:12] }}</small>
                             </div>

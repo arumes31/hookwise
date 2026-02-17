@@ -271,6 +271,23 @@ h4,
     box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
 }
 
+.status-processed {
+    background-color: var(--success) !important;
+}
+
+.status-failed {
+    background-color: var(--danger) !important;
+}
+
+.status-skipped {
+    background-color: var(--warning) !important;
+}
+
+.status-default {
+    background-color: var(--text-secondary) !important;
+}
+
+
 @keyframes pulse-danger {
     0% {
         transform: scale(0.95);
