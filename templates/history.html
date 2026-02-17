@@ -294,11 +294,20 @@
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
         showToast(`Queuing ${ids.length} replays...`, 'info');
-        for (const id of ids) {
-            await fetch(`/history/replay/${id}`, { method: 'POST' });
+        try {
+            for (const id of ids) {
+                const res = await fetch(`/history/replay/${id}`, { method: 'POST' });
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
+                    showToast(`Error replaying ${id}: ` + (error.message || error.status), 'danger');
+                    return; // Stop further replays on error
+                }
+            }
+            showToast('All replays queued', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (e) {
+            showToast('Network error during replay: ' + e.message, 'danger');
         }
-        showToast('All replays queued', 'success');
-        setTimeout(() => window.location.reload(), 1000);
     }
 
     async function bulkDeleteLogs() {
@@ -306,14 +315,21 @@
         if (!ids.length) return;
         if (!confirm(`Delete ${ids.length} log entries?`)) return;
         try {
-            await fetch('/history/bulk-delete', {
+            const res = await fetch('/history/bulk-delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids })
             });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
+                showToast('Error deleting logs: ' + (error.message || error.status), 'danger');
+                return;
+            }
             showToast('Logs deleted', 'success');
             setTimeout(() => window.location.reload(), 1000);
-        } catch (e) { showToast('Error deleting logs', 'danger'); }
+        } catch (e) {
+            showToast('Network error during deletion: ' + e.message, 'danger');
+        }
     }
 
     function deleteAllLogs() {
@@ -557,10 +573,11 @@
         // Request ID
         const tdReqId = document.createElement('td');
         tdReqId.className = 'py-3 text-secondary font-monospace small';
-        tdReqId.dataset.requestId = data.id; // Corrected: request_id usually from data
+        const fullId = data.request_id || data.id || '';
+        tdReqId.dataset.requestId = fullId;
         const reqSpan = document.createElement('span');
         reqSpan.className = 'user-select-all';
-        reqSpan.textContent = (data.request_id ? data.request_id.substring(0, 16) : (data.id || '').toString().substring(0, 16)) + '...';
+        reqSpan.textContent = (fullId.toString().substring(0, 16)) + '...';
         tdReqId.appendChild(reqSpan);
 
         // Matched Rule
