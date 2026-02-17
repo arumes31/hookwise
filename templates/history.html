@@ -380,7 +380,7 @@
         document.getElementById('date-to').value = "{{ date_to or '' }}";
 
         // Infinite Scroll Logic
-        let currentPage = {{ pagination.page }
+        let currentPage = {{ pagination.page }};
     };
     if (hasNext) {
         sentinel.classList.remove('d-none');
@@ -505,7 +505,7 @@
     });
 
     function replayWebhook(id) {
-        if (!{{ debug_mode | tojson }
+        if (!{{ debug_mode | tojson }}
     } && !confirm('Re-process this webhook?')) return;
     fetch(`/history/replay/${id}`, { method: 'POST' })
         .then(res => res.json())
