@@ -382,6 +382,7 @@
         // Infinite Scroll Logic
         let currentPage = {{ pagination.page }
     };
+    };
     const hasNext = {{ pagination.has_next | tojson }};
     const sentinel = document.getElementById('infinite-sentinel');
     const standardPagination = document.getElementById('standard-pagination');
