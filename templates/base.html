@@ -116,6 +116,7 @@
         </svg>
     </button>
 
+    {% if request.endpoint != 'main.login' %}
     <footer class="footer mt-auto py-3 bg-dark bg-opacity-50 border-top border-secondary border-opacity-10">
         <div class="container d-flex justify-content-between align-items-center">
             <span class="text-secondary small">&copy; 2026 HookWise</span>
@@ -132,6 +133,7 @@
             </div>
         </div>
     </footer>
+    {% endif %}
 
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
