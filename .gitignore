@@ -43,3 +43,6 @@ instance/
 # OS Generated
 .DS_Store
 Thumbs.db
+
+# test
+*.exe
