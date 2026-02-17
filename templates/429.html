@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<canvas id="bg-animation"></canvas>
+<div class="row min-vh-100 justify-content-center align-items-center">
+    <div class="col-md-6 col-lg-5 text-center">
+        <div class="glass-card p-5">
+            <h1 class="display-4 fw-bold text-light mb-3">429</h1>
+            <h2 class="h4 text-uppercase ls-2 mb-4 text-warning">Too Many Requests</h2>
+            <p class="text-secondary mb-5">
+                Whoa there, speedy! You've hit the rate limit. <br>
+                Please wait a moment before trying again.
+            </p>
+            <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg fw-bold px-5 shadow-lg">
+                Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/login-animation.js') }}"></script>
+{% endblock %}

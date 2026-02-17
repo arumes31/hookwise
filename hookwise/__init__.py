@@ -147,6 +147,10 @@ def create_app() -> Flask:
     def bad_request(e: Any) -> Any:
         return render_template("500.html"), 400
 
+    @app.errorhandler(429)
+    def rate_limit_error(e: Any) -> Any:
+        return render_template("429.html"), 429
+
 
     # Register CLI commands
     from .commands import clear_cw_cache_command
