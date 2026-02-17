@@ -31,6 +31,11 @@ COPY --chown=appuser:appuser . .
 # Remove unnecessary files from production image
 RUN rm -rf tests .venv .git .pytest_cache .qodo
 
+# Copy and set entrypoint
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 5000
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["gunicorn", "--worker-class", "gevent", "--workers", "1", "--bind", "0.0.0.0:5000", "app:app"]
