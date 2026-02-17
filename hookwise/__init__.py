@@ -87,8 +87,12 @@ def create_app() -> Flask:
 
         from .tasks import redis_client
 
-        # Allow /admin and static files during maintenance
-        if request.path.startswith("/static/") or request.path.startswith("/admin") or request.path == "/health":
+        # Allow /admin, /health*, and static files during maintenance
+        if (
+            request.path.startswith("/static/")
+            or request.path.startswith("/admin")
+            or request.path.startswith("/health")
+        ):
             return
 
         mode = redis_client.get("hookwise_maintenance_mode")

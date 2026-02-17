@@ -1,10 +1,45 @@
-__pycache__
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Environment variables
 .env
-# test*
-.venv
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing / Quality
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .qodo
-.pytest_cache
-*.db
+
+# Instance / Database
 instance/
-task.md
-.ruff_cache
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# OS Generated
+.DS_Store
+Thumbs.db
