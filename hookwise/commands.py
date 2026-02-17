@@ -1,6 +1,8 @@
 import logging
+
 import click
 from flask.cli import with_appcontext
+
 from .extensions import redis_client
 
 logger = logging.getLogger(__name__)
