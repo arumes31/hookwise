@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 @click.command("clear-cw-cache")
 @with_appcontext
-def clear_cw_cache_command():
+def clear_cw_cache_command() -> None:
     """Clear ConnectWise API cache from Redis."""
     try:
         # Scan for keys starting with hookwise_cw_

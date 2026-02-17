@@ -6,7 +6,7 @@ from hookwise.extensions import redis_client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def clear_cw_cache():
+def clear_cw_cache() -> None:
     with app.app_context():
         # keys list removed as it was unused
         # Also need to find wildcard keys for statuses, types, subtypes, items if possible

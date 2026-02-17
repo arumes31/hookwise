@@ -8,7 +8,7 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def test_connection():
+def test_connection() -> None:
     # Load credentials from environment
     base_url = os.getenv("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0")
     company = os.getenv("CW_COMPANY")

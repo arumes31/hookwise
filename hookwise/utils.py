@@ -92,7 +92,7 @@ def auth_required(f: Any) -> Any:
 
         if auth and gui_user and gui_pass:
             # Only check Basic Auth if the client sent the header
-            if check_auth(auth.username, auth.password):
+            if auth.username and auth.password and check_auth(auth.username, auth.password):
                 # Valid Basic Auth - populate synthetic session
                 from .models import User
                 user = User.query.filter_by(username=auth.username).first()
