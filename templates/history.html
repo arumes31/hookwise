@@ -73,8 +73,8 @@
                     <tr class="border-bottom border-light border-opacity-5">
                         <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}"
                                 onchange="updateBulkHistory()"></td>
-                        <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
-                            %H:%M:%S') }}</td>
+                        <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                            }}</td>
                         <td class="py-3 fw-bold">{{ log.config_name }}</td>
                         <td class="py-3">
                             {% if log.status == 'processed' %}
@@ -146,8 +146,8 @@
                                     data-headers='{{ log.headers | tojson | safe }}'
                                     data-rule="{{ log.matched_rule or '' }}">View</button>
                                 <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}')"
-                                    data-payload='{{ log.payload | tojson | safe }}'>Compare</button> <button
-                                    class="btn btn-outline-primary"
+                                    data-payload='{{ log.payload | tojson | safe }}'>Compare</button>
+                                <button class="btn btn-outline-primary"
                                     onclick="replayWebhook('{{ log.id }}')">Replay</button>
                                 <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
@@ -175,35 +175,26 @@
 </div>
 
 <nav id="standard-pagination" class="mt-4">
-    <ul class="pagination justify-content-center"> {% if pagination.has_prev %}
-        <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white"
-                href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a>
-        </li>
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a></li>
         {% else %}
-        <li class="page-item disabled">
-            <span class="page-link bg-dark border-secondary text-secondary">Previous</span>
+        <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-secondary">Previous</span>
         </li>
         {% endif %}
-
-        <li class="page-item active">
-            <span class="page-link bg-primary border-primary">{{ pagination.page }} of {{ pagination.pages }}</span>
-        </li>
-
+        <li class="page-item active"><span class="page-link bg-primary border-primary">{{ pagination.page }} of {{
+                pagination.pages }}</span></li>
         {% if pagination.has_next %}
-        <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white"
-                href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a>
-        </li>
+        <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a></li>
         {% else %}
-        <li class="page-item disabled">
-            <span class="page-link bg-dark border-secondary text-secondary">Next</span>
-        </li>
+        <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-secondary">Next</span></li>
         {% endif %}
     </ul>
 </nav>
 
-<!-- Modal -->
+<!-- Modals -->
 <div class="modal fade" id="payloadModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark border-secondary">
@@ -228,7 +219,6 @@
     </div>
 </div>
 
-<!-- Comparison Modal -->
 <div class="modal fade" id="compareModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <div class="modal-content bg-dark border-warning">
@@ -267,12 +257,10 @@
         } else {
             const leftStr = JSON.stringify(compareLeft, null, 2);
             const rightStr = JSON.stringify(payload, null, 2);
-
             document.getElementById('compare-left').innerHTML = highlightDiff(leftStr, rightStr);
             document.getElementById('compare-right').innerHTML = highlightDiff(rightStr, leftStr);
-
             new bootstrap.Modal(document.getElementById('compareModal')).show();
-            compareLeft = null; // Reset
+            compareLeft = null;
         }
     }
 
@@ -305,7 +293,6 @@
     async function bulkReplay() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-
         showToast(`Queuing ${ids.length} replays...`, 'info');
         for (const id of ids) {
             await fetch(`/history/replay/${id}`, { method: 'POST' });
@@ -317,9 +304,7 @@
     async function bulkDeleteLogs() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-
         if (!confirm(`Delete ${ids.length} log entries?`)) return;
-
         try {
             await fetch('/history/bulk-delete', {
                 method: 'POST',
@@ -332,7 +317,7 @@
     }
 
     function deleteAllLogs() {
-        if (!confirm('Are you SURE you want to delete ALL history logs? This cannot be undone.')) return;
+        if (!confirm('Are you SURE you want to delete ALL history logs?')) return;
         fetch('/history/delete-all', { method: 'POST' })
             .then(res => res.json())
             .then(data => {
@@ -347,16 +332,14 @@
         const rows = [["Timestamp", "Config", "Status", "Ticket", "Request ID"]];
         document.querySelectorAll('table tbody tr').forEach(tr => {
             const cells = [];
-            // Skip the checkbox column
             const tds = tr.querySelectorAll('td');
-            cells.push(`"${tds[1].textContent.trim()}"`); // Timestamp
-            cells.push(`"${tds[2].textContent.trim()}"`); // Config
-            cells.push(`"${tds[3].textContent.trim()}"`); // Status
-            cells.push(`"${tds[6].textContent.trim()}"`); // Ticket
-            cells.push(`"${tds[7].textContent.trim()}"`); // Request ID
+            cells.push(`"${tds[1].textContent.trim()}"`);
+            cells.push(`"${tds[2].textContent.trim()}"`);
+            cells.push(`"${tds[3].textContent.trim()}"`);
+            cells.push(`"${tds[6].textContent.trim()}"`);
+            cells.push(`"${tds[7].textContent.trim()}"`);
             rows.push(cells.join(','));
         });
-
         const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
@@ -379,7 +362,6 @@
         currentRawPayload = btn.getAttribute('data-payload');
         currentRawHeaders = btn.getAttribute('data-headers');
         const matchedRule = btn.getAttribute('data-rule');
-
         const ruleInfo = document.getElementById('matched-rule-info');
         if (matchedRule) {
             ruleInfo.classList.remove('d-none');
@@ -387,7 +369,6 @@
         } else {
             ruleInfo.classList.add('d-none');
         }
-
         isPretty = true;
         showingHeaders = false;
         updatePayloadDisplay();
@@ -398,9 +379,7 @@
         const display = document.getElementById('payload-display');
         const toggleBtn = document.getElementById('pretty-toggle');
         const headersBtn = document.getElementById('headers-toggle');
-
         const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
-
         try {
             const parsed = JSON.parse(JSON.parse(dataToDisplay || '{}'));
             if (isPretty) {
@@ -450,9 +429,7 @@
     }
 
     document.getElementById('history-search').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            searchHistory();
-        }
+        if (e.key === 'Enter') searchHistory();
     });
 
     document.getElementById('pretty-toggle').addEventListener('click', () => {
@@ -480,14 +457,12 @@
     if (hasNext) {
         sentinel.classList.remove('d-none');
         standardPagination.classList.add('d-none');
-
         const observer = new IntersectionObserver(async (entries) => {
             if (entries[0].isIntersecting) {
                 currentPage++;
                 const url = new URL(window.location.href);
                 url.searchParams.set('page', currentPage);
                 url.searchParams.set('partial', 'true');
-
                 try {
                     const res = await fetch(url);
                     const html = await res.text();
@@ -497,43 +472,36 @@
                         observer.unobserve(sentinel);
                         sentinel.classList.add('d-none');
                     }
-                } catch (e) {
-                    console.error('Error fetching next page', e);
-                }
+                } catch (e) { console.error('Error fetching next page', e); }
             }
         }, { threshold: 1.0 });
-
         observer.observe(sentinel);
     }
 
     const socket = io();
     const liveToggle = document.getElementById('live-tail-toggle');
-
     socket.on('new_log', (data) => {
         if (!liveToggle.checked) return;
-
         const tr = document.createElement('tr');
         tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
-
         const ts = new Date(data.timestamp).toLocaleString();
         const statusBadge = `<span class="badge bg-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} bg-opacity-10 text-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} border border-opacity-25">${data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase()}</span>`;
         const ticketLink = data.ticket_id ? `<a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">#${data.ticket_id}</a>` : '<span class="text-muted opacity-50">-</span>';
-
         tr.innerHTML = `
-                    <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="${data.id}" onchange="updateBulkHistory()"></td>
-                    <td class="py-3 text-secondary font-monospace">${ts}</td>
-                    <td class="py-3 fw-bold">${data.config_name}</td>
-                    <td class="py-3">${statusBadge}</td>
-                    <td class="py-3 text-secondary font-monospace small">-</td>
-                    <td class="py-3">-</td>
-                    <td class="py-3 font-monospace">${ticketLink}</td>
-                    <td class="py-3 text-secondary font-monospace small">${data.payload ? 'realtime' : '-'}</td>
-                    <td class="pe-4 py-3 text-end">
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-info" onclick="window.location.reload()">Refresh to View</button>
-                        </div>
-                    </td>
-                `;
+                <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="${data.id}" onchange="updateBulkHistory()"></td>
+                <td class="py-3 text-secondary font-monospace">${ts}</td>
+                <td class="py-3 fw-bold">${data.config_name}</td>
+                <td class="py-3">${statusBadge}</td>
+                <td class="py-3 text-secondary font-monospace small">-</td>
+                <td class="py-3">-</td>
+                <td class="py-3 font-monospace">${ticketLink}</td>
+                <td class="py-3 text-secondary font-monospace small">${data.payload ? 'realtime' : '-'}</td>
+                <td class="pe-4 py-3 text-end">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-info" onclick="window.location.reload()">Refresh to View</button>
+                    </div>
+                </td>
+            `;
         tableBody.insertBefore(tr, tableBody.firstChild);
         if (tableBody.children.length > 50) tableBody.lastChild.remove();
     });
