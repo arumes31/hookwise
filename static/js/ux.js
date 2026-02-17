@@ -21,11 +21,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Tooltip System
 function initTooltips() {
+    // Clear any existing tooltips to avoid duplicates on re-init
+    const existingTooltips = [].slice.call(document.querySelectorAll('.tooltip'));
+    existingTooltips.forEach(el => el.remove());
+
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-tooltip]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
+        const title = tooltipTriggerEl.getAttribute('data-tooltip');
+        if (!title) return; // Skip if no title
+
+        // USER RULE: Only add tooltips to buttons without visible text
+        const hasVisibleText = tooltipTriggerEl.innerText.trim().length > 0;
+        if (hasVisibleText && tooltipTriggerEl.tagName === 'BUTTON') {
+            tooltipTriggerEl.removeAttribute('data-tooltip');
+            return null;
+        }
+
         return new bootstrap.Tooltip(tooltipTriggerEl, {
-            title: tooltipTriggerEl.getAttribute('data-tooltip'),
-            placement: 'top'
+            title: title,
+            placement: 'top',
+            container: 'body', // Crucial: avoid clipping by overflow:hidden parents
+            trigger: 'hover'
         });
     });
 }

@@ -7,7 +7,22 @@
     <div class="col-md-5 col-lg-4">
         <div class="glass-card shadow-premium p-4 p-md-5">
             <div class="text-center mb-4">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="64" class="mb-3">
+                <div class="hw-logo-container justify-content-center mb-3">
+                    <svg class="logo-animated-svg" style="height: 80px;" viewBox="0 0 100 100"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="hookGradLogin" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:var(--primary);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:var(--accent);stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                        <path class="logo-hook-path" d="M 20 40 C 20 10, 80 10, 80 40 C 80 70, 40 70, 40 50 L 40 90" />
+                        <path class="logo-pulse" d="M 20 40 C 20 10, 80 10, 80 40 C 80 70, 40 70, 40 50 L 40 90"
+                            stroke="url(#hookGradLogin)" />
+                        <circle cx="20" cy="40" r="4" fill="var(--primary)" class="logo-dots" />
+                        <circle cx="40" cy="90" r="4" fill="var(--accent)" class="logo-dots" />
+                    </svg>
+                </div>
                 {% if step == '2fa' %}
                 <h4 class="mb-0 fw-bold accent-gradient">Two-Factor Auth</h4>
                 {% else %}
