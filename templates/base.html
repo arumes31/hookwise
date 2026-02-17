@@ -20,84 +20,99 @@
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
                 <div class="hw-logo-container me-2">
                     <svg class="logo-8bit-svg" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg">
-                        <rect class="retro-scanline" x="0" y="0" width="320" height="2" />
+                        <!-- CRT Scanline (Background) -->
+                        <rect class="retro-scanline" x="0" y="0" width="320" height="4" />
+
+                        <!-- Phase 1: Falling Garbage (Random bits) -->
                         <g class="falling-garbage">
-                            <text x="50" y="-20" class="falling-piece" fill="var(--retro-white)"
-                                font-family="'Courier New', monospace" font-size="20">a</text>
-                            <text x="120" y="-40" class="falling-piece" style="animation-delay: 0.2s"
-                                fill="var(--retro-cyan)" font-family="'Courier New', monospace" font-size="24">f</text>
-                            <text x="200" y="-10" class="falling-piece" style="animation-delay: 0.5s"
-                                fill="var(--retro-magenta)" font-family="'Courier New', monospace"
-                                font-size="18">x</text>
-                            <text x="280" y="-30" class="falling-piece" style="animation-delay: 0.8s"
-                                fill="var(--retro-yellow)" font-family="'Courier New', monospace"
-                                font-size="22">p</text>
+                            <rect x="60" y="-20" width="8" height="8" class="falling-piece"
+                                fill="var(--retro-magenta)" />
+                            <path d="M120 -40 h12 v12 h-12 z" class="falling-piece" style="animation-delay: 0.2s"
+                                fill="var(--retro-cyan)" />
+                            <rect x="200" y="-10" width="10" height="4" class="falling-piece"
+                                style="animation-delay: 0.5s" fill="var(--retro-yellow)" />
                         </g>
 
-                        <g class="word-group tugged logo-settled" transform="translate(40, 45)">
-                            <path class="retro-letter snap-letter" style="animation-delay: 2.2s"
-                                fill="var(--retro-cyan)" d="M0 0 V30 M0 15 H15 V30" stroke="var(--retro-cyan)"
-                                stroke-width="8" />
-                            <rect class="retro-letter snap-letter" style="animation-delay: 2.4s" x="25" y="10"
-                                width="20" height="20" fill="none" stroke="var(--retro-white)" stroke-width="6" />
-                            <rect class="retro-letter snap-letter" style="animation-delay: 2.6s" x="55" y="10"
-                                width="20" height="20" fill="none" stroke="var(--retro-white)" stroke-width="6" />
-                            <path class="retro-letter snap-letter" style="animation-delay: 2.8s" fill="none"
+                        <!-- Phase 3: High-Legibility Word Group -->
+                        <g class="word-group tugged logo-settled" transform="translate(30, 20)">
+                            <!-- 'h' -->
+                            <path class="snap-letter" style="animation-delay: 2.1s" fill="none"
+                                stroke="var(--retro-cyan)" stroke-width="8" d="M4 0 v48 M4 24 h24 v24" />
+                            <!-- 'o' -->
+                            <rect class="snap-letter" style="animation-delay: 2.3s" x="44" y="16" width="32" height="32"
+                                fill="none" stroke="var(--retro-white)" stroke-width="8" />
+                            <!-- 'o' -->
+                            <rect class="snap-letter" style="animation-delay: 2.5s" x="88" y="16" width="32" height="32"
+                                fill="none" stroke="var(--retro-white)" stroke-width="8" />
+                            <!-- 'k' -->
+                            <path class="snap-letter" style="animation-delay: 2.7s" fill="none"
                                 stroke="var(--retro-cyan)" stroke-width="8"
-                                d="M85 0 V30 M85 15 L105 0 M85 15 L105 30" />
-                            <path class="retro-letter snap-letter w-bounce" style="animation-delay: 3.0s" fill="none"
-                                stroke="var(--retro-white)" stroke-width="8" d="M115 10 V30 L 125 20 L 135 30 V 10" />
-                            <rect class="retro-letter snap-letter" style="animation-delay: 3.2s" x="145" y="10"
-                                width="8" height="20" fill="var(--retro-cyan)" />
-                            <rect class="i-dot-fall" x="145" y="0" width="8" height="6" fill="var(--retro-yellow)" />
-                            <path class="retro-letter snap-letter" style="animation-delay: 3.4s" fill="none"
-                                stroke="var(--retro-magenta)" stroke-width="6" d="M165 10 H185 V20 H165 V30 H185" />
-                            <path class="retro-letter snap-letter" style="animation-delay: 3.6s" fill="none"
-                                stroke="var(--retro-white)" stroke-width="6" d="M195 10 H215 V30 H195 M195 20 H215" />
+                                d="M136 0 v48 M136 24 l24 -20 M136 24 l24 24" />
+                            <!-- 'w' -->
+                            <path class="snap-letter w-bounce" style="animation-delay: 2.9s" fill="none"
+                                stroke="var(--retro-white)" stroke-width="8" d="M172 16 v32 l16 -16 l16 16 v-32" />
+                            <!-- 'i' -->
+                            <g class="snap-letter" style="animation-delay: 3.1s">
+                                <rect x="216" y="16" width="8" height="32" fill="var(--retro-cyan)" />
+                                <rect class="i-dot-fall" x="216" y="0" width="8" height="8"
+                                    fill="var(--retro-yellow)" />
+                            </g>
+                            <!-- 's' -->
+                            <path class="snap-letter" style="animation-delay: 3.3s" fill="none"
+                                stroke="var(--retro-magenta)" stroke-width="8" d="M236 16 h32 v12 h-32 v12 h32" />
+                            <!-- 'e' -->
+                            <path class="snap-letter" style="animation-delay: 3.5s" fill="none"
+                                stroke="var(--retro-white)" stroke-width="8"
+                                d="M280 16 h32 v32 h-32 v-32 M280 32 h32" />
 
-                            <rect class="sparkle" style="animation-delay: 2.2s" x="-5" y="15" width="4" height="4"
+                            <!-- Sparkle SNAPS -->
+                            <rect class="sparkle" style="animation-delay: 2.1s" x="0" y="24" width="8" height="8"
                                 fill="var(--retro-yellow)" />
-                            <rect class="sparkle" style="animation-delay: 3.0s" x="120" y="25" width="4" height="4"
+                            <rect class="sparkle" style="animation-delay: 2.9s" x="180" y="32" width="8" height="8"
                                 fill="var(--retro-cyan)" />
                         </g>
 
+                        <!-- Phase 4: Re-designed Hook -->
                         <g class="retro-hook" transform="translate(260, 45)">
-                            <path d="M0 -30 V10 C0 30 30 30 30 10 L 25 15" fill="none" stroke="var(--retro-white)"
-                                stroke-width="6" />
-                            <rect x="25" y="5" width="8" height="8" fill="var(--retro-yellow)" />
+                            <path d="M0 -45 v50 c0 20 25 20 25 5 l -8 6" fill="none" stroke="var(--retro-white)"
+                                stroke-width="8" stroke-linecap="square" />
+                            <rect x="22" y="5" width="8" height="8" fill="var(--retro-yellow)" />
                         </g>
 
-                        <g font-family="'Courier New', monospace" font-weight="bold" font-size="10"
-                            transform="translate(40, 75)">
-                            <text x="0" y="0" class="tagline-char" style="animation-delay: 8.0s"
+                        <!-- Tagline (v2 Spacing) -->
+                        <g font-family="'Courier New', monospace" font-weight="bold" font-size="12"
+                            transform="translate(35, 75)">
+                            <text x="0" y="0" class="tagline-char" style="animation-delay: 7.5s"
                                 fill="var(--retro-white)">H</text>
-                            <text x="8" y="0" class="tagline-char" style="animation-delay: 8.1s"
+                            <text x="10" y="0" class="tagline-char" style="animation-delay: 7.6s"
                                 fill="var(--retro-white)">O</text>
-                            <text x="16" y="0" class="tagline-char" style="animation-delay: 8.2s"
+                            <text x="20" y="0" class="tagline-char" style="animation-delay: 7.7s"
                                 fill="var(--retro-white)">O</text>
-                            <text x="24" y="0" class="tagline-char" style="animation-delay: 8.3s"
+                            <text x="30" y="0" class="tagline-char" style="animation-delay: 7.8s"
                                 fill="var(--retro-white)">K</text>
-                            <text x="36" y="0" class="tagline-char" style="animation-delay: 8.5s"
+
+                            <text x="45" y="0" class="tagline-char" style="animation-delay: 8.0s"
                                 fill="var(--retro-cyan)">L</text>
-                            <text x="44" y="0" class="tagline-char" style="animation-delay: 8.6s"
+                            <text x="55" y="0" class="tagline-char" style="animation-delay: 8.1s"
                                 fill="var(--retro-cyan)">I</text>
-                            <text x="52" y="0" class="tagline-char" style="animation-delay: 8.7s"
+                            <text x="65" y="0" class="tagline-char" style="animation-delay: 8.2s"
                                 fill="var(--retro-cyan)">N</text>
-                            <text x="60" y="0" class="tagline-char" style="animation-delay: 8.8s"
+                            <text x="75" y="0" class="tagline-char" style="animation-delay: 8.3s"
                                 fill="var(--retro-cyan)">E</text>
-                            <text x="72" y="0" class="tagline-char" style="animation-delay: 9.0s"
+
+                            <text x="90" y="0" class="tagline-char" style="animation-delay: 8.5s"
                                 fill="var(--retro-white)">C</text>
-                            <text x="80" y="0" class="tagline-char" style="animation-delay: 9.1s"
+                            <text x="100" y="0" class="tagline-char" style="animation-delay: 8.6s"
                                 fill="var(--retro-white)">O</text>
-                            <text x="88" y="0" class="tagline-char" style="animation-delay: 9.2s"
+                            <text x="110" y="0" class="tagline-char" style="animation-delay: 8.7s"
                                 fill="var(--retro-white)">N</text>
-                            <text x="96" y="0" class="tagline-char" style="animation-delay: 9.3s"
+                            <text x="120" y="0" class="tagline-char" style="animation-delay: 8.8s"
                                 fill="var(--retro-white)">N</text>
-                            <text x="104" y="0" class="tagline-char" style="animation-delay: 9.4s"
+                            <text x="130" y="0" class="tagline-char" style="animation-delay: 8.9s"
                                 fill="var(--retro-white)">E</text>
-                            <text x="112" y="0" class="tagline-char" style="animation-delay: 9.5s"
+                            <text x="140" y="0" class="tagline-char" style="animation-delay: 9.0s"
                                 fill="var(--retro-white)">C</text>
-                            <text x="120" y="0" class="tagline-char" style="animation-delay: 9.6s"
+                            <text x="150" y="0" class="tagline-char" style="animation-delay: 9.1s"
                                 fill="var(--retro-white)">T</text>
                         </g>
                     </svg>
