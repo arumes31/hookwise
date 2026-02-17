@@ -30,7 +30,32 @@ def _register() -> None:
 
     @main_bp.route("/login", methods=["GET", "POST"])
     def login() -> Any:
+        # If we are already in the 2FA step (from previous credential check)
+        pending_user_id = session.get("pending_user_id")
+
         if request.method == "POST":
+            # Case 1: Submitting OTP (User is in pending state)
+            if pending_user_id and "otp" in request.form:
+                otp = request.form.get("otp")
+                user = User.query.get(pending_user_id)
+
+                if user and pyotp.TOTP(cast(str, user.otp_secret)).verify(cast(str, otp)):
+                    # Success
+                    session["user_id"] = user.id
+                    session["username"] = user.username
+                    session["role"] = user.role
+                    session.pop("pending_user_id", None)
+                    log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
+                    return redirect(url_for("main.index"))
+
+                flash("Invalid 2FA code", "danger")
+                return render_template("login.html", step="2fa")
+
+            # Case 2: Submitting Credentials or restarting flow
+            # If attempting to login with new creds, clear old pending state
+            if pending_user_id:
+                session.pop("pending_user_id", None)
+
             username = request.form.get("username")
             password = request.form.get("password")
 
@@ -38,7 +63,7 @@ def _register() -> None:
             if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
                 if user.is_2fa_enabled:
                     session["pending_user_id"] = user.id
-                    return redirect(url_for("main.login_2fa"))
+                    return render_template("login.html", step="2fa")
 
                 session["user_id"] = user.id
                 session["username"] = user.username
@@ -47,28 +72,12 @@ def _register() -> None:
                 return redirect(url_for("main.index"))
 
             flash("Invalid username or password", "danger")
+
+        # GET request - always reset pending state to ensure clean login flow
+        if "pending_user_id" in session:
+            session.pop("pending_user_id", None)
+
         return render_template("login.html")
-
-    @main_bp.route("/login/2fa", methods=["GET", "POST"])
-    def login_2fa() -> Any:
-        if "pending_user_id" not in session:
-            return redirect(url_for("main.login"))
-
-        if request.method == "POST":
-            otp = request.form.get("otp")
-            user = User.query.get(session["pending_user_id"])
-
-            if user and pyotp.TOTP(cast(str, user.otp_secret)).verify(cast(str, otp)):
-                session["user_id"] = user.id
-                session["username"] = user.username
-                session["role"] = user.role
-                session.pop("pending_user_id")
-                log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
-                return redirect(url_for("main.index"))
-
-            flash("Invalid 2FA code", "danger")
-
-        return render_template("login_2fa.html")
 
     @main_bp.route("/settings/2fa/setup", methods=["GET", "POST"])
     @auth_required

@@ -1,33 +1,126 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row justify-content-center align-items-center" style="min-height: 70vh;">
-    <div class="col-md-4">
-        <div class="card border-0 shadow-lg bg-dark">
-            <div class="card-header bg-primary text-white text-center py-4 border-0">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="50" class="mb-2">
-                <h4 class="mb-0 fw-bold">Login to HookWise</h4>
+<canvas id="bg-animation"></canvas>
+
+<div class="row justify-content-center align-items-center" style="min-height: 80vh;">
+    <div class="col-md-5 col-lg-4">
+        <div class="glass-card shadow-premium p-4 p-md-5">
+            <div class="text-center mb-4">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="64" class="mb-3">
+                {% if step == '2fa' %}
+                <h4 class="mb-0 fw-bold accent-gradient">Two-Factor Auth</h4>
+                {% else %}
+                <h4 class="mb-0 fw-bold accent-gradient">Login to HookWise</h4>
+                {% endif %}
             </div>
-            <div class="card-body p-4">
-                <form method="POST">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                    <div class="mb-3">
-                        <label for="username" class="form-label small fw-bold">USERNAME</label>
-                        <input type="text" class="form-control" id="username" name="username" required autofocus>
+
+            <form method="POST" id="login-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+                {% if step == '2fa' %}
+                <p class="text-secondary text-center mb-4">Enter the 6-digit code from your authenticator app.</p>
+                <div class="mb-4">
+                    <input type="text"
+                        class="form-control form-control-lg text-center font-monospace ls-wide bg-dark bg-opacity-50 border-secondary text-light"
+                        style="letter-spacing: 0.5em; font-size: 1.5rem;" id="otp" name="otp" placeholder="000000"
+                        required autofocus autocomplete="one-time-code" maxlength="6">
+                </div>
+                <div class="d-grid mb-3">
+                    <button type="submit" class="btn btn-primary btn-lg fw-bold shadow-lg" id="submit-btn">
+                        <span class="btn-text">Verify Code</span>
+                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <div class="text-center">
+                    <a href="{{ url_for('main.login') }}"
+                        class="text-secondary small text-decoration-none hover-text-primary transition-colors">
+                        &larr; Back to Login
+                    </a>
+                </div>
+                {% else %}
+                <div class="mb-3">
+                    <label for="username" class="form-label small fw-bold text-secondary ls-wide">USERNAME</label>
+                    <input type="text" class="form-control bg-dark bg-opacity-50 border-secondary text-light"
+                        id="username" name="username" required autofocus placeholder="Enter your username">
+                </div>
+                <div class="mb-4">
+                    <label for="password" class="form-label small fw-bold text-secondary ls-wide">PASSWORD</label>
+                    <div class="input-group">
+                        <input type="password"
+                            class="form-control bg-dark bg-opacity-50 border-secondary text-light border-end-0"
+                            id="password" name="password" required placeholder="Enter your password">
+                        <button
+                            class="btn btn-outline-secondary bg-dark bg-opacity-50 border-secondary border-start-0 text-secondary"
+                            type="button" id="toggle-password">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                class="bi bi-eye" viewBox="0 0 16 16" id="eye-icon">
+                                <path
+                                    d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z" />
+                                <path
+                                    d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z" />
+                            </svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                class="bi bi-eye-slash d-none" viewBox="0 0 16 16" id="eye-slash-icon">
+                                <path
+                                    d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z" />
+                                <path
+                                    d="M11.297 9.32l.766.766a2.775 2.775 0 0 1-4.31.03l2.884-2.884a2.775 2.775 0 0 1 .66.766zm-4.296-4.296L8.258 6.65a2.775 2.775 0 0 1 4.52 4.52l3.65 3.65a.5.5 0 0 1-.708.708l-12-12a.5.5 0 0 1 .708 0l1.5 1.5z" />
+                            </svg>
+                        </button>
                     </div>
-                    <div class="mb-4">
-                        <label for="password" class="form-label small fw-bold">PASSWORD</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
-                    </div>
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary fw-bold">Sign In</button>
-                    </div>
-                </form>
-            </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary btn-lg fw-bold shadow-lg" id="submit-btn">
+                        <span class="btn-text">Sign In</span>
+                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+                {% endif %}
+            </form>
         </div>
-        <p class="text-center mt-4 small text-secondary">
-            Default credentials can be set via environment variables.
-        </p>
+
+        {% if step != '2fa' %}
+        <div class="text-center mt-4">
+            <p class="small text-secondary mb-0">
+                Default credentials can be set via environment variables.
+            </p>
+        </div>
+        {% endif %}
     </div>
 </div>
+
+<script src="{{ url_for('static', filename='js/login-animation.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Password Toggle
+        const toggleBtn = document.getElementById('toggle-password');
+        const passwordInput = document.getElementById('password');
+        const eyeIcon = document.getElementById('eye-icon');
+        const eyeSlashIcon = document.getElementById('eye-slash-icon');
+
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', function () {
+                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                passwordInput.setAttribute('type', type);
+                eyeIcon.classList.toggle('d-none');
+                eyeSlashIcon.classList.toggle('d-none');
+            });
+        }
+
+        // Loading State
+        const form = document.getElementById('login-form');
+        const submitBtn = document.getElementById('submit-btn');
+
+        if (form) {
+            form.addEventListener('submit', function () {
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.querySelector('.btn-text').textContent = 'Signing In...';
+                    submitBtn.querySelector('.spinner-border').classList.remove('d-none');
+                }
+            });
+        }
+    });
+</script>
 {% endblock %}
