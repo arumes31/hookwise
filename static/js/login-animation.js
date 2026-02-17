@@ -110,12 +110,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function animate() {
-        ctx.clearRect(0, 0, width, height);
+        if (!document.hidden) {
+            ctx.clearRect(0, 0, width, height);
 
-        tickets.forEach(ticket => {
-            ticket.update();
-            ticket.draw();
-        });
+            tickets.forEach(ticket => {
+                ticket.update();
+                ticket.draw();
+            });
+        }
 
         requestAnimationFrame(animate);
     }

@@ -9,7 +9,7 @@ import segno
 from flask import flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
-from .extensions import db
+from .extensions import db, limiter
 from .models import User
 from .utils import auth_required, log_audit
 
@@ -29,6 +29,7 @@ def _register() -> None:
     from .routes import main_bp
 
     @main_bp.route("/login", methods=["GET", "POST"])
+    @limiter.limit("5 per minute")
     def login() -> Any:
         # If we are already in the 2FA step (from previous credential check)
         pending_user_id = session.get("pending_user_id")
@@ -65,6 +66,7 @@ def _register() -> None:
                     session["pending_user_id"] = user.id
                     return render_template("login.html", step="2fa")
 
+                session.clear()
                 session["user_id"] = user.id
                 session["username"] = user.username
                 session["role"] = user.role

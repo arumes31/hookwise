@@ -23,19 +23,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
-USER appuser
-
 COPY --from=builder /install /usr/local
 COPY --chown=appuser:appuser . .
 
 # Remove unnecessary files from production image
 RUN rm -rf tests .venv .git .pytest_cache .qodo
 
-# Copy and set entrypoint
+# Copy and set entrypoint (as root)
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 5000
+
+# Switch to non-root user
+USER appuser
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["gunicorn", "--worker-class", "gevent", "--workers", "1", "--bind", "0.0.0.0:5000", "app:app"]
