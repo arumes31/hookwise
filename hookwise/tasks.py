@@ -6,7 +6,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, cast
 
-import redis
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
 
