@@ -398,8 +398,7 @@
     }
 
     function replayWebhook(id) {
-        if (!{{ debug_mode | tojson }
-    } && !confirm('Re-process this webhook?')) return;
+        if (!{{ debug_mode | tojson }} && !confirm('Re-process this webhook?')) return;
     fetch(`/history/replay/${id}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
@@ -448,8 +447,7 @@
         document.getElementById('date-to').value = "{{ date_to or '' }}";
 
         const tableBody = document.querySelector('table tbody');
-        let currentPage = {{ pagination.page }
-    };
+        let currentPage = {{ pagination.page }};
     const hasNext = {{ pagination.has_next | tojson }};
     const sentinel = document.getElementById('infinite-sentinel');
     const standardPagination = document.getElementById('standard-pagination');
