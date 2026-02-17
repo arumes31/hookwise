@@ -355,7 +355,7 @@ h4,
 }
 
 /* Specific override for help text visibility */
-/* Retro 8-Bit Logo Styling */
+/* Retro 8-Bit Logo Styling v2 */
 :root {
     --retro-bg: #000022;
     --retro-cyan: #00FFFF;
@@ -375,6 +375,22 @@ h4,
     border: 2px solid #333;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    /* Subtle 50Hz CRT flicker */
+    animation: retro-crt-flicker 0.1s infinite;
+}
+
+@keyframes retro-crt-flicker {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.98;
+    }
+
+    100% {
+        opacity: 1;
+    }
 }
 
 .logo-8bit-svg {
@@ -383,235 +399,210 @@ h4,
     shape-rendering: crispEdges;
 }
 
-/* Base Hidden State for Letters */
-.retro-letter {
-    opacity: 0;
-}
-
-/* Phase 1: Falling Tetris Pieces */
+/* Phase 1: Falling Garbage (Aggressive bounce) */
 .falling-piece {
-    animation: retro-fall 2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    opacity: 0;
+    animation: retro-fall-v2 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
-@keyframes retro-fall {
+@keyframes retro-fall-v2 {
     0% {
-        transform: translateY(-100px);
+        transform: translateY(-120px) rotate(15deg);
         opacity: 0;
     }
 
-    40% {
-        transform: translateY(0);
+    60% {
+        transform: translateY(0) rotate(0);
         opacity: 1;
     }
 
-    50% {
-        transform: translateY(-15px) scaleY(0.8);
-    }
-
-    65% {
-        transform: translateY(0) scaleY(1.1);
-    }
-
-    80% {
-        transform: translateY(-5px);
+    75% {
+        transform: translateY(-30px);
     }
 
     100% {
         transform: translateY(0);
         opacity: 0;
     }
-
-    /* Hide after bounce to let "real" letters snap */
 }
 
-/* Phase 2: CRT Scanline */
+/* Phase 2: CRT Scanline (Sharp sweep) */
 .retro-scanline {
     fill: var(--retro-cyan);
-    opacity: 0.3;
-    animation: retro-scan-sweep 2s ease-in-out infinite;
+    opacity: 0.6;
+    animation: retro-scan-v2 1.5s ease-in-out infinite;
 }
 
-@keyframes retro-scan-sweep {
+@keyframes retro-scan-v2 {
     0% {
-        transform: translateY(100%);
-    }
-
-    50% {
-        transform: translateY(-100%);
+        transform: translateY(-100%) scaleY(2);
     }
 
     100% {
-        transform: translateY(100%);
+        transform: translateY(200%) scaleY(1);
     }
 }
 
-/* Phase 3: Letter Snapping */
+/* Phase 3: High-Fidelity Letter Snap */
 .snap-letter {
-    animation: retro-snap 0.3s steps(4) forwards;
+    opacity: 0;
+    animation: retro-snap-v2 0.4s steps(4) forwards;
 }
 
-@keyframes retro-snap {
+@keyframes retro-snap-v2 {
     0% {
-        transform: scale(1.5);
+        transform: scale(1.8) translateY(-10px);
         opacity: 0;
-        filter: brightness(3);
+        filter: brightness(4) blur(1px);
     }
 
     100% {
-        transform: scale(1);
+        transform: scale(1) translateY(0);
         opacity: 1;
-        filter: brightness(1);
+        filter: brightness(1) blur(0);
     }
 }
 
 .w-bounce {
-    animation: retro-w-bounce 1s ease-in-out 3.5s forwards;
+    animation: retro-w-v2 0.8s ease-in-out 3.2s forwards;
 }
 
-@keyframes retro-w-bounce {
+@keyframes retro-w-v2 {
 
     0%,
     100% {
         transform: scale(1);
     }
 
-    30% {
-        transform: scale(1.2);
+    40% {
+        transform: scale(1.3) translateY(-4px);
     }
 
-    50% {
-        transform: scale(0.9);
+    60% {
+        transform: scale(0.8) translateY(2px);
     }
 
-    70% {
-        transform: scale(1.05);
+    80% {
+        transform: scale(1.1);
     }
 }
 
 .i-dot-fall {
-    animation: retro-i-drop 1s bounce 3.8s forwards;
+    opacity: 0;
+    animation: retro-dot-v2 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 3.6s forwards;
 }
 
-@keyframes retro-i-drop {
+@keyframes retro-dot-v2 {
     0% {
-        transform: translateY(-40px);
+        transform: translateY(-60px);
         opacity: 0;
-    }
-
-    60% {
-        transform: translateY(0);
-        opacity: 1;
-    }
-
-    80% {
-        transform: translateY(-4px);
     }
 
     100% {
         transform: translateY(0);
+        opacity: 1;
     }
 }
 
-/* Phase 4: Fishing Hook */
-.retro-hook {
-    animation: retro-hook-entrance 1.5s ease-out 4.5s forwards,
-        retro-hook-bob 2s ease-in-out infinite 6s;
+/* Phase 5: Rubbery Tug with Skew */
+.word-group.tugged {
+    animation: retro-tug-v2 1.2s ease-in-out 6s forwards;
 }
 
-@keyframes retro-hook-entrance {
+@keyframes retro-tug-v2 {
     0% {
-        transform: translateX(100px) translateY(-20px);
+        transform: translateX(0) skewX(0);
+    }
+
+    30% {
+        transform: translateX(25px) skewX(-12deg) scaleX(1.1);
+    }
+
+    50% {
+        transform: translateX(-10px) skewX(6deg);
+    }
+
+    70% {
+        transform: translateX(4px) skewX(-2deg);
+    }
+
+    90% {
+        transform: translateX(-1px);
+    }
+
+    100% {
+        transform: translateX(0) skewX(0);
+    }
+}
+
+/* Phase 4: Precise Hook entrance */
+.retro-hook {
+    opacity: 0;
+    animation: retro-hook-v2 1.2s ease-out 5s forwards;
+}
+
+@keyframes retro-hook-v2 {
+    0% {
+        transform: translateX(120px) translateY(-40px);
+        opacity: 0;
     }
 
     100% {
         transform: translateX(0) translateY(0);
+        opacity: 1;
     }
 }
 
-@keyframes retro-hook-bob {
-
-    0%,
-    100% {
-        transform: translateY(0);
-    }
-
-    50% {
-        transform: translateY(4px);
-    }
-}
-
-/* Phase 5: The Tug */
-.word-group.tugged {
-    animation: retro-tug-action 1.5s ease-in-out 6.5s forwards;
-}
-
-@keyframes retro-tug-action {
-    0% {
-        transform: translateX(0) skewX(0);
-    }
-
-    20% {
-        transform: translateX(15px) skewX(-5deg);
-    }
-
-    40% {
-        transform: translateX(0) skewX(2deg);
-    }
-
-    60% {
-        transform: translateX(3px) skewX(0);
-    }
-
-    100% {
-        transform: translateX(0) skewX(0);
-    }
-}
-
-/* Sparkle Burst */
+/* Sparkle Burst v2 (Square/Cross) */
 .sparkle {
     opacity: 0;
-    animation: retro-sparkle 0.4s ease-out forwards;
+    animation: retro-sparkle-v2 0.5s steps(3) forwards;
 }
 
-@keyframes retro-sparkle {
+@keyframes retro-sparkle-v2 {
     0% {
         transform: scale(0);
         opacity: 1;
+        filter: brightness(2);
+    }
+
+    50% {
+        transform: scale(1.6) rotate(45deg);
+        opacity: 0.8;
     }
 
     100% {
-        transform: scale(1.5);
+        transform: scale(0.4);
         opacity: 0;
     }
 }
 
-/* Final Polish */
 .logo-settled {
-    animation: retro-final-pulse 5s ease-in-out infinite 8s;
+    animation: retro-idle-breath 4s ease-in-out infinite 8s;
 }
 
-@keyframes retro-final-pulse {
+@keyframes retro-idle-breath {
 
     0%,
-    90%,
     100% {
-        filter: drop-shadow(0 0 0 transparent);
         transform: scale(1);
+        filter: drop-shadow(0 0 0 transparent);
     }
 
-    95% {
-        filter: drop-shadow(0 0 5px var(--retro-cyan));
-        transform: scale(1.04);
+    50% {
+        transform: scale(1.03);
+        filter: drop-shadow(0 0 4px var(--retro-cyan));
     }
 }
 
+/* Tagline typewriter */
 .tagline-char {
     opacity: 0;
-    animation: retro-typewriter 0.1s steps(1) forwards;
+    animation: retro-type-v2 0.05s steps(1) forwards;
 }
 
-@keyframes retro-typewriter {
+@keyframes retro-type-v2 {
     to {
-        opacity: 1;
+        opacity: 0.9;
     }
 }
