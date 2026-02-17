@@ -14,6 +14,7 @@
 
 <body>
     <div id="loading-bar" style="width: 0%;"></div>
+    {% if request.endpoint != 'main.login' %}
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
@@ -52,6 +53,7 @@
             </div>
         </div>
     </nav>
+    {% endif %}
 
     <!-- Documentation Sidebar -->
     <div class="offcanvas offcanvas-end bg-dark text-white border-start border-secondary border-opacity-25"
