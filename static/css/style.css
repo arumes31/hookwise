@@ -38,6 +38,17 @@ body.page-loaded {
     transform: translateY(0);
 }
 
+/* Background Animation Canvas */
+#bg-animation {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    pointer-events: none;
+}
+
 /* Glassmorphism Classes */
 .glass {
     background: var(--glass-bg);
