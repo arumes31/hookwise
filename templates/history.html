@@ -419,6 +419,7 @@
 
 
 
+
     if (!debugMode && !confirm('Re-process this webhook?')) return;
     fetch(`/history/replay/${id}`, { method: 'POST' })
         .then(res => res.json())
@@ -470,6 +471,7 @@
         const tableBody = document.querySelector('table tbody');
         let currentPage = Number({{ pagination.page | tojson }});
     const hasNext = Boolean({{ pagination.has_next | tojson }});
+
 
 
     const sentinel = document.getElementById('infinite-sentinel');

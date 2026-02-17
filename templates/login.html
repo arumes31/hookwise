@@ -8,21 +8,88 @@
         <div class="glass-card shadow-premium p-4 p-md-5">
             <div class="text-center mb-4">
                 <div class="hw-logo-container justify-content-center mb-3">
-                    <svg class="logo-animated-svg" style="height: 80px;" viewBox="0 0 100 100"
+                    <svg class="logo-8bit-svg" style="height: 100px;" viewBox="0 0 320 80"
                         xmlns="http://www.w3.org/2000/svg">
-                        <!-- BG Circuitry -->
-                        <path class="logo-circuit-bg"
-                            d="M 10 10 L 90 10 L 90 90 L 10 90 Z M 30 30 L 70 30 L 70 70 L 30 70 Z" />
-                        <!-- Technical H-Hook Trace -->
-                        <path class="logo-hook-trace"
-                            d="M 30 25 V 75 M 30 50 H 60 V 25 M 60 50 V 75 C 60 95 90 95 90 70 V 45" />
-                        <!-- Cinematic Streams -->
-                        <path class="logo-stream stream-1" d="M 30 50 H 60 V 75 C 60 95 90 95 90 70 V 45" />
-                        <path class="logo-stream stream-2" d="M 60 25 V 75 C 60 95 90 95 90 70 V 45" />
-                        <path class="logo-stream stream-3" d="M 30 25 V 75" />
-                        <!-- Animated Terminal Nodes -->
-                        <circle cx="30" cy="50" r="4" class="logo-node" />
-                        <circle cx="90" cy="70" r="5" class="logo-node node-accent" />
+                        <rect class="retro-scanline" x="0" y="0" width="320" height="2" />
+                        <g class="falling-garbage">
+                            <text x="50" y="-20" class="falling-piece" fill="var(--retro-white)"
+                                font-family="'Courier New', monospace" font-size="20">a</text>
+                            <text x="120" y="-40" class="falling-piece" style="animation-delay: 0.2s"
+                                fill="var(--retro-cyan)" font-family="'Courier New', monospace" font-size="24">f</text>
+                            <text x="200" y="-10" class="falling-piece" style="animation-delay: 0.5s"
+                                fill="var(--retro-magenta)" font-family="'Courier New', monospace"
+                                font-size="18">x</text>
+                            <text x="280" y="-30" class="falling-piece" style="animation-delay: 0.8s"
+                                fill="var(--retro-yellow)" font-family="'Courier New', monospace"
+                                font-size="22">p</text>
+                        </g>
+
+                        <g class="word-group tugged logo-settled" transform="translate(40, 45)">
+                            <path class="retro-letter snap-letter" style="animation-delay: 2.2s"
+                                fill="var(--retro-cyan)" d="M0 0 V30 M0 15 H15 V30" stroke="var(--retro-cyan)"
+                                stroke-width="8" />
+                            <rect class="retro-letter snap-letter" style="animation-delay: 2.4s" x="25" y="10"
+                                width="20" height="20" fill="none" stroke="var(--retro-white)" stroke-width="6" />
+                            <rect class="retro-letter snap-letter" style="animation-delay: 2.6s" x="55" y="10"
+                                width="20" height="20" fill="none" stroke="var(--retro-white)" stroke-width="6" />
+                            <path class="retro-letter snap-letter" style="animation-delay: 2.8s" fill="none"
+                                stroke="var(--retro-cyan)" stroke-width="8"
+                                d="M85 0 V30 M85 15 L105 0 M85 15 L105 30" />
+                            <path class="retro-letter snap-letter w-bounce" style="animation-delay: 3.0s" fill="none"
+                                stroke="var(--retro-white)" stroke-width="8" d="M115 10 V30 L 125 20 L 135 30 V 10" />
+                            <rect class="retro-letter snap-letter" style="animation-delay: 3.2s" x="145" y="10"
+                                width="8" height="20" fill="var(--retro-cyan)" />
+                            <rect class="i-dot-fall" x="145" y="0" width="8" height="6" fill="var(--retro-yellow)" />
+                            <path class="retro-letter snap-letter" style="animation-delay: 3.4s" fill="none"
+                                stroke="var(--retro-magenta)" stroke-width="6" d="M165 10 H185 V20 H165 V30 H185" />
+                            <path class="retro-letter snap-letter" style="animation-delay: 3.6s" fill="none"
+                                stroke="var(--retro-white)" stroke-width="6" d="M195 10 H215 V30 H195 M195 20 H215" />
+
+                            <rect class="sparkle" style="animation-delay: 2.2s" x="-5" y="15" width="4" height="4"
+                                fill="var(--retro-yellow)" />
+                            <rect class="sparkle" style="animation-delay: 3.0s" x="120" y="25" width="4" height="4"
+                                fill="var(--retro-cyan)" />
+                        </g>
+
+                        <g class="retro-hook" transform="translate(260, 45)">
+                            <path d="M0 -30 V10 C0 30 30 30 30 10 L 25 15" fill="none" stroke="var(--retro-white)"
+                                stroke-width="6" />
+                            <rect x="25" y="5" width="8" height="8" fill="var(--retro-yellow)" />
+                        </g>
+
+                        <g font-family="'Courier New', monospace" font-weight="bold" font-size="10"
+                            transform="translate(40, 75)">
+                            <text x="0" y="0" class="tagline-char" style="animation-delay: 8.0s"
+                                fill="var(--retro-white)">H</text>
+                            <text x="8" y="0" class="tagline-char" style="animation-delay: 8.1s"
+                                fill="var(--retro-white)">O</text>
+                            <text x="16" y="0" class="tagline-char" style="animation-delay: 8.2s"
+                                fill="var(--retro-white)">O</text>
+                            <text x="24" y="0" class="tagline-char" style="animation-delay: 8.3s"
+                                fill="var(--retro-white)">K</text>
+                            <text x="36" y="0" class="tagline-char" style="animation-delay: 8.5s"
+                                fill="var(--retro-cyan)">L</text>
+                            <text x="44" y="0" class="tagline-char" style="animation-delay: 8.6s"
+                                fill="var(--retro-cyan)">I</text>
+                            <text x="52" y="0" class="tagline-char" style="animation-delay: 8.7s"
+                                fill="var(--retro-cyan)">N</text>
+                            <text x="60" y="0" class="tagline-char" style="animation-delay: 8.8s"
+                                fill="var(--retro-cyan)">E</text>
+                            <text x="72" y="0" class="tagline-char" style="animation-delay: 9.0s"
+                                fill="var(--retro-white)">C</text>
+                            <text x="80" y="0" class="tagline-char" style="animation-delay: 9.1s"
+                                fill="var(--retro-white)">O</text>
+                            <text x="88" y="0" class="tagline-char" style="animation-delay: 9.2s"
+                                fill="var(--retro-white)">N</text>
+                            <text x="96" y="0" class="tagline-char" style="animation-delay: 9.3s"
+                                fill="var(--retro-white)">N</text>
+                            <text x="104" y="0" class="tagline-char" style="animation-delay: 9.4s"
+                                fill="var(--retro-white)">E</text>
+                            <text x="112" y="0" class="tagline-char" style="animation-delay: 9.5s"
+                                fill="var(--retro-white)">C</text>
+                            <text x="120" y="0" class="tagline-char" style="animation-delay: 9.6s"
+                                fill="var(--retro-white)">T</text>
+                        </g>
                     </svg>
                 </div>
                 {% if step == '2fa' %}
