@@ -19,32 +19,51 @@ document.addEventListener('DOMContentLoaded', () => {
     initNotifications();
 });
 
-// Tooltip System
+// Tooltip System - Optimized for icon-only button detection
 function initTooltips() {
-    // Clear any existing tooltips to avoid duplicates on re-init
-    const existingTooltips = [].slice.call(document.querySelectorAll('.tooltip'));
-    existingTooltips.forEach(el => el.remove());
+    // 1. Robust cleanup of existing instances
+    const nodes = document.querySelectorAll('[data-tooltip]');
+    nodes.forEach(el => {
+        try {
+            const instance = bootstrap.Tooltip.getInstance(el);
+            if (instance) instance.destroy();
+        } catch (e) {
+            console.warn('Tooltip cleanup failed for element', el, e);
+        }
+    });
 
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-tooltip]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        const title = tooltipTriggerEl.getAttribute('data-tooltip');
-        if (!title) return; // Skip if no title
+    // 2. Precise re-initialization
+    const triggerList = [].slice.call(nodes);
+    triggerList.forEach(function (el) {
+        const title = el.getAttribute('data-tooltip');
+        if (!title) return;
 
-        // USER RULE: Only add tooltips to buttons without visible text
-        const hasVisibleText = tooltipTriggerEl.innerText.trim().length > 0;
-        if (hasVisibleText && tooltipTriggerEl.tagName === 'BUTTON') {
-            tooltipTriggerEl.removeAttribute('data-tooltip');
-            return null;
+        // USER RULE: Only add tooltips to buttons/links without VISIBLE text
+        // Improved detection: remove allowed icons/svgs from a clone to check remaining content
+        const clone = el.cloneNode(true);
+        const icons = clone.querySelectorAll('svg, i, .bi, .visually-hidden, span.d-none');
+        icons.forEach(icon => icon.remove());
+
+        const textContent = clone.innerText.trim();
+        const hasVisibleText = textContent.length > 0;
+
+        // If it has text and is a button-like element, skip the tooltip to avoid clutter
+        if (hasVisibleText && (el.tagName === 'BUTTON' || el.classList.contains('btn'))) {
+            el.removeAttribute('title'); // Prevent native browser tooltips
+            return;
         }
 
-        return new bootstrap.Tooltip(tooltipTriggerEl, {
+        new bootstrap.Tooltip(el, {
             title: title,
             placement: 'top',
-            container: 'body', // Crucial: avoid clipping by overflow:hidden parents
-            trigger: 'hover'
+            container: 'body',
+            boundary: 'clippingParents',
+            trigger: 'hover',
+            fallbackPlacements: ['bottom', 'right']
         });
     });
 }
+
 
 function initToasts() {
     console.log('Toasts initialized');

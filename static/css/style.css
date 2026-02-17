@@ -335,7 +335,11 @@ h4,
     box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
 }
 
-/* Tooltips Customization removed - Handled by Bootstrap JS with container body to avoid clipping */
+/* Tooltips Customization - Ensure visibility over glassmorphism cards */
+.tooltip {
+    z-index: 9999 !important;
+}
+
 
 
 /* Responsive Overrides */
