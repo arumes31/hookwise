@@ -73,8 +73,8 @@
                     <tr class="border-bottom border-light border-opacity-5">
                         <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}"
                                 onchange="updateBulkHistory()"></td>
-                        <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
-                            %H:%M:%S') }}</td>
+                        <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                            }}</td>
                         <td class="py-3 fw-bold">{{ log.config_name }}</td>
                         <td class="py-3">
                             {% if log.status == 'processed' %}
@@ -118,7 +118,7 @@
                             <span class="text-muted opacity-50">-</span>
                             {% endif %}
                         </td>
-                        <td class="py-3 text-secondary font-monospace small">
+                        <td class="py-3 text-secondary font-monospace small" data-request-id="{{ log.request_id }}">
                             <span class="user-select-all">{{ log.request_id[:16] }}...</span>
                             <button class="btn btn-sm btn-link p-0 ms-1 opacity-50"
                                 onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID">
@@ -146,8 +146,8 @@
                                     data-headers='{{ log.headers | tojson | safe }}'
                                     data-rule="{{ log.matched_rule or '' }}">View</button>
                                 <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}')"
-                                    data-payload='{{ log.payload | tojson | safe }}'>Compare</button> <button
-                                    class="btn btn-outline-primary"
+                                    data-payload='{{ log.payload | tojson | safe }}'>Compare</button>
+                                <button class="btn btn-outline-primary"
                                     onclick="replayWebhook('{{ log.id }}')">Replay</button>
                                 <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
@@ -175,35 +175,26 @@
 </div>
 
 <nav id="standard-pagination" class="mt-4">
-    <ul class="pagination justify-content-center"> {% if pagination.has_prev %}
-        <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white"
-                href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a>
-        </li>
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a></li>
         {% else %}
-        <li class="page-item disabled">
-            <span class="page-link bg-dark border-secondary text-secondary">Previous</span>
+        <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-secondary">Previous</span>
         </li>
         {% endif %}
-
-        <li class="page-item active">
-            <span class="page-link bg-primary border-primary">{{ pagination.page }} of {{ pagination.pages }}</span>
-        </li>
-
+        <li class="page-item active"><span class="page-link bg-primary border-primary">{{ pagination.page }} of {{
+                pagination.pages }}</span></li>
         {% if pagination.has_next %}
-        <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white"
-                href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a>
-        </li>
+        <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a></li>
         {% else %}
-        <li class="page-item disabled">
-            <span class="page-link bg-dark border-secondary text-secondary">Next</span>
-        </li>
+        <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-secondary">Next</span></li>
         {% endif %}
     </ul>
 </nav>
 
-<!-- Modal -->
+<!-- Modals -->
 <div class="modal fade" id="payloadModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark border-secondary">
@@ -228,7 +219,6 @@
     </div>
 </div>
 
-<!-- Comparison Modal -->
 <div class="modal fade" id="compareModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <div class="modal-content bg-dark border-warning">
@@ -254,6 +244,10 @@
 
 <script>
     let compareLeft = null;
+    let currentRawPayload = '';
+    let currentRawHeaders = '';
+    let isPretty = true;
+    let showingHeaders = false;
 
     function comparePayload(id) {
         const payload = JSON.parse(JSON.parse(event.target.dataset.payload));
@@ -263,12 +257,10 @@
         } else {
             const leftStr = JSON.stringify(compareLeft, null, 2);
             const rightStr = JSON.stringify(payload, null, 2);
-
             document.getElementById('compare-left').innerHTML = highlightDiff(leftStr, rightStr);
             document.getElementById('compare-right').innerHTML = highlightDiff(rightStr, leftStr);
-
             new bootstrap.Modal(document.getElementById('compareModal')).show();
-            compareLeft = null; // Reset
+            compareLeft = null;
         }
     }
 
@@ -285,7 +277,9 @@
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
-    } function toggleAllLogs() {
+    }
+
+    function toggleAllLogs() {
         const checkAll = document.getElementById('check-all-logs');
         document.querySelectorAll('.log-check').forEach(c => c.checked = checkAll.checked);
         updateBulkHistory();
@@ -299,34 +293,47 @@
     async function bulkReplay() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-
         showToast(`Queuing ${ids.length} replays...`, 'info');
-        for (const id of ids) {
-            await fetch(`/history/replay/${id}`, { method: 'POST' });
+        try {
+            for (const id of ids) {
+                const res = await fetch(`/history/replay/${id}`, { method: 'POST' });
+                if (!res.ok) {
+                    const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
+                    showToast(`Error replaying ${id}: ` + (error.message || error.status), 'danger');
+                    return; // Stop further replays on error
+                }
+            }
+            showToast('All replays queued', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (e) {
+            showToast('Network error during replay: ' + e.message, 'danger');
         }
-        showToast('All replays queued', 'success');
-        setTimeout(() => window.location.reload(), 1000);
     }
 
     async function bulkDeleteLogs() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-
         if (!confirm(`Delete ${ids.length} log entries?`)) return;
-
         try {
-            await fetch('/history/bulk-delete', {
+            const res = await fetch('/history/bulk-delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids })
             });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
+                showToast('Error deleting logs: ' + (error.message || error.status), 'danger');
+                return;
+            }
             showToast('Logs deleted', 'success');
             setTimeout(() => window.location.reload(), 1000);
-        } catch (e) { showToast('Error deleting logs', 'danger'); }
+        } catch (e) {
+            showToast('Network error during deletion: ' + e.message, 'danger');
+        }
     }
 
     function deleteAllLogs() {
-        if (!confirm('Are you SURE you want to delete ALL history logs? This cannot be undone.')) return;
+        if (!confirm('Are you SURE you want to delete ALL history logs?')) return;
         fetch('/history/delete-all', { method: 'POST' })
             .then(res => res.json())
             .then(data => {
@@ -338,19 +345,17 @@
     }
 
     function exportCSV() {
-        const rows = [];
-        const headers = ['Timestamp', 'Endpoint', 'Status', 'Ticket ID', 'Request ID'];
-        rows.push(headers.join(','));
-
+        const rows = [["Timestamp", "Config", "Status", "Ticket", "Request ID"]];
         document.querySelectorAll('table tbody tr').forEach(tr => {
-            const cells = Array.from(tr.querySelectorAll('td')).slice(0, 5).map(td => {
-                let text = td.textContent.trim().replace(/\s+/g, ' ');
-                if (text.includes(',')) text = `"${text}"`;
-                return text;
-            });
+            const cells = [];
+            const tds = tr.querySelectorAll('td');
+            cells.push(`"${tds[1].textContent.trim()}"`);
+            cells.push(`"${tds[2].textContent.trim()}"`);
+            cells.push(`"${tds[3].textContent.trim()}"`);
+            cells.push(`"${tds[6].textContent.trim()}"`);
+            cells.push(`"${tds[7].dataset.requestId || tds[7].textContent.trim()}"`);
             rows.push(cells.join(','));
         });
-
         const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
@@ -368,99 +373,11 @@
         window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${from}&date_to=${to}`;
     }
 
-    document.getElementById('history-search').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            searchHistory();
-        }
-    });
-
-    document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('history-search').value = "{{ search or '' }}";
-        document.getElementById('date-from').value = "{{ date_from or '' }}";
-        document.getElementById('date-to').value = "{{ date_to or '' }}";
-
-        // Infinite Scroll Logic
-        let currentPage = {{ pagination.page }
-    };
-    });
-
-    const hasNext = {{ pagination.has_next | tojson }};
-    const sentinel = document.getElementById('infinite-sentinel');
-    const standardPagination = document.getElementById('standard-pagination');
-
-    if (hasNext) {
-        sentinel.classList.remove('d-none');
-        standardPagination.classList.add('d-none');
-
-        const observer = new IntersectionObserver(async (entries) => {
-            if (entries[0].isIntersecting) {
-                currentPage++;
-                const url = new URL(window.location.href);
-                url.searchParams.set('page', currentPage);
-                url.searchParams.set('partial', 'true');
-
-                try {
-                    const res = await fetch(url);
-                    const html = await res.text();
-                    if (html.trim()) {
-                        tableBody.insertAdjacentHTML('beforeend', html);
-                    } else {
-                        observer.unobserve(sentinel);
-                        sentinel.classList.add('d-none');
-                    }
-                } catch (e) {
-                    console.error('Error fetching next page', e);
-                }
-            }
-        }, { threshold: 1.0 });
-
-        observer.observe(sentinel);
-    }
-
-    const socket = io();
-    const liveToggle = document.getElementById('live-tail-toggle');
-    const tableBody = document.querySelector('table tbody');
-
-    socket.on('new_log', (data) => {
-        if (!liveToggle.checked) return;
-
-        const tr = document.createElement('tr');
-        tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
-
-        const ts = new Date(data.timestamp).toLocaleString();
-        const statusBadge = `<span class="badge bg-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} bg-opacity-10 text-${data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger'} border border-opacity-25">${data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase()}</span>`;
-        const ticketLink = data.ticket_id ? `<a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">#${data.ticket_id}</a>` : '<span class="text-muted opacity-50">-</span>';
-
-        tr.innerHTML = `
-                <td class="ps-4 py-3 text-secondary font-monospace">${ts}</td>
-                <td class="py-3 fw-bold">${data.config_name}</td>
-                <td class="py-3">${statusBadge}</td>
-                <td class="py-3 text-secondary font-monospace small">-</td>
-                <td class="py-3">-</td>
-                <td class="py-3 font-monospace">${ticketLink}</td>
-                <td class="py-3 text-secondary font-monospace small">${data.payload ? 'realtime' : '-'}</td>
-                <td class="pe-4 py-3 text-end">
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-info" onclick="window.location.reload()">Refresh to View</button>
-                    </div>
-                </td>
-            `;
-        tableBody.insertBefore(tr, tableBody.firstChild);
-        if (tableBody.children.length > 50) tableBody.lastChild.remove();
-    });
-    });
-
-    let currentRawPayload = '';
-    let currentRawHeaders = '';
-    let isPretty = true;
-    let showingHeaders = false;
-
     function viewPayload(id) {
         const btn = event.currentTarget;
         currentRawPayload = btn.getAttribute('data-payload');
         currentRawHeaders = btn.getAttribute('data-headers');
         const matchedRule = btn.getAttribute('data-rule');
-
         const ruleInfo = document.getElementById('matched-rule-info');
         if (matchedRule) {
             ruleInfo.classList.remove('d-none');
@@ -468,7 +385,6 @@
         } else {
             ruleInfo.classList.add('d-none');
         }
-
         isPretty = true;
         showingHeaders = false;
         updatePayloadDisplay();
@@ -479,11 +395,10 @@
         const display = document.getElementById('payload-display');
         const toggleBtn = document.getElementById('pretty-toggle');
         const headersBtn = document.getElementById('headers-toggle');
-
         const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
-
         try {
             const parsed = JSON.parse(JSON.parse(dataToDisplay || '{}'));
+            toggleBtn.style.display = '';
             if (isPretty) {
                 display.textContent = JSON.stringify(parsed, null, 2);
                 toggleBtn.textContent = 'Minified';
@@ -499,19 +414,10 @@
         Prism.highlightElement(display);
     }
 
-    document.getElementById('pretty-toggle').addEventListener('click', () => {
-        isPretty = !isPretty;
-        updatePayloadDisplay();
-    });
-
-    document.getElementById('headers-toggle').addEventListener('click', () => {
-        showingHeaders = !showingHeaders;
-        updatePayloadDisplay();
-    });
-
     function replayWebhook(id) {
-        if (!{{ debug_mode | tojson }
-    } && !confirm('Re-process this webhook?')) return;
+        const debugMode = {{ debug_mode | tojson
+    }};
+    if (!debugMode && !confirm('Re-process this webhook?')) return;
     fetch(`/history/replay/${id}`, { method: 'POST' })
         .then(res => res.json())
         .then(data => {
@@ -539,5 +445,175 @@
         navigator.clipboard.writeText(text);
         showToast('Payload copied to clipboard!', 'success');
     }
+
+    document.getElementById('history-search').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') searchHistory();
+    });
+
+    document.getElementById('pretty-toggle').addEventListener('click', () => {
+        isPretty = !isPretty;
+        updatePayloadDisplay();
+    });
+
+    document.getElementById('headers-toggle').addEventListener('click', () => {
+        showingHeaders = !showingHeaders;
+        updatePayloadDisplay();
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('history-search').value = "{{ search or '' }}";
+        document.getElementById('date-from').value = "{{ date_from or '' }}";
+        document.getElementById('date-to').value = "{{ date_to or '' }}";
+
+        const tableBody = document.querySelector('table tbody');
+        let currentPage = Number({{ pagination.page | tojson }});
+    const hasNext = Boolean({{ pagination.has_next | tojson }});
+    const sentinel = document.getElementById('infinite-sentinel');
+    const standardPagination = document.getElementById('standard-pagination');
+
+    if (hasNext) {
+        sentinel.classList.remove('d-none');
+        standardPagination.classList.add('d-none');
+        const observer = new IntersectionObserver(async (entries) => {
+            if (entries[0].isIntersecting) {
+                currentPage++;
+                const url = new URL(window.location.href);
+                url.searchParams.set('page', currentPage);
+                url.searchParams.set('partial', 'true');
+                try {
+                    const res = await fetch(url);
+                    const html = await res.text();
+                    if (html.trim()) {
+                        tableBody.insertAdjacentHTML('beforeend', html);
+                    } else {
+                        observer.unobserve(sentinel);
+                        sentinel.classList.add('d-none');
+                    }
+                } catch (e) { console.error('Error fetching next page', e); }
+            }
+        }, { threshold: 1.0 });
+        observer.observe(sentinel);
+    }
+
+    const socket = io();
+    const liveToggle = document.getElementById('live-tail-toggle');
+    socket.on('new_log', (data) => {
+        if (!liveToggle.checked) return;
+        const tr = document.createElement('tr');
+        tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
+
+        // Checkbox
+        const tdCheck = document.createElement('td');
+        tdCheck.className = 'ps-4 py-3';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'log-check';
+        input.dataset.id = data.id;
+        input.onchange = updateBulkHistory;
+        tdCheck.appendChild(input);
+
+        // Timestamp
+        const tdTs = document.createElement('td');
+        tdTs.className = 'py-3 text-secondary font-monospace';
+        tdTs.textContent = new Date(data.timestamp).toLocaleString();
+
+        // Endpoint
+        const tdConfig = document.createElement('td');
+        tdConfig.className = 'py-3 fw-bold';
+        tdConfig.textContent = data.config_name;
+
+        // Status
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'py-3';
+        const badge = document.createElement('span');
+        const levelClass = data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger';
+        badge.className = `badge bg-${levelClass} bg-opacity-10 text-${levelClass} border border-opacity-25`;
+        badge.textContent = data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase();
+        tdStatus.appendChild(badge);
+
+        // Source IP
+        const tdIp = document.createElement('td');
+        tdIp.className = 'py-3 text-secondary font-monospace small';
+        tdIp.textContent = data.source_ip || '-';
+
+        // Retry
+        const tdRetry = document.createElement('td');
+        tdRetry.className = 'py-3';
+        if (data.retry_count > 0) {
+            const retryBadge = document.createElement('span');
+            retryBadge.className = 'badge bg-warning text-dark';
+            retryBadge.style.fontSize = '0.65rem';
+            retryBadge.textContent = data.retry_count;
+            tdRetry.appendChild(retryBadge);
+        } else {
+            const span = document.createElement('span');
+            span.className = 'text-muted opacity-50';
+            span.textContent = '-';
+            tdRetry.appendChild(span);
+        }
+
+        // Ticket
+        const tdTicket = document.createElement('td');
+        tdTicket.className = 'py-3 font-monospace';
+        if (data.ticket_id) {
+            const a = document.createElement('a');
+            a.href = `https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/${data.ticket_id}`;
+            a.target = '_blank';
+            a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold';
+            a.style.fontSize = '0.7rem';
+            a.textContent = `#${data.ticket_id}`;
+            tdTicket.appendChild(a);
+        } else {
+            const span = document.createElement('span');
+            span.className = 'text-muted opacity-50';
+            span.textContent = '-';
+            tdTicket.appendChild(span);
+        }
+
+        // Request ID
+        const tdReqId = document.createElement('td');
+        tdReqId.className = 'py-3 text-secondary font-monospace small';
+        const fullId = data.request_id || data.id || '';
+        tdReqId.dataset.requestId = fullId;
+        const reqSpan = document.createElement('span');
+        reqSpan.className = 'user-select-all';
+        reqSpan.textContent = (fullId.toString().substring(0, 16)) + '...';
+        tdReqId.appendChild(reqSpan);
+
+        // Matched Rule
+        const tdRule = document.createElement('td');
+        tdRule.className = 'py-3';
+        if (data.matched_rule) {
+            const ruleBadge = document.createElement('span');
+            ruleBadge.className = 'badge bg-info bg-opacity-10 text-info border border-info border-opacity-25';
+            ruleBadge.dataset.tooltip = data.matched_rule;
+            ruleBadge.textContent = 'RULE MATCH';
+            tdRule.appendChild(ruleBadge);
+        } else {
+            const span = document.createElement('span');
+            span.className = 'text-muted opacity-50';
+            span.textContent = '-';
+            tdRule.appendChild(span);
+        }
+
+        // Actions
+        const tdActions = document.createElement('td');
+        tdActions.className = 'pe-4 py-3 text-end';
+        const group = document.createElement('div');
+        group.className = 'btn-group btn-group-sm';
+        const reloadBtn = document.createElement('button');
+        reloadBtn.className = 'btn btn-outline-info';
+        reloadBtn.onclick = () => window.location.reload();
+        reloadBtn.textContent = 'Refresh to View';
+        group.appendChild(reloadBtn);
+        tdActions.appendChild(group);
+
+        // Append cells in order
+        [tdCheck, tdTs, tdConfig, tdStatus, tdIp, tdRetry, tdTicket, tdReqId, tdRule, tdActions].forEach(td => tr.appendChild(td));
+
+        tableBody.insertBefore(tr, tableBody.firstChild);
+        if (tableBody.children.length > 50) tableBody.lastChild.remove();
+    });
+    });
 </script>
 {% endblock %}
