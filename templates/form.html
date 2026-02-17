@@ -6,71 +6,88 @@
         <nav aria-label="breadcrumb" class="mb-4">
             <ol class="breadcrumb">
                 <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}"
-                        class="text-decoration-none">Dashboard</a></li>
+                        class="text-decoration-none text-info">Dashboard</a></li>
                 <li class="breadcrumb-item active text-secondary" aria-current="page">{{ 'Edit' if config else 'New' }}
                     Endpoint</li>
             </ol>
         </nav>
-        <div class="card border-0 shadow-lg">
-            <div class="card-header bg-primary text-white p-4">
+
+        <div class="glass-card mb-5 anime-slide-up">
+            <div class="card-header border-bottom border-secondary border-opacity-25 p-4 bg-transparent">
                 <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h2 class="mb-0 h4 fw-bold">{{ 'Edit' if config else 'New' }} Webhook Endpoint</h2>
-                        <p class="mb-0 small opacity-75">{{ 'Update your existing webhook routing configuration.' if
-                            config else
-                            'Configure how incoming alerts are routed to ConnectWise.' }}</p>
+                    <div class="d-flex align-items-center">
+                        <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 rounded-circle me-3"
+                            style="width: 48px; height: 48px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
+                                class="bi bi-bezier2 text-primary" viewBox="0 0 16 16">
+                                <path fill-rule="evenodd"
+                                    d="M1 2.5A1.5 1.5 0 0 1 2.5 1h1A1.5 1.5 0 0 1 5 2.5h4.134a1 1 0 1 1 0 1h-1.205a2.5 2.5 0 0 1-.486 1.879l-1.025 1.25a2.49 2.49 0 0 1 1.087 1.93l.386 2.316a1 1 0 1 1-1.972.33l-.386-2.315a1.5 1.5 0 0 0-.812-1.088l-1.902-2.315A2.49 2.49 0 0 1 1.25 3h-.5a1.5 1.5 0 0 1 0-3h1zm3.844 7.644-2.846-3.468A1.49 1.49 0 0 0 1 7.5v1a1.5 1.5 0 0 0 1.28 1.484l2.564.428zM14.5 13.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0zM8.5 2.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0z" />
+                                <path fill-rule="evenodd"
+                                    d="M10 2.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0zm-7 11a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="mb-0 h4 fw-bold text-light">{{ 'Edit' if config else 'New' }} Webhook Endpoint
+                            </h2>
+                            <p class="mb-0 small text-secondary">{{ 'Update your existing webhook routing
+                                configuration.' if config else 'Configure how incoming alerts are routed to
+                                ConnectWise.' }}</p>
+                        </div>
                     </div>
-                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-light btn-sm">Back to Dashboard</a>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
                 </div>
             </div>
             <div class="card-body p-4">
                 <form method="POST" id="endpoint-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                    <div class="row g-4">
+                    <div class="row g-5">
                         <!-- Left Column: Core Configuration -->
-                        <div class="col-lg-6">
-                            <div class="mb-4 rounded-3 p-3"
-                                style="background: linear-gradient(135deg, #0d1b2a, #1b2838); border: 1px solid #58a6ff; border-left: 4px solid #58a6ff;">
-                                <small class="d-block mb-1 fw-bold"
-                                    style="color: #58a6ff !important; letter-spacing: 0.1em; font-size: 0.75rem;">PREVIEW:
-                                    CW TICKET SUMMARY</small>
-                                <div id="summary-preview" class="font-monospace"
-                                    style="color: #ffffff !important; font-size: 1.25rem; font-weight: 700;">Prefix:
-                                    Source Name</div>
+                        <div class="col-lg-6 border-end border-secondary border-opacity-10">
+
+                            <div class="mb-4 rounded-3 p-3 position-relative overflow-hidden"
+                                style="background: linear-gradient(135deg, rgba(13, 27, 42, 0.8), rgba(27, 40, 56, 0.8)); border: 1px solid rgba(88, 166, 255, 0.3);">
+                                <div class="position-absolute top-0 start-0 bottom-0 bg-primary" style="width: 4px;">
+                                </div>
+                                <small class="d-block mb-1 fw-bold text-uppercase ls-1"
+                                    style="color: #58a6ff; font-size: 0.7rem;">PREVIEW: CW TICKET SUMMARY</small>
+                                <div id="summary-preview" class="font-monospace text-light"
+                                    style="font-size: 1.1rem; font-weight: 600;">Prefix: Source Name</div>
                             </div>
+
                             <div
-                                class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2 border-secondary border-opacity-10">
-                                <h5 class="fw-bold mb-0">Core Settings</h5>
+                                class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 border-secondary border-opacity-25">
+                                <h5 class="fw-bold mb-0 text-light">Core Settings</h5>
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-secondary" onclick="undo()"
-                                        id="undo-btn" disabled>Undo</button>
+                                        id="undo-btn" disabled><i class="fas fa-undo me-1"></i>Undo</button>
                                     <button type="button" class="btn btn-outline-secondary" onclick="redo()"
-                                        id="redo-btn" disabled>Redo</button>
+                                        id="redo-btn" disabled><i class="fas fa-redo me-1"></i>Redo</button>
                                 </div>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="name" class="form-label fw-bold">Endpoint Name <span
+                            <div class="mb-4">
+                                <label for="name" class="form-label fw-bold text-light">Endpoint Name <span
                                         class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="name" name="name"
-                                    placeholder="e.g. Uptime Kuma Production" required
+                                <input type="text" class="form-control bg-dark border-secondary text-light" id="name"
+                                    name="name" placeholder="e.g. Uptime Kuma Production" required
                                     value="{{ config.name if config else '' }}"
                                     data-tooltip="A descriptive name for this webhook source.">
                             </div>
 
                             <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="board" class="form-label fw-bold">Service Board</label>
-                                    <select class="form-select" id="board" name="board"
+                                <div class="col-md-6 mb-4">
+                                    <label for="board" class="form-label fw-bold text-light">Service Board</label>
+                                    <select class="form-select bg-dark border-secondary text-light" id="board"
+                                        name="board"
                                         data-tooltip="The ConnectWise Service Board where tickets will be created.">
                                         <option value="">Loading...</option>
                                     </select>
                                     <input type="hidden" id="board_hidden" value="{{ config.board if config else '' }}">
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label for="priority" class="form-label fw-bold">Priority</label>
-                                    <select class="form-select" id="priority" name="priority"
-                                        data-tooltip="The priority name to set on new tickets.">
+                                <div class="col-md-6 mb-4">
+                                    <label for="priority" class="form-label fw-bold text-light">Priority</label>
+                                    <select class="form-select bg-dark border-secondary text-light" id="priority"
+                                        name="priority" data-tooltip="The priority name to set on new tickets.">
                                         <option value="">Loading...</option>
                                     </select>
                                     <input type="hidden" id="priority_hidden"
@@ -79,18 +96,20 @@
                             </div>
 
                             <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label for="customer_id_default" class="form-label fw-bold">Default Company</label>
-                                    <input class="form-control" list="company_list" id="customer_id_default"
-                                        name="customer_id_default" placeholder="Search Identifier"
+                                <div class="col-md-6 mb-4">
+                                    <label for="customer_id_default" class="form-label fw-bold text-light">Default
+                                        Company</label>
+                                    <input class="form-control bg-dark border-secondary text-light" list="company_list"
+                                        id="customer_id_default" name="customer_id_default"
+                                        placeholder="Search Identifier"
                                         value="{{ config.customer_id_default if config else '' }}"
                                         data-tooltip="The ConnectWise Company ID to use if not found in the payload.">
                                     <datalist id="company_list"></datalist>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label for="status" class="form-label fw-bold">Initial Status</label>
-                                    <select class="form-select" id="status" name="status"
-                                        data-tooltip="The status to set on new tickets.">
+                                <div class="col-md-6 mb-4">
+                                    <label for="status" class="form-label fw-bold text-light">Initial Status</label>
+                                    <select class="form-select bg-dark border-secondary text-light" id="status"
+                                        name="status" data-tooltip="The status to set on new tickets.">
                                         <option value="">-- Select Board First --</option>
                                     </select>
                                     <input type="hidden" id="status_hidden"
@@ -98,34 +117,39 @@
                                 </div>
                             </div>
 
-                            <div class="form-check form-switch mb-3 mt-2">
+                            <div class="form-check form-switch mb-4">
                                 <input class="form-check-input" type="checkbox" id="show-advanced"
                                     onchange="toggleAdvanced()">
-                                <label class="form-check-label small text-secondary fw-bold" for="show-advanced">SHOW
-                                    ADVANCED TICKET FIELDS</label>
+                                <label class="form-check-label small text-secondary fw-bold text-uppercase ls-1"
+                                    for="show-advanced">Show Advanced Fields</label>
                             </div>
 
-                            <div id="advanced-fields" class="d-none">
+                            <div id="advanced-fields"
+                                class="d-none bg-dark bg-opacity-25 p-3 rounded mb-4 border border-secondary border-opacity-25">
                                 <div class="row">
                                     <div class="col-md-4 mb-3">
-                                        <label for="ticket_type" class="form-label fw-bold">Type</label>
-                                        <select class="form-select" id="ticket_type" name="ticket_type">
+                                        <label for="ticket_type"
+                                            class="form-label fw-bold text-light small">Type</label>
+                                        <select class="form-select form-select-sm bg-dark border-secondary text-light"
+                                            id="ticket_type" name="ticket_type">
                                             <option value="">-- Select Board --</option>
                                         </select>
                                         <input type="hidden" id="type_hidden"
                                             value="{{ config.ticket_type if config else '' }}">
                                     </div>
                                     <div class="col-md-4 mb-3">
-                                        <label for="subtype" class="form-label fw-bold">Subtype</label>
-                                        <select class="form-select" id="subtype" name="subtype">
+                                        <label for="subtype" class="form-label fw-bold text-light small">Subtype</label>
+                                        <select class="form-select form-select-sm bg-dark border-secondary text-light"
+                                            id="subtype" name="subtype">
                                             <option value="">-- Select Board --</option>
                                         </select>
                                         <input type="hidden" id="subtype_hidden"
                                             value="{{ config.subtype if config else '' }}">
                                     </div>
                                     <div class="col-md-4 mb-3">
-                                        <label for="item" class="form-label fw-bold">Item</label>
-                                        <select class="form-select" id="item" name="item">
+                                        <label for="item" class="form-label fw-bold text-light small">Item</label>
+                                        <select class="form-select form-select-sm bg-dark border-secondary text-light"
+                                            id="item" name="item">
                                             <option value="">-- Select Board --</option>
                                         </select>
                                         <input type="hidden" id="item_hidden"
@@ -134,25 +158,30 @@
                                 </div>
                             </div>
 
-                            <div class="mb-3">
-                                <label for="ticket_prefix" class="form-label fw-bold">Summary Prefix</label>
-                                <input type="text" class="form-control" id="ticket_prefix" name="ticket_prefix"
-                                    placeholder="e.g. Alert:" value="{{ config.ticket_prefix if config else '' }}"
+                            <div class="mb-4">
+                                <label for="ticket_prefix" class="form-label fw-bold text-light">Summary Prefix</label>
+                                <input type="text" class="form-control bg-dark border-secondary text-light"
+                                    id="ticket_prefix" name="ticket_prefix" placeholder="e.g. Alert:"
+                                    value="{{ config.ticket_prefix if config else '' }}"
                                     data-tooltip="Text to prepend to the ConnectWise ticket title.">
                             </div>
 
-                            <div class="mb-3">
-                                <label for="trusted_ips" class="form-label fw-bold">Trusted IPs (Optional)</label>
-                                <input type="text" class="form-control font-monospace" id="trusted_ips"
-                                    name="trusted_ips" placeholder="e.g. 192.168.1.0/24, 10.0.0.1"
+                            <div class="mb-4">
+                                <label for="trusted_ips" class="form-label fw-bold text-light">Trusted IPs
+                                    (Optional)</label>
+                                <input type="text"
+                                    class="form-control font-monospace bg-dark border-secondary text-info small"
+                                    id="trusted_ips" name="trusted_ips" placeholder="e.g. 192.168.1.0/24, 10.0.0.1"
                                     value="{{ config.trusted_ips if config else '' }}"
                                     data-tooltip="Comma-separated list of allowed IPs or CIDRs.">
                             </div>
 
-                            <div class="mb-3">
-                                <label for="hmac_secret" class="form-label fw-bold">HMAC Secret (Optional)</label>
-                                <input type="text" class="form-control font-monospace" id="hmac_secret"
-                                    name="hmac_secret" placeholder="Optional shared secret"
+                            <div class="mb-4">
+                                <label for="hmac_secret" class="form-label fw-bold text-light">HMAC Secret
+                                    (Optional)</label>
+                                <input type="text"
+                                    class="form-control font-monospace bg-dark border-secondary text-warning small"
+                                    id="hmac_secret" name="hmac_secret" placeholder="Optional shared secret"
                                     value="{{ config.hmac_secret if config else '' }}"
                                     data-tooltip="If set, incoming webhooks must include a valid X-HookWise-Signature header.">
                             </div>
@@ -160,23 +189,25 @@
 
                         <!-- Right Column: Advanced & Automation -->
                         <div class="col-lg-6">
-                            <h5 class="fw-bold mb-3 border-bottom pb-2 border-secondary border-opacity-10">Automation &
+                            <h5 class="fw-bold mb-4 border-bottom pb-2 border-secondary border-opacity-25 text-light">
+                                Automation &
                                 Logic</h5>
 
-                            <div class="mb-3">
+                            <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label class="form-label fw-bold mb-0">Trigger Logic</label>
+                                    <label class="form-label fw-bold mb-0 text-light">Trigger Logic</label>
                                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
                                         data-bs-target="#debugger-tool">
-                                        Open Step-through Debugger
+                                        <i class="fas fa-bug me-1"></i>Open Step-through Debugger
                                     </button>
                                 </div>
 
                                 <div class="collapse mb-3" id="debugger-tool">
                                     <div
-                                        class="card bg-black bg-opacity-50 border-info border-opacity-25 card-body p-3">
-                                        <label class="small preview-text fw-bold mb-2 text-info">STEP-THROUGH
-                                            DEBUGGER</label>
+                                        class="rounded-3 bg-black bg-opacity-50 border border-info border-opacity-25 p-3">
+                                        <label
+                                            class="small preview-text fw-bold mb-2 text-info text-uppercase ls-1">Step-Through
+                                            Debugger</label>
                                         <p class="small text-secondary mb-3">Paste a sample JSON payload below to
                                             simulate how HookWise would process this alert using your current
                                             configuration.</p>
@@ -192,8 +223,9 @@
                                 <div class="input-group mb-2">
                                     <span
                                         class="input-group-text bg-dark border-secondary text-secondary small">Field</span>
-                                    <input type="text" class="form-control font-monospace" id="trigger_field"
-                                        name="trigger_field" placeholder="heartbeat.status"
+                                    <input type="text"
+                                        class="form-control font-monospace bg-dark border-secondary text-light"
+                                        id="trigger_field" name="trigger_field" placeholder="heartbeat.status"
                                         value="{{ config.trigger_field if config else 'heartbeat.status' }}" required
                                         data-tooltip="Dot-notation path to the status field in webhook payload.">
                                 </div>
@@ -202,32 +234,35 @@
                                         <div class="input-group input-group-sm">
                                             <span
                                                 class="input-group-text bg-dark border-secondary text-danger small">Open</span>
-                                            <input type="text" class="form-control" id="open_value" name="open_value"
-                                                placeholder="0" value="{{ config.open_value if config else '0' }}"
-                                                required data-tooltip="Values that trigger a TICKET OPEN.">
+                                            <input type="text" class="form-control bg-dark border-secondary text-light"
+                                                id="open_value" name="open_value" placeholder="0"
+                                                value="{{ config.open_value if config else '0' }}" required
+                                                data-tooltip="Values that trigger a TICKET OPEN.">
                                         </div>
                                     </div>
                                     <div class="col-6">
                                         <div class="input-group input-group-sm">
                                             <span
                                                 class="input-group-text bg-dark border-secondary text-success small">Close</span>
-                                            <input type="text" class="form-control" id="close_value" name="close_value"
-                                                placeholder="1" value="{{ config.close_value if config else '1' }}"
-                                                required data-tooltip="Values that trigger a TICKET CLOSE.">
+                                            <input type="text" class="form-control bg-dark border-secondary text-light"
+                                                id="close_value" name="close_value" placeholder="1"
+                                                value="{{ config.close_value if config else '1' }}" required
+                                                data-tooltip="Values that trigger a TICKET CLOSE.">
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="mb-3">
+                            <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label for="description_template" class="form-label fw-bold mb-0">Description
+                                    <label for="description_template"
+                                        class="form-label fw-bold mb-0 text-light">Description
                                         Template</label>
                                     <div class="dropdown">
                                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2"
-                                            style="font-size: 0.7rem;" type="button" data-bs-toggle="dropdown">Insert
+                                            style="font-size: 0.75rem;" type="button" data-bs-toggle="dropdown">Insert
                                             Placeholder</button>
-                                        <ul class="dropdown-menu dropdown-menu-dark small" style="font-size: 0.75rem;">
+                                        <ul class="dropdown-menu dropdown-menu-dark small" style="font-size: 0.8rem;">
                                             <li><a class="dropdown-item" href="#"
                                                     onclick="return insertAtCursor(event, 'description_template', '{{ monitor_name }}')">Monitor
                                                     Name</a></li>
@@ -243,23 +278,23 @@
                                         </ul>
                                     </div>
                                 </div>
-                                <textarea class="form-control font-monospace small" id="description_template"
-                                    name="description_template" rows="4"
+                                <textarea class="form-control font-monospace small bg-dark border-secondary text-light"
+                                    id="description_template" name="description_template" rows="4"
                                     placeholder="Resource {{ monitor_name }} is experiencing issues.&#10;Message: {{ msg }}&#10;Path: {$.some.field}"
                                     data-tooltip="Custom ticket description using placeholders.">{{ config.description_template if config else '' }}</textarea>
                             </div>
 
-                            <div class="mb-3">
+                            <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label for="json_mapping" class="form-label fw-bold mb-0">Field Mapping
+                                    <label for="json_mapping" class="form-label fw-bold mb-0 text-light">Field Mapping
                                         (JSON)</label>
                                     <div class="d-flex gap-2">
                                         <div class="dropdown">
                                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2"
-                                                style="font-size: 0.7rem;" type="button"
+                                                style="font-size: 0.75rem;" type="button"
                                                 data-bs-toggle="dropdown">Insert Placeholder</button>
                                             <ul class="dropdown-menu dropdown-menu-dark small"
-                                                style="font-size: 0.75rem;">
+                                                style="font-size: 0.8rem;">
                                                 <li><a class="dropdown-item" href="#"
                                                         onclick="return insertAtCursor(event, 'json_mapping', '{{ monitor_name }}')">Monitor
                                                         Name</a></li>
@@ -276,81 +311,68 @@
                                         </div>
                                         <select
                                             class="form-select form-select-sm bg-dark border-secondary text-info py-0 px-2"
-                                            style="font-size: 0.7rem; width: auto;"
+                                            style="font-size: 0.75rem; width: auto;"
                                             onchange="applyTemplate(this.value)">
                                             <option value="">Apply Template...</option>
                                             <option value="uptime_kuma">Uptime Kuma</option>
                                             <option value="grafana">Grafana</option>
                                             <option value="zabbix">Zabbix</option>
                                         </select>
-                                        <button type="button" class="btn btn-sm btn-link text-info p-0"
+                                        <button type="button"
+                                            class="btn btn-sm btn-link text-info p-0 text-decoration-none"
                                             onclick="formatJSON('json_mapping')">Format</button>
                                     </div>
                                 </div>
-                                <textarea class="form-control font-monospace small" id="json_mapping"
-                                    name="json_mapping" rows="3"
+                                <textarea
+                                    class="form-control font-monospace small bg-dark border-secondary text-warning"
+                                    id="json_mapping" name="json_mapping" rows="3"
                                     placeholder='{"summary": "$.title", "description": "$.msg"}'
                                     data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
                             </div>
 
-                            <div class="mb-3">
-
+                            <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-
-                                    <label for="routing_rules" class="form-label fw-bold mb-0">Regex Routing (JSON
-                                        Array)</label>
-
-                                    <button type="button" class="btn btn-sm btn-link text-info p-0"
+                                    <label for="routing_rules" class="form-label fw-bold mb-0 text-light">Regex Routing
+                                        (JSON Array)</label>
+                                    <button type="button" class="btn btn-sm btn-link text-info p-0 text-decoration-none"
                                         onclick="formatJSON('routing_rules')">Format</button>
-
                                 </div>
-
-                                <textarea class="form-control font-monospace small" id="routing_rules"
-                                    name="routing_rules" rows="3"
+                                <textarea
+                                    class="form-control font-monospace small bg-dark border-secondary text-warning"
+                                    id="routing_rules" name="routing_rules" rows="3"
                                     placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
                                     data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
-
                             </div>
 
-
-
-                            <div
-                                class="mb-3 border border-primary border-opacity-25 rounded p-3 bg-primary bg-opacity-5">
-
+                            <div class="mb-4 p-3 rounded-2 bg-gradient-custom-blue border border-primary border-opacity-25"
+                                style="background: rgba(13, 110, 253, 0.05);">
                                 <div class="form-check form-switch mb-2">
-
                                     <input class="form-check-input" type="checkbox" role="switch" id="ai_rca_enabled"
                                         name="ai_rca_enabled" value="true" {{ 'checked' if config and
                                         config.ai_rca_enabled else '' }} onchange="toggleAI()">
-
-                                    <label class="form-check-label fw-bold text-white" for="ai_rca_enabled">AUTOMATED
-                                        RCA NOTES</label>
-
+                                    <label class="form-check-label fw-bold text-info" for="ai_rca_enabled">
+                                        <i class="fas fa-robot me-2"></i>AUTOMATED RCA NOTES
+                                    </label>
                                 </div>
 
                                 <div id="ai-settings"
                                     class="{{ '' if config and config.ai_rca_enabled else 'd-none' }}">
-
                                     <p class="small text-secondary mb-3">Uses local LLM (Phi-3) to intelligently suggest
                                         root causes based on alert context.</p>
 
                                     <label for="ai_prompt_template"
-                                        class="form-label small fw-bold text-secondary">CUSTOM AI PROMPT
-                                        (OPTIONAL)</label>
-
-                                    <textarea class="form-control font-monospace small bg-dark" id="ai_prompt_template"
-                                        name="ai_prompt_template" rows="3"
+                                        class="form-label small fw-bold text-secondary text-uppercase ls-1">Custom AI
+                                        Prompt (Original)</label>
+                                    <textarea
+                                        class="form-control font-monospace small bg-dark border-secondary text-light"
+                                        id="ai_prompt_template" name="ai_prompt_template" rows="3"
                                         placeholder="Analyze this payload and select the best priority... ">{{ config.ai_prompt_template if config else '' }}</textarea>
-
                                 </div>
-
                             </div>
-
-
 
                             <div class="mb-0">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label class="form-label fw-bold mb-0">Maintenance Windows</label>
+                                    <label class="form-label fw-bold mb-0 text-light">Maintenance Windows</label>
                                     <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="addMaintenanceWindow()">Add Window</button>
                                 </div>
@@ -363,7 +385,7 @@
                         </div>
                     </div>
 
-                    <hr class="my-4 opacity-10">
+                    <hr class="my-5 border-secondary border-opacity-10">
 
                     <div class="d-flex justify-content-end gap-3">
                         <input type="hidden" name="create_another" id="create_another" value="false">
@@ -377,7 +399,7 @@
                         <button type="button" class="btn btn-outline-primary px-4" onclick="saveAndAnother()">Save &
                             Create Another</button>
                         {% endif %}
-                        <button type="submit" class="btn btn-primary px-5 fw-bold"
+                        <button type="submit" class="btn btn-primary px-5 fw-bold shadow-lg"
                             onclick="document.getElementById('is_draft').value='false'">{{ 'Update Endpoint' if config
                             else 'Create Endpoint' }}</button>
                     </div>
@@ -489,10 +511,10 @@
         div.className = 'row g-2 mb-2 maintenance-entry';
         div.innerHTML = `
             <div class="col-5">
-                <input type="datetime-local" class="form-control form-control-sm mw-start" value="${start}" onchange="syncMaintenance()">
+                <input type="datetime-local" class="form-control form-control-sm mw-start bg-dark border-secondary text-light" value="${start}" onchange="syncMaintenance()">
             </div>
             <div class="col-5">
-                <input type="datetime-local" class="form-control form-control-sm mw-end" value="${end}" onchange="syncMaintenance()">
+                <input type="datetime-local" class="form-control form-control-sm mw-end bg-dark border-secondary text-light" value="${end}" onchange="syncMaintenance()">
             </div>
             <div class="col-2">
                 <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="this.closest('.row').remove(); syncMaintenance();">&times;</button>
