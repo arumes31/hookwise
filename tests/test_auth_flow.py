@@ -8,6 +8,7 @@ from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import User
 
+
 @pytest.fixture
 def app():
     app = create_app()
