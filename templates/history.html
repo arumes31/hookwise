@@ -380,15 +380,8 @@
         document.getElementById('date-to').value = "{{ date_to or '' }}";
 
         // Infinite Scroll Logic
-        let currentPage = {{ pagination.page }};
+        let currentPage = {{ pagination.page }
     };
-    });
-
-
-    const hasNext = {{ pagination.has_next | tojson }};
-    const sentinel = document.getElementById('infinite-sentinel');
-    const standardPagination = document.getElementById('standard-pagination');
-
     if (hasNext) {
         sentinel.classList.remove('d-none');
         standardPagination.classList.add('d-none');
@@ -450,6 +443,7 @@
         if (tableBody.children.length > 50) tableBody.lastChild.remove();
     });
     });
+
 
     let currentRawPayload = '';
     let currentRawHeaders = '';
