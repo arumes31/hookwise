@@ -1,11 +1,11 @@
-
 import pytest
 from unittest.mock import patch
+import pyotp
+from werkzeug.security import generate_password_hash
+
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import User
-from werkzeug.security import generate_password_hash
-import pyotp
 
 @pytest.fixture
 def app():
@@ -63,7 +63,7 @@ def test_login_normal(client, sample_users):
 
 def test_login_2fa_flow(client, sample_users):
     """Test 2FA login flow merged into /login."""
-    user_2fa = sample_users['2fa']
+    # user_2fa = sample_users['2fa']  <- Removed unused variable
     secret = sample_users['secret']
     
     # 1. Login with credentials
