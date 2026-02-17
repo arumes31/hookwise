@@ -57,8 +57,7 @@
                     <div class="card-body p-3">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6 class="text-secondary text-uppercase small ls-wide mb-0">Service Health</h6>
-                            <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()"
-                                data-tooltip="Refresh Stats">
+                            <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                                     class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
                                     <path fill-rule="evenodd"
@@ -122,7 +121,7 @@
                 </svg>
             </span>
             <input type="text" id="endpoint-search" class="form-control bg-dark border-secondary text-white"
-                placeholder="Search endpoints..." data-tooltip="Press '/' to search">
+                placeholder="Search endpoints...">
         </div>
         <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
@@ -311,8 +310,9 @@
                         <div>
                             <h4 class="mb-1 text-white fw-bold">{{ config.name }}</h4>
                             <div class="d-flex gap-2">
-                                <span class="heartbeat-dot pulse-success"
-                                    style="background-color: {{ 'var(--success)' if last_statuses.get(config.id) == 'processed' else 'var(--danger)' if last_statuses.get(config.id) == 'failed' else 'var(--warning)' if last_statuses.get(config.id) == 'skipped' else 'var(--text-secondary)' }}"></span>
+                                <span
+                                    class="heartbeat-dot pulse-success {{ 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
+
                                 <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
                                     {{ config.id[:12] }}</small>
                             </div>

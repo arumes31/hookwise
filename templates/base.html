@@ -16,9 +16,25 @@
     <div id="loading-bar" style="width: 0%;"></div>
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('main.index') }}">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="42"
-                    class="d-inline-block align-top me-2">
+            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
+                <div class="hw-logo-container me-2">
+                    <svg class="logo-animated-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="hookGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:var(--primary);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:var(--accent);stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                        <!-- Main Hook Path -->
+                        <path class="logo-hook-path" d="M 20 40 C 20 10, 80 10, 80 40 C 80 70, 40 70, 40 50 L 40 90" />
+                        <!-- Pulse Animation -->
+                        <path class="logo-pulse" d="M 20 40 C 20 10, 80 10, 80 40 C 80 70, 40 70, 40 50 L 40 90"
+                            stroke="url(#hookGrad)" />
+                        <!-- Static Terminal Nodes -->
+                        <circle cx="20" cy="40" r="4" fill="var(--primary)" class="logo-dots" />
+                        <circle cx="40" cy="90" r="4" fill="var(--accent)" class="logo-dots" />
+                    </svg>
+                </div>
                 HookWise
             </a>
             <div class="navbar-nav ms-auto">

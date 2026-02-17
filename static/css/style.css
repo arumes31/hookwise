@@ -271,6 +271,23 @@ h4,
     box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
 }
 
+.status-processed {
+    background-color: var(--success) !important;
+}
+
+.status-failed {
+    background-color: var(--danger) !important;
+}
+
+.status-skipped {
+    background-color: var(--warning) !important;
+}
+
+.status-default {
+    background-color: var(--text-secondary) !important;
+}
+
+
 @keyframes pulse-danger {
     0% {
         transform: scale(0.95);
@@ -318,36 +335,8 @@ h4,
     box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
 }
 
-/* Tooltips Customization */
-[data-tooltip] {
-    position: relative;
-}
+/* Tooltips Customization removed - Handled by Bootstrap JS with container body to avoid clipping */
 
-[data-tooltip]:after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%) translateY(10px);
-    background: rgba(15, 23, 42, 0.95);
-    color: #fff;
-    padding: 0.5rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    pointer-events: none;
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow-premium);
-}
-
-[data-tooltip]:hover:after {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(-50%) translateY(0);
-}
 
 /* Responsive Overrides */
 @media (max-width: 991px) {
@@ -357,6 +346,66 @@ h4,
 }
 
 /* Specific override for help text visibility */
-.text-muted.small.ms-2 {
-    color: #cbd5e1 !important;
+/* Logo Animation & Styling */
+.hw-logo-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo-animated-svg {
+    height: 38px;
+    width: auto;
+    overflow: visible;
+}
+
+.logo-hook-path {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 5px var(--primary-glow));
+}
+
+.logo-pulse {
+    fill: none;
+    stroke: white;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 20, 100;
+    animation: logo-flow 3s linear infinite;
+}
+
+.logo-dots {
+    animation: logo-flicker 4s ease-in-out infinite;
+}
+
+@keyframes logo-flow {
+    0% {
+        stroke-dashoffset: 120;
+    }
+
+    100% {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes logo-flicker {
+
+    0%,
+    100% {
+        opacity: 1;
+        filter: brightness(1);
+    }
+
+    50% {
+        opacity: 0.6;
+        filter: brightness(1.5);
+    }
+}
+
+.navbar-brand:hover .logo-pulse {
+    animation-duration: 1.5s;
+    stroke: var(--accent);
 }
