@@ -52,6 +52,10 @@ def create_app() -> Flask:
             "img-src 'self' data:; connect-src 'self' ws: wss:;"
         )
         response.headers["Content-Security-Policy"] = csp
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
 
         if "Cache-Control" not in response.headers:
             if request.path.startswith("/static/"):
