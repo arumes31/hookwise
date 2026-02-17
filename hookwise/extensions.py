@@ -1,5 +1,6 @@
 import os
 
+import redis
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
@@ -24,3 +25,10 @@ limiter = Limiter(
     key_func=get_remote_address, storage_uri=_limiter_storage, default_limits=["2000 per day", "500 per hour"]
 )
 socketio = SocketIO(cors_allowed_origins="*", async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"))
+
+redis_client: redis.Redis = redis.Redis(
+    host=_redis_host,
+    port=int(_redis_port),
+    db=0,
+    password=_redis_password,
+)

@@ -6,12 +6,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, cast
 
-import redis
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
 
 from .client import ConnectWiseClient
-from .extensions import db
+from .extensions import db, redis_client
 from .models import WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
 
@@ -25,12 +24,9 @@ PSA_TASK_DURATION = Histogram("hookwise_psa_task_seconds", "Time spent on PSA ta
 # Redis Cache setup
 CACHE_PREFIX = "hookwise_ticket:"
 CACHE_TTL = 3600 * 24  # 24 hours
-redis_client = redis.Redis(
-    host=os.environ.get("REDIS_HOST", "localhost"),
-    port=int(os.environ.get("REDIS_PORT", 6379)),
-    db=0,
-    password=os.environ.get("REDIS_PASSWORD"),
-)
+CACHE_PREFIX = "hookwise_ticket:"
+CACHE_TTL = 3600 * 24  # 24 hours
+
 cw_client = ConnectWiseClient()
 
 

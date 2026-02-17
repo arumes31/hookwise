@@ -30,7 +30,7 @@
                 <a class="nav-link" href="{{ url_for('main.settings') }}">Settings</a>
                 <a class="nav-link" href="{{ url_for('main.logout') }}">Logout</a>
                 {% else %}
-                <a class="nav-link" href="{{ url_for('main.login') }}">Login</a>
+                <!-- Login removed from navbar as all pages are protected -->
                 {% endif %}
                 <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">Docs</a>
                 <a class="nav-link" href="{{ url_for('main.new_endpoint') }}">New Endpoint</a>

@@ -242,7 +242,8 @@ def _register() -> None:
         if cached:
             return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
         boards = cw_client.get_boards()
-        redis_client.set(cache_key, json.dumps(boards), ex=3600)
+        if boards:
+            redis_client.set(cache_key, json.dumps(boards), ex=3600)
         return jsonify(boards)
 
     @main_bp.route("/api/cw/priorities")
@@ -253,7 +254,8 @@ def _register() -> None:
         if cached:
             return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
         priorities = cw_client.get_priorities()
-        redis_client.set(cache_key, json.dumps(priorities), ex=86400)
+        if priorities:
+            redis_client.set(cache_key, json.dumps(priorities), ex=86400)
         return jsonify(priorities)
 
     @main_bp.route("/api/cw/statuses/<board_id>")
@@ -310,7 +312,7 @@ def _register() -> None:
             if cached:
                 return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
         companies = cw_client.get_companies(search=search)
-        if not search:
+        if not search and companies:
             redis_client.set("hookwise_cw_companies_default", json.dumps(companies), ex=3600)
         return jsonify(companies)
 
@@ -409,6 +411,19 @@ def _register() -> None:
             redis_client.set("hookwise_health_webhook", health_webhook)
         flash("Settings updated successfully!")
         return redirect(url_for("main.settings"))
+
+    @main_bp.route("/admin/clear-cache", methods=["POST"])
+    @auth_required
+    def clear_cache() -> Any:
+        count = 0
+        try:
+            for key in redis_client.scan_iter("hookwise_cw_*"):
+                redis_client.delete(key)
+                count += 1
+            log_audit("clear_cache", None, f"Cleared {count} ConnectWise API cache keys")
+            return jsonify({"status": "success", "count": count})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
 
     @main_bp.route("/admin/generate-api-key", methods=["POST"])
     @auth_required
