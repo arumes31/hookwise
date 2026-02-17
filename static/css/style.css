@@ -262,6 +262,11 @@ h4,
     height: 42px;
 }
 
+.form-control::placeholder {
+    color: lightgrey !important;
+    opacity: 0.7;
+}
+
 .form-control:focus {
     border-color: var(--primary) !important;
     box-shadow: 0 0 0 4px var(--primary-glow) !important;
