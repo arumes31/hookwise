@@ -16,6 +16,19 @@ HookWise is a highly performant, general-purpose webhook router designed to brid
 
 ---
 
+## 📍 Table of Contents
+- [Architecture & Flow](#-architecture--flow)
+- [Advanced Features](#-advanced-features)
+- [API Reference](#-api-reference)
+- [AI In-Depth](#-ai-in-depth)
+- [Extensive Configuration](#-extensive-configuration)
+- [Deep-Dive Usage](#-deep-dive-usage)
+- [Troubleshooting & FAQ](#-troubleshooting--faq)
+- [Security & Compliance](#-security--compliance)
+- [Development & Contributing](#-development--contributing)
+
+---
+
 ## 🏗️ Architecture & Flow
 
 ### System Overview
@@ -40,6 +53,59 @@ graph TD
 5.  **Deduplication**: PSA is queried for existing open tickets with the same summary.
 6.  **Action**: Ticket is Created, Updated, or Closed in ConnectWise.
 7.  **AI Insights**: For new tickets, Ollama generates an automated RCA note.
+
+#### 🔄 Ticket Management Logic
+```mermaid
+flowchart TD
+    A[Start Process] --> B{Existing Open Ticket?}
+    B -- Yes --> C{Status in Payload?}
+    C -- "Close Value" --> D[Close Ticket]
+    C -- Other --> E[Add Internal Note]
+    B -- No --> F{Status in Payload?}
+    F -- "Open Value" --> G[Create New Ticket]
+    F -- Other --> H[Skip/Log Only]
+    G --> I[Analyze with AI]
+    I --> J[Add RCA Note]
+```
+
+#### 🛡️ Maintenance Suppression Flow
+```mermaid
+flowchart TD
+    A[Incoming Webhook] --> B{Global Maintenance?}
+    B -- Yes --> C[Log as Skipped]
+    B -- No --> D{Window Matches?}
+    D -- "Daily Schedule" --> C
+    D -- "Weekly Day" --> C
+    D -- No Match --> E[Process Normally]
+```
+
+#### ⛓️ The Life of a Webhook (Sequence)
+```mermaid
+sequenceDiagram
+    participant S as Monitoring Source
+    participant P as Flask Proxy
+    participant R as Redis Broker
+    participant W as Celery Worker
+    participant A as Ollama (phi3)
+    participant C as ConnectWise API
+
+    S->>P: POST /webhook/<id> (Bearer Auth)
+    P->>P: Validate Source & HMAC
+    P->>R: Push Task ID
+    P-->>S: 202 Accepted (Request ID)
+    
+    R->>W: Fetch Task
+    W->>C: Check for Duplicate Entry
+    alt Exists
+        W->>C: Update Ticket / Add Note
+    else New
+        W->>C: Create Ticket
+        W->>A: Analyze Payload
+        A-->>W: Root Cause Note
+        W->>C: Add Internal RCA Note
+    end
+    W->>W: Log Final Status
+```
 
 ---
 
@@ -85,6 +151,25 @@ All GUI/Admin endpoints require Session Auth or Basic Auth (if configured). Webh
 - `GET /api/cw/boards`: Cached proxy to ConnectWise boards.
 - `GET /health/services`: Real-time health check for Redis, DB, and Celery.
 - `POST /admin/maintenance`: Toggle global maintenance mode.
+
+---
+
+## 🧠 AI In-Depth
+
+HookWise leverages local LLMs via **Ollama** to provide instant RCA (Root Cause Analysis). This means no data ever leaves your network.
+
+### Model Customization
+By default, HookWise uses `phi3:latest`. You can swap this for `llama3`, `mistral`, or any other model supported by Ollama:
+
+1. **Pull the model**:
+   ```bash
+   docker exec -it hookwise-llm ollama pull llama3
+   ```
+2. **Update Configuration**: Set the `AI_MODEL` environment variable to `llama3`.
+3. **Restart Worker**: The Celery worker will now use the new model for all analysis.
+
+### The RCA System Prompt
+The analysis is guided by a global system prompt that tells the AI to be concise and focused on remediation. You can customize the **RCA Instructions** per endpoint in the Web GUI, allowing different alerts to receive different styles of analysis (e.g., "Developer-focused" vs "Support-focused").
 
 ---
 
