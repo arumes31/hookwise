@@ -240,13 +240,17 @@
     </div>
 </div>
 
+<script id="server-data" type="application/json">
+    {
+        "debugMode": {{ debug_mode | tojson }},
+        "currentPage": {{ pagination.page | tojson }},
+        "hasNext": {{ pagination.has_next | tojson }}
+    }
+</script>
+
 <script>
     // Server-side data for scripts
-    const SERVER_DATA = {
-        debugMode: {{ debug_mode | tojson }},
-    currentPage: Number({{ pagination.page | tojson }}),
-        hasNext: Boolean({{ pagination.has_next | tojson }})
-    };
+    const SERVER_DATA = JSON.parse(document.getElementById('server-data').textContent);
 
     let compareLeft = null;
     let currentRawPayload = '';
