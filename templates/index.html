@@ -314,7 +314,7 @@
                                     class="heartbeat-dot pulse-success {{ 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
 
                                 <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
-                                    {{ config.id[:12] }}</small>
+                                    {{ config.id[:16] }}</small>
                             </div>
                         </div>
                     </div>

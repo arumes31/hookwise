@@ -27,7 +27,7 @@ class User(Base):
 
 
 class WebhookConfig(Base):
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = db.Column(db.String(64), primary_key=True, default=lambda: secrets.token_urlsafe(48))
     name = db.Column(db.String(100), nullable=False)
     bearer_token = db.Column(
         db.String(512),
@@ -99,7 +99,7 @@ class WebhookConfig(Base):
 
 class WebhookLog(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_id = db.Column(db.String(36), db.ForeignKey("webhook_config.id"), nullable=False, index=True)
+    config_id = db.Column(db.String(64), db.ForeignKey("webhook_config.id"), nullable=False, index=True)
     request_id = db.Column(db.String(100), nullable=False, index=True)
     payload = db.Column(db.Text, nullable=False)  # JSON string
     headers = db.Column(db.Text)  # JSON string
@@ -139,7 +139,7 @@ class WebhookLog(Base):
 
 class AuditLog(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_id = db.Column(db.String(36))
+    config_id = db.Column(db.String(64))
     action = db.Column(db.String(50), nullable=False)  # create, update, delete, rotate_token
     user = db.Column(db.String(100))
     details = db.Column(db.Text)
