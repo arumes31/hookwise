@@ -156,6 +156,45 @@ All GUI/Admin endpoints require Session Auth or Basic Auth (if configured). Webh
 
 ---
 
+## 🔒 HMAC Security & Verification
+
+HMAC (Hash-based Message Authentication Code) provides a way to verify both the **integrity** and the **authenticity** of a webhook. It ensures that the payload hasn't been tampered with and truly originated from your monitoring tool.
+
+### How it Works
+1.  **Shared Secret**: You and HookWise share a secret key (configured per endpoint).
+2.  **Signing**: Your monitor tool calculates a SHA256 hash of the **raw request body** using that secret.
+3.  **Transmission**: The tool sends this hash in the `X-HookWise-Signature` header.
+4.  **Verification**: HookWise recalculates the hash and compares it. If they don't match, the request is rejected.
+
+### Implementation Guide (How-to)
+If your monitoring tool supports custom headers and signing scripts, use the following logic:
+
+**1. Calculate the Signature** (Python Example):
+```python
+import hmac
+import hashlib
+
+secret = "your_hmac_secret_from_gui"
+payload = '{"status": "0", "msg": "Critical Alert"}' # Raw body string
+
+signature = hmac.new(
+    secret.encode(), 
+    payload.encode(), 
+    hashlib.sha256
+).hexdigest()
+
+print(f"Header Value: {signature}")
+```
+
+**2. Send the Request**:
+- **Header**: `X-HookWise-Signature: <calculated_signature>`
+- **Content-Type**: `application/json`
+
+> [!IMPORTANT]
+> Always sign the **raw, unformatted** body. If your tool beautifies the JSON (adds spaces/newlines) after signing, the verification will fail.
+
+---
+
 ## 🧠 AI In-Depth
 
 HookWise leverages local LLMs via **Ollama** to provide instant RCA (Root Cause Analysis). This means no data ever leaves your network.
