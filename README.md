@@ -58,6 +58,7 @@ docker exec -it hookwise-llm ollama pull phi3
 
 ### 📋 Observability
 - **Live Activity Hub:** Real-time Socket.io feed of all incoming webhooks.
+- **Secure Management:** Integrated endpoint deletion with confirmation prompts and CSRF protection.
 - **Audit Trail:** Every configuration change is logged with the user and timestamp.
 - **Prometheus Metrics:** Native Export for scrapers like Grafana.
 
@@ -141,6 +142,7 @@ Use these in your "Ticket Description Template":
 ## 🛡️ Security & Compliance
 - **Data Privacy**: Webhook payloads are masked (`********`) in audit logs if they contain sensitive keys like `token` or `password`.
 - **Encryption**: Bearer tokens and HMAC secrets are encrypted using AES-128 via the Fernet protocol.
+- **Secure Identifiers**: Uses high-entropy, 64-character URL-safe tokens for endpoint IDs to prevent brute-force discovery.
 - **Air-Gap Support**: All assets (Bootstrap, Socket.io, Prism.js) are bundled locally. No external CDNs are used.
 
 ---
