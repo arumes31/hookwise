@@ -60,6 +60,11 @@ def create_app() -> Flask:
         if "Cache-Control" not in response.headers:
             if request.path.startswith("/static/"):
                 response.headers["Cache-Control"] = "public, max-age=31536000"
+            else:
+                # Disable caching for all protected routes to prevent "Back" button issues after logout
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
         return response
 
     @app.before_request
