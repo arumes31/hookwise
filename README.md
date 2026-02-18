@@ -77,6 +77,7 @@ flowchart TD
     D -- "Daily Schedule" --> C
     D -- "Weekly Day" --> C
     D -- No Match --> E[Process Normally]
+```
 
 #### ⛓️ The Life of a Webhook (Sequence)
 ```mermaid
