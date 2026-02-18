@@ -442,33 +442,3 @@ h4,
         opacity: 0;
     }
 }
-
-.logo-settled {
-    animation: retro-idle-breath 4s ease-in-out infinite 3s;
-}
-
-@keyframes retro-idle-breath {
-
-    0%,
-    100% {
-        transform: scale(1);
-        filter: drop-shadow(0 0 0 transparent);
-    }
-
-    50% {
-        transform: scale(1.03);
-        filter: drop-shadow(0 0 4px var(--retro-cyan));
-    }
-}
-
-/* Tagline typewriter */
-.tagline-char {
-    opacity: 0;
-    animation: retro-type-v2 0.05s steps(1) forwards;
-}
-
-@keyframes retro-type-v2 {
-    to {
-        opacity: 0.9;
-    }
-}
