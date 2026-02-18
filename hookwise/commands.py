@@ -7,6 +7,7 @@ from .extensions import redis_client
 
 logger = logging.getLogger(__name__)
 
+
 @click.command("clear-cw-cache")
 @with_appcontext
 def clear_cw_cache_command() -> None:
@@ -17,7 +18,7 @@ def clear_cw_cache_command() -> None:
         for key in redis_client.scan_iter("hookwise_cw_*"):
             redis_client.delete(key)
             count += 1
-        
+
         click.echo(f"Successfully cleared {count} ConnectWise API cache keys.")
         logger.info(f"Cleared {count} ConnectWise API cache keys via CLI.")
     except Exception as e:

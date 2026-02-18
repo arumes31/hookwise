@@ -573,6 +573,21 @@ def _register() -> None:
 
     @main_bp.route("/metrics", methods=["GET"])
     def metrics() -> Any:
+        import hookwise.tasks as tasks_mod
+        import hookwise.webhook as webhook_mod
+
+        from .metrics import RedisMetricRegistry
+
+        prom_counters = {
+            "hookwise_webhooks_received_total": getattr(webhook_mod, "WEBHOOK_COUNT", None),
+            "hookwise_webhooks_total": getattr(tasks_mod, "WEBHOOK_TOTAL", None),
+            "hookwise_psa_tasks_total": getattr(tasks_mod, "PSA_TASK_COUNT", None),
+        }
+
+        # Filter out None and sync from Redis (the source of truth)
+        active_counters = {k: v for k, v in prom_counters.items() if v is not None}
+        RedisMetricRegistry.sync_to_prometheus(active_counters)
+
         try:
             size_raw = redis_client.llen("celery")
             size = float(cast(Any, size_raw))

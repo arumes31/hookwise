@@ -20,7 +20,7 @@ def upgrade():
     # Increase lengths for config_id and id across tables
     # Note: SQLite doesn't strictly enforce varchar lengths, but Postgres does.
     # Alembic handles alter_column differently per dialect.
-    
+
     with op.batch_alter_table("webhook_config") as batch_op:
         batch_op.alter_column("id", type_=sa.String(length=64))
 

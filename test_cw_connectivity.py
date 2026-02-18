@@ -8,6 +8,7 @@ import requests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def test_connection() -> None:
     # Load credentials from environment
     base_url = os.getenv("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0")
@@ -29,11 +30,7 @@ def test_connection() -> None:
     # Construct Auth Header
     auth_string = f"{company}+{public_key}:{private_key}"
     auth_header = f"Basic {base64.b64encode(auth_string.encode()).decode()}"
-    headers = {
-        "Authorization": auth_header,
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
+    headers = {"Authorization": auth_header, "Content-Type": "application/json", "Accept": "application/json"}
 
     if client_id:
         headers["clientId"] = client_id
@@ -51,7 +48,7 @@ def test_connection() -> None:
         try:
             response = requests.get(url, headers=headers, timeout=10)
             print(f"Status Code: {response.status_code}")
-            
+
             if response.status_code == 200:
                 print("Success!")
                 try:
@@ -71,9 +68,10 @@ def test_connection() -> None:
                 print("3. Application Client ID is invalid or missing.")
             else:
                 print(f"Failed. Response: {response.text[:200]}")
-                
+
         except Exception as e:
             print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     test_connection()

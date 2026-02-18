@@ -11,6 +11,7 @@ from prometheus_client import Counter, Histogram
 
 from .client import ConnectWiseClient
 from .extensions import db, redis_client
+from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
 
@@ -365,7 +366,8 @@ def handle_webhook_logic(
                         data=data,
                         ticket_id=ticket_id,
                     )
-                    PSA_TASK_COUNT.labels(type="create", result="updated").inc()
+                    log_psa_task(task_type="create", result="updated")
+                    log_webhook_processed(config_id=config_id, status="processed")
                     log_entry.status = "processed"
                     log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
@@ -388,7 +390,8 @@ def handle_webhook_logic(
                         ticket_id=ticket_id,
                     )
                     redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
-                    PSA_TASK_COUNT.labels(type="create", result="updated").inc()
+                    log_psa_task(task_type="create", result="updated")
+                    log_webhook_processed(config_id=config_id, status="processed")
                     log_entry.status = "processed"
                     log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
@@ -448,7 +451,8 @@ def handle_webhook_logic(
                         data=data,
                         ticket_id=ticket_id,
                     )
-                    PSA_TASK_COUNT.labels(type="create", result="success").inc()
+                    PSA_TASK_COUNT.labels(type="create", result="success")  # Kept for dynamic registration if needed
+                    log_psa_task(task_type="create", result="success")
                     log_entry.action = "create"
 
                     # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
@@ -485,17 +489,19 @@ def handle_webhook_logic(
                             data=data,
                             ticket_id=ticket_id,
                         )
-                        PSA_TASK_COUNT.labels(type="close", result="success").inc()
+                        PSA_TASK_COUNT.labels(type="close", result="success")
+                        log_psa_task(task_type="close", result="success")
                         log_entry.action = "close"
                 else:
                     log_to_web(
                         f"UP alert: No open ticket to close for {monitor_name}", "success", config_name, data=data
                     )
-                    PSA_TASK_COUNT.labels(type="close", result="skipped").inc()
+                    log_psa_task(task_type="close", result="skipped")
 
             PSA_TASK_DURATION.labels(type=alert_type).observe(time.time() - start_time)
 
             # Finalize SUCCESS
+            log_webhook_processed(config_id=config_id, status="processed")
             log_entry.status = "processed"
             log_entry.ticket_id = ticket_id
             log_entry.processing_time = time.time() - start_time
@@ -503,9 +509,19 @@ def handle_webhook_logic(
 
         except Exception as e:
             db.session.rollback()
+            log_webhook_processed(config_id=config_id, status="failed")
             log_entry.status = "failed"
-            log_entry.error_message = str(e)
+
+            error_msg = str(e)
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    # Capture response body if available (e.g., from requests)
+                    error_msg += f" | Details: {e.response.text}"
+                except Exception:
+                    pass
+
+            log_entry.error_message = error_msg
             log_entry.processing_time = time.time() - start_time
             db.session.commit()
-            logger.error(f"Error handling webhook: {e}", extra=extra)
+            logger.error(f"Error handling webhook: {error_msg}", extra=extra)
             raise e

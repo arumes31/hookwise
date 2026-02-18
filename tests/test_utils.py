@@ -1,4 +1,5 @@
 """Tests for utility functions: encryption, jsonpath, masking, auth."""
+
 import os
 from unittest.mock import patch
 
@@ -18,11 +19,12 @@ from hookwise.utils import (
 @pytest.fixture
 def app():
     from cryptography.fernet import Fernet
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ.setdefault('ENCRYPTION_KEY', Fernet.generate_key().decode())
+
+    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+    os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
     app = create_app()
-    app.config['TESTING'] = True
-    app.config['WTF_CSRF_ENABLED'] = False
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.create_all()
         yield app
@@ -30,6 +32,7 @@ def app():
 
 
 # --- Encryption ---
+
 
 def test_encrypt_decrypt_roundtrip(app):
     """Encrypt then decrypt should return the original plaintext."""
@@ -48,6 +51,7 @@ def test_decrypt_unencrypted_returns_input(app):
 
 
 # --- JSONPath ---
+
 
 def test_resolve_jsonpath_simple():
     data = {"status": "down", "code": 500}
@@ -73,6 +77,7 @@ def test_resolve_jsonpath_missing():
 
 
 # --- Masking ---
+
 
 def test_mask_secrets_dict():
     data = {
@@ -105,6 +110,7 @@ def test_mask_secrets_list():
 
 # --- Auth ---
 
+
 @patch.dict(os.environ, {"GUI_USERNAME": "admin", "GUI_PASSWORD": "pass123"})
 def test_check_auth_valid():
     assert check_auth("admin", "pass123") is True
@@ -120,6 +126,6 @@ def test_check_auth_invalid():
 def test_check_auth_disabled_when_no_env():
     """When GUI_USERNAME/GUI_PASSWORD are not set, auth is disabled."""
     # Remove the keys if they exist
-    os.environ.pop('GUI_USERNAME', None)
-    os.environ.pop('GUI_PASSWORD', None)
+    os.environ.pop("GUI_USERNAME", None)
+    os.environ.pop("GUI_PASSWORD", None)
     assert check_auth("anything", "anything") is True

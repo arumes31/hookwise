@@ -36,7 +36,7 @@ def index() -> Any:
         .group_by(WebhookLog.config_id, WebhookLog.status)
         .all()
     )
-    
+
     # Structure: {config_id: {status: count}}
     counts: Dict[str, Dict[str, int]] = {}
     for cid, status, cnt in count_rows:

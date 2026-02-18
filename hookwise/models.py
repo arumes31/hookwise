@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Any, Dict
 from .extensions import db
 
 if TYPE_CHECKING:
+
     class Base:
         query: Any
+
         def __init__(self, **kwargs: Any) -> None: ...
 else:
     Base = db.Model

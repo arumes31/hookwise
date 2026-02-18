@@ -151,7 +151,7 @@ def create_app() -> Flask:
     @app.errorhandler(500)
     def internal_server_error(e: Any) -> Any:
         return render_template("500.html"), 500
-    
+
     @app.errorhandler(400)
     def bad_request(e: Any) -> Any:
         return render_template("500.html"), 400
@@ -160,9 +160,9 @@ def create_app() -> Flask:
     def rate_limit_error(e: Any) -> Any:
         return render_template("429.html"), 429
 
-
     # Register CLI commands
     from .commands import clear_cw_cache_command
+
     app.cli.add_command(clear_cw_cache_command)
 
     return app

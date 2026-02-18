@@ -95,6 +95,7 @@ def auth_required(f: Any) -> Any:
             if auth.username and auth.password and check_auth(auth.username, auth.password):
                 # Valid Basic Auth - populate synthetic session
                 from .models import User
+
                 user = User.query.filter_by(username=auth.username).first()
                 if user:
                     session["user_id"] = user.id

@@ -23,6 +23,7 @@ HookWise is a highly performant, general-purpose webhook router designed to brid
 - [AI In-Depth](#-ai-in-depth)
 - [Extensive Configuration](#-extensive-configuration)
 - [Deep-Dive Usage](#-deep-dive-usage)
+- [Configuration Recipes](#-configuration-recipes)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
 - [Security & Compliance](#-security--compliance)
 - [Development & Contributing](#-development--contributing)
@@ -155,6 +156,45 @@ All GUI/Admin endpoints require Session Auth or Basic Auth (if configured). Webh
 
 ---
 
+## 🔒 HMAC Security & Verification
+
+HMAC (Hash-based Message Authentication Code) provides a way to verify both the **integrity** and the **authenticity** of a webhook. It ensures that the payload hasn't been tampered with and truly originated from your monitoring tool.
+
+### How it Works
+1.  **Shared Secret**: You and HookWise share a secret key (configured per endpoint).
+2.  **Signing**: Your monitor tool calculates a SHA256 hash of the **raw request body** using that secret.
+3.  **Transmission**: The tool sends this hash in the `X-HookWise-Signature` header.
+4.  **Verification**: HookWise recalculates the hash and compares it. If they don't match, the request is rejected.
+
+### Implementation Guide (How-to)
+If your monitoring tool supports custom headers and signing scripts, use the following logic:
+
+**1. Calculate the Signature** (Python Example):
+```python
+import hmac
+import hashlib
+
+secret = "your_hmac_secret_from_gui"
+payload = '{"status": "0", "msg": "Critical Alert"}' # Raw body string
+
+signature = hmac.new(
+    secret.encode(), 
+    payload.encode(), 
+    hashlib.sha256
+).hexdigest()
+
+print(f"Header Value: {signature}")
+```
+
+**2. Send the Request**:
+- **Header**: `X-HookWise-Signature: <calculated_signature>`
+- **Content-Type**: `application/json`
+
+> [!IMPORTANT]
+> Always sign the **raw, unformatted** body. If your tool beautifies the JSON (adds spaces/newlines) after signing, the verification will fail.
+
+---
+
 ## 🧠 AI In-Depth
 
 HookWise leverages local LLMs via **Ollama** to provide instant RCA (Root Cause Analysis). This means no data ever leaves your network.
@@ -217,6 +257,105 @@ Use these in your "Ticket Description Template":
 
 ---
 
+## 🚀 Configuration Recipes
+
+### 1. Uptime Kuma (Standard)
+Perfect for basic UP/DOWN monitoring.
+
+- **Trigger Field**: `$.heartbeat.status`
+- **Open Value**: `0`
+- **Close Value**: `1`
+- **JSON Mapping**:
+  ```json
+  {
+    "summary": "$.monitor.name",
+    "description": "$.heartbeat.msg",
+    "customer_id": "$.monitor.tags.CW_ID"
+  }
+  ```
+
+### 2. Generic Status Webhook
+For tools that send text-based statuses like "CRITICAL" or "OK".
+
+- **Trigger Field**: `$.status_text`
+- **Open Value**: `CRITICAL, WARNING`
+- **Close Value**: `OK, RESOLVED`
+- **Ticket Prefix**: `Infrastructure Alert:`
+
+### 3. Advanced Regex Routing
+Route alerts to different boards based on the hostname.
+
+- **Routing Rules**:
+  ```json
+  [
+    {
+      "path": "$.monitor.hostname",
+      "regex": ".*-DB-.*",
+      "overrides": {
+        "board": "Database Team",
+        "priority": "High"
+      }
+    },
+    {
+      "path": "$.monitor.hostname",
+      "regex": ".*-FE-.*",
+      "overrides": {
+        "board": "Frontend Team"
+      }
+    }
+  ]
+  ```
+
+### 4. Zabbix (Enterprise)
+Great for detailed system health and event severity.
+
+- **Trigger Field**: `$.event.status`
+- **Open Value**: `PROBLEM`
+- **Close Value**: `OK, RESOLVED`
+- **JSON Mapping**:
+  ```json
+  {
+    "summary": "$.event.name",
+    "severity": "$.event.severity",
+    "description": "Trigger: {$.trigger.description}\nHost: {$.host.name}"
+  }
+  ```
+
+### 5. Grafana Alertmanager
+Handle firing and resolved alerts from Grafana dashboards.
+
+- **Trigger Field**: `$.status`
+- **Open Value**: `firing`
+- **Close Value**: `resolved`
+- **JSON Mapping**:
+  ```json
+  {
+    "summary": "$.alerts[0].annotations.summary",
+    "description": "$.alerts[0].annotations.description"
+  }
+  ```
+
+---
+
+## 🏢 Dynamic Company Identification
+
+HookWise provides several ways to automatically map alerts to the correct ConnectWise Client without creating separate endpoints for every customer.
+
+### 1. The "#CW" Magic String (Simplest)
+If your monitor name contains `#CW` followed by a ConnectWise Company Identifier, HookWise will automatically route the ticket to that company.
+- **Example Monitor Name**: `Firewall Down #CW-AcmeCorp`
+- **Result**: Ticket created for company `AcmeCorp`.
+
+### 2. JSONPath Mapping
+Map a specific field in the webhook payload directly to the ConnectWise company ID.
+- **Mapping**: `"customer_id": "$.tags.client_id"`
+
+### 3. Regex Overrides
+Use Routing Rules to map specific hostnames or message patterns to different companies.
+- **Rule**: `{"path": "$.host", "regex": "PRD-CL1-.*", "overrides": {"customer_id": "CLIENT_A"}}`
+
+---
+
 ## 🛠️ Troubleshooting & FAQ
 
 **Q: Why are tickets not closing automatically?**
@@ -228,6 +367,21 @@ Use these in your "Ticket Description Template":
 
 **Q: AI RCA is too slow?**
 - LLM inference is CPU-heavy. Ensure the `hookwise-llm` container has at least 4 cores and 8GB RAM assigned.
+- Consider switching to a smaller model (e.g., `phi3:3.8b` instead of larger variants).
+
+**Q: Getting "400 Bad Request" when creating tickets?**
+- This usually means ConnectWise rejected the payload due to a missing or invalid field.
+- **Check the History**: Go to the "History" tab in the GUI. I've updated the logging to show the *exact* error message from ConnectWise in the "Error Message" column.
+- Common causes: Invalid `board`, `priority`, or `status` name that doesn't exist on the target board.
+
+**Q: Metrics at `/metrics` are missing some counters?**
+- If you don't see `hookwise_webhooks_total` or other custom metrics, ensure your **Celery worker** and **Web proxy** can both reach the same Redis instance.
+- HookWise uses Redis to aggregate metrics across process boundaries; if Redis is down or partitioned, counters will restart at zero or appear empty.
+
+**Q: HMAC verification fails on every request?**
+- Ensure your monitoring tool is sending the payload as raw JSON.
+- If your tool adds extra whitespace or re-orders JSON keys after signing, the signature won't match.
+- Try testing with the `X-HookWise-Signature` header disabled first to verify the basic connectivity.
 
 ---
 

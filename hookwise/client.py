@@ -116,7 +116,10 @@ class ConnectWiseClient:
             logger.info(f"Created ticket #{ticket.get('id')} for {monitor_name}")
             return cast(Dict[str, Any], ticket)
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error creating ticket: {e}")
+            error_msg = f"Error creating ticket: {e}"
+            if e.response is not None:
+                error_msg += f" | Response: {e.response.text}"
+            logger.error(error_msg)
             return None
 
     def close_ticket(self, ticket_id: int, resolution: str) -> bool:
