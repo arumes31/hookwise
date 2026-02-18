@@ -29,14 +29,18 @@ def index() -> Any:
 
     last_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
-    # Aggregated 24h counts (1 query instead of N)
+    # Aggregated 24h counts grouped by config and status
     count_rows = (
-        db.session.query(WebhookLog.config_id, func.count(WebhookLog.id))
-        .filter(WebhookLog.status == "processed", WebhookLog.action == "create", WebhookLog.created_at >= last_24h)
-        .group_by(WebhookLog.config_id)
+        db.session.query(WebhookLog.config_id, WebhookLog.status, func.count(WebhookLog.id))
+        .filter(WebhookLog.created_at >= last_24h)
+        .group_by(WebhookLog.config_id, WebhookLog.status)
         .all()
     )
-    counts = {row[0]: row[1] for row in count_rows}
+    
+    # Structure: {config_id: {status: count}}
+    counts: Dict[str, Dict[str, int]] = {}
+    for cid, status, cnt in count_rows:
+        counts.setdefault(cid, {})[status] = cnt
 
     # Latest log per config (1 query instead of N)
     latest_subq = (
@@ -77,7 +81,7 @@ def index() -> Any:
     sparklines = {}
     for config in configs:
         cid = config.id
-        counts.setdefault(cid, 0)
+        counts.setdefault(cid, {"processed": 0, "failed": 0, "skipped": 0})
         last_statuses.setdefault(cid, "none")
         last_errors.setdefault(cid, None)
         config_spark = []
