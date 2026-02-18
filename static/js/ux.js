@@ -106,10 +106,7 @@ function initTooltips() {
             container: 'body',
             boundary: 'clippingParents',
             trigger: 'hover',
-            fallbackPlacements: ['bottom', 'right'],
-            popperConfig: {
-                strategy: 'fixed'
-            }
+            fallbackPlacements: ['bottom', 'right']
         });
     });
 }
