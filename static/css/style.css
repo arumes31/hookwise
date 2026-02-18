@@ -355,28 +355,29 @@ h4,
 }
 
 /* Specific override for help text visibility */
-/* Retro 8-Bit Logo Styling v2 */
+/* Retro 8-Bit Logo Styling Refresh (v5) */
 :root {
-    --retro-bg: #000022;
-    --retro-cyan: #00FFFF;
-    --retro-magenta: #FF00FF;
-    --retro-white: #FFFFFF;
-    --retro-yellow: #FFFF00;
+    --retro-bg: transparent;
+    --retro-cyan: var(--primary);
+    --retro-magenta: var(--accent);
+    --retro-white: var(--text-primary);
+    --retro-yellow: #fbbf24;
+    /* Theme warning yellow for spark */
 }
 
 .hw-logo-container {
     display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
     position: relative;
     overflow: hidden;
-    background: linear-gradient(to bottom, #000022, #001144);
-    padding: 10px 20px;
-    border: 2px solid #333;
+    background: transparent;
+    padding: 10px;
+    border-radius: 8px;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     /* Subtle 50Hz CRT flicker */
-    animation: retro-crt-flicker 0.1s infinite;
+    animation: retro-crt-flicker 0.2s infinite;
 }
 
 @keyframes retro-crt-flicker {
@@ -385,7 +386,7 @@ h4,
     }
 
     50% {
-        opacity: 0.98;
+        opacity: 0.96;
     }
 
     100% {
@@ -407,9 +408,9 @@ h4,
 
 @keyframes retro-snap-v2 {
     0% {
-        transform: scale(1.8) translateY(-10px);
+        transform: scale(1.6) translateY(-8px);
         opacity: 0;
-        filter: brightness(4) blur(1px);
+        filter: brightness(2) blur(1px);
     }
 
     100% {
