@@ -328,6 +328,21 @@ Use Routing Rules to map specific hostnames or message patterns to different com
 
 **Q: AI RCA is too slow?**
 - LLM inference is CPU-heavy. Ensure the `hookwise-llm` container has at least 4 cores and 8GB RAM assigned.
+- Consider switching to a smaller model (e.g., `phi3:3.8b` instead of larger variants).
+
+**Q: Getting "400 Bad Request" when creating tickets?**
+- This usually means ConnectWise rejected the payload due to a missing or invalid field.
+- **Check the History**: Go to the "History" tab in the GUI. I've updated the logging to show the *exact* error message from ConnectWise in the "Error Message" column.
+- Common causes: Invalid `board`, `priority`, or `status` name that doesn't exist on the target board.
+
+**Q: Metrics at `/metrics` are missing some counters?**
+- If you don't see `hookwise_webhooks_total` or other custom metrics, ensure your **Celery worker** and **Web proxy** can both reach the same Redis instance.
+- HookWise uses Redis to aggregate metrics across process boundaries; if Redis is down or partitioned, counters will restart at zero or appear empty.
+
+**Q: HMAC verification fails on every request?**
+- Ensure your monitoring tool is sending the payload as raw JSON.
+- If your tool adds extra whitespace or re-orders JSON keys after signing, the signature won't match.
+- Try testing with the `X-HookWise-Signature` header disabled first to verify the basic connectivity.
 
 ---
 
