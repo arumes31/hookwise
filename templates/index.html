@@ -596,10 +596,15 @@
         updateDashboardPayloadDisplay();
     });
 
-    document.addEventListener('DOMContentLoaded', function () {
-        const socket = io({ reconnection: true });
+    htmx.onLoad(function (elt) {
+        const socket = getSocket();
+        if (socket) {
+            socket.off('connect');
+            socket.off('new_log');
+        }
+
         const logContainer = document.getElementById('log-container');
-        if (!logContainer) return; // Exit if activity log is not present
+        if (!logContainer) return;
 
         const pauseBtn = document.getElementById('pause-button');
         const timeBtn = document.getElementById('time-toggle');
@@ -802,10 +807,12 @@
         }
     }
 
-    // Initial load and periodic refresh
-    document.addEventListener('DOMContentLoaded', () => {
+    // Unified initialization for first-load and HTMX swaps
+    (function () {
+        if (window.statsInterval) clearInterval(window.statsInterval);
+
         refreshStats();
-        setInterval(refreshStats, 30000); // Every 30 seconds
+        window.statsInterval = setInterval(refreshStats, 30000); // Every 30 seconds
 
         // Initialize Sparklines
         document.querySelectorAll('canvas[data-sparkline]').forEach(canvas => {
@@ -815,8 +822,9 @@
 
         // Set maintenance toggle state
         fetch('/admin/maintenance').then(r => r.json()).then(d => {
-            document.getElementById('maintenance-toggle').checked = d.maintenance_mode;
+            const toggle = document.getElementById('maintenance-toggle');
+            if (toggle) toggle.checked = d.maintenance_mode;
         }).catch(() => { });
-    });
+    })();
 </script>
 {% endblock %}

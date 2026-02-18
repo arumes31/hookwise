@@ -3,7 +3,55 @@
  * Handles search, filtering, bulk actions, and validator tool.
  */
 
+// Singleton Socket.IO instance
+let socketInstance = null;
+function getSocket() {
+    if (!socketInstance) {
+        socketInstance = typeof io !== 'undefined' ? io() : null;
+    }
+    return socketInstance;
+}
+
+function initSocketHandlers() {
+    const socket = getSocket();
+    if (!socket) return;
+    // Global listeners can go here
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    reinitApp(document.body);
+    initSocketHandlers();
+});
+
+// HTMX Lifecycle
+document.body.addEventListener('htmx:load', function (evt) {
+    reinitApp(evt.detail.elt);
+});
+
+document.body.addEventListener('htmx:beforeRequest', function (evt) {
+    const bar = document.getElementById('loading-bar');
+    if (bar) {
+        bar.style.transition = 'none';
+        bar.style.width = '0%';
+        setTimeout(() => {
+            bar.style.transition = 'width 2s ease-out';
+            bar.style.width = '70%';
+        }, 10);
+    }
+});
+
+document.body.addEventListener('htmx:afterRequest', function (evt) {
+    const bar = document.getElementById('loading-bar');
+    if (bar) {
+        bar.style.transition = 'width 0.3s ease-out';
+        bar.style.width = '100%';
+        setTimeout(() => {
+            bar.style.width = '0%';
+        }, 500);
+    }
+});
+
+function reinitApp(container) {
     initSearch();
     initBulkActions();
     initServiceHealth();
@@ -17,9 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initOnboarding();
     initNotifications();
 
-    // Delay tooltip initialization slightly to ensure layout and animations (like slide-up) are stable
+    // Trigger template-specific initializations if they exist
+    if (window.onPageLoad) window.onPageLoad(container);
+
+    // Delay tooltip initialization slightly to ensure layout and animations are stable
     setTimeout(initTooltips, 500);
-});
+}
 
 // A8: Robust session handling - prevent "Back" button from showing cached protected pages after logout
 window.addEventListener('pageshow', (event) => {
@@ -287,7 +338,8 @@ function initServiceHealth() {
     };
 
     updateHealth();
-    setInterval(updateHealth, 30000);
+    if (window.healthInterval) clearInterval(window.healthInterval);
+    window.healthInterval = setInterval(updateHealth, 30000);
 }
 
 // Transitions
@@ -296,18 +348,7 @@ function initTransitions() {
     if (window.toggleView) window.toggleView(savedView);
 
     document.body.classList.add('page-loaded');
-
-    document.querySelectorAll('a').forEach(link => {
-        if (link.hostname === window.location.hostname && !link.hash && link.target !== '_blank' && !link.getAttribute('href')?.startsWith('javascript:') && !link.getAttribute('href')?.startsWith('#')) {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const url = link.href;
-                document.body.classList.remove('page-loaded');
-                document.body.classList.add('page-leaving');
-                setTimeout(() => window.location.href = url, 300);
-            });
-        }
-    });
+    document.body.classList.remove('page-leaving');
 }
 
 // Bulk Actions Implementation
