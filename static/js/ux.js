@@ -21,6 +21,15 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initTooltips, 500);
 });
 
+// A8: Robust session handling - prevent "Back" button from showing cached protected pages after logout
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+        // If the page is loaded from bfcache (Back-Forward Cache), force a reload
+        // to trigger a server-side auth check.
+        window.location.reload();
+    }
+});
+
 /**
  * Modern Confirmation Prompt Wrapper
  * @param {string} message 
