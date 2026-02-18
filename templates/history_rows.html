@@ -22,7 +22,7 @@
         {% if log.retry_count > 0 %}
         <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ log.retry_count }}</span>
         {% else %}
-        <span class="text-muted opacity-50">-</span>
+        <span class="lightgrey opacity-50">-</span>
         {% endif %}
     </td>
     <td class="py-3 font-monospace">
@@ -39,7 +39,7 @@
             #{{ log.ticket_id }}
         </a>
         {% else %}
-        <span class="text-muted opacity-50">-</span>
+        <span class="lightgrey opacity-50">-</span>
         {% endif %}
     </td>
     <td class="py-3 text-secondary font-monospace small">

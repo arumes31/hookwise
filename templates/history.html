@@ -95,7 +95,7 @@
                             <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ log.retry_count
                                 }}</span>
                             {% else %}
-                            <span class="text-muted opacity-50">-</span>
+                            <span class="lightgrey opacity-50">-</span>
                             {% endif %}
                         </td>
                         <td class="py-3 font-monospace">
@@ -113,7 +113,7 @@
                                 #{{ log.ticket_id }}
                             </a>
                             {% else %}
-                            <span class="text-muted opacity-50">-</span>
+                            <span class="lightgrey opacity-50">-</span>
                             {% endif %}
                         </td>
                         <td class="py-3 text-secondary font-monospace small" data-request-id="{{ log.request_id }}">
@@ -134,7 +134,7 @@
                             <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25"
                                 data-tooltip="{{ log.matched_rule }}">RULE MATCH</span>
                             {% else %}
-                            <span class="text-muted opacity-50">-</span>
+                            <span class="lightgrey opacity-50">-</span>
                             {% endif %}
                         </td>
                         <td class="pe-4 py-3 text-end">
@@ -553,7 +553,7 @@
             tdRetry.appendChild(retryBadge);
         } else {
             const span = document.createElement('span');
-            span.className = 'text-muted opacity-50';
+            span.className = 'lightgrey opacity-50';
             span.textContent = '-';
             tdRetry.appendChild(span);
         }
@@ -571,7 +571,7 @@
             tdTicket.appendChild(a);
         } else {
             const span = document.createElement('span');
-            span.className = 'text-muted opacity-50';
+            span.className = 'lightgrey opacity-50';
             span.textContent = '-';
             tdTicket.appendChild(span);
         }
@@ -597,7 +597,7 @@
             tdRule.appendChild(ruleBadge);
         } else {
             const span = document.createElement('span');
-            span.className = 'text-muted opacity-50';
+            span.className = 'lightgrey opacity-50';
             span.textContent = '-';
             tdRule.appendChild(span);
         }

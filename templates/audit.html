@@ -22,12 +22,16 @@
                 <tbody>
                     {% for log in logs %}
                     <tr class="border-bottom border-light border-opacity-5">
-                        <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                        <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
+                            %H:%M:%S') }}</td>
                         <td class="py-3">
-                            <span class="badge bg-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} bg-opacity-10 text-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} border border-opacity-25 uppercase">{{ log.action.upper() }}</span>
+                            <span
+                                class="badge bg-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} bg-opacity-10 text-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} border border-opacity-25 uppercase">{{
+                                log.action.upper() }}</span>
                         </td>
                         <td class="py-3 text-secondary">{{ log.user or 'System' }}</td>
-                        <td class="py-3 font-monospace small text-muted">{{ log.config_id[:8] if log.config_id else '-' }}</td>
+                        <td class="py-3 font-monospace small lightgrey">{{ log.config_id[:8] if log.config_id else '-'
+                            }}</td>
                         <td class="pe-4 py-3">{{ log.details }}</td>
                     </tr>
                     {% endfor %}
@@ -41,13 +45,16 @@
     <ul class="pagination justify-content-center">
         {% if pagination.has_prev %}
         <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.audit_logs', page=pagination.prev_num) }}">Previous</a>
+            <a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.audit_logs', page=pagination.prev_num) }}">Previous</a>
         </li>
         {% endif %}
-        <li class="page-item active"><span class="page-link bg-primary border-primary">{{ pagination.page }} of {{ pagination.pages }}</span></li>
+        <li class="page-item active"><span class="page-link bg-primary border-primary">{{ pagination.page }} of {{
+                pagination.pages }}</span></li>
         {% if pagination.has_next %}
         <li class="page-item">
-            <a class="page-link bg-dark border-secondary text-white" href="{{ url_for('main.audit_logs', page=pagination.next_num) }}">Next</a>
+            <a class="page-link bg-dark border-secondary text-white"
+                href="{{ url_for('main.audit_logs', page=pagination.next_num) }}">Next</a>
         </li>
         {% endif %}
     </ul>

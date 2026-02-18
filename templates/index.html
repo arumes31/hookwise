@@ -151,7 +151,7 @@
         <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Empty" class="opacity-75 mb-4"
             style="filter: grayscale(0.5); height: 120px;">
         <h3 class="text-secondary">Ready to start routing?</h3>
-        <p class="text-muted mb-5">Create your first webhook endpoint to bridge monitoring alerts to ConnectWise Manage.
+        <p class="lightgrey mb-5">Create your first webhook endpoint to bridge monitoring alerts to ConnectWise Manage.
         </p>
 
         <div class="row g-4 text-start">
@@ -546,7 +546,7 @@
                         <div class="card h-100 bg-black bg-opacity-25 border-0">
                             <div class="card-body">
                                 <div class="h6 text-info">1. API Keys</div>
-                                <p class="small text-muted">Ensure your ConnectWise API keys are set in your
+                                <p class="small lightgrey">Ensure your ConnectWise API keys are set in your
                                     <code>.env</code> file.
                                 </p>
                             </div>
@@ -556,7 +556,7 @@
                         <div class="card h-100 bg-black bg-opacity-25 border-0">
                             <div class="card-body">
                                 <div class="h6 text-info">2. Endpoint</div>
-                                <p class="small text-muted">Create an endpoint for each tool (e.g. Uptime Kuma,
+                                <p class="small lightgrey">Create an endpoint for each tool (e.g. Uptime Kuma,
                                     Grafana).</p>
                             </div>
                         </div>
@@ -565,7 +565,7 @@
                         <div class="card h-100 bg-black bg-opacity-25 border-0">
                             <div class="card-body">
                                 <div class="h6 text-info">3. Webhooks</div>
-                                <p class="small text-muted">Copy your endpoint URL to your monitoring tool's webhook
+                                <p class="small lightgrey">Copy your endpoint URL to your monitoring tool's webhook
                                     settings.</p>
                             </div>
                         </div>
@@ -690,7 +690,7 @@
 
         if (clearBtn) {
             clearBtn.addEventListener('click', () => {
-                logContainer.innerHTML = '<div class="text-muted opacity-50 italic">Waiting for activity...</div>';
+                logContainer.innerHTML = '<div class="lightgrey opacity-50 italic">Waiting for activity...</div>';
             });
         }
 
@@ -732,7 +732,7 @@
         socket.on('new_log', (data) => {
             if (isPaused) return;
 
-            if (logContainer.querySelector('.text-muted')) {
+            if (logContainer.querySelector('.lightgrey')) {
                 logContainer.innerHTML = '';
             }
 
