@@ -430,7 +430,7 @@
 
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            {% if config %}
+                            {% if config.id %}
                             <button type="button" class="btn btn-outline-danger px-4" id="delete-endpoint-btn"
                                 data-id='{{ config.id|tojson }}' data-name='{{ config.name|tojson }}'
                                 onclick="const btn=this; confirmDelete(JSON.parse(btn.dataset.id), JSON.parse(btn.dataset.name))">
@@ -441,12 +441,13 @@
                         <div class="d-flex gap-3">
                             <input type="hidden" name="create_another" id="create_another" value="false">
                             <input type="hidden" name="is_draft" id="is_draft"
-                                value="{{ 'true' if config and config.is_draft else 'false' }}">
+                                value="{{ 'true' if config.id and config.is_draft else 'false' }}">
                             <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
                             <button type="button" class="btn btn-outline-warning px-4" id="draft-btn"
-                                onclick="saveAsDraft()">{{ 'Keep as Draft' if config and config.is_draft else 'Save as
+                                onclick="saveAsDraft()">{{ 'Keep as Draft' if config.id and config.is_draft else 'Save
+                                as
                                 Draft' }}</button>
-                            {% if not config %}
+                            {% if not config.id %}
                             <button type="button" class="btn btn-outline-primary px-4" onclick="saveAndAnother()">Save &
                                 Create Another</button>
                             {% endif %}
