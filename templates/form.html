@@ -432,7 +432,7 @@
                         <div>
                             {% if config %}
                             <button type="button" class="btn btn-outline-danger px-4" id="delete-endpoint-btn"
-                                data-id="{{ config.id|tojson }}" data-name="{{ config.name|tojson }}"
+                                data-id='{{ config.id|tojson }}' data-name='{{ config.name|tojson }}'
                                 onclick="const btn=this; confirmDelete(JSON.parse(btn.dataset.id), JSON.parse(btn.dataset.name))">
                                 <i class="fas fa-trash-alt me-2"></i>Delete Endpoint
                             </button>
