@@ -125,6 +125,10 @@ def _register() -> None:
         config.last_rotated_at = datetime.now(timezone.utc)
         db.session.commit()
         log_audit("rotate_token", id, f"Token for {config.name} rotated")
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+            return jsonify({"status": "success", "token": new_token})
+
         flash(f'Token for "{config.name}" rotated successfully!')
         return redirect(url_for("main.index"))
 
