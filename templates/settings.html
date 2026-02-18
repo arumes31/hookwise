@@ -180,10 +180,10 @@
                         </div>
                         <div class="mt-3">
                             {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
-                            <form action="{{ url_for('main.disable_2fa') }}" method="POST"
-                                onsubmit="return confirm('Disable 2FA? This will reduce your account security.')">
+                            <form id="disable-2fa-form" action="{{ url_for('main.disable_2fa') }}" method="POST">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                                <button type="submit" class="btn btn-outline-danger w-100">Disable 2FA</button>
+                                <button type="button" class="btn btn-outline-danger w-100"
+                                    onclick="confirmDisable2FA()">Disable 2FA</button>
                             </form>
                             {% else %}
                             <a href="{{ url_for('main.setup_2fa') }}" class="btn btn-primary w-100">Set Up 2FA</a>
@@ -238,7 +238,7 @@
 
 <script>
     async function generateApiKey() {
-        if (!confirm('Are you sure you want to generate a new master API key?')) return;
+        if (!await hwConfirm('Are you sure you want to generate a new master API key?', { title: 'Regenerate API Key', okText: 'Regenerate' })) return;
         try {
             const res = await fetch('/admin/generate-api-key', { method: 'POST' });
             const data = await res.json();
@@ -271,8 +271,8 @@
         } catch (e) { showToast('Error uploading file', 'danger'); }
     }
 
-    function deleteAllLogs() {
-        if (!confirm('Are you SURE you want to delete ALL history logs? This cannot be undone.')) return;
+    async function deleteAllLogs() {
+        if (!await hwConfirm('Are you SURE you want to delete ALL history logs? This cannot be undone.', { title: 'Purge All Logs', okText: 'Purge' })) return;
         fetch('/history/delete-all', { method: 'POST' })
             .then(res => res.json())
             .then(data => {
@@ -282,8 +282,14 @@
             });
     }
 
+    async function confirmDisable2FA() {
+        if (await hwConfirm('Disable 2FA? This will reduce your account security.', { title: 'Security Warning', okText: 'Disable' })) {
+            document.getElementById('disable-2fa-form').submit();
+        }
+    }
+
     async function clearCache() {
-        if (!confirm('Clear ConnectWise API cache? This will cause the next requests to be slower as data is refetched.')) return;
+        if (!await hwConfirm('Clear ConnectWise API cache? This will cause the next requests to be slower as data is refetched.', { title: 'Clear Cache', okText: 'Clear' })) return;
         try {
             const res = await fetch('/admin/clear-cache', { method: 'POST' });
             const data = await res.json();
