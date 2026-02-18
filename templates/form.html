@@ -822,7 +822,7 @@
     }
 
     async function rotateBearerToken(id) {
-        if (!confirm('Are you sure you want to regenerate the bearer token? Existing integrations using the old token will break immediately.')) return;
+        if (!await hwConfirm('Are you sure you want to regenerate the bearer token? Existing integrations using the old token will break immediately.', { title: 'Regenerate Token', okText: 'Regenerate' })) return;
 
         const btn = document.getElementById('rotate-btn');
         const input = document.getElementById('bearer-token-display');
