@@ -903,8 +903,10 @@
         preview.textContent = (prefix ? prefix + ' ' : '') + 'Source Name';
     }
 
-    document.addEventListener('DOMContentLoaded', async () => {
+    htmx.onLoad(async function (elt) {
         const form = document.getElementById('endpoint-form');
+        if (!form) return;
+
         form.addEventListener('input', () => {
             clearTimeout(window.saveStateTimeout);
             window.saveStateTimeout = setTimeout(saveState, 500);
