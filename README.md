@@ -88,6 +88,7 @@ sequenceDiagram
     participant W as Celery Worker
     participant A as Ollama (phi3)
     participant C as ConnectWise API
+    participant D as PostgreSQL DB
 
     S->>P: POST /webhook/<id> (Bearer Auth)
     P->>P: Validate Source & HMAC
@@ -104,7 +105,7 @@ sequenceDiagram
         A-->>W: Root Cause Note
         W->>C: Add Internal RCA Note
     end
-    W->>W: Log Final Status
+    W->>D: Persist Final Status & Logs
 ```
 
 ---
