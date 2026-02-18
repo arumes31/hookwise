@@ -185,6 +185,47 @@
                                     value="{{ config.hmac_secret if config else '' }}"
                                     data-tooltip="If set, incoming webhooks must include a valid X-HookWise-Signature header.">
                             </div>
+
+                            <div class="form-check form-switch mb-4">
+                                <input class="form-check-input" type="checkbox" role="switch" id="bearer_auth_enabled"
+                                    name="bearer_auth_enabled" value="true" {{ 'checked' if not config or
+                                    config.bearer_auth_enabled else '' }}>
+                                <label class="form-check-label fw-bold text-light" for="bearer_auth_enabled">
+                                    Bearer Token Authentication
+                                </label>
+                                <div class="small text-secondary">
+                                    Require an <code>Authorization: Bearer</code> header. Disable only if your source
+                                    cannot send headers.
+                                </div>
+                            </div>
+
+                            {% if config %}
+                            <div class="mb-4 p-3 rounded-2 bg-dark bg-opacity-50 border border-secondary border-opacity-25"
+                                id="token-mgmt-section">
+                                <label class="form-label fw-bold text-light small d-block mb-2">Token Management</label>
+                                <div class="input-group input-group-sm mb-3">
+                                    <input type="password"
+                                        class="form-control bg-dark border-secondary text-info font-monospace"
+                                        id="bearer-token-display" readonly value="****************">
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        onclick="toggleTokenVisibility()" title="Reveal/Hide">
+                                        <i class="fas fa-eye" id="token-eye-icon"></i>
+                                    </button>
+                                    <button class="btn btn-outline-info" type="button" onclick="copyBearerToken()"
+                                        title="Copy to Clipboard">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-warning w-100 fw-bold"
+                                    onclick="rotateBearerToken('{{ config.id }}')" id="rotate-btn">
+                                    <i class="fas fa-sync-alt me-2"></i>Regenerate Bearer Token
+                                </button>
+                                <div class="small text-warning mt-2" style="font-size: 0.7rem;">
+                                    <i class="fas fa-exclamation-triangle me-1"></i> Regeneration is immediate and stays
+                                    rotated even if you cancel this form.
+                                </div>
+                            </div>
+                            {% endif %}
                         </div>
 
                         <!-- Right Column: Advanced & Automation -->
@@ -641,6 +682,83 @@
     function saveAndAnother() {
         document.getElementById('create_another').value = 'true';
         document.getElementById('endpoint-form').submit();
+    }
+
+    let tokenLoaded = false;
+    async function toggleTokenVisibility() {
+        const input = document.getElementById('bearer-token-display');
+        const icon = document.getElementById('token-eye-icon');
+        const configId = "{{ config.id if config else '' }}";
+
+        if (input.type === 'password') {
+            if (!tokenLoaded && configId) {
+                try {
+                    const res = await fetch(`/endpoint/token/${configId}`);
+                    const data = await res.json();
+                    if (data.token) {
+                        input.value = data.token;
+                        tokenLoaded = true;
+                    }
+                } catch (e) {
+                    showToast('Failed to load token', 'danger');
+                    return;
+                }
+            }
+            input.type = 'text';
+            icon.classList.replace('fa-eye', 'fa-eye-slash');
+        } else {
+            input.type = 'password';
+            icon.classList.replace('fa-eye-slash', 'fa-eye');
+        }
+    }
+
+    function copyBearerToken() {
+        const input = document.getElementById('bearer-token-display');
+        if (input.value === '****************' && !tokenLoaded) {
+            showToast('Please reveal the token first', 'warning');
+            return;
+        }
+        navigator.clipboard.writeText(input.value).then(() => {
+            showToast('Token copied to clipboard', 'success');
+        });
+    }
+
+    async function rotateBearerToken(id) {
+        if (!confirm('Are you sure you want to regenerate the bearer token? Existing integrations using the old token will break immediately.')) return;
+
+        const btn = document.getElementById('rotate-btn');
+        const input = document.getElementById('bearer-token-display');
+        const originalHtml = btn.innerHTML;
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Rotating...';
+
+        try {
+            const res = await fetch(`/endpoint/rotate-token/${id}`, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                input.value = data.token;
+                input.type = 'text';
+                tokenLoaded = true;
+                const icon = document.getElementById('token-eye-icon');
+                if (icon) icon.classList.replace('fa-eye', 'fa-eye-slash');
+                showToast('Token regenerated successfully!', 'success');
+            } else {
+                showToast('Rotation failed', 'danger');
+            }
+        } catch (e) {
+            showToast('Error rotating token', 'danger');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
     }
 
     document.getElementById('endpoint-form').addEventListener('submit', (e) => {

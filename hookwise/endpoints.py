@@ -60,6 +60,7 @@ def _register() -> None:
                 trusted_ips=request.form.get("trusted_ips"),
                 is_draft=request.form.get("is_draft") == "true",
                 ai_rca_enabled=request.form.get("ai_rca_enabled") == "true",
+                bearer_auth_enabled=request.form.get("bearer_auth_enabled") == "true",
                 ai_prompt_template=request.form.get("ai_prompt_template"),
             )
             db.session.add(config)
@@ -96,6 +97,7 @@ def _register() -> None:
             config.trusted_ips = request.form.get("trusted_ips")
             config.is_draft = request.form.get("is_draft") == "true"
             config.ai_rca_enabled = request.form.get("ai_rca_enabled") == "true"
+            config.bearer_auth_enabled = request.form.get("bearer_auth_enabled") == "true"
             config.ai_prompt_template = request.form.get("ai_prompt_template")
 
             db.session.commit()
@@ -123,6 +125,10 @@ def _register() -> None:
         config.last_rotated_at = datetime.now(timezone.utc)
         db.session.commit()
         log_audit("rotate_token", id, f"Token for {config.name} rotated")
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+            return jsonify({"status": "success", "token": new_token})
+
         flash(f'Token for "{config.name}" rotated successfully!')
         return redirect(url_for("main.index"))
 
@@ -163,6 +169,7 @@ def _register() -> None:
             maintenance_windows=config.maintenance_windows,
             trusted_ips=config.trusted_ips,
             ai_rca_enabled=config.ai_rca_enabled,
+            bearer_auth_enabled=config.bearer_auth_enabled,
             ai_prompt_template=config.ai_prompt_template,
         )
         new_config.bearer_token = encrypt_string(secrets.token_urlsafe(32))
