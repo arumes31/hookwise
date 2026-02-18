@@ -24,8 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // HTMX Lifecycle
-document.body.addEventListener('htmx:load', function (evt) {
-    reinitApp(evt.detail.elt);
+// Use afterSettle to ensure we run once after the DOM is fully swapped
+document.body.addEventListener('htmx:afterSettle', function (evt) {
+    reinitApp(evt.detail.elt || document.body);
 });
 
 document.body.addEventListener('htmx:beforeRequest', function (evt) {
@@ -52,24 +53,24 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
 });
 
 function reinitApp(container) {
-    initSearch();
-    initBulkActions();
-    initServiceHealth();
-    initToasts();
-    initTransitions();
-    initDragAndDrop();
-    initContextMenu();
-    initAutoSave();
-    initFeedback();
-    initPullToRefresh();
-    initOnboarding();
-    initNotifications();
+    initSearch(container);
+    initBulkActions(container);
+    initServiceHealth(container);
+    initToasts(container);
+    initTransitions(container);
+    initDragAndDrop(container);
+    initContextMenu(container);
+    initAutoSave(container);
+    initFeedback(container);
+    initPullToRefresh(container);
+    initOnboarding(container);
+    initNotifications(container);
 
     // Trigger template-specific initializations if they exist
     if (window.onPageLoad) window.onPageLoad(container);
 
     // Delay tooltip initialization slightly to ensure layout and animations are stable
-    setTimeout(initTooltips, 500);
+    setTimeout(() => initTooltips(container), 500);
 }
 
 // A8: Robust session handling - prevent "Back" button from showing cached protected pages after logout
@@ -132,9 +133,9 @@ window.hwConfirm = function (message, options = {}) {
 };
 
 // Tooltip System - Optimized for icon-only button detection
-function initTooltips() {
+function initTooltips(container = document) {
     // 1. Robust cleanup of existing instances
-    const nodes = document.querySelectorAll('[data-tooltip]');
+    const nodes = container.querySelectorAll('[data-tooltip]');
     nodes.forEach(el => {
         try {
             const instance = bootstrap.Tooltip.getInstance(el);
@@ -213,18 +214,29 @@ function showToast(message, type = 'info') {
 }
 
 // Endpoint Search
-function initSearch() {
-    const searchInput = document.getElementById('endpoint-search');
-    const boardFilter = document.getElementById('board-filter');
-    const statusFilter = document.getElementById('status-filter');
+function initSearch(container = document) {
+    const searchInput = container.querySelector('#endpoint-search');
+    const boardFilter = container.querySelector('#board-filter');
+    const statusFilter = container.querySelector('#status-filter');
     if (!searchInput) return;
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-            e.preventDefault();
-            searchInput.focus();
-        }
-    });
+    // Use a unique flag to prevent duplicate listeners
+    if (searchInput.dataset.initSearch) return;
+    searchInput.dataset.initSearch = 'true';
+
+    // Global key listener should only be added once
+    if (!window._searchShortcutInit) {
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                const globalInput = document.getElementById('endpoint-search');
+                if (globalInput) {
+                    e.preventDefault();
+                    globalInput.focus();
+                }
+            }
+        });
+        window._searchShortcutInit = true;
+    }
 
     const filterEndpoints = () => {
         const term = searchInput.value.toLowerCase();
@@ -263,10 +275,13 @@ function initSearch() {
 }
 
 // Bulk Actions
-function initBulkActions() {
-    const mainCheck = document.getElementById('check-all');
-    const bulkControls = document.getElementById('bulk-controls');
+function initBulkActions(container = document) {
+    const mainCheck = container.querySelector('#check-all');
+    const bulkControls = container.querySelector('#bulk-controls');
     if (!mainCheck) return;
+
+    if (mainCheck.dataset.initBulk) return;
+    mainCheck.dataset.initBulk = 'true';
 
     const updateControls = () => {
         const checked = document.querySelectorAll('.endpoint-check:checked').length;
@@ -284,7 +299,15 @@ function initBulkActions() {
 }
 
 // Service Health Monitoring
-function initServiceHealth() {
+function initServiceHealth(container = document) {
+    // Health display elements might be in navigation (document-level) or page-level
+    const redisEl = container.querySelector('#health-redis');
+    const dbEl = container.querySelector('#health-database');
+    const celeryEl = container.querySelector('#health-celery');
+
+    // Only set up the timer if we are on the primary container (document.body)
+    // or if the displays are actually present in this container.
+    if (!redisEl && !dbEl && !celeryEl && container !== document.body) return;
     const updateFavicon = (status) => {
         const canvas = document.createElement('canvas');
         canvas.width = 32;
@@ -580,9 +603,12 @@ window.copyToClipboard = function (text) {
     showToast('Copied to clipboard!', 'success');
 };
 
-function initDragAndDrop() {
-    const grid = document.getElementById('endpoint-grid');
+function initDragAndDrop(container = document) {
+    const grid = container.querySelector('#endpoint-grid');
     if (!grid) return;
+
+    if (grid.dataset.initDrag) return;
+    grid.dataset.initDrag = 'true';
 
     let draggedItem = null;
 
@@ -643,9 +669,12 @@ function initDragAndDrop() {
     }
 }
 
-function initContextMenu() {
-    const menu = document.getElementById('context-menu');
+function initContextMenu(container = document) {
+    const menu = container.querySelector('#context-menu') || document.getElementById('context-menu');
     if (!menu) return;
+
+    if (window._ctxMenuInit) return;
+    window._ctxMenuInit = true;
 
     document.addEventListener('contextmenu', (e) => {
         const card = e.target.closest('.endpoint-card');

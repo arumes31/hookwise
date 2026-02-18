@@ -468,13 +468,14 @@
 
     htmx.onLoad(function (elt) {
         const searchInput = document.getElementById('history-search');
-        if (!searchInput) return;
-
-        searchInput.value = "{{ search or '' }}";
-        document.getElementById('date-from').value = "{{ date_from or '' }}";
-        document.getElementById('date-to').value = "{{ date_to or '' }}";
+        if (searchInput) {
+            searchInput.value = "{{ search or '' }}";
+            document.getElementById('date-from').value = "{{ date_from or '' }}";
+            document.getElementById('date-to').value = "{{ date_to or '' }}";
+        }
 
         const tableBody = document.querySelector('table tbody');
+        if (!tableBody) return;
         let currentPage = SERVER_DATA.currentPage;
         const hasNext = SERVER_DATA.hasNext;
 

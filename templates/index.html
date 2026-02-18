@@ -658,13 +658,15 @@
             });
         }
 
-        socket.on('connect', () => {
-            const statusBadge = document.getElementById('socket-status');
-            if (statusBadge) {
-                statusBadge.textContent = 'Live';
-                statusBadge.className = 'badge bg-success';
-            }
-        });
+        if (socket) {
+            socket.on('connect', () => {
+                const statusBadge = document.getElementById('socket-status');
+                if (statusBadge) {
+                    statusBadge.textContent = 'Live';
+                    statusBadge.className = 'badge bg-success';
+                }
+            });
+        }
 
         socket.on('new_log', (data) => {
             if (isPaused) return;
