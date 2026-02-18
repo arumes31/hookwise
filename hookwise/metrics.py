@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict
+from typing import Any, Dict, List, Optional, cast
 
 from prometheus_client import Counter
 
@@ -24,7 +24,7 @@ class RedisMetricRegistry:
         return f"{REDIS_METRICS_KEY_PREFIX}:counter:{metric_name}:{label_str}"
 
     @classmethod
-    def incr_counter(cls, name: str, labels: Dict[str, str] = None) -> None:
+    def incr_counter(cls, name: str, labels: Optional[Dict[str, str]] = None) -> None:
         """Increment a counter in Redis."""
         labels = labels or {}
         key = cls._get_redis_key(name, labels)
@@ -42,10 +42,10 @@ class RedisMetricRegistry:
         try:
             # Pattern: prefix:counter:metric_name:*
             pattern = f"{REDIS_METRICS_KEY_PREFIX}:counter:*"
-            keys = redis_client.keys(pattern)
+            keys = cast(List[Any], redis_client.keys(pattern))
 
             for key in keys:
-                key_str = key.decode() if isinstance(key, bytes) else key
+                key_str = key.decode() if isinstance(key, bytes) else str(key)
                 # Format: prefix:counter:name:labels_json
                 parts = key_str.split(":", 4)
                 if len(parts) < 5:
@@ -57,7 +57,7 @@ class RedisMetricRegistry:
                 if metric_name in prometheus_counters:
                     try:
                         labels = json.loads(label_json)
-                        value_raw = redis_client.get(key)
+                        value_raw = cast(Optional[str], redis_client.get(key))
                         if value_raw:
                             value = float(value_raw)
                             # In Prometheus client, we can't easily "set" a counter to a specific value
