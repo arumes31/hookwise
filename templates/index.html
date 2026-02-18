@@ -318,7 +318,8 @@
                             </div>
                         </div>
                     </div>
-                    <canvas id="sparkline-{{ config.id }}" width="100" height="40"></canvas>
+                    <canvas id="sparkline-{{ config.id }}" width="100" height="40"
+                        data-sparkline="{{ sparklines.get(config.id, [0, 0, 0, 0, 0, 0, 0]) | tojson }}"></canvas>
                 </div>
 
                 <!-- Technical Fields -->
@@ -876,14 +877,15 @@
         setInterval(refreshStats, 30000); // Every 30 seconds
 
         // Initialize Sparklines
-        {% for config in configs %}
-        MiniChart.renderLine('sparkline-{{ config.id }}', {{ sparklines.get(config.id, [0, 0, 0, 0, 0, 0, 0]) | tojson }});
-    {% endfor %}
-
-    // Set maintenance toggle state
-    fetch('/admin/maintenance').then(r => r.json()).then(d => {
-        document.getElementById('maintenance-toggle').checked = d.maintenance_mode;
-    }).catch(() => { });
+        document.querySelectorAll('canvas[data-sparkline]').forEach(canvas => {
+            const data = JSON.parse(canvas.getAttribute('data-sparkline'));
+            MiniChart.renderLine(canvas.id, data);
         });
+
+        // Set maintenance toggle state
+        fetch('/admin/maintenance').then(r => r.json()).then(d => {
+            document.getElementById('maintenance-toggle').checked = d.maintenance_mode;
+        }).catch(() => { });
+    });
 </script>
 {% endblock %}
