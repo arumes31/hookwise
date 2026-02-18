@@ -182,7 +182,7 @@
                                 <input type="text"
                                     class="form-control font-monospace bg-dark border-secondary text-warning small"
                                     id="hmac_secret" name="hmac_secret" placeholder="Optional shared secret"
-                                    value="{{ config.hmac_secret if config else '' }}"
+                                    value="{{ config.hmac_secret or '' if config else '' }}"
                                     data-tooltip="If set, incoming webhooks must include a valid X-HookWise-Signature header.">
                             </div>
 
