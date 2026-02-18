@@ -267,6 +267,54 @@ Route alerts to different boards based on the hostname.
   ]
   ```
 
+### 4. Zabbix (Enterprise)
+Great for detailed system health and event severity.
+
+- **Trigger Field**: `$.event.status`
+- **Open Value**: `PROBLEM`
+- **Close Value**: `OK, RESOLVED`
+- **JSON Mapping**:
+  ```json
+  {
+    "summary": "$.event.name",
+    "severity": "$.event.severity",
+    "description": "Trigger: {$.trigger.description}\nHost: {$.host.name}"
+  }
+  ```
+
+### 5. Grafana Alertmanager
+Handle firing and resolved alerts from Grafana dashboards.
+
+- **Trigger Field**: `$.status`
+- **Open Value**: `firing`
+- **Close Value**: `resolved`
+- **JSON Mapping**:
+  ```json
+  {
+    "summary": "$.alerts[0].annotations.summary",
+    "description": "$.alerts[0].annotations.description"
+  }
+  ```
+
+---
+
+## 🏢 Dynamic Company Identification
+
+HookWise provides several ways to automatically map alerts to the correct ConnectWise Client without creating separate endpoints for every customer.
+
+### 1. The "#CW" Magic String (Simplest)
+If your monitor name contains `#CW` followed by a ConnectWise Company Identifier, HookWise will automatically route the ticket to that company.
+- **Example Monitor Name**: `Firewall Down #CW-AcmeCorp`
+- **Result**: Ticket created for company `AcmeCorp`.
+
+### 2. JSONPath Mapping
+Map a specific field in the webhook payload directly to the ConnectWise company ID.
+- **Mapping**: `"customer_id": "$.tags.client_id"`
+
+### 3. Regex Overrides
+Use Routing Rules to map specific hostnames or message patterns to different companies.
+- **Rule**: `{"path": "$.host", "regex": "PRD-CL1-.*", "overrides": {"customer_id": "CLIENT_A"}}`
+
 ---
 
 ## 🛠️ Troubleshooting & FAQ
