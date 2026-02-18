@@ -573,26 +573,18 @@ def _register() -> None:
 
     @main_bp.route("/metrics", methods=["GET"])
     def metrics() -> Any:
-        from .metrics import RedisMetricRegistry
-        from .tasks import WEBHOOK_TOTAL, PSA_TASK_COUNT
-        from .webhook import log_webhook_received  # This pulls in log_webhook_received, we need the counter object though
-        
-        # We need to manually register/import the counter from webhook.py if it's not easily accessible
-        # or better, just import the counter objects we want to sync
-        from .tasks import WEBHOOK_TOTAL, PSA_TASK_COUNT
-        from .webhook import WEBHOOK_COUNT if hasattr(cast(Any, __import__('hookwise.webhook', fromlist=['WEBHOOK_COUNT'])), 'WEBHOOK_COUNT') else None
-        
-        # Simpler: just import them directly since we know where they are
-        import hookwise.webhook as webhook_mod
         import hookwise.tasks as tasks_mod
-        
+        import hookwise.webhook as webhook_mod
+
+        from .metrics import RedisMetricRegistry
+
         prom_counters = {
-            "hookwise_webhooks_received_total": webhook_mod.WEBHOOK_COUNT if hasattr(webhook_mod, 'WEBHOOK_COUNT') else None,
-            "hookwise_webhooks_total": tasks_mod.WEBHOOK_TOTAL,
-            "hookwise_psa_tasks_total": tasks_mod.PSA_TASK_COUNT
+            "hookwise_webhooks_received_total": getattr(webhook_mod, "WEBHOOK_COUNT", None),
+            "hookwise_webhooks_total": getattr(tasks_mod, "WEBHOOK_TOTAL", None),
+            "hookwise_psa_tasks_total": getattr(tasks_mod, "PSA_TASK_COUNT", None),
         }
-        
-        # Filter out None and sync
+
+        # Filter out None and sync from Redis (the source of truth)
         active_counters = {k: v for k, v in prom_counters.items() if v is not None}
         RedisMetricRegistry.sync_to_prometheus(active_counters)
 

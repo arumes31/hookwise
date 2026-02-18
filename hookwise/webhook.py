@@ -7,11 +7,11 @@ from flask import g, jsonify, request
 from prometheus_client import Counter
 
 from .extensions import limiter
+from .metrics import log_webhook_received
 from .models import WebhookConfig
 from .tasks import process_webhook_task
 from .utils import decrypt_string, log_to_web
 
-from .metrics import log_webhook_received
 WEBHOOK_COUNT = Counter("hookwise_webhooks_received_total", "Total webhooks received", ["status", "config_name"])
 
 

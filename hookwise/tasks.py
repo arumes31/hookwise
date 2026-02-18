@@ -11,9 +11,9 @@ from prometheus_client import Counter, Histogram
 
 from .client import ConnectWiseClient
 from .extensions import db, redis_client
+from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
-from .metrics import log_webhook_processed, log_psa_task
 
 logger = logging.getLogger(__name__)
 
@@ -451,7 +451,7 @@ def handle_webhook_logic(
                         data=data,
                         ticket_id=ticket_id,
                     )
-                    PSA_TASK_COUNT.labels(type="create", result="success") # Kept for dynamic registration if needed
+                    PSA_TASK_COUNT.labels(type="create", result="success")  # Kept for dynamic registration if needed
                     log_psa_task(task_type="create", result="success")
                     log_entry.action = "create"
 
@@ -511,7 +511,7 @@ def handle_webhook_logic(
             db.session.rollback()
             log_webhook_processed(config_id=config_id, status="failed")
             log_entry.status = "failed"
-            
+
             error_msg = str(e)
             if hasattr(e, "response") and e.response is not None:
                 try:
@@ -519,7 +519,7 @@ def handle_webhook_logic(
                     error_msg += f" | Details: {e.response.text}"
                 except Exception:
                     pass
-                    
+
             log_entry.error_message = error_msg
             log_entry.processing_time = time.time() - start_time
             db.session.commit()
