@@ -537,7 +537,7 @@
             tdStatus.className = 'py-3';
             const badge = document.createElement('span');
             const levelClass = data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger';
-            badge.className = `badge bg-${levelClass} bg-opacity-10 text-${levelClass} border border-opacity-25`;
+            badge.className = `badge bg-${levelClass} bg-opacity-10 text-${levelClass} border border-${levelClass} border-opacity-25`;
             badge.textContent = data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase();
             tdStatus.appendChild(badge);
 
