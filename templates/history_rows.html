@@ -27,8 +27,8 @@
     </td>
     <td class="py-3 font-monospace">
         {% if log.ticket_id %}
-        <a href="https://api-na.myconnectwise.net/v4_6_release/apis/3.0/service/tickets/{{ log.ticket_id }}"
-            target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
+        <a href="{{ cw_url }}/service/tickets/{{ log.ticket_id }}" target="_blank"
+            class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
                 class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
                 <path fill-rule="evenodd"
