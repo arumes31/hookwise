@@ -504,8 +504,17 @@ def handle_webhook_logic(
         except Exception as e:
             db.session.rollback()
             log_entry.status = "failed"
-            log_entry.error_message = str(e)
+            
+            error_msg = str(e)
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    # Capture response body if available (e.g., from requests)
+                    error_msg += f" | Details: {e.response.text}"
+                except Exception:
+                    pass
+                    
+            log_entry.error_message = error_msg
             log_entry.processing_time = time.time() - start_time
             db.session.commit()
-            logger.error(f"Error handling webhook: {e}", extra=extra)
+            logger.error(f"Error handling webhook: {error_msg}", extra=extra)
             raise e
