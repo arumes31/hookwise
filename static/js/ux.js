@@ -53,7 +53,19 @@ window.hwConfirm = function (message, options = {}) {
         const btnOk = document.getElementById('hw-confirm-ok');
         const btnCancel = document.getElementById('hw-confirm-cancel');
 
+        let handled = false;
+
+        const onHidden = () => {
+            if (!handled) {
+                handled = true;
+                resolve(false);
+            }
+        };
+
         const cleanup = (result) => {
+            if (handled) return;
+            handled = true;
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
             btnOk.onclick = null;
             btnCancel.onclick = null;
             modal.hide();
@@ -62,7 +74,7 @@ window.hwConfirm = function (message, options = {}) {
 
         btnOk.onclick = () => cleanup(true);
         btnCancel.onclick = () => cleanup(false);
-        modalEl.addEventListener('hidden.bs.modal', () => resolve(false), { once: true });
+        modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
 
         modal.show();
     });
@@ -621,16 +633,18 @@ function initContextMenu() {
             };
             document.getElementById('ctx-delete').onclick = async () => {
                 if (await hwConfirm('Delete endpoint ' + name + '?', { title: 'Delete Endpoint', okText: 'Delete' })) {
-                    const form = document.createElement('form');
-                    form.method = 'POST';
-                    form.action = '/endpoint/delete/' + id;
-                    const csrfInput = document.createElement('input');
-                    csrfInput.type = 'hidden';
-                    csrfInput.name = 'csrf_token';
-                    csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-                    form.appendChild(csrfInput);
-                    document.body.appendChild(form);
-                    form.submit();
+                    setTimeout(() => {
+                        const form = document.createElement('form');
+                        form.method = 'POST';
+                        form.action = '/endpoint/delete/' + id;
+                        const csrfInput = document.createElement('input');
+                        csrfInput.type = 'hidden';
+                        csrfInput.name = 'csrf_token';
+                        csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                        form.appendChild(csrfInput);
+                        document.body.appendChild(form);
+                        form.submit();
+                    }, 300);
                 }
             };
         } else {
