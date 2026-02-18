@@ -681,9 +681,19 @@ async function initAutoSave() {
         if (proceed) {
             Object.keys(data).forEach(key => {
                 const el = form.elements[key];
-                if (el) el.value = data[key];
+                if (el) {
+                    if (el.type === 'checkbox' || el.type === 'radio') {
+                        el.checked = (data[key] === 'true' || data[key] === 'on' || data[key] === true);
+                    } else {
+                        el.value = data[key];
+                    }
+                }
             });
             if (window.updatePreview) window.updatePreview();
+            if (window.toggleBearerMgmt) window.toggleBearerMgmt();
+            if (window.toggleAdvanced) window.toggleAdvanced();
+            if (window.toggleAI) window.toggleAI();
+
             if (isEditPage) showToast('Auto-restored unsaved changes', 'info');
         } else {
             localStorage.removeItem('autosave_' + formId);

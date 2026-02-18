@@ -199,10 +199,11 @@
                                 </div>
                             </div>
 
-                            {% if config.id %}
-                            <div class="mb-4 p-3 rounded-2 bg-dark bg-opacity-50 border border-secondary border-opacity-25 {{ '' if config.bearer_auth_enabled else 'd-none' }}"
+                            <div class="mb-4 p-3 rounded-2 bg-dark bg-opacity-50 border border-secondary border-opacity-25 {{ '' if (not config or config.bearer_auth_enabled) else 'd-none' }}"
                                 id="token-mgmt-section">
                                 <label class="form-label fw-bold text-light small d-block mb-2">Token Management</label>
+
+                                {% if config and config.id %}
                                 <div class="input-group input-group-sm mb-3">
                                     <input type="password"
                                         class="form-control bg-dark border-secondary text-info font-monospace"
@@ -224,8 +225,14 @@
                                     <i class="fas fa-exclamation-triangle me-1"></i> Regeneration is immediate and stays
                                     rotated even if you cancel this form.
                                 </div>
+                                {% else %}
+                                <div
+                                    class="alert alert-info py-2 px-3 mb-0 small border-0 bg-info bg-opacity-10 text-info">
+                                    <i class="fas fa-info-circle me-2"></i> A secure bearer token will be automatically
+                                    generated and displayed here after you save this endpoint.
+                                </div>
+                                {% endif %}
                             </div>
-                            {% endif %}
                         </div>
 
                         <!-- Right Column: Advanced & Automation -->
