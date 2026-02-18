@@ -428,21 +428,32 @@
 
                     <hr class="my-5 border-secondary border-opacity-10">
 
-                    <div class="d-flex justify-content-end gap-3">
-                        <input type="hidden" name="create_another" id="create_another" value="false">
-                        <input type="hidden" name="is_draft" id="is_draft"
-                            value="{{ 'true' if config and config.is_draft else 'false' }}">
-                        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
-                        <button type="button" class="btn btn-outline-warning px-4" id="draft-btn"
-                            onclick="saveAsDraft()">{{ 'Keep as Draft' if config and config.is_draft else 'Save as
-                            Draft' }}</button>
-                        {% if not config %}
-                        <button type="button" class="btn btn-outline-primary px-4" onclick="saveAndAnother()">Save &
-                            Create Another</button>
-                        {% endif %}
-                        <button type="submit" class="btn btn-primary px-5 fw-bold shadow-lg"
-                            onclick="document.getElementById('is_draft').value='false'">{{ 'Update Endpoint' if config
-                            else 'Create Endpoint' }}</button>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            {% if config %}
+                            <button type="button" class="btn btn-outline-danger px-4" id="delete-endpoint-btn"
+                                data-id="{{ config.id|tojson }}" data-name="{{ config.name|tojson }}"
+                                onclick="const btn=this; confirmDelete(JSON.parse(btn.dataset.id), JSON.parse(btn.dataset.name))">
+                                <i class="fas fa-trash-alt me-2"></i>Delete Endpoint
+                            </button>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex gap-3">
+                            <input type="hidden" name="create_another" id="create_another" value="false">
+                            <input type="hidden" name="is_draft" id="is_draft"
+                                value="{{ 'true' if config and config.is_draft else 'false' }}">
+                            <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-4">Cancel</a>
+                            <button type="button" class="btn btn-outline-warning px-4" id="draft-btn"
+                                onclick="saveAsDraft()">{{ 'Keep as Draft' if config and config.is_draft else 'Save as
+                                Draft' }}</button>
+                            {% if not config %}
+                            <button type="button" class="btn btn-outline-primary px-4" onclick="saveAndAnother()">Save &
+                                Create Another</button>
+                            {% endif %}
+                            <button type="submit" class="btn btn-primary px-5 fw-bold shadow-lg"
+                                onclick="document.getElementById('is_draft').value='false'">{{ 'Update Endpoint' if
+                                config else 'Create Endpoint' }}</button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -682,6 +693,21 @@
     function saveAndAnother() {
         document.getElementById('create_another').value = 'true';
         document.getElementById('endpoint-form').submit();
+    }
+
+    function confirmDelete(id, name) {
+        if (confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/endpoint/delete/${id}`;
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            csrfInput.value = '{{ csrf_token() }}';
+            form.appendChild(csrfInput);
+            document.body.appendChild(form);
+            form.submit();
+        }
     }
 
     let tokenLoaded = false;

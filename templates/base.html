@@ -18,7 +18,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
-                <div class="hw-logo-container me-2">
+                <div class="hw-logo-container">
                     <svg class="logo-8bit-svg" viewBox="0 0 400 80" xmlns="http://www.w3.org/2000/svg">
                         <!-- Refined Spawning Word Group (Centered @ 42,16) -->
                         <g class="word-group" transform="translate(42, 16)">
@@ -50,19 +50,16 @@
                             <path class="snap-letter" style="animation-delay: 0.8s" fill="none"
                                 stroke="var(--retro-white)" stroke-width="8"
                                 d="M280 16 h32 v32 h-32 v-32 M280 32 h32" />
-
                             <!-- Instant Sparkle SNAPS -->
                             <rect class="sparkle" style="animation-delay: 0.1s" x="0" y="24" width="8" height="8"
                                 fill="var(--retro-yellow)" />
                         </g>
-
                     </svg>
                 </div>
-                HookWise
             </a>
             <div class="navbar-nav ms-auto">
                 {% if session.user_id %}
-                <span class="nav-link small text-muted me-2">Hi, {{ session.username }}</span>
+                <span class="nav-link small lightgrey me-2">Hi, {{ session.username }}</span>
                 <a class="nav-link" href="{{ url_for('main.index') }}">Endpoints</a>
                 <a class="nav-link" href="{{ url_for('main.history') }}">History</a>
                 <a class="nav-link" href="{{ url_for('main.audit_logs') }}">Audit</a>
