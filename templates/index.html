@@ -252,6 +252,7 @@
         <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
             data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
             data-status="{{ 'enabled' if config.is_enabled else 'paused' }}">
+            <div class="paused-badge">PAUSED</div>
             <div class="card-body p-4">
                 <!-- Action Toolbar Overlay -->
                 <div class="endpoint-actions">
@@ -309,7 +310,7 @@
                             <h4 class="mb-1 text-white fw-bold">{{ config.name }}</h4>
                             <div class="d-flex gap-2">
                                 <span
-                                    class="heartbeat-dot pulse-success {{ 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
+                                    class="heartbeat-dot {{ 'pulse-success' if config.is_enabled else '' }} {{ 'status-paused' if not config.is_enabled else 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
 
                                 <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
                                     {{ config.id[:16] }}</small>
@@ -338,102 +339,34 @@
                     </div>
                 </div>
 
-                {% if config.bearer_auth_enabled %}
-                <div class="mb-4">
-                    <div class="tech-label">Bearer Token</div>
-                    <div class="copyable-field">
-                        <code id="token-{{ config.id }}"
-                            class="user-select-all text-truncate flex-grow-1 text-secondary">••••••••••••••••••••••••••••••••</code>
-                        <button class="btn btn-sm btn-link text-warning p-0" onclick="revealToken('{{ config.id }}')"
-                            data-tooltip="Reveal">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                                class="bi bi-eye" viewBox="0 0 16 16">
-                                <path
-                                    d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.05-1.465 1.687C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z" />
-                                <path
-                                    d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z" />
-                            </svg>
-                        </button>
-                        <button class="btn btn-sm btn-link text-primary p-0" onclick="copyToken('{{ config.id }}')"
-                            data-tooltip="Copy Token">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                                class="bi bi-clipboard" viewBox="0 0 16 16">
-                                <path
-                                    d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
-                                <path
-                                    d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-                {% elif config.hmac_secret %}
-                <div class="mb-4">
-                    <div class="tech-label">HMAC Security</div>
-                    <div
-                        class="d-flex align-items-center gap-2 py-1 px-2 rounded-2 bg-dark bg-opacity-25 border border-success border-opacity-25">
-                        <i class="fas fa-shield-alt text-success small"></i>
-                        <span class="small text-success fw-bold">Active</span>
-                        <span class="ms-auto small text-secondary opacity-50" style="font-size: 0.6rem;">Header
-                            Validation</span>
-                    </div>
-                </div>
-                {% else %}
-                <div class="mb-4">
-                    <div class="tech-label">Authentication</div>
-                    <div
-                        class="d-flex align-items-center gap-2 py-1 px-2 rounded-2 bg-dark bg-opacity-25 border border-warning border-opacity-25">
-                        <i class="fas fa-exclamation-triangle text-warning small"></i>
-                        <span class="small text-warning fw-bold">Disabled</span>
-                        <span class="ms-auto small text-secondary opacity-50" style="font-size: 0.6rem;">Public
-                            Endpoint</span>
-                    </div>
-                </div>
-                {% endif %}
-
-                <!-- Technical Attributes Grid -->
-                <div class="tech-grid">
+                <!-- Simplified Activity Stats -->
+                <div class="tech-grid mb-4">
                     <div class="tech-item">
-                        <div class="tech-label">Prefix</div>
-                        <span class="small fw-bold">{{ config.ticket_prefix or 'Default' }}</span>
+                        <div class="tech-label text-success">SUCCESS</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('processed', 0) }}</div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
+                            Total 24H</div>
                     </div>
                     <div class="tech-item">
-                        <div class="tech-label">Status Mapping</div>
-                        <div class="d-flex gap-2">
-                            <span
-                                class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25">{{
-                                config.open_value }}</span>
-                            <span
-                                class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-25">{{
-                                config.close_value }}</span>
+                        <div class="tech-label text-danger">FAILED</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('failed', 0) }}</div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
+                            Recent</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-label text-warning">SKIPPED</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('skipped', 0) }}</div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
+                            Dedupe</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-label text-primary">LAST SEEN</div>
+                        <div class="small mb-1 fw-bold text-white text-truncate" style="font-size: 0.7rem;">
+                            {{ config.last_seen_at.strftime('%H:%M %m/%d') if config.last_seen_at else 'NEVER' }}
                         </div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">UTC
+                            Time</div>
                     </div>
-                    <div class="tech-item">
-                        <div class="tech-label">Board</div>
-                        <select class="form-select form-select-sm bg-transparent border-0 text-white p-0 small fw-bold"
-                            style="box-shadow: none; cursor: pointer;"
-                            onchange="quickUpdate('{{ config.id }}', 'board', this.value)">
-                            <option value="{{ config.board or '' }}">{{ config.board or 'Default' }}</option>
-                            <option value="LOAD">Load Boards...</option>
-                        </select>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-label">ConnectWise Status</div>
-                        <select class="form-select form-select-sm bg-transparent border-0 text-info p-0 small fw-bold"
-                            style="box-shadow: none; cursor: pointer;"
-                            onchange="quickUpdate('{{ config.id }}', 'status', this.value)">
-                            <option value="{{ config.status or '' }}">{{ config.status or 'Default' }}</option>
-                            <option value="LOAD">Load Statuses...</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="mt-4 d-flex justify-content-between align-items-center opacity-75">
-                    <span class="small text-secondary fw-bold" style="font-size: 0.6rem;">
-                        LAST SEEN: {{ config.last_seen_at.strftime('%H:%M %m/%d') if config.last_seen_at else 'NEVER' }}
-                    </span>
-                    <span class="badge glass px-2 py-1" style="font-size: 0.6rem; color: var(--primary);">
-                        {{ counts.get(config.id, 0) }} TICKETS (24H)
-                    </span>
                 </div>
             </div>
         </div>
