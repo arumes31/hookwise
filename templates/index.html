@@ -252,6 +252,7 @@
         <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
             data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
             data-status="{{ 'enabled' if config.is_enabled else 'paused' }}">
+            <div class="paused-badge">PAUSED</div>
             <div class="card-body p-4">
                 <!-- Action Toolbar Overlay -->
                 <div class="endpoint-actions">
@@ -309,7 +310,7 @@
                             <h4 class="mb-1 text-white fw-bold">{{ config.name }}</h4>
                             <div class="d-flex gap-2">
                                 <span
-                                    class="heartbeat-dot pulse-success {{ 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
+                                    class="heartbeat-dot {{ 'pulse-success' if config.is_enabled else '' }} {{ 'status-paused' if not config.is_enabled else 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
 
                                 <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
                                     {{ config.id[:16] }}</small>

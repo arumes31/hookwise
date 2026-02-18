@@ -121,6 +121,48 @@ h4,
     background: rgba(30, 41, 59, 0.85);
 }
 
+/* Paused Visual State */
+.endpoint-card[data-status="paused"] {
+    opacity: 0.7;
+    filter: grayscale(0.4);
+    pointer-events: auto;
+    /* Allow interactions like 'Settings' or 'Resume' */
+}
+
+.endpoint-card[data-status="paused"]::before {
+    content: "PAUSED";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-15deg);
+    font-size: 5rem;
+    font-weight: 900;
+    color: rgba(255, 255, 255, 0.03);
+    pointer-events: none;
+    z-index: 0;
+    letter-spacing: 0.2em;
+}
+
+.paused-badge {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: #f59e0b;
+    color: #000;
+    font-size: 0.6rem;
+    font-weight: 900;
+    padding: 2px 12px;
+    border-radius: 0 0 8px 0;
+    z-index: 10;
+    letter-spacing: 0.1em;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    display: none;
+}
+
+.endpoint-card[data-status="paused"] .paused-badge {
+    display: block;
+}
+
 /* Interactive Overlay for Actions */
 .endpoint-actions {
     position: absolute;
@@ -294,6 +336,13 @@ h4,
 
 .status-default {
     background-color: var(--text-secondary) !important;
+}
+
+.status-paused {
+    background-color: #f59e0b !important;
+    box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+    animation: none !important;
+    /* No pulse for paused */
 }
 
 
