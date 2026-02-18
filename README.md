@@ -41,7 +41,7 @@ graph TD
 
 ### 🛠️ Intelligent Routing
 - **Regex Rule Engine:** Route `CRITICAL` alerts to the "Emergency" board and `WARN` alerts to "Tiling" automatically.
-- **Maintenance Awareness:** Define ISO8601 maintenance windows to suppress tickets during scheduled downtime.
+- **Smart Maintenance:** Define recurring maintenance windows (Daily, Weekly, Once) with support for overnight schedules (e.g., 22:00 to 04:00) using UTC-normalized logic.
 - **Company Mapping:** Supports `#CW<ID>` in titles or dynamic lookups from payload fields.
 
 ### 🧠 AI-Powered Insights
