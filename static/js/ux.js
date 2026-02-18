@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initServiceHealth();
     initToasts();
     initTransitions();
-    initTooltips();
     initDragAndDrop();
     initContextMenu();
     initAutoSave();
@@ -17,6 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initPullToRefresh();
     initOnboarding();
     initNotifications();
+
+    // Delay tooltip initialization slightly to ensure layout and animations (like slide-up) are stable
+    setTimeout(initTooltips, 500);
 });
 
 // Tooltip System - Optimized for icon-only button detection
@@ -59,7 +61,10 @@ function initTooltips() {
             container: 'body',
             boundary: 'clippingParents',
             trigger: 'hover',
-            fallbackPlacements: ['bottom', 'right']
+            fallbackPlacements: ['bottom', 'right'],
+            popperConfig: {
+                strategy: 'fixed'
+            }
         });
     });
 }
