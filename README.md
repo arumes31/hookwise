@@ -41,6 +41,31 @@ graph TD
 6.  **Action**: Ticket is Created, Updated, or Closed in ConnectWise.
 7.  **AI Insights**: For new tickets, Ollama generates an automated RCA note.
 
+#### 🔄 Ticket Management Logic
+```mermaid
+flowchart TD
+    A[Start Process] --> B{Existing Open Ticket?}
+    B -- Yes --> C{Status in Payload?}
+    C -- "Close Value" --> D[Close Ticket]
+    C -- Other --> E[Add Internal Note]
+    B -- No --> F{Status in Payload?}
+    F -- "Open Value" --> G[Create New Ticket]
+    F -- Other --> H[Skip/Log Only]
+    G --> I[Analyze with AI]
+    I --> J[Add RCA Note]
+```
+
+#### 🛡️ Maintenance Suppression Flow
+```mermaid
+flowchart TD
+    A[Incoming Webhook] --> B{Global Maintenance?}
+    B -- Yes --> C[Log as Skipped]
+    B -- No --> D{Window Matches?}
+    D -- "Daily Schedule" --> C
+    D -- "Weekly Day" --> C
+    D -- No Match --> E[Process Normally]
+```
+
 ---
 
 ## 🚀 Advanced Features
