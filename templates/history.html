@@ -322,7 +322,7 @@
     async function bulkDeleteLogs() {
         const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
         if (!ids.length) return;
-        if (!confirm(`Delete ${ids.length} log entries?`)) return;
+        if (!await hwConfirm(`Delete ${ids.length} log entries?`, { title: 'Bulk Delete', okText: 'Delete' })) return;
         try {
             const res = await fetch('/history/bulk-delete', {
                 method: 'POST',
@@ -341,8 +341,8 @@
         }
     }
 
-    function deleteAllLogs() {
-        if (!confirm('Are you SURE you want to delete ALL history logs?')) return;
+    async function deleteAllLogs() {
+        if (!await hwConfirm('Are you SURE you want to delete ALL history logs?', { title: 'Purge All Logs', okText: 'Purge' })) return;
         fetch('/history/delete-all', { method: 'POST' })
             .then(res => res.json())
             .then(data => {
@@ -423,8 +423,8 @@
         Prism.highlightElement(display);
     }
 
-    function replayWebhook(id) {
-        if (!SERVER_DATA.debugMode && !confirm('Re-process this webhook?')) return;
+    async function replayWebhook(id) {
+        if (!SERVER_DATA.debugMode && !await hwConfirm('Re-process this webhook?', { title: 'Re-run Webhook', okText: 'Re-run' })) return;
         fetch(`/history/replay/${id}`, { method: 'POST' })
             .then(res => res.json())
             .then(data => {
@@ -436,8 +436,8 @@
             });
     }
 
-    function deleteHistory(id) {
-        if (!confirm('Delete this log entry?')) return;
+    async function deleteHistory(id) {
+        if (!await hwConfirm('Delete this log entry?', { title: 'Delete Log', okText: 'Delete' })) return;
         fetch(`/history/delete/${id}`, { method: 'POST' })
             .then(res => res.json())
             .then(data => {
