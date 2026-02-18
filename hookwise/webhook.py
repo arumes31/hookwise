@@ -29,17 +29,18 @@ def _register() -> None:
             WEBHOOK_COUNT.labels(status="disabled", config_name=config.name).inc()
             return jsonify({"status": "error", "message": "Endpoint is disabled"}), 403
 
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            WEBHOOK_COUNT.labels(status="unauthorized", config_name=config.name).inc()
-            return jsonify({"status": "error", "message": "Missing Bearer Token"}), 401
+        if config.bearer_auth_enabled:
+            auth_header = request.headers.get("Authorization")
+            if not auth_header or not auth_header.startswith("Bearer "):
+                WEBHOOK_COUNT.labels(status="unauthorized", config_name=config.name).inc()
+                return jsonify({"status": "error", "message": "Missing Bearer Token"}), 401
 
-        token = auth_header.split(" ")[1]
-        import hmac as _hmac
+            token = auth_header.split(" ")[1]
+            import hmac as _hmac
 
-        if not _hmac.compare_digest(token, decrypt_string(config.bearer_token)):
-            WEBHOOK_COUNT.labels(status="unauthorized", config_name=config.name).inc()
-            return jsonify({"status": "error", "message": "Invalid Bearer Token"}), 401
+            if not _hmac.compare_digest(token, decrypt_string(config.bearer_token)):
+                WEBHOOK_COUNT.labels(status="unauthorized", config_name=config.name).inc()
+                return jsonify({"status": "error", "message": "Invalid Bearer Token"}), 401
 
         # HMAC Signature Verification
         if config.hmac_secret:

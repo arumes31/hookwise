@@ -60,6 +60,7 @@ class WebhookConfig(Base):
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
     last_rotated_at = db.Column(db.DateTime)
+    bearer_auth_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = db.Column(db.DateTime)
 
@@ -83,6 +84,7 @@ class WebhookConfig(Base):
             "routing_rules": self.routing_rules,
             "maintenance_windows": self.maintenance_windows,
             "trusted_ips": self.trusted_ips,
+            "bearer_auth_enabled": self.bearer_auth_enabled,
             "is_enabled": self.is_enabled,
             "is_pinned": self.is_pinned,
             "ai_rca_enabled": self.ai_rca_enabled,

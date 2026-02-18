@@ -185,6 +185,19 @@
                                     value="{{ config.hmac_secret if config else '' }}"
                                     data-tooltip="If set, incoming webhooks must include a valid X-HookWise-Signature header.">
                             </div>
+
+                            <div class="form-check form-switch mb-4">
+                                <input class="form-check-input" type="checkbox" role="switch" id="bearer_auth_enabled"
+                                    name="bearer_auth_enabled" value="true" {{ 'checked' if not config or
+                                    config.bearer_auth_enabled else '' }}>
+                                <label class="form-check-label fw-bold text-light" for="bearer_auth_enabled">
+                                    Bearer Token Authentication
+                                </label>
+                                <div class="small text-secondary">
+                                    Require an <code>Authorization: Bearer</code> header. Disable only if your source
+                                    cannot send headers.
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Right Column: Advanced & Automation -->
