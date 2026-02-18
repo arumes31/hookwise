@@ -23,6 +23,7 @@ HookWise is a highly performant, general-purpose webhook router designed to brid
 - [AI In-Depth](#-ai-in-depth)
 - [Extensive Configuration](#-extensive-configuration)
 - [Deep-Dive Usage](#-deep-dive-usage)
+- [Configuration Recipes](#-configuration-recipes)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
 - [Security & Compliance](#-security--compliance)
 - [Development & Contributing](#-development--contributing)
@@ -214,6 +215,57 @@ Use these in your "Ticket Description Template":
 - ` / ` : Focus Search bar.
 - `Esc` : Close any open modal.
 - `Drag & Drop` : Reorder endpoint priority on the dashboard.
+
+---
+
+## 🚀 Configuration Recipes
+
+### 1. Uptime Kuma (Standard)
+Perfect for basic UP/DOWN monitoring.
+
+- **Trigger Field**: `$.heartbeat.status`
+- **Open Value**: `0`
+- **Close Value**: `1`
+- **JSON Mapping**:
+  ```json
+  {
+    "summary": "$.monitor.name",
+    "description": "$.heartbeat.msg",
+    "customer_id": "$.monitor.tags.CW_ID"
+  }
+  ```
+
+### 2. Generic Status Webhook
+For tools that send text-based statuses like "CRITICAL" or "OK".
+
+- **Trigger Field**: `$.status_text`
+- **Open Value**: `CRITICAL, WARNING`
+- **Close Value**: `OK, RESOLVED`
+- **Ticket Prefix**: `Infrastructure Alert:`
+
+### 3. Advanced Regex Routing
+Route alerts to different boards based on the hostname.
+
+- **Routing Rules**:
+  ```json
+  [
+    {
+      "path": "$.monitor.hostname",
+      "regex": ".*-DB-.*",
+      "overrides": {
+        "board": "Database Team",
+        "priority": "High"
+      }
+    },
+    {
+      "path": "$.monitor.hostname",
+      "regex": ".*-FE-.*",
+      "overrides": {
+        "board": "Frontend Team"
+      }
+    }
+  ]
+  ```
 
 ---
 
