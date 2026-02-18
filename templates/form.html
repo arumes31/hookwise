@@ -521,11 +521,7 @@
         if (state.maintenance_windows) {
             try {
                 const windows = JSON.parse(state.maintenance_windows);
-                windows.forEach(w => {
-                    const start = new Date(w.start).toISOString().substring(0, 16);
-                    const end = new Date(w.end).toISOString().substring(0, 16);
-                    addMaintenanceWindow(start, end);
-                });
+                windows.forEach(w => addMaintenanceWindow(w));
             } catch (e) { }
         }
     }
@@ -570,34 +566,97 @@
         return false;
     }
 
-    function addMaintenanceWindow(start = '', end = '') {
+    function addMaintenanceWindow(w = {}) {
         const list = document.getElementById('maintenance-list');
+        const count = document.querySelectorAll('.maintenance-entry').length;
         const div = document.createElement('div');
-        div.className = 'row g-2 mb-2 maintenance-entry';
+        div.className = 'p-3 mb-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-25 maintenance-entry';
+
+        const type = w.type || 'once';
+        const start = w.start || '';
+        const end = w.end || '';
+        const days = w.days || [];
+
         div.innerHTML = `
-            <div class="col-5">
-                <input type="datetime-local" class="form-control form-control-sm mw-start bg-dark border-secondary text-light" value="${start}" onchange="syncMaintenance()">
+            <div class="row g-2 mb-3 align-items-center">
+                <div class="col-md-4">
+                    <select class="form-select form-select-sm mw-type bg-dark border-secondary text-info fw-bold" onchange="updateMWFields(this)">
+                        <option value="once" ${type === 'once' ? 'selected' : ''}>One-time</option>
+                        <option value="daily" ${type === 'daily' ? 'selected' : ''}>Daily</option>
+                        <option value="weekly" ${type === 'weekly' ? 'selected' : ''}>Weekly</option>
+                    </select>
+                </div>
+                <div class="col-md-8 text-end">
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0 fw-bold text-decoration-none" onclick="this.closest('.maintenance-entry').remove(); syncMaintenance();">
+                        <i class="fas fa-times me-1"></i>Remove Window
+                    </button>
+                </div>
             </div>
-            <div class="col-5">
-                <input type="datetime-local" class="form-control form-control-sm mw-end bg-dark border-secondary text-light" value="${end}" onchange="syncMaintenance()">
-            </div>
-            <div class="col-2">
-                <button type="button" class="btn btn-sm btn-outline-danger w-100" onclick="this.closest('.row').remove(); syncMaintenance();">&times;</button>
+
+            <div class="mw-fields">
+                <!-- Days for Weekly -->
+                <div class="mw-days-container mb-3 ${type === 'weekly' ? '' : 'd-none'}">
+                    <label class="small text-secondary fw-bold text-uppercase ls-1 d-block mb-2">Days of Week (UTC)</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `
+                            <div>
+                                <input type="checkbox" class="btn-check mw-day" id="mw-${count}-${d}" value="${d}" ${days.includes(d) ? 'checked' : ''} onchange="syncMaintenance()">
+                                <label class="btn btn-sm btn-outline-secondary px-2 py-1" for="mw-${count}-${d}" style="font-size: 0.7rem;">${d}</label>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 d-block mb-1">Start (UTC)</label>
+                        <input type="${type === 'once' ? 'datetime-local' : 'time'}" 
+                               class="form-control form-control-sm mw-start bg-dark border-secondary text-light" 
+                               value="${start}" onchange="syncMaintenance()">
+                    </div>
+                    <div class="col-6">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 d-block mb-1">End (UTC)</label>
+                        <input type="${type === 'once' ? 'datetime-local' : 'time'}" 
+                               class="form-control form-control-sm mw-end bg-dark border-secondary text-light" 
+                               value="${end}" onchange="syncMaintenance()">
+                    </div>
+                </div>
             </div>
         `;
         list.appendChild(div);
     }
 
+    function updateMWFields(select) {
+        const entry = select.closest('.maintenance-entry');
+        const type = select.value;
+        const daysContainer = entry.querySelector('.mw-days-container');
+        const startInput = entry.querySelector('.mw-start');
+        const endInput = entry.querySelector('.mw-end');
+
+        if (type === 'once') {
+            daysContainer.classList.add('d-none');
+            startInput.type = 'datetime-local';
+            endInput.type = 'datetime-local';
+        } else {
+            daysContainer.classList.toggle('d-none', type !== 'weekly');
+            startInput.type = 'time';
+            endInput.type = 'time';
+        }
+        syncMaintenance();
+    }
+
     function syncMaintenance() {
         const windows = [];
         document.querySelectorAll('.maintenance-entry').forEach(entry => {
+            const type = entry.querySelector('.mw-type').value;
             const start = entry.querySelector('.mw-start').value;
             const end = entry.querySelector('.mw-end').value;
+            const days = Array.from(entry.querySelectorAll('.mw-day:checked')).map(cb => cb.value);
+
             if (start && end) {
-                windows.push({
-                    start: new Date(start).toISOString(),
-                    end: new Date(end).toISOString()
-                });
+                const w = { type, start, end };
+                if (type === 'weekly') w.days = days;
+                windows.push(w);
             }
         });
         document.getElementById('maintenance_windows').value = JSON.stringify(windows);
@@ -901,11 +960,7 @@
         if (mwRaw) {
             try {
                 const windows = JSON.parse(mwRaw);
-                windows.forEach(w => {
-                    const start = new Date(w.start).toISOString().substring(0, 16);
-                    const end = new Date(w.end).toISOString().substring(0, 16);
-                    addMaintenanceWindow(start, end);
-                });
+                windows.forEach(w => addMaintenanceWindow(w));
             } catch (e) { console.error('Error parsing maintenance windows', e); }
         }
 
