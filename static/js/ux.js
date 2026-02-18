@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initServiceHealth();
     initToasts();
     initTransitions();
-    initTooltips();
     initDragAndDrop();
     initContextMenu();
     initAutoSave();
@@ -17,7 +16,48 @@ document.addEventListener('DOMContentLoaded', () => {
     initPullToRefresh();
     initOnboarding();
     initNotifications();
+
+    // Delay tooltip initialization slightly to ensure layout and animations (like slide-up) are stable
+    setTimeout(initTooltips, 500);
 });
+
+/**
+ * Modern Confirmation Prompt Wrapper
+ * @param {string} message 
+ * @param {object} options { title, okText, cancelText }
+ * @returns {Promise<boolean>}
+ */
+window.hwConfirm = function (message, options = {}) {
+    return new Promise((resolve) => {
+        const modalEl = document.getElementById('hw-confirm-modal');
+        if (!modalEl) {
+            resolve(confirm(message));
+            return;
+        }
+        const modal = new bootstrap.Modal(modalEl);
+
+        document.getElementById('hw-confirm-message').textContent = message;
+        document.getElementById('hw-confirm-title').textContent = options.title || 'Confirm Action';
+        document.getElementById('hw-confirm-ok').textContent = options.okText || 'Confirm';
+        document.getElementById('hw-confirm-cancel').textContent = options.cancelText || 'Cancel';
+
+        const btnOk = document.getElementById('hw-confirm-ok');
+        const btnCancel = document.getElementById('hw-confirm-cancel');
+
+        const cleanup = (result) => {
+            btnOk.onclick = null;
+            btnCancel.onclick = null;
+            modal.hide();
+            resolve(result);
+        };
+
+        btnOk.onclick = () => cleanup(true);
+        btnCancel.onclick = () => cleanup(false);
+        modalEl.addEventListener('hidden.bs.modal', () => resolve(false), { once: true });
+
+        modal.show();
+    });
+};
 
 // Tooltip System - Optimized for icon-only button detection
 function initTooltips() {
@@ -39,7 +79,6 @@ function initTooltips() {
         if (!title) return;
 
         // USER RULE: Only add tooltips to buttons/links without VISIBLE text
-        // Improved detection: remove allowed icons/svgs from a clone to check remaining content
         const clone = el.cloneNode(true);
         const icons = clone.querySelectorAll('svg, i, .bi, .visually-hidden, span.d-none');
         icons.forEach(icon => icon.remove());
@@ -47,9 +86,8 @@ function initTooltips() {
         const textContent = clone.innerText.trim();
         const hasVisibleText = textContent.length > 0;
 
-        // If it has text and is a button-like element, skip the tooltip to avoid clutter
         if (hasVisibleText && (el.tagName === 'BUTTON' || el.classList.contains('btn'))) {
-            el.removeAttribute('title'); // Prevent native browser tooltips
+            el.removeAttribute('title');
             return;
         }
 
@@ -59,7 +97,10 @@ function initTooltips() {
             container: 'body',
             boundary: 'clippingParents',
             trigger: 'hover',
-            fallbackPlacements: ['bottom', 'right']
+            fallbackPlacements: ['bottom', 'right'],
+            popperConfig: {
+                strategy: 'fixed'
+            }
         });
     });
 }
@@ -256,7 +297,7 @@ window.bulkDelete = async function () {
     const checked = Array.from(document.querySelectorAll('.endpoint-check:checked')).map(c => c.dataset.id);
     if (!checked.length) return;
 
-    if (confirm(`Delete ${checked.length} endpoints?`)) {
+    if (await hwConfirm(`Delete ${checked.length} endpoints?`, { title: 'Bulk Delete', okText: 'Delete All' })) {
         try {
             const resp = await fetch('/endpoint/bulk/delete', {
                 method: 'POST',
@@ -388,6 +429,7 @@ window.toggleView = function (view) {
 
 window.revealToken = async function (id) {
     const el = document.getElementById('token-' + id);
+    if (!el) return;
     if (el.textContent.includes('•')) {
         try {
             const resp = await fetch('/endpoint/token/' + id);
@@ -407,6 +449,7 @@ window.revealToken = async function (id) {
 
 window.copyToken = async function (id) {
     const el = document.getElementById('token-' + id);
+    if (!el) return;
     let token = el.textContent;
     if (token.includes('•')) {
         const resp = await fetch('/endpoint/token/' + id);
@@ -570,8 +613,8 @@ function initContextMenu() {
                 document.body.appendChild(form);
                 form.submit();
             };
-            document.getElementById('ctx-delete').onclick = () => {
-                if (confirm('Delete endpoint ' + name + '?')) {
+            document.getElementById('ctx-delete').onclick = async () => {
+                if (await hwConfirm('Delete endpoint ' + name + '?', { title: 'Delete Endpoint', okText: 'Delete' })) {
                     const form = document.createElement('form');
                     form.method = 'POST';
                     form.action = '/endpoint/delete/' + id;
@@ -619,22 +662,31 @@ window.fetch = function (resource, options) {
     return originalFetch.apply(this, arguments).finally(() => stopLoading());
 };
 
-function initAutoSave() {
+async function initAutoSave() {
     const form = document.getElementById('endpoint-form');
     if (!form) return;
 
     const formId = window.location.pathname;
     const saved = localStorage.getItem('autosave_' + formId);
     if (saved) {
+        const data = JSON.parse(saved);
         const isEditPage = window.location.pathname.includes('/endpoint/edit/');
-        if (isEditPage || confirm('Restore unsaved changes?')) {
-            const data = JSON.parse(saved);
+
+        const proceed = isEditPage || await hwConfirm('Restore unsaved changes?', {
+            title: 'Unsaved Changes',
+            okText: 'Restore',
+            cancelText: 'Discard'
+        });
+
+        if (proceed) {
             Object.keys(data).forEach(key => {
                 const el = form.elements[key];
                 if (el) el.value = data[key];
             });
             if (window.updatePreview) window.updatePreview();
             if (isEditPage) showToast('Auto-restored unsaved changes', 'info');
+        } else {
+            localStorage.removeItem('autosave_' + formId);
         }
     }
 

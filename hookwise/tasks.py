@@ -140,12 +140,46 @@ def is_in_maintenance(config: WebhookConfig) -> bool:
 
         windows = json.loads(config.maintenance_windows)
         now = datetime.now(timezone.utc)
+        now_time = now.time()
+        now_weekday = now.strftime("%a")  # Mon, Tue, etc.
+
         for window in windows:
-            # Simple format: {"start": "2024-01-01T00:00:00Z", "end": "2024-01-01T01:00:00Z"}
-            start = datetime.fromisoformat(window["start"].replace("Z", "+00:00"))
-            end = datetime.fromisoformat(window["end"].replace("Z", "+00:00"))
-            if start <= now <= end:
-                return True
+            w_type = window.get("type", "once")
+            start_str = window.get("start")
+            end_str = window.get("end")
+
+            if not start_str or not end_str:
+                continue
+
+            if w_type == "once":
+                # Simple format: {"type": "once", "start": "2024-01-01T00:00:00Z", "end": "2024-01-01T01:00:00Z"}
+                start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                if start <= now <= end:
+                    return True
+
+            elif w_type in ["daily", "weekly"]:
+                # Format: {"type": "daily", "start": "HH:mm", "end": "HH:mm"}
+                # Check Weekday for Weekly
+                if w_type == "weekly":
+                    if now_weekday not in window.get("days", []):
+                        continue
+
+                # Parse times
+                s_h, s_m = map(int, start_str.split(":"))
+                e_h, e_m = map(int, end_str.split(":"))
+                start_time = now.replace(hour=s_h, minute=s_m, second=0, microsecond=0).time()
+                end_time = now.replace(hour=e_h, minute=e_m, second=0, microsecond=0).time()
+
+                if start_time < end_time:
+                    # Normal range within a single day
+                    if start_time <= now_time <= end_time:
+                        return True
+                else:
+                    # Overnight range (e.g., 22:00 to 02:00)
+                    if now_time >= start_time or now_time <= end_time:
+                        return True
+
     except Exception as e:
         logger.error(f"Error checking maintenance window: {e}")
     return False
