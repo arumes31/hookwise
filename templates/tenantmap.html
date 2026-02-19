@@ -43,7 +43,9 @@
                     </td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-link text-info p-0 text-decoration-none me-3"
-                            onclick="openEditModal('{{ m.id }}', '{{ m.tenant_value }}', '{{ m.company_id }}', '{{ m.description or '' }}')">
+                            data-m-id="{{ m.id }}" data-m-tenant="{{ m.tenant_value }}"
+                            data-m-company="{{ m.company_id }}" data-m-desc="{{ m.description or '' }}"
+                            onclick="openEditModal(this)">
                             <i class="fas fa-edit"></i>
                         </button>
                         <form action="{{ url_for('main.delete_mapping', id=m.id) }}" method="POST" class="d-inline"
@@ -145,7 +147,12 @@
 </div>
 
 <script>
-    function openEditModal(id, tenant, company, desc) {
+    function openEditModal(btn) {
+        const id = btn.getAttribute('data-m-id');
+        const tenant = btn.getAttribute('data-m-tenant');
+        const company = btn.getAttribute('data-m-company');
+        const desc = btn.getAttribute('data-m-desc');
+
         document.getElementById('editMappingForm').action = `/tenantmap/edit/${id}`;
         document.getElementById('edit_tenant_value').value = tenant;
         document.getElementById('edit_company_id').value = company;
