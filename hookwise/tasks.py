@@ -399,9 +399,34 @@ def handle_webhook_logic(
                     return
 
                 company_id_match = re.search(r"#CW(\w+)", monitor_name)
-                company_id = mapped_customer_id or (
-                    company_id_match.group(1) if company_id_match else customer_id_default
-                )
+                company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else None)
+
+                # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
+                if not company_id and config.global_routing_enabled:
+                    from .models import GlobalMapping
+
+                    # Try common tenant fields
+                    tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
+                    tenant_val = None
+                    for tf in tenant_fields:
+                        val = resolve_jsonpath(data, f"$.{tf}")
+                        if not val:
+                            # Try nested commonly used paths like .TaskInfo.Tenant
+                            val = resolve_jsonpath(data, f"$.TaskInfo.{tf}")
+                        if val:
+                            tenant_val = str(val)
+                            break
+
+                    if tenant_val:
+                        mapping = GlobalMapping.query.filter_by(tenant_value=tenant_val).first()
+                        if mapping:
+                            company_id = mapping.company_id
+                            logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
+                            log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
+
+                # Fallback to default
+                if not company_id:
+                    company_id = customer_id_default
 
                 # Sanitize data for substitution/logging
                 safe_data = mask_secrets(data)

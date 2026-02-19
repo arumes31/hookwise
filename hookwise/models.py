@@ -61,6 +61,7 @@ class WebhookConfig(Base):
     display_order = db.Column(db.Integer, default=0)
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
+    global_routing_enabled = db.Column(db.Boolean, default=True, nullable=False)
     last_rotated_at = db.Column(db.DateTime)
     bearer_auth_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -154,5 +155,25 @@ class AuditLog(Base):
             "action": self.action,
             "user": self.user,
             "details": self.details,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
+class GlobalMapping(Base):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_value = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    company_id = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "tenant_value": self.tenant_value,
+            "company_id": self.company_id,
+            "description": self.description,
             "created_at": self.created_at.isoformat(),
         }
