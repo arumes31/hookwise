@@ -32,14 +32,51 @@ body {
     background-image:
         radial-gradient(circle at 2px 2px, rgba(56, 189, 248, 0.03) 1px, transparent 0);
     background-size: 32px 32px;
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1), transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-body.page-loaded {
+/* View Transitions API Support */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.3s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+::view-transition-old(root) {
+  animation: 0.3s cubic-bezier(0.4, 0, 0.2, 1) both fade-out;
+}
+
+::view-transition-new(root) {
+  animation: 0.3s cubic-bezier(0.4, 0, 0.2, 1) both fade-in;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Auto-save Indicator */
+.save-indicator {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.save-indicator.visible {
     opacity: 1;
-    transform: none;
+}
+
+.save-indicator i {
+    font-size: 0.85rem;
 }
 
 /* Background Animation Canvas */

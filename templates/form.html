@@ -31,7 +31,11 @@
                             </h2>
                             <p class="mb-0 small text-secondary">{{ 'Update your existing webhook routing
                                 configuration.' if config else 'Configure how incoming alerts are routed to
-                                ConnectWise.' }}</p>
+                                ConnectWise.' }}
+                                <span id="save-indicator" class="save-indicator ms-2 text-success">
+                                    <i class="fas fa-check-circle me-1"></i>Draft Saved
+                                </span>
+                            </p>
                         </div>
                     </div>
                     <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
@@ -509,6 +513,16 @@
         document.getElementById('undo-btn').disabled = undoStack.length < 2;
         redoStack.length = 0; // Clear redo on new action
         document.getElementById('redo-btn').disabled = true;
+
+        // Show save indicator
+        const indicator = document.getElementById('save-indicator');
+        if (indicator) {
+            indicator.classList.add('visible');
+            clearTimeout(window.saveIndicatorTimeout);
+            window.saveIndicatorTimeout = setTimeout(() => {
+                indicator.classList.remove('visible');
+            }, 2000);
+        }
     }
 
     function undo() {
