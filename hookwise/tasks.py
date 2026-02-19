@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -51,6 +52,10 @@ celery.conf.beat_schedule = {
         "task": "hookwise.cleanup_logs",
         "schedule": 86400.0,  # Every 24 hours
     },
+    "verify-health-every-15m": {
+        "task": "hookwise.verify_endpoint_health",
+        "schedule": 900.0,  # Every 15 minutes
+    },
 }
 
 _app = None
@@ -97,6 +102,70 @@ def cleanup_logs() -> None:
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
 
+@celery.task(name="hookwise.verify_endpoint_health")  # type: ignore[untyped-decorator]
+def verify_endpoint_health() -> None:
+    """Validate endpoint configurations against ConnectWise."""
+    try:
+        # Fetch global metadata
+        boards = cw_client.get_boards()
+        if not boards:
+            logger.warning("Skipping health check: Unable to fetch boards from CW.")
+            return
+
+        board_map = {b["name"]: b["id"] for b in boards}
+
+        priorities = cw_client.get_priorities()
+        priority_names = {p["name"] for p in priorities}
+
+        status_cache: Dict[int, Any] = {}
+
+        configs = WebhookConfig.query.filter_by(is_enabled=True).all()
+        updates = 0
+
+        for config in configs:
+            errors = []
+
+            # 1. Check Board
+            if config.board:
+                if config.board not in board_map:
+                    errors.append(f"Board '{config.board}' not found")
+                else:
+                    # 2. Check Status
+                    if config.status:
+                        bid = board_map[config.board]
+                        if bid not in status_cache:
+                            statuses = cw_client.get_board_statuses(bid)
+                            status_cache[bid] = {s["name"] for s in statuses}
+
+                        if config.status not in status_cache[bid]:
+                            errors.append(f"Status '{config.status}' not found")
+
+            # 3. Check Priority
+            if config.priority and config.priority not in priority_names:
+                errors.append(f"Priority '{config.priority}' not found")
+
+            # Determine Status
+            new_status = "OK"
+            new_msg = "Configuration validated"
+            if errors:
+                new_status = "ERROR"
+                new_msg = " | ".join(errors)
+
+            # Update if changed
+            if config.config_health_status != new_status or config.config_health_message != new_msg:
+                config.config_health_status = new_status
+                config.config_health_message = new_msg
+                updates += 1
+
+        if updates > 0:
+            db.session.commit()
+            logger.info(f"Health verification completed. Updated {updates} configs.")
+
+    except Exception as e:
+        logger.error(f"Health verification task failed: {e}")
+        db.session.rollback()
+
+
 @celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)  # type: ignore[untyped-decorator]
 def process_webhook_task(
     self: Any,
@@ -127,7 +196,9 @@ def process_webhook_task(
                 log_entry.retry_count = self.request.retries
                 db.session.commit()
             return
-        raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+        jitter = random.uniform(0.8, 1.2)
+        countdown = (2**self.request.retries) * jitter
+        raise self.retry(exc=exc, countdown=countdown) from exc
 
 
 def is_in_maintenance(config: WebhookConfig) -> bool:

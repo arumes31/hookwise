@@ -31,7 +31,11 @@
                             </h2>
                             <p class="mb-0 small text-secondary">{{ 'Update your existing webhook routing
                                 configuration.' if config else 'Configure how incoming alerts are routed to
-                                ConnectWise.' }}</p>
+                                ConnectWise.' }}
+                                <span id="save-indicator" class="save-indicator ms-2 text-success">
+                                    <i class="fas fa-check-circle me-1"></i>Draft Saved
+                                </span>
+                            </p>
                         </div>
                     </div>
                     <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
@@ -53,6 +57,25 @@
                                 <div id="summary-preview" class="font-monospace text-light"
                                     style="font-size: 1.1rem; font-weight: 600;">Prefix: Source Name</div>
                             </div>
+
+                            {% if config and config.id %}
+                            <div class="mb-4">
+                                <label class="form-label fw-bold text-light">Endpoint URL</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text"
+                                        class="form-control bg-dark border-secondary text-info font-monospace" readonly
+                                        value="{{ base_url }}/w/{{ config.id }}">
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" title="Copy URL">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="btn btn-primary fw-bold" type="button"
+                                        onclick="showSetupGuide('{{ config.id }}')">
+                                        <i class="fas fa-magic me-1"></i>Setup Guide
+                                    </button>
+                                </div>
+                            </div>
+                            {% endif %}
 
                             <div
                                 class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 border-secondary border-opacity-25">
@@ -380,16 +403,21 @@
 
                             <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label for="routing_rules" class="form-label fw-bold mb-0 text-light">Regex Routing
-                                        (JSON Array)</label>
-                                    <button type="button" class="btn btn-sm btn-link text-info p-0 text-decoration-none"
-                                        onclick="formatJSON('routing_rules')">Format</button>
+                                    <label class="form-label fw-bold mb-0 text-light">Regex Routing Rules</label>
+                                    <button type="button" class="btn btn-sm btn-outline-info"
+                                        onclick="addRoutingRule()">
+                                        <i class="fas fa-plus me-1"></i>Add Rule
+                                    </button>
                                 </div>
-                                <textarea
-                                    class="form-control font-monospace small bg-dark border-secondary text-warning"
-                                    id="routing_rules" name="routing_rules" rows="3"
-                                    placeholder='[{"path": "$.status", "regex": "critical", "overrides": {"board": "Critical"}}]'
-                                    data-tooltip="Dynamic routing based on payload content.">{{ config.routing_rules if config else '' }}</textarea>
+                                <div id="rules-container" class="mb-2">
+                                    <!-- Dynamic rules added here -->
+                                </div>
+                                <textarea class="d-none" id="routing_rules"
+                                    name="routing_rules">{{ config.routing_rules if config else '' }}</textarea>
+                                <div class="small text-secondary mt-1">
+                                    <i class="fas fa-info-circle me-1"></i> Dynamic routing based on payload content
+                                    regex matching.
+                                </div>
                             </div>
 
                             <div class="mb-4 p-3 rounded-2 bg-gradient-custom-blue border border-primary border-opacity-25"
@@ -483,7 +511,110 @@
     </div>
 </div>
 
+
+<!-- Setup Guide Modal -->
+<div class="modal fade" id="setupGuideModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content glass-card border-0">
+            <div class="modal-header border-bottom border-light border-opacity-10">
+                <h5 class="modal-title text-white"><i class="fas fa-rocket me-2 text-primary"></i>Smart Setup Guide</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary small mb-4">
+                    Send a test payload to validate your configuration. Copy the code below to your terminal or script.
+                </p>
+
+                <ul class="nav nav-tabs border-secondary border-opacity-25 mb-3" id="snippetTabs">
+                    <li class="nav-item">
+                        <button class="nav-link active small text-light" data-bs-toggle="tab" data-bs-target="#curl-tab"
+                            type="button">cURL</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link small text-light" data-bs-toggle="tab" data-bs-target="#python-tab"
+                            type="button">Python</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link small text-light" data-bs-toggle="tab" data-bs-target="#powershell-tab"
+                            type="button">PowerShell</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="snippetTabContent">
+                    <div class="tab-pane fade show active" id="curl-tab">
+                        <pre
+                            class="bg-black bg-opacity-50 p-3 rounded border border-secondary border-opacity-25"><code class="language-bash text-info" id="code-curl"></code></pre>
+                    </div>
+                    <div class="tab-pane fade" id="python-tab">
+                        <pre
+                            class="bg-black bg-opacity-50 p-3 rounded border border-secondary border-opacity-25"><code class="language-python text-warning" id="code-python"></code></pre>
+                    </div>
+                    <div class="tab-pane fade" id="powershell-tab">
+                        <pre
+                            class="bg-black bg-opacity-50 p-3 rounded border border-secondary border-opacity-25"><code class="language-powershell text-success" id="code-powershell"></code></pre>
+                    </div>
+                </div>
+
+                <div class="mt-3 text-end">
+                    <button class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+
+    function showSetupGuide(id) {
+        const modal = new bootstrap.Modal(document.getElementById('setupGuideModal'));
+        const url = `{{ base_url }}/w/${id}`;
+        // Get token if visible/known (hidden field?)
+        const tokenDisplay = document.getElementById('bearer-token-display');
+        const token = (tokenDisplay && tokenDisplay.value !== '****************') ? tokenDisplay.value : 'YOUR_BEARER_TOKEN';
+
+        const payload = {
+            "title": "Test Alert from Setup Guide",
+            "message": "This is a test notification to verify HookWise connectivity.",
+            "status": "firing",
+            "severity": "critical"
+        };
+        const jsonPayload = JSON.stringify(payload, null, 2);
+
+        // Curl
+        const curl = `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${token}" \\
+  -d '${JSON.stringify(payload)}'`;
+        document.getElementById('code-curl').textContent = curl;
+
+        // Python
+        const python = `import requests
+
+url = "${url}"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer ${token}"
+}
+payload = ${jsonPayload}
+
+response = requests.post(url, json=payload, headers=headers)
+print(response.status_code, response.text)`;
+        document.getElementById('code-python').textContent = python;
+
+        // PowerShell
+        const ps = `$url = "${url}"
+$headers = @{
+    "Content-Type" = "application/json"
+    "Authorization" = "Bearer ${token}"
+}
+$body = '${JSON.stringify(payload).replace(/'/g, "''")}'
+
+Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
+        document.getElementById('code-powershell').textContent = ps;
+
+        modal.show();
+    }
+
     const undoStack = [];
     const redoStack = [];
     let isUndoing = false;
@@ -504,6 +635,16 @@
         document.getElementById('undo-btn').disabled = undoStack.length < 2;
         redoStack.length = 0; // Clear redo on new action
         document.getElementById('redo-btn').disabled = true;
+
+        // Show save indicator
+        const indicator = document.getElementById('save-indicator');
+        if (indicator) {
+            indicator.classList.add('visible');
+            clearTimeout(window.saveIndicatorTimeout);
+            window.saveIndicatorTimeout = setTimeout(() => {
+                indicator.classList.remove('visible');
+            }, 2000);
+        }
     }
 
     function undo() {
@@ -537,13 +678,26 @@
         });
         if (window.updatePreview) window.updatePreview();
         // Also sync maintenance windows if they changed
-        const list = document.getElementById('maintenance-list');
-        list.innerHTML = '';
-        if (state.maintenance_windows) {
-            try {
-                const windows = JSON.parse(state.maintenance_windows);
-                windows.forEach(w => addMaintenanceWindow(w));
-            } catch (e) { }
+        const mwList = document.getElementById('maintenance-list');
+        if (mwList) {
+            mwList.innerHTML = '';
+            if (state.maintenance_windows) {
+                try {
+                    const windows = JSON.parse(state.maintenance_windows);
+                    windows.forEach(w => addMaintenanceWindow(w));
+                } catch (e) { }
+            }
+        }
+
+        const rulesList = document.getElementById('rules-container');
+        if (rulesList) {
+            rulesList.innerHTML = '';
+            if (state.routing_rules) {
+                try {
+                    const rules = JSON.parse(state.routing_rules);
+                    rules.forEach(r => addRoutingRule(r));
+                } catch (e) { }
+            }
         }
     }
 
@@ -681,6 +835,125 @@
             }
         });
         document.getElementById('maintenance_windows').value = JSON.stringify(windows);
+    }
+    function addRoutingRule(rule = {}) {
+        const container = document.getElementById('rules-container');
+        const count = container.querySelectorAll('.rule-entry').length;
+        const div = document.createElement('div');
+        div.className = 'p-3 mb-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-25 rule-entry animate-fade-in';
+
+        const path = rule.path || '';
+        const regex = rule.regex || '';
+        const overrides = rule.overrides || {};
+
+        div.innerHTML = `
+            <div class="row g-2 mb-2 align-items-center">
+                <div class="col-md-5">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">PATH</span>
+                        <input type="text" class="form-control bg-dark border-secondary text-info font-monospace rule-path" 
+                               value="${path}" placeholder="$.field" oninput="syncRoutingRules()">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">REGEX</span>
+                        <input type="text" class="form-control bg-dark border-secondary text-warning font-monospace rule-regex" 
+                               value="${regex}" placeholder=".*" oninput="validateRegex(this); syncRoutingRules()">
+                        <span class="input-group-text bg-dark border-secondary regex-status">
+                            <i class="fas fa-check-circle text-success"></i>
+                        </span>
+                    </div>
+                </div>
+                <div class="col-md-1 text-end">
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" 
+                            onclick="this.closest('.rule-entry').remove(); syncRoutingRules();">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">BOARD</span>
+                        <select class="form-select bg-dark border-secondary text-light rule-board" onchange="syncRoutingRules()">
+                            <option value="">-- No Change --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">PRIORITY</span>
+                        <select class="form-select bg-dark border-secondary text-light rule-priority" onchange="syncRoutingRules()">
+                            <option value="">-- No Change --</option>
+                        </select>
+                    </div>
+                </div>
+                 <div class="col-md-4">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">STATUS</span>
+                        <input type="text" class="form-control bg-dark border-secondary text-light rule-status" 
+                               value="${overrides.status || ''}" placeholder="New Status" oninput="syncRoutingRules()">
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.appendChild(div);
+
+        // Populate selects from the main board/priority lists if they exist
+        const boardOptions = document.getElementById('board').innerHTML;
+        const priorityOptions = document.getElementById('priority').innerHTML;
+
+        const bSelect = div.querySelector('.rule-board');
+        const pSelect = div.querySelector('.rule-priority');
+
+        if (boardOptions) {
+            bSelect.innerHTML = '<option value="">-- No Change --</option>' + boardOptions.replace('selected', '');
+            if (overrides.board) bSelect.value = overrides.board;
+        }
+        if (priorityOptions) {
+            pSelect.innerHTML = '<option value="">-- No Change --</option>' + priorityOptions.replace('selected', '');
+            if (overrides.priority) pSelect.value = overrides.priority;
+        }
+
+        validateRegex(div.querySelector('.rule-regex'));
+    }
+
+    function validateRegex(input) {
+        const val = input.value;
+        const statusIcon = input.nextElementSibling;
+        try {
+            if (val) new RegExp(val);
+            statusIcon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+        } catch (e) {
+            statusIcon.innerHTML = '<i class="fas fa-exclamation-circle text-danger" title="Invalid Regex"></i>';
+            input.classList.remove('is-valid');
+            input.classList.add('is-invalid');
+        }
+    }
+
+    function syncRoutingRules() {
+        const rules = [];
+        document.querySelectorAll('.rule-entry').forEach(entry => {
+            const path = entry.querySelector('.rule-path').value.trim();
+            const regex = entry.querySelector('.rule-regex').value.trim();
+            const board = entry.querySelector('.rule-board').value;
+            const priority = entry.querySelector('.rule-priority').value;
+            const status = entry.querySelector('.rule-status').value.trim();
+
+            if (path && regex) {
+                const overrides = {};
+                if (board) overrides.board = board;
+                if (priority) overrides.priority = priority;
+                if (status) overrides.status = status;
+
+                rules.push({ path, regex, overrides });
+            }
+        });
+        document.getElementById('routing_rules').value = JSON.stringify(rules);
     }
 
     const templates = {
@@ -991,6 +1264,7 @@
             } catch (e) { console.error('Error parsing maintenance windows', e); }
         }
 
+
         // Fetch Boards
         try {
             const res = await fetch('/api/cw/boards');
@@ -1051,6 +1325,15 @@
             } catch (e) {
                 console.error('Error loading companies', e);
             }
+        }
+
+        // Initialize Routing Rules (Move to after boards/priorities fetched)
+        const rulesRaw = document.getElementById('routing_rules').value;
+        if (rulesRaw) {
+            try {
+                const rules = JSON.parse(rulesRaw);
+                rules.forEach(r => addRoutingRule(r));
+            } catch (e) { console.error('Error parsing routing rules', e); }
         }
 
         // Initial load (first 50)

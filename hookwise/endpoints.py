@@ -72,7 +72,7 @@ def _register() -> None:
             if request.form.get("create_another") == "true":
                 return redirect(url_for("main.new_endpoint", confetti="true"))
             return redirect(url_for("main.index", confetti="true"))
-        return render_template("form.html")
+        return render_template("form.html", base_url=request.url_root.rstrip("/"))
 
     @main_bp.route("/endpoint/edit/<id>", methods=["GET", "POST"])
     @auth_required
@@ -106,7 +106,7 @@ def _register() -> None:
             log_audit("update", config.id, f"Endpoint {config.name} updated")
             flash(f'Endpoint "{config.name}" updated successfully!')
             return redirect(url_for("main.index"))
-        return render_template("form.html", config=config)
+        return render_template("form.html", config=config, base_url=request.url_root.rstrip("/"))
 
     @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
     @auth_required
