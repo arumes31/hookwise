@@ -42,6 +42,10 @@
                         {{ m.description or '-' }}
                     </td>
                     <td class="text-end">
+                        <button class="btn btn-sm btn-link text-info p-0 text-decoration-none me-3"
+                            onclick="openEditModal('{{ m.id }}', '{{ m.tenant_value }}', '{{ m.company_id }}', '{{ m.description or '' }}')">
+                            <i class="fas fa-edit"></i>
+                        </button>
                         <form action="{{ url_for('main.delete_mapping', id=m.id) }}" method="POST" class="d-inline"
                             onsubmit="return confirm('Delete mapping for {{ m.tenant_value }}?')">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -105,7 +109,50 @@
     </div>
 </div>
 
+<!-- Edit Mapping Modal -->
+<div class="modal fade" id="editMappingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="glass-card shadow-lg border-0 w-100 p-1">
+            <div class="modal-content bg-transparent border-0 p-4">
+                <div class="modal-header border-0 p-0 mb-4">
+                    <h5 class="modal-title fw-bold text-light">Edit Global Mapping</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="editMappingForm" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
+                        <input type="text" id="edit_tenant_value" name="tenant_value"
+                            class="form-control bg-dark border-secondary text-light" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
+                        <input type="text" id="edit_company_id" name="company_id" list="company_list"
+                            class="form-control bg-dark border-secondary text-light" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Description</label>
+                        <input type="text" id="edit_description" name="description"
+                            class="form-control bg-dark border-secondary text-light">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-info fw-bold py-2 text-white">Update Mapping</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+    function openEditModal(id, tenant, company, desc) {
+        document.getElementById('editMappingForm').action = `/tenantmap/edit/${id}`;
+        document.getElementById('edit_tenant_value').value = tenant;
+        document.getElementById('edit_company_id').value = company;
+        document.getElementById('edit_description').value = desc;
+        new bootstrap.Modal(document.getElementById('editMappingModal')).show();
+    }
+
     htmx.onLoad(function (content) {
         // Reuse the same debounced search logic as in form.html
         function debounce(func, wait) {
@@ -152,6 +199,17 @@
             }, 500));
             // Initial load
             fetchCompanies();
+        }
+
+        // Initialize search for edit modal as well
+        const editCompanyInput = document.getElementById('edit_company_id');
+        if (editCompanyInput && !editCompanyInput.dataset.initialized) {
+            editCompanyInput.dataset.initialized = 'true';
+            editCompanyInput.addEventListener('input', debounce((e) => {
+                const val = e.target.value;
+                if (val.length >= 2) fetchCompanies(val);
+                else if (val.length === 0) fetchCompanies();
+            }, 500));
         }
     });
 </script>

@@ -44,6 +44,38 @@ def add_mapping() -> Any:
     return redirect(url_for("main.tenantmap"))
 
 
+@main_bp.route("/tenantmap/edit/<id>", methods=["POST"])
+@auth_required
+def edit_mapping(id: str) -> Any:
+    mapping = GlobalMapping.query.get(id)
+    if not mapping:
+        flash("Global mapping not found.")
+        return redirect(url_for("main.tenantmap"))
+
+    tenant_value = request.form.get("tenant_value")
+    company_id = request.form.get("company_id")
+    description = request.form.get("description")
+
+    if not tenant_value or not company_id:
+        flash("Tenant Value and Company ID are required.")
+        return redirect(url_for("main.tenantmap"))
+
+    try:
+        old_val = f"{mapping.tenant_value} -> {mapping.company_id}"
+        mapping.tenant_value = tenant_value.strip()
+        mapping.company_id = company_id.strip()
+        mapping.description = description.strip() if description else None
+        
+        db.session.commit()
+        log_audit("update_mapping", config_id=id, details=f"Updated global mapping: {old_val} to {tenant_value} -> {company_id}")
+        flash(f"Mapping for {tenant_value} updated successfully.")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error updating mapping: {str(e)}")
+
+    return redirect(url_for("main.tenantmap"))
+
+
 @main_bp.route("/tenantmap/delete/<id>", methods=["POST"])
 @auth_required
 def delete_mapping(id: str) -> Any:
