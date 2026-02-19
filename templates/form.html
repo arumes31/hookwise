@@ -1010,20 +1010,49 @@
             prioritySelect.innerHTML = '<option value="">Error loading priorities</option>';
         }
 
-        // Fetch Companies (first 50)
-        try {
-            const res = await fetch('/api/cw/companies');
-            const companies = await res.json();
-            const datalist = document.getElementById('company_list');
-            if (datalist) datalist.innerHTML = '';
-            companies.forEach(c => {
-                const opt = document.createElement('option');
-                opt.value = c.identifier;
-                opt.textContent = `${c.name} (${c.identifier})`;
-                datalist.appendChild(opt);
-            });
-        } catch (e) {
-            console.error('Error loading companies', e);
+        // Debounce helper
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        async function fetchCompanies(query = '') {
+            try {
+                const url = query ? `/api/cw/companies?search=${encodeURIComponent(query)}` : '/api/cw/companies';
+                const res = await fetch(url);
+                const companies = await res.json();
+                const datalist = document.getElementById('company_list');
+                if (datalist) {
+                    datalist.innerHTML = '';
+                    companies.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.identifier;
+                        opt.textContent = `${c.name} (${c.identifier})`;
+                        datalist.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error('Error loading companies', e);
+            }
+        }
+
+        // Initial load (first 50)
+        fetchCompanies();
+
+        // Search-as-you-type listener
+        const companyInput = document.getElementById('customer_id_default');
+        if (companyInput) {
+            companyInput.addEventListener('input', debounce((e) => {
+                const val = e.target.value;
+                if (val.length >= 2) {
+                    fetchCompanies(val);
+                } else if (val.length === 0) {
+                    fetchCompanies();
+                }
+            }, 500));
         }
     });
 </script>
