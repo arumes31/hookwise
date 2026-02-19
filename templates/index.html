@@ -604,7 +604,8 @@
         }
 
         const logContainer = document.getElementById('log-container');
-        if (!logContainer) return;
+        if (!logContainer || logContainer.dataset.initialized) return;
+        logContainer.dataset.initialized = 'true';
 
         const pauseBtn = document.getElementById('pause-button');
         const timeBtn = document.getElementById('time-toggle');

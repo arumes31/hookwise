@@ -905,7 +905,8 @@
 
     htmx.onLoad(async function (elt) {
         const form = document.getElementById('endpoint-form');
-        if (!form) return;
+        if (!form || form.dataset.initialized) return;
+        form.dataset.initialized = 'true';
 
         form.addEventListener('input', () => {
             clearTimeout(window.saveStateTimeout);
@@ -1014,6 +1015,7 @@
             const res = await fetch('/api/cw/companies');
             const companies = await res.json();
             const datalist = document.getElementById('company_list');
+            if (datalist) datalist.innerHTML = '';
             companies.forEach(c => {
                 const opt = document.createElement('option');
                 opt.value = c.identifier;

@@ -4,10 +4,11 @@ import secrets
 import uuid
 from typing import Any, cast
 
-from flask import Flask, Response, g, redirect, render_template, request
+from flask import Flask, Response, g, jsonify, redirect, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from .extensions import db, limiter, migrate
+from .extensions import csrf, db, limiter, migrate
 from .extensions import socketio as socketio
 
 _logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def create_app() -> Flask:
     migrate.init_app(app, db)
     limiter.init_app(app)
     socketio.init_app(app)
+    csrf.init_app(app)
 
     @app.after_request
     def add_header(response: Response) -> Response:
@@ -113,12 +115,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(main_bp)
 
-    from flask_wtf.csrf import CSRFProtect
-    from werkzeug.security import check_password_hash, generate_password_hash
-
     from .models import User
-
-    CSRFProtect(app)
 
     with app.app_context():
         try:
@@ -154,6 +151,8 @@ def create_app() -> Flask:
 
     @app.errorhandler(400)
     def bad_request(e: Any) -> Any:
+        if request.path.startswith("/w/") or request.path.startswith("/api/"):
+            return jsonify({"status": "error", "message": "Bad Request or CSRF Error"}), 400
         return render_template("500.html"), 400
 
     @app.errorhandler(429)

@@ -6,6 +6,7 @@ from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
 from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
+from flask_wtf.csrf import CSRFProtect
 
 _redis_password = os.environ.get("REDIS_PASSWORD")
 _redis_host = os.environ.get("REDIS_HOST", "localhost")
@@ -21,6 +22,7 @@ if not _limiter_storage:
 
 db = SQLAlchemy()
 migrate = Migrate()
+csrf = CSRFProtect()
 limiter = Limiter(
     key_func=get_remote_address, storage_uri=_limiter_storage, default_limits=["2000 per day", "500 per hour"]
 )
