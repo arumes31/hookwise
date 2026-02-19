@@ -6,7 +6,7 @@ from typing import Any
 from flask import g, jsonify, request
 from prometheus_client import Counter
 
-from .extensions import limiter
+from .extensions import csrf, limiter
 from .metrics import log_webhook_received
 from .models import WebhookConfig
 from .tasks import process_webhook_task
@@ -19,6 +19,7 @@ def _register() -> None:
     from .routes import main_bp
 
     @main_bp.route("/w/<config_id>", methods=["POST"])
+    @csrf.exempt
     @limiter.limit("60 per minute")
     def dynamic_webhook(config_id: str) -> Any:
         request_id = g.request_id
