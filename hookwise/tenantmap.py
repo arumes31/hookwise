@@ -67,7 +67,11 @@ def edit_mapping(id: str) -> Any:
         mapping.description = description.strip() if description else None
         
         db.session.commit()
-        log_audit("update_mapping", config_id=id, details=f"Updated global mapping: {old_val} to {tenant_value} -> {company_id}")
+        log_audit(
+            "update_mapping",
+            config_id=id,
+            details=f"Updated global mapping: {old_val} to {tenant_value} -> {company_id}",
+        )
         flash(f"Mapping for {tenant_value} updated successfully.")
     except Exception as e:
         db.session.rollback()
