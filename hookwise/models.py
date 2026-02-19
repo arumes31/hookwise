@@ -61,7 +61,7 @@ class WebhookConfig(Base):
     display_order = db.Column(db.Integer, default=0)
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
-    global_routing_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    global_routing_enabled = db.Column(db.Boolean, default=False, nullable=False)
     last_rotated_at = db.Column(db.DateTime)
     bearer_auth_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
