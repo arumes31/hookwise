@@ -394,16 +394,7 @@
 
                             <div class="mb-4 p-3 rounded-2 bg-gradient-custom-blue border border-primary border-opacity-25"
                                 style="background: rgba(13, 110, 253, 0.05);">
-                                <div class="form-check form-switch mb-2">
-                                    <input class="form-check-input" type="checkbox" role="switch" id="ai_rca_enabled"
-                                        name="ai_rca_enabled" value="true" {{ 'checked' if config and
-                                        config.ai_rca_enabled else '' }} onchange="toggleAI()">
-                                    <label class="form-check-label fw-bold text-info" for="ai_rca_enabled">
-                                        <i class="fas fa-robot me-2"></i>AUTOMATED RCA NOTES
-                                    </label>
-                                </div>
-
-                                <div class="form-check form-switch mb-2">
+                                <div class="form-check form-switch mb-3">
                                     <input class="form-check-input" type="checkbox" role="switch"
                                         id="global_routing_enabled" name="global_routing_enabled" value="true"
                                         {{ 'checked' if config and config.global_routing_enabled else '' }}>
@@ -415,6 +406,15 @@
                                             target="_blank" class="text-info text-decoration-none">TenantMap</a> lookup
                                         if not in payload.
                                     </div>
+                                </div>
+
+                                <div class="form-check form-switch mb-2">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="ai_rca_enabled"
+                                        name="ai_rca_enabled" value="true" {{ 'checked' if config and
+                                        config.ai_rca_enabled else '' }} onchange="toggleAI()">
+                                    <label class="form-check-label fw-bold text-info" for="ai_rca_enabled">
+                                        <i class="fas fa-robot me-2"></i>AUTOMATED RCA NOTES
+                                    </label>
                                 </div>
 
                                 <div id="ai-settings"
