@@ -44,6 +44,7 @@ class ConnectWiseClient:
         retry_strategy = Retry(
             total=5,
             backoff_factor=2,  # Exponential backoff: 2, 4, 8, 16, 32 seconds
+            backoff_jitter=0.1,  # Added jitter to prevent thundering herd
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"],
         )

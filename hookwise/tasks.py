@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -127,7 +128,9 @@ def process_webhook_task(
                 log_entry.retry_count = self.request.retries
                 db.session.commit()
             return
-        raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
+        jitter = random.uniform(0.8, 1.2)
+        countdown = (2**self.request.retries) * jitter
+        raise self.retry(exc=exc, countdown=countdown) from exc
 
 
 def is_in_maintenance(config: WebhookConfig) -> bool:
