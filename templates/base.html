@@ -61,7 +61,9 @@
                 {% if session.user_id %}
                 <span class="nav-link small lightgrey me-2">Hi, {{ session.username }}</span>
                 <a class="nav-link" href="{{ url_for('main.index') }}">Endpoints</a>
-                <a class="nav-link" href="{{ url_for('main.routing') }}">Routing</a>
+                <a class="nav-link" href="{{ url_for('main.routing') }}" style="display:none;">Routing</a>
+                <!-- Legacy link hidden -->
+                <a class="nav-link" href="{{ url_for('main.tenantmap') }}">TenantMap</a>
                 <a class="nav-link" href="{{ url_for('main.history') }}">History</a>
                 <a class="nav-link" href="{{ url_for('main.audit_logs') }}">Audit</a>
                 <a class="nav-link" href="{{ url_for('main.settings') }}">Settings</a>

@@ -8,14 +8,14 @@ from .routes import main_bp
 from .utils import auth_required, log_audit
 
 
-@main_bp.route("/routing")
+@main_bp.route("/tenantmap")
 @auth_required
-def routing() -> Any:
+def tenantmap() -> Any:
     mappings = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
-    return render_template("routing.html", mappings=mappings)
+    return render_template("tenantmap.html", mappings=mappings)
 
 
-@main_bp.route("/routing/add", methods=["POST"])
+@main_bp.route("/tenantmap/add", methods=["POST"])
 @auth_required
 def add_mapping() -> Any:
     tenant_value = request.form.get("tenant_value")
@@ -24,7 +24,7 @@ def add_mapping() -> Any:
 
     if not tenant_value or not company_id:
         flash("Tenant Value and Company ID are required.")
-        return redirect(url_for("main.routing"))
+        return redirect(url_for("main.tenantmap"))
 
     mapping = GlobalMapping(
         tenant_value=tenant_value.strip(),
@@ -41,10 +41,10 @@ def add_mapping() -> Any:
         db.session.rollback()
         flash(f"Error adding mapping: {str(e)}")
 
-    return redirect(url_for("main.routing"))
+    return redirect(url_for("main.tenantmap"))
 
 
-@main_bp.route("/routing/delete/<id>", methods=["POST"])
+@main_bp.route("/tenantmap/delete/<id>", methods=["POST"])
 @auth_required
 def delete_mapping(id: str) -> Any:
     mapping = GlobalMapping.query.get(id)
@@ -54,4 +54,4 @@ def delete_mapping(id: str) -> Any:
         db.session.commit()
         log_audit("delete_mapping", f"Deleted global mapping for: {tenant}")
         flash(f"Mapping for {tenant} deleted.")
-    return redirect(url_for("main.routing"))
+    return redirect(url_for("main.tenantmap"))

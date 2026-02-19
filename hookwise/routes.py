@@ -108,4 +108,4 @@ def index() -> Any:
 
 
 # Import sub-route modules so they register their routes on main_bp
-from . import api, auth, endpoints, routing, webhook  # noqa: E402, F401
+from . import api, auth, endpoints, tenantmap, webhook  # noqa: E402, F401

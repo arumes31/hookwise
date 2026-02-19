@@ -401,8 +401,8 @@ def handle_webhook_logic(
                 company_id_match = re.search(r"#CW(\w+)", monitor_name)
                 company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else None)
 
-                # 3. Apply Global Mapping if not yet resolved
-                if not company_id:
+                # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
+                if not company_id and config.global_routing_enabled:
                     from .models import GlobalMapping
 
                     # Try common tenant fields
