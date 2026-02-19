@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4 animate-fade-in">
+    <div class="col-md-8">
+        <h2 class="fw-bold text-light mb-1">TenantMap</h2>
+        <p class="text-secondary small">Map tenant identifiers (domains, IDs, names) to ConnectWise Company IDs
+            globally.</p>
+    </div>
+    <div class="col-md-4 text-end d-flex align-items-center justify-content-end">
+        <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#addMappingModal">
+            <i class="fas fa-plus me-2"></i>New Mapping
+        </button>
+    </div>
+</div>
+
+<div class="glass-card p-4 animate-slide-up">
+    <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle mb-0">
+            <thead class="text-secondary small text-uppercase ls-1">
+                <tr>
+                    <th>Tenant Value</th>
+                    <th>CW Company ID</th>
+                    <th>Description</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if mappings %}
+                {% for m in mappings %}
+                <tr>
+                    <td>
+                        <code class="text-info">{{ m.tenant_value }}</code>
+                    </td>
+                    <td>
+                        <span
+                            class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1">
+                            {{ m.company_id }}
+                        </span>
+                    </td>
+                    <td class="text-secondary small">
+                        {{ m.description or '-' }}
+                    </td>
+                    <td class="text-end">
+                        <form action="{{ url_for('main.delete_mapping', id=m.id) }}" method="POST" class="d-inline"
+                            onsubmit="return confirm('Delete mapping for {{ m.tenant_value }}?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center py-5 text-secondary">
+                        <i class="fas fa-route d-block mb-3 fs-2 opacity-25"></i>
+                        No global mappings defined yet.
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add Mapping Modal -->
+<div class="modal fade" id="addMappingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="glass-card shadow-lg border-0 w-100 p-1">
+            <div class="modal-content bg-transparent border-0 p-4">
+                <div class="modal-header border-0 p-0 mb-4">
+                    <h5 class="modal-title fw-bold text-light">Add Global Mapping</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form action="{{ url_for('main.add_mapping') }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
+                        <input type="text" name="tenant_value" class="form-control bg-dark border-secondary text-light"
+                            placeholder="e.g. example.com or 6a1b05..." required>
+                        <div class="form-text text-secondary small-xs mt-1">
+                            The value found in the payload that identifies the tenant.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
+                        <input type="text" name="company_id" id="company_search_input" list="company_list"
+                            class="form-control bg-dark border-secondary text-light" placeholder="Search Identifier"
+                            required>
+                        <datalist id="company_list"></datalist>
+                    </div>
+                    <div class="mb-4">
+                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Description</label>
+                        <input type="text" name="description" class="form-control bg-dark border-secondary text-light"
+                            placeholder="Friendly name or notes">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary fw-bold py-2">Create Mapping</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Reuse the same debounced search logic as in form.html
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        async function fetchCompanies(query = '') {
+            try {
+                const url = query ? `/api/cw/companies?search=${encodeURIComponent(query)}` : '/api/cw/companies';
+                const res = await fetch(url);
+
+                if (!res.ok) {
+                    console.error(`Error loading companies: ${res.status} ${res.statusText}`, url);
+                    return;
+                }
+
+                const companies = await res.json();
+                const datalist = document.getElementById('company_list');
+                if (datalist) {
+                    datalist.innerHTML = '';
+                    companies.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.identifier;
+                        opt.textContent = `${c.name} (${c.identifier})`;
+                        datalist.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.error('Network or parsing error in fetchCompanies', e);
+            }
+        }
+
+        const companyInput = document.getElementById('company_search_input');
+        if (companyInput) {
+            companyInput.addEventListener('input', debounce((e) => {
+                const val = e.target.value;
+                if (val.length >= 2) fetchCompanies(val);
+                else if (val.length === 0) fetchCompanies();
+            }, 500));
+            // Initial load
+            fetchCompanies();
+        }
+    });
+</script>
+{% endblock %}

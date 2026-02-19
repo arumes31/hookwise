@@ -354,6 +354,16 @@ Map a specific field in the webhook payload directly to the ConnectWise company 
 Use Routing Rules to map specific hostnames or message patterns to different companies.
 - **Rule**: `{"path": "$.host", "regex": "PRD-CL1-.*", "overrides": {"customer_id": "CLIENT_A"}}`
 
+### 4. TenantMap (Global Routing)
+HookWise provides a centralized mapping table called **TenantMap** (found in the navbar). This allows you to map common client identifiers (like domains or company IDs) once and apply them globally across all your endpoints.
+
+- **Centralized Link**: Map `example.com` -> `EXAMPLE` just once.
+- **Auto-Scanning**: HookWise intelligently scans incoming payloads for fields like `Tenant`, `tenantId`, and `$.TaskInfo.Tenant`.
+- **Per-Endpoint Toggle**: You can enable or disable TenantMap lookups for each specific endpoint in its configuration form.
+
+> [!TIP]
+> Use TenantMap for high-volume client identification to avoid repeating the same mapping rules in dozens of different endpoint configurations.
+
 ---
 
 ## 🛠️ Troubleshooting & FAQ
