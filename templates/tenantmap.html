@@ -120,6 +120,12 @@
             try {
                 const url = query ? `/api/cw/companies?search=${encodeURIComponent(query)}` : '/api/cw/companies';
                 const res = await fetch(url);
+
+                if (!res.ok) {
+                    console.error(`Error loading companies: ${res.status} ${res.statusText}`, url);
+                    return;
+                }
+
                 const companies = await res.json();
                 const datalist = document.getElementById('company_list');
                 if (datalist) {
@@ -131,7 +137,9 @@
                         datalist.appendChild(opt);
                     });
                 }
-            } catch (e) { console.error('Error loading companies', e); }
+            } catch (e) {
+                console.error('Network or parsing error in fetchCompanies', e);
+            }
         }
 
         const companyInput = document.getElementById('company_search_input');

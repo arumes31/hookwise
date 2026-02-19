@@ -25,8 +25,6 @@ PSA_TASK_DURATION = Histogram("hookwise_psa_task_seconds", "Time spent on PSA ta
 # Redis Cache setup
 CACHE_PREFIX = "hookwise_ticket:"
 CACHE_TTL = 3600 * 24  # 24 hours
-CACHE_PREFIX = "hookwise_ticket:"
-CACHE_TTL = 3600 * 24  # 24 hours
 
 cw_client = ConnectWiseClient()
 

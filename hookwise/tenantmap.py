@@ -35,7 +35,7 @@ def add_mapping() -> Any:
     try:
         db.session.add(mapping)
         db.session.commit()
-        log_audit("create_mapping", f"Added global mapping: {tenant_value} -> {company_id}")
+        log_audit("create_mapping", details=f"Added global mapping: {tenant_value} -> {company_id}")
         flash(f"Mapping for {tenant_value} added successfully.")
     except Exception as e:
         db.session.rollback()
@@ -48,10 +48,18 @@ def add_mapping() -> Any:
 @auth_required
 def delete_mapping(id: str) -> Any:
     mapping = GlobalMapping.query.get(id)
-    if mapping:
-        tenant = mapping.tenant_value
+    if not mapping:
+        flash("Global mapping not found.")
+        return redirect(url_for("main.tenantmap"))
+
+    tenant = mapping.tenant_value
+    try:
         db.session.delete(mapping)
         db.session.commit()
-        log_audit("delete_mapping", f"Deleted global mapping for: {tenant}")
+        log_audit("delete_mapping", config_id=id, details=f"Deleted global mapping for: {tenant}")
         flash(f"Mapping for {tenant} deleted.")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error deleting mapping: {str(e)}")
+
     return redirect(url_for("main.tenantmap"))

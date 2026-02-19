@@ -92,6 +92,7 @@ class WebhookConfig(Base):
             "is_pinned": self.is_pinned,
             "ai_rca_enabled": self.ai_rca_enabled,
             "ai_prompt_template": self.ai_prompt_template,
+            "global_routing_enabled": self.global_routing_enabled,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
         }
