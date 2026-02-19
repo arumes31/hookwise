@@ -475,7 +475,8 @@
         }
 
         const tableBody = document.querySelector('table tbody');
-        if (!tableBody) return;
+        if (!tableBody || tableBody.dataset.initialized) return;
+        tableBody.dataset.initialized = 'true';
         let currentPage = SERVER_DATA.currentPage;
         const hasNext = SERVER_DATA.hasNext;
 
