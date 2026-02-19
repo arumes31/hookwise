@@ -321,6 +321,20 @@
                         data-sparkline='{{ sparklines.get(config.id, [0, 0, 0, 0, 0, 0, 0]) | tojson }}'></canvas>
                 </div>
 
+                <!-- Security HUD Trigger -->
+                <div class="position-absolute top-0 start-0 p-3">
+                    <button
+                        class="btn btn-sm btn-link p-0 text-{{ 'success' if config.config_health_status == 'OK' else 'danger' if config.config_health_status == 'ERROR' else 'warning' }} opacity-50 hover-opacity-100"
+                        onclick="showSecurityHud('{{ config.id }}', '{{ config.config_health_status }}', '{{ config.config_health_message or '' }}', '{{ config.last_ip or '' }}', '{{ config.last_rotated_at or '' }}')"
+                        data-tooltip="Security & Health: {{ config.config_health_status }}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                            class="bi bi-shield-check" viewBox="0 0 16 16">
+                            <path
+                                d="M5.338 1.59a61.44 61.44 0 0 0-2.837.856.481.481 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.725 10.725 0 0 0 2.287 2.233c.346.244.652.42.893.533.12.057.218.095.293.118a.55.55 0 0 0 .101.025.615.615 0 0 0 .1-.025c.076-.023.174-.061.294-.118.24-.113.547-.29.893-.533a10.726 10.726 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.775 11.775 0 0 1-2.517 2.453 7.159 7.159 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7.158 7.158 0 0 1-1.048-.625 11.777 11.777 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43 62.456 62.456 0 0 1 5.072.56z" />
+                        </svg>
+                    </button>
+                </div>
+
                 <!-- Technical Fields -->
                 <div class="mb-3">
                     <div class="tech-label">Endpoint URL</div>
@@ -511,6 +525,41 @@
     </div>
 </div>
 
+<!-- Security HUD Modal -->
+<div class="modal fade" id="securityHudModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0">
+            <div class="modal-header border-bottom border-light border-opacity-10">
+                <h5 class="modal-title text-white"><i class="fas fa-shield-alt me-2 text-info"></i>Security & Health
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <div id="hud-status-icon" class="display-4 mb-2"></div>
+                    <h4 id="hud-status-text" class="fw-bold"></h4>
+                    <p id="hud-message" class="text-secondary small"></p>
+                </div>
+
+                <div class="bg-black bg-opacity-25 rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary small">Last IP Address</span>
+                        <span id="hud-last-ip" class="font-monospace text-info small"></span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-secondary small">Token Age</span>
+                        <span id="hud-token-age" class="font-monospace text-warning small"></span>
+                    </div>
+                </div>
+
+                <div class="d-grid">
+                    <button class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     async function quickUpdate(id, field, value) {
         const select = event.target;
@@ -677,65 +726,60 @@
             }
 
             const logEntry = document.createElement('div');
-            logEntry.className = `log-entry mb-1 py-1 border-bottom border-light border-opacity-5 text-${data.level === 'warning' ? 'warning' : data.level === 'success' ? 'success' : 'info'}`;
+            // Advanced Flow View Logic
+            const isError = data.level === 'warning' || data.level === 'error';
+            const statusColor = isError ? 'danger' : 'success';
 
-            // Time logic
-            const logDate = new Date(data.timestamp);
-            const absoluteTimeStr = logDate.toLocaleTimeString();
-            const displayTime = absoluteTime ? `[${absoluteTimeStr}]` : `[${getRelativeTime(logDate)}]`;
+            // Flow Steps
+            // 1. Ingest (always success if we are here)
+            // 2. Auth (assumed success if processed)
+            // 3. Mapping (Rule matched?)
+            // 4. ConnectWise (Ticket created?)
 
-            // Troubleshooting link
-            const helpLink = getTroubleshootingLink(data.message.toLowerCase());
+            const timeStr = new Date(data.timestamp).toLocaleTimeString();
 
-            // Ticket Link logic
-            let ticketHtml = '';
-            if (data.ticket_id) {
-                ticketHtml = `
-                    <span class="ms-2">
-                        <a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.65rem;">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
-                                <path fill-rule="evenodd" d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
-                                <path fill-rule="evenodd" d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
-                            </svg>
-                            TICKET #${data.ticket_id}
-                        </a>
+            let flowHtml = `
+                <div class="d-flex align-items-center gap-2 small">
+                    <span class="text-secondary font-monospace" style="font-size: 0.7rem;">${timeStr}</span>
+                    <span class="fw-bold text-light">${escapeHtml(data.config_name)}</span>
+                    
+                    <!-- Flow Icons -->
+                    <div class="d-flex align-items-center bg-dark bg-opacity-50 rounded px-2 py-1 ms-2 border border-secondary border-opacity-10">
+                        <!-- Step 1: Ingest -->
+                        <span class="text-success" title="Payload Received"><i class="fas fa-satellite-dish"></i></span>
+                        <span class="text-secondary mx-1 opacity-25">&rarr;</span>
+                        
+                        <!-- Step 2: Processing -->
+                        <span class="text-${statusColor}" title="${escapeHtml(data.message)}">
+                            <i class="fas fa-cog ${isError ? 'fa-spin text-danger' : ''}"></i>
+                        </span>
+                        
+                        <!-- Step 3: Action -->
+                         <span class="text-secondary mx-1 opacity-25">&rarr;</span>
+                        <span class="text-${data.ticket_id ? 'primary' : 'secondary'}" title="${data.ticket_id ? 'Ticket Created' : 'No Action'}">
+                            <i class="fas fa-ticket-alt"></i>
+                        </span>
+                    </div>
+
+                     <span class="text-${statusColor} ms-2 text-truncate" style="max-width: 300px;">
+                        ${escapeHtml(data.message)}
                     </span>
-                `;
-            }
-
-            function escapeHtml(text) {
-                if (!text) return '';
-                return text.replace(/[&<>"']/g, function (m) {
-                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
-                });
-            }
-
-            logEntry.dataset.timestamp = data.timestamp;
-            logEntry.innerHTML = `
-                <span class="text-secondary me-2">${displayTime}</span>
-                <span class="fw-bold me-2">${escapeHtml(data.config_name)}:</span>
-                <span style="cursor: ${data.payload ? 'pointer' : 'default'}">${escapeHtml(data.message)}</span>
-                ${ticketHtml}
-                ${helpLink ? `<a href="${helpLink}" target="_blank" class="ms-2 small text-secondary" title="Troubleshoot this error"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.94 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/></svg></a>` : ''}
-                ${data.payload ? '<span class="float-end opacity-50 clickable-payload"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-code" viewBox="0 0 16 16"><path d="M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z"/></svg></span>' : ''}
+                    
+                    ${data.ticket_id ? `<a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
+                    
+                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0" onclick="showPayloadModal('${escapeHtml(JSON.stringify(data.payload))}')">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
             `;
 
-            if (data.payload) {
-                logEntry.addEventListener('click', (e) => {
-                    // Prevent modal from opening if a link (ticket or help) was clicked
-                    if (e.target.tagName !== 'A' && e.target.closest('A') === null) {
-                        currentDashboardPayload = data.payload;
-                        isDashboardPretty = true;
-                        updateDashboardPayloadDisplay();
-                        new bootstrap.Modal(document.getElementById('payloadModal')).show();
-                    }
-                });
-            }
+            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light`;
+            logEntry.innerHTML = flowHtml;
 
             logContainer.appendChild(logEntry);
             logContainer.scrollTop = logContainer.scrollHeight;
 
-            if (window.notifyFailure) window.notifyFailure(data);
+            if (window.notifyFailure && isError) window.notifyFailure(data);
 
             while (logContainer.childNodes.length > 200) {
                 logContainer.removeChild(logContainer.firstChild);
@@ -808,6 +852,57 @@
         } catch (e) {
             showToast('Error toggling maintenance mode', 'danger');
         }
+    }
+
+    function showPayloadModal(payloadStr) {
+        try {
+            // Handle potential double-encoding or already object
+            let payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
+            currentDashboardPayload = payload;
+            isDashboardPretty = true;
+            updateDashboardPayloadDisplay();
+            new bootstrap.Modal(document.getElementById('payloadModal')).show();
+        } catch (e) {
+            console.error("Payload parse error", e);
+            showToast('Error displaying payload', 'danger');
+        }
+    }
+
+    function showSecurityHud(id, status, message, lastIp, rotatedAt) {
+        const modal = new bootstrap.Modal(document.getElementById('securityHudModal'));
+        const icon = document.getElementById('hud-status-icon');
+        const text = document.getElementById('hud-status-text');
+        const msg = document.getElementById('hud-message');
+        const ip = document.getElementById('hud-last-ip');
+        const age = document.getElementById('hud-token-age');
+
+        // Status Logic
+        if (status === 'OK') {
+            icon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+            text.className = 'fw-bold text-success';
+            text.textContent = 'System Healthy';
+        } else if (status === 'ERROR') {
+            icon.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i>';
+            text.className = 'fw-bold text-danger';
+            text.textContent = 'Security Alert';
+        } else {
+            icon.innerHTML = '<i class="fas fa-info-circle text-warning"></i>';
+            text.className = 'fw-bold text-warning';
+            text.textContent = 'Warning';
+        }
+
+        msg.textContent = message || 'No active security notifications.';
+        ip.textContent = lastIp || 'Unknown';
+
+        if (rotatedAt && rotatedAt !== 'None') {
+            const rotatedDate = new Date(rotatedAt);
+            const days = Math.floor((new Date() - rotatedDate) / (1000 * 60 * 60 * 24));
+            age.textContent = `${days} days ago`;
+        } else {
+            age.textContent = 'Never rotated';
+        }
+
+        modal.show();
     }
 
     // Unified initialization for first-load and HTMX swaps

@@ -58,6 +58,25 @@
                                     style="font-size: 1.1rem; font-weight: 600;">Prefix: Source Name</div>
                             </div>
 
+                            {% if config and config.id %}
+                            <div class="mb-4">
+                                <label class="form-label fw-bold text-light">Endpoint URL</label>
+                                <div class="input-group input-group-sm">
+                                    <input type="text"
+                                        class="form-control bg-dark border-secondary text-info font-monospace" readonly
+                                        value="{{ base_url }}/w/{{ config.id }}">
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" title="Copy URL">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="btn btn-primary fw-bold" type="button"
+                                        onclick="showSetupGuide('{{ config.id }}')">
+                                        <i class="fas fa-magic me-1"></i>Setup Guide
+                                    </button>
+                                </div>
+                            </div>
+                            {% endif %}
+
                             <div
                                 class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 border-secondary border-opacity-25">
                                 <h5 class="fw-bold mb-0 text-light">Core Settings</h5>
@@ -492,7 +511,110 @@
     </div>
 </div>
 
+
+<!-- Setup Guide Modal -->
+<div class="modal fade" id="setupGuideModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content glass-card border-0">
+            <div class="modal-header border-bottom border-light border-opacity-10">
+                <h5 class="modal-title text-white"><i class="fas fa-rocket me-2 text-primary"></i>Smart Setup Guide</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary small mb-4">
+                    Send a test payload to validate your configuration. Copy the code below to your terminal or script.
+                </p>
+
+                <ul class="nav nav-tabs border-secondary border-opacity-25 mb-3" id="snippetTabs">
+                    <li class="nav-item">
+                        <button class="nav-link active small text-light" data-bs-toggle="tab" data-bs-target="#curl-tab"
+                            type="button">cURL</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link small text-light" data-bs-toggle="tab" data-bs-target="#python-tab"
+                            type="button">Python</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link small text-light" data-bs-toggle="tab" data-bs-target="#powershell-tab"
+                            type="button">PowerShell</button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="snippetTabContent">
+                    <div class="tab-pane fade show active" id="curl-tab">
+                        <pre
+                            class="bg-black bg-opacity-50 p-3 rounded border border-secondary border-opacity-25"><code class="language-bash text-info" id="code-curl"></code></pre>
+                    </div>
+                    <div class="tab-pane fade" id="python-tab">
+                        <pre
+                            class="bg-black bg-opacity-50 p-3 rounded border border-secondary border-opacity-25"><code class="language-python text-warning" id="code-python"></code></pre>
+                    </div>
+                    <div class="tab-pane fade" id="powershell-tab">
+                        <pre
+                            class="bg-black bg-opacity-50 p-3 rounded border border-secondary border-opacity-25"><code class="language-powershell text-success" id="code-powershell"></code></pre>
+                    </div>
+                </div>
+
+                <div class="mt-3 text-end">
+                    <button class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+
+    function showSetupGuide(id) {
+        const modal = new bootstrap.Modal(document.getElementById('setupGuideModal'));
+        const url = `{{ base_url }}/w/${id}`;
+        // Get token if visible/known (hidden field?)
+        const tokenDisplay = document.getElementById('bearer-token-display');
+        const token = (tokenDisplay && tokenDisplay.value !== '****************') ? tokenDisplay.value : 'YOUR_BEARER_TOKEN';
+
+        const payload = {
+            "title": "Test Alert from Setup Guide",
+            "message": "This is a test notification to verify HookWise connectivity.",
+            "status": "firing",
+            "severity": "critical"
+        };
+        const jsonPayload = JSON.stringify(payload, null, 2);
+
+        // Curl
+        const curl = `curl -X POST "${url}" \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${token}" \\
+  -d '${JSON.stringify(payload)}'`;
+        document.getElementById('code-curl').textContent = curl;
+
+        // Python
+        const python = `import requests
+
+url = "${url}"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer ${token}"
+}
+payload = ${jsonPayload}
+
+response = requests.post(url, json=payload, headers=headers)
+print(response.status_code, response.text)`;
+        document.getElementById('code-python').textContent = python;
+
+        // PowerShell
+        const ps = `$url = "${url}"
+$headers = @{
+    "Content-Type" = "application/json"
+    "Authorization" = "Bearer ${token}"
+}
+$body = '${JSON.stringify(payload).replace(/'/g, "''")}'
+
+Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
+        document.getElementById('code-powershell').textContent = ps;
+
+        modal.show();
+    }
+
     const undoStack = [];
     const redoStack = [];
     let isUndoing = false;

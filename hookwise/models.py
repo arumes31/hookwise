@@ -62,6 +62,12 @@ class WebhookConfig(Base):
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
     global_routing_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # Health & Security
+    config_health_status = db.Column(db.String(20), default="OK")  # OK, WARNING, ERROR
+    config_health_message = db.Column(db.String(255), nullable=True)
+    last_ip = db.Column(db.String(45), nullable=True)
+
     last_rotated_at = db.Column(db.DateTime)
     bearer_auth_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -93,6 +99,9 @@ class WebhookConfig(Base):
             "ai_rca_enabled": self.ai_rca_enabled,
             "ai_prompt_template": self.ai_prompt_template,
             "global_routing_enabled": self.global_routing_enabled,
+            "config_health_status": self.config_health_status,
+            "config_health_message": self.config_health_message,
+            "last_ip": self.last_ip,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
         }
