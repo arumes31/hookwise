@@ -1251,8 +1251,8 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         preview.textContent = (prefix ? prefix + ' ' : '') + 'Source Name';
     }
 
-    function initFormSelects(content) {
-        const form = content.getElementById ? content.getElementById('endpoint-form') : document.getElementById('endpoint-form');
+    function initFormSelects() {
+        const form = document.getElementById('endpoint-form');
         if (!form || form.dataset.initialized) return;
         form.dataset.initialized = 'true';
 
@@ -1282,6 +1282,9 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         const itemHidden = document.getElementById('item_hidden')?.value || '';
         const priorityHidden = document.getElementById('priority_hidden')?.value || '';
 
+        // Cached boards list so loadBoardDetails doesn't re-fetch on every call
+        let cachedBoards = null;
+
         const loadBoardDetails = async (boardName) => {
             if (!boardName) {
                 [statusSelect, closeStatusSelect, typeSelect, subtypeSelect, itemSelect].forEach(s => s.innerHTML = '<option value="">-- Select Board --</option>');
@@ -1289,9 +1292,11 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             }
 
             try {
-                const boardsRes = await fetch('/api/cw/boards');
-                const boards = await boardsRes.json();
-                const board = boards.find(b => b.name === boardName);
+                if (!cachedBoards) {
+                    const boardsRes = await fetch('/api/cw/boards');
+                    cachedBoards = await boardsRes.json();
+                }
+                const board = cachedBoards.find(b => b.name === boardName);
                 if (!board) return;
 
                 const fetchAndPopulate = async (url, select, hiddenVal) => {
@@ -1328,20 +1333,20 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             } catch (e) { console.error('Error parsing maintenance windows', e); }
         }
 
-        // Fetch Boards
+        // Fetch Boards and Priorities, then initialize routing rules after selects are populated
         (async () => {
             try {
                 const res = await fetch('/api/cw/boards');
-                const boards = await res.json();
+                cachedBoards = await res.json();
                 boardSelect.innerHTML = '<option value="">-- Use Default --</option>';
-                boards.forEach(b => {
+                cachedBoards.forEach(b => {
                     const opt = document.createElement('option');
                     opt.value = b.name;
                     opt.textContent = b.name;
                     if (b.name === boardHidden) opt.selected = true;
                     boardSelect.appendChild(opt);
                 });
-                if (boardHidden) loadBoardDetails(boardHidden);
+                if (boardHidden) await loadBoardDetails(boardHidden);
             } catch (e) {
                 boardSelect.innerHTML = '<option value="">Error loading boards</option>';
             }
@@ -1360,6 +1365,15 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 });
             } catch (e) {
                 prioritySelect.innerHTML = '<option value="">Error loading priorities</option>';
+            }
+
+            // Initialize Routing Rules only AFTER boards/priorities are populated
+            const rulesRaw = document.getElementById('routing_rules').value;
+            if (rulesRaw) {
+                try {
+                    const rules = JSON.parse(rulesRaw);
+                    rules.forEach(r => addRoutingRule(r));
+                } catch (e) { console.error('Error parsing routing rules', e); }
             }
         })();
 
@@ -1392,15 +1406,6 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             }
         }
 
-        // Initialize Routing Rules
-        const rulesRaw = document.getElementById('routing_rules').value;
-        if (rulesRaw) {
-            try {
-                const rules = JSON.parse(rulesRaw);
-                rules.forEach(r => addRoutingRule(r));
-            } catch (e) { console.error('Error parsing routing rules', e); }
-        }
-
         // Initial load (first 50)
         fetchCompanies();
 
@@ -1420,14 +1425,15 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
 
     // Use htmx.onLoad for HTMX navigation compatibility (fires on both first load and HTMX swaps)
     if (typeof htmx !== 'undefined') {
-        htmx.onLoad(function (content) {
-            initFormSelects(content);
+        htmx.onLoad(function () {
+            initFormSelects();
         });
     } else {
         document.addEventListener('DOMContentLoaded', function () {
-            initFormSelects(document);
+            initFormSelects();
         });
     }
+
 
 </script>
 {% endblock %}
