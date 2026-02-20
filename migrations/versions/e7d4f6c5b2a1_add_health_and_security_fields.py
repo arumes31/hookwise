@@ -17,7 +17,10 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("webhook_config", sa.Column("config_health_status", sa.String(length=20), server_default="OK", nullable=True))
+    op.add_column(
+        "webhook_config",
+        sa.Column("config_health_status", sa.String(length=20), server_default="OK", nullable=True),
+    )
     op.add_column("webhook_config", sa.Column("config_health_message", sa.String(length=255), nullable=True))
     op.add_column("webhook_config", sa.Column("last_ip", sa.String(length=45), nullable=True))
 
