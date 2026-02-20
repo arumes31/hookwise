@@ -237,12 +237,8 @@
             </div>
         </div>
     </div>
-</div>
 
-{% endblock %}
-
-{% block scripts %}
-<script id="server-data" type="application/json">
+    <script id="server-data" type="application/json">
     {
         "debugMode": {{ debug_mode | tojson }},
         "currentPage": {{ pagination.page | tojson }},
@@ -250,393 +246,391 @@
     }
 </script>
 
-<script>
-    // Server-side data for scripts
-    const SERVER_DATA = JSON.parse(document.getElementById('server-data').textContent);
+    <script>
+        // Server-side data for scripts
+        const SERVER_DATA = JSON.parse(document.getElementById('server-data').textContent);
 
-    let compareLeft = null;
-    let currentRawPayload = '';
-    let currentRawHeaders = '';
-    let isPretty = true;
-    let showingHeaders = false;
+        let compareLeft = null;
+        let currentRawPayload = '';
+        let currentRawHeaders = '';
+        let isPretty = true;
+        let showingHeaders = false;
 
-    function comparePayload(id) {
-        const payload = JSON.parse(JSON.parse(event.target.dataset.payload));
-        if (!compareLeft) {
-            compareLeft = payload;
-            showToast('Selected for comparison. Now click Compare on another entry.', 'info');
-        } else {
-            const leftStr = JSON.stringify(compareLeft, null, 2);
-            const rightStr = JSON.stringify(payload, null, 2);
-            document.getElementById('compare-left').innerHTML = highlightDiff(leftStr, rightStr);
-            document.getElementById('compare-right').innerHTML = highlightDiff(rightStr, leftStr);
-            new bootstrap.Modal(document.getElementById('compareModal')).show();
-            compareLeft = null;
+        function comparePayload(id) {
+            const payload = JSON.parse(JSON.parse(event.target.dataset.payload));
+            if (!compareLeft) {
+                compareLeft = payload;
+                showToast('Selected for comparison. Now click Compare on another entry.', 'info');
+            } else {
+                const leftStr = JSON.stringify(compareLeft, null, 2);
+                const rightStr = JSON.stringify(payload, null, 2);
+                document.getElementById('compare-left').innerHTML = highlightDiff(leftStr, rightStr);
+                document.getElementById('compare-right').innerHTML = highlightDiff(rightStr, leftStr);
+                new bootstrap.Modal(document.getElementById('compareModal')).show();
+                compareLeft = null;
+            }
         }
-    }
 
-    function highlightDiff(str, other) {
-        const lines = str.split('\n');
-        const otherLines = other.split('\n');
-        return lines.map((line, i) => {
-            const isDiff = line !== otherLines[i];
-            return `<div class="${isDiff ? 'bg-danger bg-opacity-25' : ''}">${escapeHtml(line)}</div>`;
-        }).join('');
-    }
+        function highlightDiff(str, other) {
+            const lines = str.split('\n');
+            const otherLines = other.split('\n');
+            return lines.map((line, i) => {
+                const isDiff = line !== otherLines[i];
+                return `<div class="${isDiff ? 'bg-danger bg-opacity-25' : ''}">${escapeHtml(line)}</div>`;
+            }).join('');
+        }
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
 
-    function toggleAllLogs() {
-        const checkAll = document.getElementById('check-all-logs');
-        document.querySelectorAll('.log-check').forEach(c => c.checked = checkAll.checked);
-        updateBulkHistory();
-    }
+        function toggleAllLogs() {
+            const checkAll = document.getElementById('check-all-logs');
+            document.querySelectorAll('.log-check').forEach(c => c.checked = checkAll.checked);
+            updateBulkHistory();
+        }
 
-    function updateBulkHistory() {
-        const checked = document.querySelectorAll('.log-check:checked').length;
-        document.getElementById('bulk-history-controls').classList.toggle('d-none', checked === 0);
-    }
+        function updateBulkHistory() {
+            const checked = document.querySelectorAll('.log-check:checked').length;
+            document.getElementById('bulk-history-controls').classList.toggle('d-none', checked === 0);
+        }
 
-    async function bulkReplay() {
-        const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
-        if (!ids.length) return;
-        showToast(`Queuing ${ids.length} replays...`, 'info');
-        try {
-            for (const id of ids) {
-                const res = await fetch(`/history/replay/${id}`, { method: 'POST' });
+        async function bulkReplay() {
+            const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
+            if (!ids.length) return;
+            showToast(`Queuing ${ids.length} replays...`, 'info');
+            try {
+                for (const id of ids) {
+                    const res = await fetch(`/history/replay/${id}`, { method: 'POST' });
+                    if (!res.ok) {
+                        const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
+                        showToast(`Error replaying ${id}: ` + (error.message || error.status), 'danger');
+                        return; // Stop further replays on error
+                    }
+                }
+                showToast('All replays queued', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } catch (e) {
+                showToast('Network error during replay: ' + e.message, 'danger');
+            }
+        }
+
+        async function bulkDeleteLogs() {
+            const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
+            if (!ids.length) return;
+            if (!await hwConfirm(`Delete ${ids.length} log entries?`, { title: 'Bulk Delete', okText: 'Delete' })) return;
+            try {
+                const res = await fetch('/history/bulk-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
                 if (!res.ok) {
                     const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
-                    showToast(`Error replaying ${id}: ` + (error.message || error.status), 'danger');
-                    return; // Stop further replays on error
+                    showToast('Error deleting logs: ' + (error.message || error.status), 'danger');
+                    return;
                 }
+                showToast('Logs deleted', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } catch (e) {
+                showToast('Network error during deletion: ' + e.message, 'danger');
             }
-            showToast('All replays queued', 'success');
-            setTimeout(() => window.location.reload(), 1000);
-        } catch (e) {
-            showToast('Network error during replay: ' + e.message, 'danger');
         }
-    }
 
-    async function bulkDeleteLogs() {
-        const ids = Array.from(document.querySelectorAll('.log-check:checked')).map(c => c.dataset.id);
-        if (!ids.length) return;
-        if (!await hwConfirm(`Delete ${ids.length} log entries?`, { title: 'Bulk Delete', okText: 'Delete' })) return;
-        try {
-            const res = await fetch('/history/bulk-delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids })
+        async function deleteAllLogs() {
+            if (!await hwConfirm('Are you SURE you want to delete ALL history logs?', { title: 'Purge All Logs', okText: 'Purge' })) return;
+            fetch('/history/delete-all', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showToast('All logs deleted', 'success');
+                        setTimeout(() => window.location.reload(), 1000);
+                    }
+                });
+        }
+
+        function exportCSV() {
+            const rows = [["Timestamp", "Config", "Status", "Ticket", "Request ID"]];
+            document.querySelectorAll('table tbody tr').forEach(tr => {
+                const cells = [];
+                const tds = tr.querySelectorAll('td');
+                cells.push(`"${tds[1].textContent.trim()}"`);
+                cells.push(`"${tds[2].textContent.trim()}"`);
+                cells.push(`"${tds[3].textContent.trim()}"`);
+                cells.push(`"${tds[6].textContent.trim()}"`);
+                cells.push(`"${tds[7].dataset.requestId || tds[7].textContent.trim()}"`);
+                rows.push(cells.join(','));
             });
-            if (!res.ok) {
-                const error = await res.json().catch(() => ({ message: 'HTTP ' + res.status }));
-                showToast('Error deleting logs: ' + (error.message || error.status), 'danger');
-                return;
-            }
-            showToast('Logs deleted', 'success');
-            setTimeout(() => window.location.reload(), 1000);
-        } catch (e) {
-            showToast('Network error during deletion: ' + e.message, 'danger');
+            const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `hookwise_history_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
-    }
 
-    async function deleteAllLogs() {
-        if (!await hwConfirm('Are you SURE you want to delete ALL history logs?', { title: 'Purge All Logs', okText: 'Purge' })) return;
-        fetch('/history/delete-all', { method: 'POST' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('All logs deleted', 'success');
-                    setTimeout(() => window.location.reload(), 1000);
-                }
-            });
-    }
-
-    function exportCSV() {
-        const rows = [["Timestamp", "Config", "Status", "Ticket", "Request ID"]];
-        document.querySelectorAll('table tbody tr').forEach(tr => {
-            const cells = [];
-            const tds = tr.querySelectorAll('td');
-            cells.push(`"${tds[1].textContent.trim()}"`);
-            cells.push(`"${tds[2].textContent.trim()}"`);
-            cells.push(`"${tds[3].textContent.trim()}"`);
-            cells.push(`"${tds[6].textContent.trim()}"`);
-            cells.push(`"${tds[7].dataset.requestId || tds[7].textContent.trim()}"`);
-            rows.push(cells.join(','));
-        });
-        const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `hookwise_history_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
-    function searchHistory() {
-        const term = document.getElementById('history-search').value;
-        const from = document.getElementById('date-from').value;
-        const to = document.getElementById('date-to').value;
-        window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${from}&date_to=${to}`;
-    }
-
-    function viewPayload(id) {
-        const btn = event.currentTarget;
-        currentRawPayload = btn.getAttribute('data-payload');
-        currentRawHeaders = btn.getAttribute('data-headers');
-        const matchedRule = btn.getAttribute('data-rule');
-        const ruleInfo = document.getElementById('matched-rule-info');
-        if (matchedRule) {
-            ruleInfo.classList.remove('d-none');
-            document.getElementById('rule-text').textContent = matchedRule;
-        } else {
-            ruleInfo.classList.add('d-none');
+        function searchHistory() {
+            const term = document.getElementById('history-search').value;
+            const from = document.getElementById('date-from').value;
+            const to = document.getElementById('date-to').value;
+            window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${from}&date_to=${to}`;
         }
-        isPretty = true;
-        showingHeaders = false;
-        updatePayloadDisplay();
-        new bootstrap.Modal(document.getElementById('payloadModal')).show();
-    }
 
-    function updatePayloadDisplay() {
-        const display = document.getElementById('payload-display');
-        const toggleBtn = document.getElementById('pretty-toggle');
-        const headersBtn = document.getElementById('headers-toggle');
-        const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
-        try {
-            const parsed = JSON.parse(JSON.parse(dataToDisplay || '{}'));
-            toggleBtn.style.display = '';
-            if (isPretty) {
-                display.textContent = JSON.stringify(parsed, null, 2);
-                toggleBtn.textContent = 'Minified';
+        function viewPayload(id) {
+            const btn = event.currentTarget;
+            currentRawPayload = btn.getAttribute('data-payload');
+            currentRawHeaders = btn.getAttribute('data-headers');
+            const matchedRule = btn.getAttribute('data-rule');
+            const ruleInfo = document.getElementById('matched-rule-info');
+            if (matchedRule) {
+                ruleInfo.classList.remove('d-none');
+                document.getElementById('rule-text').textContent = matchedRule;
             } else {
-                display.textContent = JSON.stringify(parsed);
-                toggleBtn.textContent = 'Pretty';
+                ruleInfo.classList.add('d-none');
             }
-        } catch (e) {
-            display.textContent = dataToDisplay;
-            toggleBtn.style.display = 'none';
+            isPretty = true;
+            showingHeaders = false;
+            updatePayloadDisplay();
+            new bootstrap.Modal(document.getElementById('payloadModal')).show();
         }
-        headersBtn.textContent = showingHeaders ? 'Show Payload' : 'Show Headers';
-        Prism.highlightElement(display);
-    }
 
-    async function replayWebhook(id) {
-        if (!SERVER_DATA.debugMode && !await hwConfirm('Re-process this webhook?', { title: 'Re-run Webhook', okText: 'Re-run' })) return;
-        fetch(`/history/replay/${id}`, { method: 'POST' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('Replay queued!', 'success');
+        function updatePayloadDisplay() {
+            const display = document.getElementById('payload-display');
+            const toggleBtn = document.getElementById('pretty-toggle');
+            const headersBtn = document.getElementById('headers-toggle');
+            const dataToDisplay = showingHeaders ? currentRawHeaders : currentRawPayload;
+            try {
+                const parsed = JSON.parse(JSON.parse(dataToDisplay || '{}'));
+                toggleBtn.style.display = '';
+                if (isPretty) {
+                    display.textContent = JSON.stringify(parsed, null, 2);
+                    toggleBtn.textContent = 'Minified';
                 } else {
-                    showToast('Error: ' + data.message, 'danger');
+                    display.textContent = JSON.stringify(parsed);
+                    toggleBtn.textContent = 'Pretty';
                 }
-            });
-    }
-
-    async function deleteHistory(id) {
-        if (!await hwConfirm('Delete this log entry?', { title: 'Delete Log', okText: 'Delete' })) return;
-        fetch(`/history/delete/${id}`, { method: 'POST' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    window.location.reload();
-                }
-            });
-    }
-
-    function copyModalPayload() {
-        const text = document.getElementById('payload-display').textContent;
-        navigator.clipboard.writeText(text);
-        showToast('Payload copied to clipboard!', 'success');
-    }
-
-    document.getElementById('history-search').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') searchHistory();
-    });
-
-    document.getElementById('pretty-toggle').addEventListener('click', () => {
-        isPretty = !isPretty;
-        updatePayloadDisplay();
-    });
-
-    document.getElementById('headers-toggle').addEventListener('click', () => {
-        showingHeaders = !showingHeaders;
-        updatePayloadDisplay();
-    });
-
-    htmx.onLoad(function (elt) {
-        const searchInput = document.getElementById('history-search');
-        if (searchInput) {
-            searchInput.value = "{{ search or '' }}";
-            document.getElementById('date-from').value = "{{ date_from or '' }}";
-            document.getElementById('date-to').value = "{{ date_to or '' }}";
+            } catch (e) {
+                display.textContent = dataToDisplay;
+                toggleBtn.style.display = 'none';
+            }
+            headersBtn.textContent = showingHeaders ? 'Show Payload' : 'Show Headers';
+            Prism.highlightElement(display);
         }
 
-        const tableBody = document.querySelector('table tbody');
-        if (!tableBody || tableBody.dataset.initialized) return;
-        tableBody.dataset.initialized = 'true';
-        let currentPage = SERVER_DATA.currentPage;
-        const hasNext = SERVER_DATA.hasNext;
-
-
-
-        const sentinel = document.getElementById('infinite-sentinel');
-        const standardPagination = document.getElementById('standard-pagination');
-
-        if (hasNext) {
-            sentinel.classList.remove('d-none');
-            standardPagination.classList.add('d-none');
-            const observer = new IntersectionObserver(async (entries) => {
-                if (entries[0].isIntersecting) {
-                    currentPage++;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('page', currentPage);
-                    url.searchParams.set('partial', 'true');
-                    try {
-                        const res = await fetch(url);
-                        const html = await res.text();
-                        if (html.trim()) {
-                            tableBody.insertAdjacentHTML('beforeend', html);
-                        } else {
-                            observer.unobserve(sentinel);
-                            sentinel.classList.add('d-none');
-                        }
-                    } catch (e) { console.error('Error fetching next page', e); }
-                }
-            }, { threshold: 1.0 });
-            observer.observe(sentinel);
+        async function replayWebhook(id) {
+            if (!SERVER_DATA.debugMode && !await hwConfirm('Re-process this webhook?', { title: 'Re-run Webhook', okText: 'Re-run' })) return;
+            fetch(`/history/replay/${id}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showToast('Replay queued!', 'success');
+                    } else {
+                        showToast('Error: ' + data.message, 'danger');
+                    }
+                });
         }
 
-        const socket = getSocket();
-        if (socket) {
-            socket.off('new_log');
+        async function deleteHistory(id) {
+            if (!await hwConfirm('Delete this log entry?', { title: 'Delete Log', okText: 'Delete' })) return;
+            fetch(`/history/delete/${id}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        window.location.reload();
+                    }
+                });
         }
 
-        const liveToggle = document.getElementById('live-tail-toggle');
-        if (socket) {
-            socket.on('new_log', (data) => {
-                if (!liveToggle.checked) return;
-                const tr = document.createElement('tr');
-                tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
-
-                // Checkbox
-                const tdCheck = document.createElement('td');
-                tdCheck.className = 'ps-4 py-3';
-                const input = document.createElement('input');
-                input.type = 'checkbox';
-                input.className = 'log-check';
-                input.dataset.id = data.id;
-                input.onchange = updateBulkHistory;
-                tdCheck.appendChild(input);
-
-                // Timestamp
-                const tdTs = document.createElement('td');
-                tdTs.className = 'py-3 text-secondary font-monospace';
-                tdTs.textContent = new Date(data.timestamp).toLocaleString();
-
-                // Endpoint
-                const tdConfig = document.createElement('td');
-                tdConfig.className = 'py-3 fw-bold';
-                tdConfig.textContent = data.config_name;
-
-                // Status
-                const tdStatus = document.createElement('td');
-                tdStatus.className = 'py-3';
-                const badge = document.createElement('span');
-                const levelClass = data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger';
-                badge.className = `badge bg-${levelClass} bg-opacity-10 text-${levelClass} border border-${levelClass} border-opacity-25`;
-                badge.textContent = data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase();
-                tdStatus.appendChild(badge);
-
-                // Source IP
-                const tdIp = document.createElement('td');
-                tdIp.className = 'py-3 text-secondary font-monospace small';
-                tdIp.textContent = data.source_ip || '-';
-
-                // Retry
-                const tdRetry = document.createElement('td');
-                tdRetry.className = 'py-3';
-                if (data.retry_count > 0) {
-                    const retryBadge = document.createElement('span');
-                    retryBadge.className = 'badge bg-warning text-dark';
-                    retryBadge.style.fontSize = '0.65rem';
-                    retryBadge.textContent = data.retry_count;
-                    tdRetry.appendChild(retryBadge);
-                } else {
-                    const span = document.createElement('span');
-                    span.className = 'lightgrey opacity-50';
-                    span.textContent = '-';
-                    tdRetry.appendChild(span);
-                }
-
-                // Ticket
-                const tdTicket = document.createElement('td');
-                tdTicket.className = 'py-3 font-monospace';
-                if (data.ticket_id) {
-                    const a = document.createElement('a');
-                    a.href = `{{ cw_url }}/service/tickets/${data.ticket_id}`;
-                    a.target = '_blank';
-                    a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold';
-                    a.style.fontSize = '0.7rem';
-                    a.textContent = `#${data.ticket_id}`;
-                    tdTicket.appendChild(a);
-                } else {
-                    const span = document.createElement('span');
-                    span.className = 'lightgrey opacity-50';
-                    span.textContent = '-';
-                    tdTicket.appendChild(span);
-                }
-
-                // Request ID
-                const tdReqId = document.createElement('td');
-                tdReqId.className = 'py-3 text-secondary font-monospace small';
-                const fullId = data.request_id || data.id || '';
-                tdReqId.dataset.requestId = fullId;
-                const reqSpan = document.createElement('span');
-                reqSpan.className = 'user-select-all';
-                reqSpan.textContent = (fullId.toString().substring(0, 16)) + '...';
-                tdReqId.appendChild(reqSpan);
-
-                // Matched Rule
-                const tdRule = document.createElement('td');
-                tdRule.className = 'py-3';
-                if (data.matched_rule) {
-                    const ruleBadge = document.createElement('span');
-                    ruleBadge.className = 'badge bg-info bg-opacity-10 text-info border border-info border-opacity-25';
-                    ruleBadge.dataset.tooltip = data.matched_rule;
-                    ruleBadge.textContent = 'RULE MATCH';
-                    tdRule.appendChild(ruleBadge);
-                } else {
-                    const span = document.createElement('span');
-                    span.className = 'lightgrey opacity-50';
-                    span.textContent = '-';
-                    tdRule.appendChild(span);
-                }
-
-                // Actions
-                const tdActions = document.createElement('td');
-                tdActions.className = 'pe-4 py-3 text-end';
-                const group = document.createElement('div');
-                group.className = 'btn-group btn-group-sm';
-                const reloadBtn = document.createElement('button');
-                reloadBtn.className = 'btn btn-outline-info';
-                reloadBtn.onclick = () => window.location.reload();
-                reloadBtn.textContent = 'Refresh to View';
-                group.appendChild(reloadBtn);
-                tdActions.appendChild(group);
-
-                // Append cells in order
-                [tdCheck, tdTs, tdConfig, tdStatus, tdIp, tdRetry, tdTicket, tdReqId, tdRule, tdActions].forEach(td => tr.appendChild(td));
-
-                tableBody.insertBefore(tr, tableBody.firstChild);
-                if (tableBody.children.length > 50) tableBody.lastChild.remove();
-            });
+        function copyModalPayload() {
+            const text = document.getElementById('payload-display').textContent;
+            navigator.clipboard.writeText(text);
+            showToast('Payload copied to clipboard!', 'success');
         }
-    });
-</script>
-{% endblock %}
+
+        document.getElementById('history-search').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') searchHistory();
+        });
+
+        document.getElementById('pretty-toggle').addEventListener('click', () => {
+            isPretty = !isPretty;
+            updatePayloadDisplay();
+        });
+
+        document.getElementById('headers-toggle').addEventListener('click', () => {
+            showingHeaders = !showingHeaders;
+            updatePayloadDisplay();
+        });
+
+        htmx.onLoad(function (elt) {
+            const searchInput = document.getElementById('history-search');
+            if (searchInput) {
+                searchInput.value = "{{ search or '' }}";
+                document.getElementById('date-from').value = "{{ date_from or '' }}";
+                document.getElementById('date-to').value = "{{ date_to or '' }}";
+            }
+
+            const tableBody = document.querySelector('table tbody');
+            if (!tableBody || tableBody.dataset.initialized) return;
+            tableBody.dataset.initialized = 'true';
+            let currentPage = SERVER_DATA.currentPage;
+            const hasNext = SERVER_DATA.hasNext;
+
+            const sentinel = document.getElementById('infinite-sentinel');
+            const standardPagination = document.getElementById('standard-pagination');
+
+            if (hasNext && sentinel) {
+                sentinel.classList.remove('d-none');
+                standardPagination.classList.add('d-none');
+                const observer = new IntersectionObserver(async (entries) => {
+                    if (entries[0].isIntersecting) {
+                        currentPage++;
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('page', currentPage);
+                        url.searchParams.set('partial', 'true');
+                        try {
+                            const res = await fetch(url);
+                            const html = await res.text();
+                            if (html.trim()) {
+                                tableBody.insertAdjacentHTML('beforeend', html);
+                            } else {
+                                observer.unobserve(sentinel);
+                                sentinel.classList.add('d-none');
+                            }
+                        } catch (e) { console.error('Error fetching next page', e); }
+                    }
+                }, { threshold: 1.0 });
+                observer.observe(sentinel);
+            }
+
+            const socket = getSocket();
+            if (socket) {
+                socket.off('new_log');
+            }
+
+            const liveToggle = document.getElementById('live-tail-toggle');
+            if (socket) {
+                socket.on('new_log', (data) => {
+                    if (!liveToggle.checked) return;
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
+
+                    // Checkbox
+                    const tdCheck = document.createElement('td');
+                    tdCheck.className = 'ps-4 py-3';
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.className = 'log-check';
+                    input.dataset.id = data.id;
+                    input.onchange = updateBulkHistory;
+                    tdCheck.appendChild(input);
+
+                    // Timestamp
+                    const tdTs = document.createElement('td');
+                    tdTs.className = 'py-3 text-secondary font-monospace';
+                    tdTs.textContent = new Date(data.timestamp).toLocaleString();
+
+                    // Endpoint
+                    const tdConfig = document.createElement('td');
+                    tdConfig.className = 'py-3 fw-bold';
+                    tdConfig.textContent = data.config_name;
+
+                    // Status
+                    const tdStatus = document.createElement('td');
+                    tdStatus.className = 'py-3';
+                    const badge = document.createElement('span');
+                    const levelClass = data.level === 'success' ? 'success' : data.level === 'warning' ? 'warning' : 'danger';
+                    badge.className = `badge bg-${levelClass} bg-opacity-10 text-${levelClass} border border-${levelClass} border-opacity-25`;
+                    badge.textContent = data.level === 'success' ? 'PROCESSED' : data.level.toUpperCase();
+                    tdStatus.appendChild(badge);
+
+                    // Source IP
+                    const tdIp = document.createElement('td');
+                    tdIp.className = 'py-3 text-secondary font-monospace small';
+                    tdIp.textContent = data.source_ip || '-';
+
+                    // Retry
+                    const tdRetry = document.createElement('td');
+                    tdRetry.className = 'py-3';
+                    if (data.retry_count > 0) {
+                        const retryBadge = document.createElement('span');
+                        retryBadge.className = 'badge bg-warning text-dark';
+                        retryBadge.style.fontSize = '0.65rem';
+                        retryBadge.textContent = data.retry_count;
+                        tdRetry.appendChild(retryBadge);
+                    } else {
+                        const span = document.createElement('span');
+                        span.className = 'lightgrey opacity-50';
+                        span.textContent = '-';
+                        tdRetry.appendChild(span);
+                    }
+
+                    // Ticket
+                    const tdTicket = document.createElement('td');
+                    tdTicket.className = 'py-3 font-monospace';
+                    if (data.ticket_id) {
+                        const a = document.createElement('a');
+                        a.href = `{{ cw_url }}/service/tickets/${data.ticket_id}`;
+                        a.target = '_blank';
+                        a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold';
+                        a.style.fontSize = '0.7rem';
+                        a.textContent = `#${data.ticket_id}`;
+                        tdTicket.appendChild(a);
+                    } else {
+                        const span = document.createElement('span');
+                        span.className = 'lightgrey opacity-50';
+                        span.textContent = '-';
+                        tdTicket.appendChild(span);
+                    }
+
+                    // Request ID
+                    const tdReqId = document.createElement('td');
+                    tdReqId.className = 'py-3 text-secondary font-monospace small';
+                    const fullId = data.request_id || data.id || '';
+                    tdReqId.dataset.requestId = fullId;
+                    const reqSpan = document.createElement('span');
+                    reqSpan.className = 'user-select-all';
+                    reqSpan.textContent = (fullId.toString().substring(0, 16)) + '...';
+                    tdReqId.appendChild(reqSpan);
+
+                    // Matched Rule
+                    const tdRule = document.createElement('td');
+                    tdRule.className = 'py-3';
+                    if (data.matched_rule) {
+                        const ruleBadge = document.createElement('span');
+                        ruleBadge.className = 'badge bg-info bg-opacity-10 text-info border border-info border-opacity-25';
+                        ruleBadge.dataset.tooltip = data.matched_rule;
+                        ruleBadge.textContent = 'RULE MATCH';
+                        tdRule.appendChild(ruleBadge);
+                    } else {
+                        const span = document.createElement('span');
+                        span.className = 'lightgrey opacity-50';
+                        span.textContent = '-';
+                        tdRule.appendChild(span);
+                    }
+
+                    // Actions
+                    const tdActions = document.createElement('td');
+                    tdActions.className = 'pe-4 py-3 text-end';
+                    const group = document.createElement('div');
+                    group.className = 'btn-group btn-group-sm';
+                    const reloadBtn = document.createElement('button');
+                    reloadBtn.className = 'btn btn-outline-info';
+                    reloadBtn.onclick = () => window.location.reload();
+                    reloadBtn.textContent = 'Refresh to View';
+                    group.appendChild(reloadBtn);
+                    tdActions.appendChild(group);
+
+                    // Append cells in order
+                    [tdCheck, tdTs, tdConfig, tdStatus, tdIp, tdRetry, tdTicket, tdReqId, tdRule, tdActions].forEach(td => tr.appendChild(td));
+
+                    tableBody.insertBefore(tr, tableBody.firstChild);
+                    if (tableBody.children.length > 50) tableBody.lastChild.remove();
+                });
+            }
+        });
+    </script>
+    {% endblock %}
