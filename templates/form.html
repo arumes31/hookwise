@@ -138,6 +138,16 @@
                                     <input type="hidden" id="status_hidden"
                                         value="{{ config.status if config else '' }}">
                                 </div>
+                                <div class="col-md-6 mb-4">
+                                    <label for="close_status" class="form-label fw-bold text-light">Close Status</label>
+                                    <select class="form-select bg-dark border-secondary text-light" id="close_status"
+                                        name="close_status"
+                                        data-tooltip="The status to set when closing tickets (e.g., 'Completed' or 'Closed').">
+                                        <option value="">-- Select Board First --</option>
+                                    </select>
+                                    <input type="hidden" id="close_status_hidden"
+                                        value="{{ config.close_status if config else '' }}">
+                                </div>
                             </div>
 
                             <div class="form-check form-switch mb-4">
@@ -615,9 +625,9 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         modal.show();
     }
 
-    const undoStack = [];
-    const redoStack = [];
-    let isUndoing = false;
+    var undoStack = [];
+    var redoStack = [];
+    var isUndoing = false;
 
     function saveState() {
         if (isUndoing) return;
@@ -1007,7 +1017,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         document.getElementById('routing_rules').value = JSON.stringify(rules);
     }
 
-    const templates = {
+    var templates = {
         uptime_kuma: {
             json_mapping: '{\n  "summary": "$.monitor.name",\n  "description": "$.msg",\n  "status": "$.monitor.status"\n}',
             trigger_field: 'heartbeat.status',
@@ -1130,7 +1140,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         }
     }
 
-    let tokenLoaded = false;
+    var tokenLoaded = false;
     async function toggleTokenVisibility() {
         const input = document.getElementById('bearer-token-display');
         const icon = document.getElementById('token-eye-icon');
@@ -1258,6 +1268,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
 
         const boardSelect = document.getElementById('board');
         const statusSelect = document.getElementById('status');
+        const closeStatusSelect = document.getElementById('close_status');
         const typeSelect = document.getElementById('ticket_type');
         const subtypeSelect = document.getElementById('subtype');
         const itemSelect = document.getElementById('item');
@@ -1265,6 +1276,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
 
         const boardHidden = document.getElementById('board_hidden')?.value || '';
         const statusHidden = document.getElementById('status_hidden')?.value || '';
+        const closeStatusHidden = document.getElementById('close_status_hidden')?.value || '';
         const typeHidden = document.getElementById('type_hidden')?.value || '';
         const subtypeHidden = document.getElementById('subtype_hidden')?.value || '';
         const itemHidden = document.getElementById('item_hidden')?.value || '';
@@ -1297,6 +1309,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 };
 
                 fetchAndPopulate(`/api/cw/statuses/${board.id}`, statusSelect, statusHidden);
+                fetchAndPopulate(`/api/cw/statuses/${board.id}`, closeStatusSelect, closeStatusHidden);
                 fetchAndPopulate(`/api/cw/types/${board.id}`, typeSelect, typeHidden);
                 fetchAndPopulate(`/api/cw/subtypes/${board.id}`, subtypeSelect, subtypeHidden);
                 fetchAndPopulate(`/api/cw/items/${board.id}`, itemSelect, itemHidden);

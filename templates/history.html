@@ -249,13 +249,13 @@
 
 <script>
     // Server-side data for scripts
-    const SERVER_DATA = JSON.parse(document.getElementById('server-data').textContent);
+    var SERVER_DATA = JSON.parse(document.getElementById('server-data').textContent);
 
-    let compareLeft = null;
-    let currentRawPayload = '';
-    let currentRawHeaders = '';
-    let isPretty = true;
-    let showingHeaders = false;
+    var compareLeft = null;
+    var currentRawPayload = '';
+    var currentRawHeaders = '';
+    var isPretty = true;
+    var showingHeaders = false;
 
     function comparePayload(id, event) {
         const btn = event.currentTarget;
