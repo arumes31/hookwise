@@ -325,7 +325,10 @@
                 <div class="position-absolute top-0 start-0 p-3">
                     <button
                         class="btn btn-sm btn-link p-0 text-{{ 'success' if config.config_health_status == 'OK' else 'danger' if config.config_health_status == 'ERROR' else 'warning' }} opacity-50 hover-opacity-100"
-                        onclick="showSecurityHud('{{ config.id }}', '{{ config.config_health_status }}', '{{ config.config_health_message or '' }}', '{{ config.last_ip or '' }}', '{{ config.last_rotated_at or '' }}')"
+                        data-id="{{ config.id }}" data-status="{{ config.config_health_status }}"
+                        data-message="{{ config.config_health_message or '' }}" data-ip="{{ config.last_ip or '' }}"
+                        data-rotated="{{ config.last_rotated_at or '' }}"
+                        onclick="showSecurityHud(this.dataset.id, this.dataset.status, this.dataset.message, this.dataset.ip, this.dataset.rotated)"
                         data-tooltip="Security & Health: {{ config.config_health_status }}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                             class="bi bi-shield-check" viewBox="0 0 16 16">
@@ -906,7 +909,7 @@
     }
 
     // Unified initialization for first-load and HTMX swaps
-    (function () {
+    function initSparklinesAndStats() {
         if (window.statsInterval) clearInterval(window.statsInterval);
 
         refreshStats();
@@ -915,7 +918,9 @@
         // Initialize Sparklines
         document.querySelectorAll('canvas[data-sparkline]').forEach(canvas => {
             const data = JSON.parse(canvas.getAttribute('data-sparkline'));
-            MiniChart.renderLine(canvas.id, data);
+            if (typeof MiniChart !== 'undefined') {
+                MiniChart.renderLine(canvas.id, data);
+            }
         });
 
         // Set maintenance toggle state
@@ -923,6 +928,9 @@
             const toggle = document.getElementById('maintenance-toggle');
             if (toggle) toggle.checked = d.maintenance_mode;
         }).catch(() => { });
-    })();
+    }
+
+    document.addEventListener('DOMContentLoaded', initSparklinesAndStats);
+    document.addEventListener('htmx:load', initSparklinesAndStats);
 </script>
 {% endblock %}

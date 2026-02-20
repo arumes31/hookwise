@@ -155,7 +155,9 @@ def test_maintenance_window_blocks_processing(mock_cw, mock_redis, app):
     with app.app_context():
         config = WebhookConfig(
             name="Test Maintenance",
-            maintenance_windows=json.dumps([{"day": now.strftime("%A"), "start": start, "end": end}]),
+            maintenance_windows=json.dumps(
+                [{"type": "weekly", "days": [now.strftime("%a")], "start": start, "end": end}]
+            ),
             trigger_field="heartbeat.status",
             open_value="0",
             close_value="1",

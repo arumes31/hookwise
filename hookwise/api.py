@@ -324,6 +324,12 @@ def _register() -> None:
     def readyz() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
+        except Exception as e:
+            current_app.logger.error("Database readiness check failed", exc_info=e)
+            return jsonify({"status": "not ready", "reason": "Database error"}), 503
+        finally:
+            db.session.remove()
+        try:
             redis_client.ping()
             return jsonify({"status": "ready"}), 200
         except Exception as e:
@@ -332,8 +338,14 @@ def _register() -> None:
     @main_bp.route("/health", methods=["GET"])
     def health() -> Tuple[Response, int]:
         try:
-            redis_client.ping()
             db.session.execute(db.text("SELECT 1"))
+        except Exception as e:
+            current_app.logger.error(f"Database health check failed: {e}")
+            return jsonify({"status": "error", "message": "Database error"}), 503
+        finally:
+            db.session.remove()
+        try:
+            redis_client.ping()
             return jsonify({"status": "ok", "timestamp": time.time()}), 200
         except Exception:
             return jsonify({"status": "error", "message": "Service unreachable"}), 503
@@ -345,6 +357,15 @@ def _register() -> None:
         status_code = 200
 
         try:
+            db.session.execute(db.text("SELECT 1"))
+            health_data["database"] = "up"
+        except Exception as e:
+            current_app.logger.error(f"Database health check failed: {e}")
+            status_code = 503
+        finally:
+            db.session.remove()
+
+        try:
             redis_client.ping()
             health_data["redis"] = "up"
         except Exception as e:
@@ -352,14 +373,7 @@ def _register() -> None:
             status_code = 503
 
         try:
-            db.session.execute(db.text("SELECT 1"))
-            health_data["database"] = "up"
-        except Exception as e:
-            current_app.logger.error(f"Database health check failed: {e}")
-            status_code = 503
-
-        try:
-            inspect = celery.control.inspect()
+            inspect = celery.control.inspect(timeout=1.0)
             stats = inspect.stats()
             active = inspect.active()
             health_data["celery"] = "up" if stats else "warning"

@@ -437,25 +437,48 @@ def handle_webhook_logic(
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
                 if cached_val:
                     ticket_id = int(cached_val.decode())
-                    note_text = (
-                        f"Duplicate {alert_type} alert detected. Updated details:\n"
-                        f"Message: {msg}\nRequest ID: {request_id}"
-                    )
-                    cw_client.add_ticket_note(ticket_id, note_text)
-                    log_to_web(
-                        f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})",
-                        "warning" if alert_type == "DOWN" else "info",
-                        config_name,
-                        data=data,
-                        ticket_id=ticket_id,
-                    )
-                    log_psa_task(task_type="create", result="updated")
-                    log_webhook_processed(config_id=config_id, status="processed")
-                    log_entry.status = "processed"
-                    log_entry.action = "update"
-                    log_entry.ticket_id = ticket_id
-                    db.session.commit()
-                    return
+                    viable_key = f"{cache_key}:viable"
+                    is_usable = False
+                    
+                    if redis_client.get(viable_key):
+                        is_usable = True
+                    else:
+                        ticket_data = cw_client.get_ticket(ticket_id)
+                        if ticket_data is None:
+                            # Transient failure: do not clear the cache, assume still viable
+                            is_usable = True
+                        else:
+                            is_closed = ticket_data.get("closedFlag", False)
+                            status_name = ticket_data.get("status", {}).get("name", "")
+                            if not is_closed and status_name not in ["Completed", "Cancelled"]:
+                                is_usable = True
+                                redis_client.set(viable_key, "1", ex=300)
+
+                    if is_usable:    
+                        note_text = (
+                            f"Duplicate {alert_type} alert detected. Updated details:\n"
+                            f"Message: {msg}\nRequest ID: {request_id}"
+                        )
+                        cw_client.add_ticket_note(ticket_id, note_text)
+                        log_to_web(
+                            f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})",
+                            "warning" if alert_type == "DOWN" else "info",
+                            config_name,
+                            data=data,
+                            ticket_id=ticket_id,
+                        )
+                        log_psa_task(task_type="create", result="updated")
+                        log_webhook_processed(config_id=config_id, status="processed")
+                        log_entry.status = "processed"
+                        log_entry.action = "update"
+                        log_entry.ticket_id = ticket_id
+                        db.session.commit()
+                        return
+                    else:
+                        # Ticket is closed/completed so we clear the cache
+                        redis_client.delete(cache_key)
+                        redis_client.delete(viable_key)
+                        ticket_id = None
 
                 existing_ticket = cw_client.find_open_ticket(ticket_summary)
                 if existing_ticket:
