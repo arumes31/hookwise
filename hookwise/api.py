@@ -62,9 +62,10 @@ def _register() -> None:
             page=page, per_page=per_page, error_out=False
         )
         debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
+        cw_url = os.environ.get("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0").rstrip("/")
 
         if request.args.get("partial") == "true":
-            return render_template("history_rows.html", logs=pagination.items)
+            return render_template("history_rows.html", logs=pagination.items, cw_url=cw_url)
 
         return render_template(
             "history.html",
@@ -74,6 +75,7 @@ def _register() -> None:
             date_from=date_from,
             date_to=date_to,
             debug_mode=debug_mode,
+            cw_url=cw_url,
         )
 
     @main_bp.route("/audit")

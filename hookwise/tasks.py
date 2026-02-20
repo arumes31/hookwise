@@ -385,6 +385,20 @@ def handle_webhook_logic(
                     if re.search(rule_regex, val, re.IGNORECASE):
                         logger.info(f"Routing rule matched: {rule_regex} on {rule_path}", extra=extra)
                         log_entry.matched_rule = f"Match: {rule_regex} on {rule_path}"
+                        
+                        if rule_overrides.get("drop"):
+                            log_entry.status = "skipped"
+                            log_entry.error_message = f"Skipped: Dropped by routing rule ({rule_regex})"
+                            log_entry.processing_time = time.time() - start_time
+                            db.session.commit()
+                            log_to_web(
+                                f"Webhook skipped (Dropped by routing rule: {rule_regex})",
+                                "warning",
+                                config_name,
+                                data=data,
+                            )
+                            return
+
                         if "board" in rule_overrides:
                             board = rule_overrides["board"]
                         if "status" in rule_overrides:

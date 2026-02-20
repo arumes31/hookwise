@@ -866,14 +866,14 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                     </div>
                 </div>
                 <div class="col-md-1 text-end">
-                    <button type="button" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" 
-                            onclick="this.closest('.rule-entry').remove(); syncRoutingRules();">
-                        <i class="fas fa-times"></i>
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0 fw-bold text-decoration-none" 
+                            onclick="this.closest('.rule-entry').remove(); syncRoutingRules(); document.getElementById('routing_rules').dispatchEvent(new Event('input', { bubbles: true }));">
+                        <i class="fas fa-times me-1"></i>Delete Rule
                     </button>
                 </div>
             </div>
             <div class="row g-2">
-                <div class="col-md-4">
+                <div class="col-md-2">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">BOARD</span>
                         <select class="form-select bg-dark border-secondary text-light rule-board" onchange="syncRoutingRules()">
@@ -881,7 +881,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                         </select>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-2">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">PRIORITY</span>
                         <select class="form-select bg-dark border-secondary text-light rule-priority" onchange="syncRoutingRules()">
@@ -889,11 +889,43 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                         </select>
                     </div>
                 </div>
-                 <div class="col-md-4">
+                 <div class="col-md-2">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">STATUS</span>
                         <input type="text" class="form-control bg-dark border-secondary text-light rule-status" 
                                value="${overrides.status || ''}" placeholder="New Status" oninput="syncRoutingRules()">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">TYPE</span>
+                        <select class="form-select bg-dark border-secondary text-light rule-type" onchange="syncRoutingRules()">
+                            <option value="">-- No Change --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">SUBTYPE</span>
+                        <select class="form-select bg-dark border-secondary text-light rule-subtype" onchange="syncRoutingRules()">
+                            <option value="">-- No Change --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">ITEM</span>
+                        <select class="form-select bg-dark border-secondary text-light rule-item" onchange="syncRoutingRules()">
+                            <option value="">-- No Change --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-md-12">
+                    <div class="form-check form-switch template-card d-inline-block py-1 pe-3">
+                        <input class="form-check-input rule-drop" type="checkbox" role="switch" id="drop-${count}" ${overrides.drop ? 'checked' : ''} onchange="syncRoutingRules()">
+                        <label class="form-check-label small text-warning fw-bold" for="drop-${count}">Drop Webhook</label>
                     </div>
                 </div>
             </div>
@@ -904,18 +936,29 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         // Populate selects from the main board/priority lists if they exist
         const boardOptions = document.getElementById('board').innerHTML;
         const priorityOptions = document.getElementById('priority').innerHTML;
+        const typeOptions = document.getElementById('ticket_type').innerHTML;
+        const subtypeOptions = document.getElementById('subtype').innerHTML;
+        const itemOptions = document.getElementById('item').innerHTML;
 
         const bSelect = div.querySelector('.rule-board');
         const pSelect = div.querySelector('.rule-priority');
+        const tSelect = div.querySelector('.rule-type');
+        const sSelect = div.querySelector('.rule-subtype');
+        const iSelect = div.querySelector('.rule-item');
 
-        if (boardOptions) {
-            bSelect.innerHTML = '<option value="">-- No Change --</option>' + boardOptions.replace('selected', '');
-            if (overrides.board) bSelect.value = overrides.board;
-        }
-        if (priorityOptions) {
-            pSelect.innerHTML = '<option value="">-- No Change --</option>' + priorityOptions.replace('selected', '');
-            if (overrides.priority) pSelect.value = overrides.priority;
-        }
+        const appendOptions = (selectElem, optionsHTML, overrideVal) => {
+            if (optionsHTML) {
+                // Ensure options don't carry over the 'selected' attribute from the main form
+                selectElem.innerHTML = '<option value="">-- No Change --</option>' + optionsHTML.replace(/selected(="[^"]*")?/gi, '');
+                if (overrideVal) selectElem.value = overrideVal;
+            }
+        };
+
+        appendOptions(bSelect, boardOptions, overrides.board);
+        appendOptions(pSelect, priorityOptions, overrides.priority);
+        appendOptions(tSelect, typeOptions, overrides.ticket_type);
+        appendOptions(sSelect, subtypeOptions, overrides.subtype);
+        appendOptions(iSelect, itemOptions, overrides.item);
 
         validateRegex(div.querySelector('.rule-regex'));
     }
@@ -943,12 +986,20 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             const board = entry.querySelector('.rule-board').value;
             const priority = entry.querySelector('.rule-priority').value;
             const status = entry.querySelector('.rule-status').value.trim();
+            const ticket_type = entry.querySelector('.rule-type').value;
+            const subtype = entry.querySelector('.rule-subtype').value;
+            const item = entry.querySelector('.rule-item').value;
+            const drop = entry.querySelector('.rule-drop').checked;
 
             if (path && regex) {
                 const overrides = {};
                 if (board) overrides.board = board;
                 if (priority) overrides.priority = priority;
                 if (status) overrides.status = status;
+                if (ticket_type) overrides.ticket_type = ticket_type;
+                if (subtype) overrides.subtype = subtype;
+                if (item) overrides.item = item;
+                if (drop) overrides.drop = drop;
 
                 rules.push({ path, regex, overrides });
             }
@@ -1190,7 +1241,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         preview.textContent = (prefix ? prefix + ' ' : '') + 'Source Name';
     }
 
-    htmx.onLoad(async function (elt) {
+    document.addEventListener('DOMContentLoaded', async function () {
         const form = document.getElementById('endpoint-form');
         if (!form || form.dataset.initialized) return;
         form.dataset.initialized = 'true';
