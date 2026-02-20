@@ -454,7 +454,11 @@ def _register() -> None:
     def llm_test() -> Any:
         from .utils import call_llm
 
-        prompt = request.json.get("prompt")
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"status": "error", "message": "JSON body as dictionary is required"}), 400
+
+        prompt = data.get("prompt")
         if not prompt:
             return jsonify({"status": "error", "message": "Prompt is required"}), 400
 
