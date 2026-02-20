@@ -121,6 +121,8 @@ def test_health_services(mock_inspect, mock_api_redis, mock_tasks_redis, client)
 @patch("hookwise.tasks.cw_client")
 def test_last_seen_at_updates(mock_cw, mock_redis, app, sample_config):
     """Test that last_seen_at is updated when a webhook is processed."""
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 1234}
     data = {"heartbeat": {"status": 0}}
     handle_webhook_logic(sample_config, data, "req-1")
 

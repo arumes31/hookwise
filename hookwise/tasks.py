@@ -444,7 +444,7 @@ def handle_webhook_logic(
                         # ConnectWise represents closed as closedFlag, status is nested 
                         is_closed = ticket_data.get("closedFlag", False)
                         status_name = ticket_data.get("status", {}).get("name", "")
-                        if not is_closed and status_name != "Completed":
+                        if not is_closed and status_name not in ["Completed", "Cancelled"]:
                             is_usable = True
 
                     if is_usable:    

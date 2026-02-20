@@ -55,7 +55,10 @@ class ConnectWiseClient:
 
     def find_open_ticket(self, summary_contains: str) -> Optional[Dict[str, Any]]:
         try:
-            conditions = f"closedFlag=false AND status/name != 'Completed' AND summary contains '{summary_contains}'"
+            conditions = (
+                f"closedFlag=false AND status/name != 'Completed' AND status/name != 'Cancelled' "
+                f"AND summary contains '{summary_contains}'"
+            )
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(
                 f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30
