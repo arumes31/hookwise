@@ -357,6 +357,13 @@ function initServiceHealth(container = document) {
         } catch (e) {
             console.error('Health check failed', e);
             updateFavicon('down');
+            // Update all visible dots to a disconnected/error state
+            ['redis', 'database', 'celery'].forEach(service => {
+                const el = document.getElementById(`health-${service}`);
+                if (el) el.className = 'heartbeat-dot heartbeat-error';
+                const dashEl = document.getElementById(`dash-health-${service}`);
+                if (dashEl) dashEl.className = 'heartbeat-dot heartbeat-error mb-1 mx-auto';
+            });
         }
     };
 

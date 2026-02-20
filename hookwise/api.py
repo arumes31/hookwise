@@ -449,6 +449,20 @@ def _register() -> None:
         log_audit("generate_master_api_key", None, "New master API key generated")
         return jsonify({"status": "success", "api_key": new_key})
 
+    @main_bp.route("/admin/llm-test", methods=["POST"])
+    @auth_required
+    def llm_test() -> Any:
+        from .utils import call_llm
+
+        prompt = request.json.get("prompt")
+        if not prompt:
+            return jsonify({"status": "error", "message": "Prompt is required"}), 400
+
+        result = call_llm(prompt)
+        if result:
+            return jsonify({"status": "success", "result": result})
+        return jsonify({"status": "error", "message": "LLM call failed or returned empty result"}), 500
+
     @main_bp.route("/admin/backup", methods=["GET"])
     @auth_required
     def backup_config() -> Any:

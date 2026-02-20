@@ -156,6 +156,39 @@
             </div>
         </div>
 
+        <!-- LLM Diagnostic -->
+        <div class="glass-card mb-5 anime-slide-up" style="animation-delay: 0.35s;">
+            <div class="card-header border-bottom border-secondary border-opacity-25 py-4 px-4 bg-transparent">
+                <div class="d-flex align-items-center">
+                    <div class="d-inline-flex align-items-center justify-content-center bg-purple bg-opacity-10 rounded-circle me-3"
+                        style="width: 48px; height: 48px; background-color: rgba(111, 66, 193, 0.1);">
+                        <i class="fas fa-brain text-purple" style="color: #6f42c1;"></i>
+                    </div>
+                    <h4 class="mb-0 fw-bold text-light">LLM Diagnostic</h4>
+                </div>
+            </div>
+            <div class="card-body p-4">
+                <div class="mb-4">
+                    <label for="llm-query" class="form-label text-secondary fw-bold text-uppercase small ls-1">Query /
+                        Prompt</label>
+                    <textarea id="llm-query" class="form-control bg-dark border-secondary text-light" rows="3"
+                        placeholder="Enter a test prompt for the LLM..."></textarea>
+                </div>
+                <div class="d-flex justify-content-end mb-4">
+                    <button class="btn btn-primary px-4 py-2 fw-bold shadow-lg" id="llm-test-btn" onclick="testLLM()">
+                        <i class="fas fa-microchip me-2"></i>Test LLM
+                    </button>
+                </div>
+                <div id="llm-result-container" class="d-none">
+                    <label class="form-label text-secondary fw-bold text-uppercase small ls-1">Result</label>
+                    <div class="bg-dark bg-opacity-50 p-3 rounded-3 border border-secondary border-opacity-25">
+                        <pre id="llm-result" class="mb-0 text-info font-monospace"
+                            style="white-space: pre-wrap; word-break: break-all;"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Security (2FA & Session) -->
         <div class="row g-4 mb-5">
             <div class="col-md-6">
@@ -299,6 +332,40 @@
                 showToast('Error clearing cache: ' + data.message, 'danger');
             }
         } catch (e) { showToast('Error communicating with server', 'danger'); }
+    }
+
+    async function testLLM() {
+        const query = document.getElementById('llm-query').value;
+        if (!query) return showToast('Please enter a query', 'danger');
+
+        const btn = document.getElementById('llm-test-btn');
+        const container = document.getElementById('llm-result-container');
+        const resultArea = document.getElementById('llm-result');
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+        container.classList.add('d-none');
+
+        try {
+            const res = await fetch('/admin/llm-test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: query })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                resultArea.textContent = data.result;
+                container.classList.remove('d-none');
+                showToast('LLM response received', 'success');
+            } else {
+                showToast('LLM test failed: ' + (data.message || 'Unknown error'), 'danger');
+            }
+        } catch (e) {
+            showToast('Error calling LLM: ' + e.message, 'danger');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-microchip me-2"></i>Test LLM';
+        }
     }
 </script>
 {% endblock %}
