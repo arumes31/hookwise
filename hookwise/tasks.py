@@ -437,15 +437,22 @@ def handle_webhook_logic(
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
                 if cached_val:
                     ticket_id = int(cached_val.decode())
-                    # Check if the ticket is still open and not completed
-                    ticket_data = cw_client.get_ticket(ticket_id)
+                    viable_key = f"{cache_key}:viable"
                     is_usable = False
-                    if ticket_data:
-                        # ConnectWise represents closed as closedFlag, status is nested 
-                        is_closed = ticket_data.get("closedFlag", False)
-                        status_name = ticket_data.get("status", {}).get("name", "")
-                        if not is_closed and status_name not in ["Completed", "Cancelled"]:
+                    
+                    if redis_client.get(viable_key):
+                        is_usable = True
+                    else:
+                        ticket_data = cw_client.get_ticket(ticket_id)
+                        if ticket_data is None:
+                            # Transient failure: do not clear the cache, assume still viable
                             is_usable = True
+                        else:
+                            is_closed = ticket_data.get("closedFlag", False)
+                            status_name = ticket_data.get("status", {}).get("name", "")
+                            if not is_closed and status_name not in ["Completed", "Cancelled"]:
+                                is_usable = True
+                                redis_client.set(viable_key, "1", ex=300)
 
                     if is_usable:    
                         note_text = (
@@ -470,6 +477,7 @@ def handle_webhook_logic(
                     else:
                         # Ticket is closed/completed so we clear the cache
                         redis_client.delete(cache_key)
+                        redis_client.delete(viable_key)
                         ticket_id = None
 
                 existing_ticket = cw_client.find_open_ticket(ticket_summary)

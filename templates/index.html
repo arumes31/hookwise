@@ -909,7 +909,7 @@
     }
 
     // Unified initialization for first-load and HTMX swaps
-    document.addEventListener('DOMContentLoaded', function () {
+    function initSparklinesAndStats() {
         if (window.statsInterval) clearInterval(window.statsInterval);
 
         refreshStats();
@@ -918,7 +918,9 @@
         // Initialize Sparklines
         document.querySelectorAll('canvas[data-sparkline]').forEach(canvas => {
             const data = JSON.parse(canvas.getAttribute('data-sparkline'));
-            MiniChart.renderLine(canvas.id, data);
+            if (typeof MiniChart !== 'undefined') {
+                MiniChart.renderLine(canvas.id, data);
+            }
         });
 
         // Set maintenance toggle state
@@ -926,6 +928,9 @@
             const toggle = document.getElementById('maintenance-toggle');
             if (toggle) toggle.checked = d.maintenance_mode;
         }).catch(() => { });
-    });
+    }
+
+    document.addEventListener('DOMContentLoaded', initSparklinesAndStats);
+    document.addEventListener('htmx:load', initSparklinesAndStats);
 </script>
 {% endblock %}

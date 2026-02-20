@@ -121,6 +121,7 @@ def test_health_services(mock_inspect, mock_api_redis, mock_tasks_redis, client)
 @patch("hookwise.tasks.cw_client")
 def test_last_seen_at_updates(mock_cw, mock_redis, app, sample_config):
     """Test that last_seen_at is updated when a webhook is processed."""
+    mock_redis.get.return_value = None
     mock_cw.find_open_ticket.return_value = None
     mock_cw.create_ticket.return_value = {"id": 1234}
     data = {"heartbeat": {"status": 0}}
@@ -130,3 +131,23 @@ def test_last_seen_at_updates(mock_cw, mock_redis, app, sample_config):
         # Re-fetch config to see updates
         config = WebhookConfig.query.get(sample_config)
         assert config.last_seen_at is not None
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_duplicate_alert_updates_usable_ticket(mock_cw, mock_redis, app, sample_config):
+    """Test tracking cache hits that trigger a duplicate alert trace."""
+    def mock_redis_get(key):
+        if key.endswith(":viable"):
+            return None
+        return b"99"
+    
+    mock_redis.get.side_effect = mock_redis_get
+    mock_cw.get_ticket.return_value = {"id": 99, "closedFlag": False, "status": {"name": "New"}}
+    mock_cw.add_ticket_note.return_value = True
+
+    data = {"heartbeat": {"status": 0}}
+    handle_webhook_logic(sample_config, data, "req-1")
+
+    mock_cw.get_ticket.assert_called_with(99)
+    mock_cw.add_ticket_note.assert_called_once()
+    mock_cw.create_ticket.assert_not_called()

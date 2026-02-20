@@ -55,9 +55,13 @@ class ConnectWiseClient:
 
     def find_open_ticket(self, summary_contains: str) -> Optional[Dict[str, Any]]:
         try:
+            safe_summary = summary_contains.replace("'", "''")
+            excluded_statuses = [self.status_closed, "Cancelled"]
+            status_clauses = " AND ".join([f"status/name != '{s}'" for s in excluded_statuses])
+            
             conditions = (
-                f"closedFlag=false AND status/name != 'Completed' AND status/name != 'Cancelled' "
-                f"AND summary contains '{summary_contains}'"
+                f"closedFlag=false AND {status_clauses} "
+                f"AND summary contains '{safe_summary}'"
             )
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(

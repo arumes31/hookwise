@@ -145,8 +145,6 @@ def test_close_ticket_on_up_signal(mock_cw, mock_redis, app):
 @patch("hookwise.tasks.cw_client")
 def test_maintenance_window_blocks_processing(mock_cw, mock_redis, app):
     """Test that webhooks during a maintenance window are skipped."""
-    mock_cw.find_open_ticket.return_value = None
-    mock_cw.create_ticket.return_value = {"id": 555}
     import json
     from datetime import datetime, timedelta, timezone
 

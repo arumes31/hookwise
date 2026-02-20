@@ -324,6 +324,8 @@ def _register() -> None:
     def readyz() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
+        except Exception as e:
+            return jsonify({"status": "not ready", "reason": f"Database error: {str(e)}"}), 503
         finally:
             db.session.remove()
         try:
@@ -336,6 +338,8 @@ def _register() -> None:
     def health() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 503
         finally:
             db.session.remove()
         try:
