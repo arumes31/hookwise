@@ -4,7 +4,7 @@
  */
 
 // Singleton Socket.IO instance
-let socketInstance = null;
+var socketInstance = null;
 function getSocket() {
     if (!socketInstance) {
         socketInstance = typeof io !== 'undefined' ? io() : null;

@@ -1263,12 +1263,12 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         const itemSelect = document.getElementById('item');
         const prioritySelect = document.getElementById('priority');
 
-        const boardHidden = document.getElementById('board_hidden').value;
-        const statusHidden = document.getElementById('status_hidden').value;
-        const typeHidden = document.getElementById('type_hidden').value;
-        const subtypeHidden = document.getElementById('subtype_hidden').value;
-        const itemHidden = document.getElementById('item_hidden').value;
-        const priorityHidden = document.getElementById('priority_hidden').value;
+        const boardHidden = document.getElementById('board_hidden')?.value || '';
+        const statusHidden = document.getElementById('status_hidden')?.value || '';
+        const typeHidden = document.getElementById('type_hidden')?.value || '';
+        const subtypeHidden = document.getElementById('subtype_hidden')?.value || '';
+        const itemHidden = document.getElementById('item_hidden')?.value || '';
+        const priorityHidden = document.getElementById('priority_hidden')?.value || '';
 
         const loadBoardDetails = async (boardName) => {
             if (!boardName) {
