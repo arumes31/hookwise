@@ -10,6 +10,12 @@
     <link href="{{ url_for('static', filename='css/prism.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/prism.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/mini-charts.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ux.js') }}"></script>
 </head>
 
 <body hx-boost="true" hx-headers='{"X-CSRF-Token": "{{ csrf_token() }}"}'>
@@ -190,12 +196,7 @@
     </footer>
     {% endif %}
 
-    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/prism.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/mini-charts.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/ux.js') }}"></script>
+    {% block scripts %}{% endblock %}
 </body>
 
 </html>
