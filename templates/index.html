@@ -645,7 +645,7 @@
         updateDashboardPayloadDisplay();
     });
 
-    htmx.onLoad(function (elt) {
+    document.addEventListener('DOMContentLoaded', function () {
         const socket = getSocket();
         if (socket) {
             socket.off('connect');
