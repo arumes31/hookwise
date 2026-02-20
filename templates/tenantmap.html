@@ -160,64 +160,72 @@
         new bootstrap.Modal(document.getElementById('editMappingModal')).show();
     }
 
-    htmx.onLoad(function (content) {
-        // Reuse the same debounced search logic as in form.html
-        function debounce(func, wait) {
-            let timeout;
-            return function (...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), wait);
-            };
-        }
-
-        async function fetchCompanies(query = '') {
-            try {
-                const url = query ? `/api/cw/companies?search=${encodeURIComponent(query)}` : '/api/cw/companies';
-                const res = await fetch(url);
-
-                if (!res.ok) {
-                    console.error(`Error loading companies: ${res.status} ${res.statusText}`, url);
-                    return;
-                }
-
-                const companies = await res.json();
-                const datalist = document.getElementById('company_list');
-                if (datalist) {
-                    datalist.innerHTML = '';
-                    companies.forEach(c => {
-                        const opt = document.createElement('option');
-                        opt.value = c.identifier;
-                        opt.textContent = `${c.name} (${c.identifier})`;
-                        datalist.appendChild(opt);
-                    });
-                }
-            } catch (e) {
-                console.error('Network or parsing error in fetchCompanies', e);
+    function runOnLoad() {
+        htmx.onLoad(function (content) {
+            // Reuse the same debounced search logic as in form.html
+            function debounce(func, wait) {
+                let timeout;
+                return function (...args) {
+                    clearTimeout(timeout);
+                    timeout = setTimeout(() => func.apply(this, args), wait);
+                };
             }
-        }
 
-        const companyInput = document.getElementById('company_search_input');
-        if (companyInput && !companyInput.dataset.initialized) {
-            companyInput.dataset.initialized = 'true';
-            companyInput.addEventListener('input', debounce((e) => {
-                const val = e.target.value;
-                if (val.length >= 2) fetchCompanies(val);
-                else if (val.length === 0) fetchCompanies();
-            }, 500));
-            // Initial load
-            fetchCompanies();
-        }
+            async function fetchCompanies(query = '') {
+                try {
+                    const url = query ? `/api/cw/companies?search=${encodeURIComponent(query)}` : '/api/cw/companies';
+                    const res = await fetch(url);
 
-        // Initialize search for edit modal as well
-        const editCompanyInput = document.getElementById('edit_company_id');
-        if (editCompanyInput && !editCompanyInput.dataset.initialized) {
-            editCompanyInput.dataset.initialized = 'true';
-            editCompanyInput.addEventListener('input', debounce((e) => {
-                const val = e.target.value;
-                if (val.length >= 2) fetchCompanies(val);
-                else if (val.length === 0) fetchCompanies();
-            }, 500));
-        }
-    });
+                    if (!res.ok) {
+                        console.error(`Error loading companies: ${res.status} ${res.statusText}`, url);
+                        return;
+                    }
+
+                    const companies = await res.json();
+                    const datalist = document.getElementById('company_list');
+                    if (datalist) {
+                        datalist.innerHTML = '';
+                        companies.forEach(c => {
+                            const opt = document.createElement('option');
+                            opt.value = c.identifier;
+                            opt.textContent = `${c.name} (${c.identifier})`;
+                            datalist.appendChild(opt);
+                        });
+                    }
+                } catch (e) {
+                    console.error('Network or parsing error in fetchCompanies', e);
+                }
+            }
+
+            const companyInput = document.getElementById('company_search_input');
+            if (companyInput && !companyInput.dataset.initialized) {
+                companyInput.dataset.initialized = 'true';
+                companyInput.addEventListener('input', debounce((e) => {
+                    const val = e.target.value;
+                    if (val.length >= 2) fetchCompanies(val);
+                    else if (val.length === 0) fetchCompanies();
+                }, 500));
+                // Initial load
+                fetchCompanies();
+            }
+
+            // Initialize search for edit modal as well
+            const editCompanyInput = document.getElementById('edit_company_id');
+            if (editCompanyInput && !editCompanyInput.dataset.initialized) {
+                editCompanyInput.dataset.initialized = 'true';
+                editCompanyInput.addEventListener('input', debounce((e) => {
+                    const val = e.target.value;
+                    if (val.length >= 2) fetchCompanies(val);
+                    else if (val.length === 0) fetchCompanies();
+                }, 500));
+            }
+        });
+    }
+
+    if (typeof htmx !== 'undefined') {
+        runOnLoad();
+    } else {
+        document.addEventListener('DOMContentLoaded', runOnLoad);
+    }
 </script>
 {% endblock %}

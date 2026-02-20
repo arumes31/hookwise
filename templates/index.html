@@ -824,28 +824,44 @@
     }
 
     function refreshStats() {
+        if (!document.getElementById('stat-created')) return;
+
         fetch('/api/stats')
             .then(res => res.json())
             .then(data => {
-                document.getElementById('stat-created').textContent = data.created_today;
-                document.getElementById('stat-closed').textContent = data.closed_today;
-                document.getElementById('stat-rate').textContent = data.success_rate;
-                document.getElementById('stat-failed').textContent = data.failed_today;
-                document.getElementById('stat-latency').textContent = data.avg_processing_time;
+                const elCreated = document.getElementById('stat-created');
+                const elClosed = document.getElementById('stat-closed');
+                const elRate = document.getElementById('stat-rate');
+                const elFailed = document.getElementById('stat-failed');
+                const elLatency = document.getElementById('stat-latency');
+
+                if (elCreated) elCreated.textContent = data.created_today;
+                if (elClosed) elClosed.textContent = data.closed_today;
+                if (elRate) elRate.textContent = data.success_rate;
+                if (elFailed) elFailed.textContent = data.failed_today;
+                if (elLatency) elLatency.textContent = data.avg_processing_time;
             })
             .catch(err => console.error('Error fetching stats:', err));
+
+        const chartEl = document.getElementById('historyChart');
+        if (!chartEl) return;
 
         fetch('/api/stats/history')
             .then(res => res.json())
             .then(data => {
                 const labels = data.map(d => d.date);
                 const counts = data.map(d => d.count);
-                MiniChart.renderBar('historyChart', labels, counts);
+                if (typeof MiniChart !== 'undefined') {
+                    MiniChart.renderBar('historyChart', labels, counts);
+                }
 
                 // Simple highlight logic
-                document.getElementById('historyChart').onclick = () => {
-                    showToast('Activity trend updated from live logs.', 'info');
-                };
+                const chart = document.getElementById('historyChart');
+                if (chart) {
+                    chart.onclick = () => {
+                        showToast('Activity trend updated from live logs.', 'info');
+                    };
+                }
             });
     }
 
@@ -912,6 +928,11 @@
 
     // Unified initialization for first-load and HTMX swaps
     function initSparklinesAndStats() {
+        // Only run if on dashboard or elements exist
+        if (!document.getElementById('stat-created') && !document.querySelector('canvas[data-sparkline]')) {
+            return;
+        }
+
         if (window.statsInterval) clearInterval(window.statsInterval);
 
         refreshStats();
@@ -919,7 +940,9 @@
 
         // Initialize Sparklines
         document.querySelectorAll('canvas[data-sparkline]').forEach(canvas => {
-            const data = JSON.parse(canvas.getAttribute('data-sparkline'));
+            const dataStr = canvas.getAttribute('data-sparkline');
+            if (!dataStr) return;
+            const data = JSON.parse(dataStr);
             if (typeof MiniChart !== 'undefined') {
                 MiniChart.renderLine(canvas.id, data);
             }
