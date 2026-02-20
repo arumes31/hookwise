@@ -26,6 +26,13 @@ csrf = CSRFProtect()
 limiter = Limiter(
     key_func=get_remote_address, storage_uri=_limiter_storage, default_limits=["2000 per day", "500 per hour"]
 )
+
+
+@limiter.request_filter
+def header_whitelist():
+    from flask import session
+
+    return "user_id" in session
 socketio = SocketIO(cors_allowed_origins="*", async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"))
 
 redis_client: redis.Redis = redis.Redis(

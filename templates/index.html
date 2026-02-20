@@ -825,43 +825,34 @@
 
     function refreshStats() {
         if (!document.getElementById('stat-created')) return;
+        if (window.dashboardState.isRefreshing) return;
+        window.dashboardState.isRefreshing = true;
 
-        fetch('/api/stats')
-            .then(res => res.json())
-            .then(data => {
-                const elCreated = document.getElementById('stat-created');
-                const elClosed = document.getElementById('stat-closed');
-                const elRate = document.getElementById('stat-rate');
-                const elFailed = document.getElementById('stat-failed');
-                const elLatency = document.getElementById('stat-latency');
+        Promise.all([
+            fetch('/api/stats').then(res => res.json()),
+            fetch('/api/stats/history').then(res => res.json())
+        ]).then(([data, historyData]) => {
+            const elCreated = document.getElementById('stat-created');
+            const elClosed = document.getElementById('stat-closed');
+            const elRate = document.getElementById('stat-rate');
+            const elFailed = document.getElementById('stat-failed');
+            const elLatency = document.getElementById('stat-latency');
 
-                if (elCreated) elCreated.textContent = data.created_today;
-                if (elClosed) elClosed.textContent = data.closed_today;
-                if (elRate) elRate.textContent = data.success_rate;
-                if (elFailed) elFailed.textContent = data.failed_today;
-                if (elLatency) elLatency.textContent = data.avg_processing_time;
-            })
-            .catch(err => console.error('Error fetching stats:', err));
+            if (elCreated) elCreated.textContent = data.created_today;
+            if (elClosed) elClosed.textContent = data.closed_today;
+            if (elRate) elRate.textContent = data.success_rate;
+            if (elFailed) elFailed.textContent = data.failed_today;
+            if (elLatency) elLatency.textContent = data.avg_processing_time;
 
-        const chartEl = document.getElementById('historyChart');
-        if (!chartEl) return;
-
-        fetch('/api/stats/history')
-            .then(res => res.json())
-            .then(data => {
-                const labels = data.map(d => d.date);
-                const counts = data.map(d => d.count);
-                if (typeof MiniChart !== 'undefined') {
-                    MiniChart.renderBar('historyChart', labels, counts);
-                }
-
-                // Simple highlight logic
-                const chart = document.getElementById('historyChart');
-                if (chart) {
-                    chart.onclick = () => {
-                        showToast('Activity trend updated from live logs.', 'info');
-                    };
-                }
+            if (typeof MiniChart !== 'undefined') {
+                const labels = historyData.map(d => d.date);
+                const counts = historyData.map(d => d.count);
+                MiniChart.renderBar('historyChart', labels, counts);
+            }
+        })
+            .catch(err => console.error('Error fetching stats:', err))
+            .finally(() => {
+                window.dashboardState.isRefreshing = false;
             });
     }
 
@@ -933,6 +924,9 @@
             return;
         }
 
+        if (window.dashboardState.isInitialized) return;
+        window.dashboardState.isInitialized = true;
+
         if (window.statsInterval) clearInterval(window.statsInterval);
 
         refreshStats();
@@ -953,6 +947,9 @@
             const toggle = document.getElementById('maintenance-toggle');
             if (toggle) toggle.checked = d.maintenance_mode;
         }).catch(() => { });
+
+        // Reset the lock after a small delay to handle intentional re-initialization (e.g. HTMX navigation)
+        setTimeout(() => { window.dashboardState.isInitialized = false; }, 500);
     }
 
     document.addEventListener('DOMContentLoaded', initSparklinesAndStats);
