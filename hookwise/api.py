@@ -325,7 +325,8 @@ def _register() -> None:
         try:
             db.session.execute(db.text("SELECT 1"))
         except Exception as e:
-            return jsonify({"status": "not ready", "reason": f"Database error: {str(e)}"}), 503
+            current_app.logger.error("Database readiness check failed", exc_info=e)
+            return jsonify({"status": "not ready", "reason": "Database error"}), 503
         finally:
             db.session.remove()
         try:
@@ -339,7 +340,8 @@ def _register() -> None:
         try:
             db.session.execute(db.text("SELECT 1"))
         except Exception as e:
-            return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 503
+            current_app.logger.error(f"Database health check failed: {e}")
+            return jsonify({"status": "error", "message": "Database error"}), 503
         finally:
             db.session.remove()
         try:
