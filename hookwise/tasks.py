@@ -75,6 +75,8 @@ class ContextTask(Task):  # type: ignore[misc]
                 db.session.rollback()
                 logger.exception("Celery task %s failed", self.name)
                 raise
+            finally:
+                db.session.remove()
 
 
 celery.Task = ContextTask
