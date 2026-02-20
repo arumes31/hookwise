@@ -625,26 +625,28 @@
     }
 
     // Live Dashboard Logic (Refined)
-    var isPaused = typeof isPaused !== 'undefined' ? isPaused : false;
-    var absoluteTime = typeof absoluteTime !== 'undefined' ? absoluteTime : false;
-    var currentDashboardPayload = typeof currentDashboardPayload !== 'undefined' ? currentDashboardPayload : null;
-    var isDashboardPretty = typeof isDashboardPretty !== 'undefined' ? isDashboardPretty : true;
+    window.dashboardState = window.dashboardState || {
+        isPaused: false,
+        absoluteTime: false,
+        currentDashboardPayload: null,
+        isDashboardPretty: true
+    };
 
     function updateDashboardPayloadDisplay() {
         const display = document.getElementById('payload-display');
         const toggleBtn = document.getElementById('pretty-toggle');
-        if (isDashboardPretty) {
-            display.textContent = JSON.stringify(currentDashboardPayload, null, 2);
+        if (window.dashboardState.isDashboardPretty) {
+            display.textContent = JSON.stringify(window.dashboardState.currentDashboardPayload, null, 2);
             toggleBtn.textContent = 'Minified';
         } else {
-            display.textContent = JSON.stringify(currentDashboardPayload);
+            display.textContent = JSON.stringify(window.dashboardState.currentDashboardPayload);
             toggleBtn.textContent = 'Pretty';
         }
         Prism.highlightElement(display);
     }
 
     document.getElementById('pretty-toggle').addEventListener('click', () => {
-        isDashboardPretty = !isDashboardPretty;
+        window.dashboardState.isDashboardPretty = !window.dashboardState.isDashboardPretty;
         updateDashboardPayloadDisplay();
     });
 
@@ -686,17 +688,17 @@
 
         if (pauseBtn) {
             pauseBtn.addEventListener('click', () => {
-                isPaused = !isPaused;
-                pauseBtn.classList.toggle('btn-primary', isPaused);
-                pauseBtn.classList.toggle('btn-outline-secondary', !isPaused);
+                window.dashboardState.isPaused = !window.dashboardState.isPaused;
+                pauseBtn.classList.toggle('btn-primary', window.dashboardState.isPaused);
+                pauseBtn.classList.toggle('btn-outline-secondary', !window.dashboardState.isPaused);
             });
         }
 
         if (timeBtn) {
             timeBtn.addEventListener('click', () => {
-                absoluteTime = !absoluteTime;
-                timeBtn.classList.toggle('btn-primary', absoluteTime);
-                timeBtn.classList.toggle('btn-outline-secondary', !absoluteTime);
+                window.dashboardState.absoluteTime = !window.dashboardState.absoluteTime;
+                timeBtn.classList.toggle('btn-primary', window.dashboardState.absoluteTime);
+                timeBtn.classList.toggle('btn-outline-secondary', !window.dashboardState.absoluteTime);
                 // Refresh visible logs to update time format
                 logContainer.querySelectorAll('.log-entry').forEach(entry => {
                     const ts = entry.dataset.timestamp;
@@ -704,7 +706,7 @@
                         const timeSpan = entry.querySelector('.text-secondary');
                         if (timeSpan) {
                             const date = new Date(ts);
-                            timeSpan.textContent = absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
+                            timeSpan.textContent = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
                         }
                     }
                 });
@@ -722,7 +724,7 @@
         }
 
         socket.on('new_log', (data) => {
-            if (isPaused) return;
+            if (window.dashboardState.isPaused) return;
 
             if (logContainer.querySelector('.lightgrey')) {
                 logContainer.innerHTML = '';
@@ -861,8 +863,8 @@
         try {
             // Handle potential double-encoding or already object
             let payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
-            currentDashboardPayload = payload;
-            isDashboardPretty = true;
+            window.dashboardState.currentDashboardPayload = payload;
+            window.dashboardState.isDashboardPretty = true;
             updateDashboardPayloadDisplay();
             new bootstrap.Modal(document.getElementById('payloadModal')).show();
         } catch (e) {

@@ -36,31 +36,43 @@ body {
 
 /* View Transitions API Support */
 @view-transition {
-  navigation: auto;
+    navigation: auto;
 }
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 0.3s;
-  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    animation-duration: 0.3s;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 ::view-transition-old(root) {
-  animation: 0.3s cubic-bezier(0.4, 0, 0.2, 1) both fade-out;
+    animation: 0.3s cubic-bezier(0.4, 0, 0.2, 1) both fade-out;
 }
 
 ::view-transition-new(root) {
-  animation: 0.3s cubic-bezier(0.4, 0, 0.2, 1) both fade-in;
+    animation: 0.3s cubic-bezier(0.4, 0, 0.2, 1) both fade-in;
 }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @keyframes fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
 }
 
 /* Auto-save Indicator */
@@ -357,6 +369,12 @@ h4,
 .heartbeat-warning {
     background-color: var(--warning);
     box-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+.heartbeat-error {
+    background-color: var(--danger);
+    box-shadow: 0 0 8px rgba(244, 63, 94, 0.4);
+    animation: pulse-danger 2s infinite;
 }
 
 .status-processed {
