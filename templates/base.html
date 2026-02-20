@@ -196,6 +196,7 @@
     <script src="{{ url_for('static', filename='js/mini-charts.js') }}"></script>
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ux.js') }}"></script>
+    {% block scripts %}{% endblock %}
 </body>
 
 </html>
