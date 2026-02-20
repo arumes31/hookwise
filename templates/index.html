@@ -906,7 +906,7 @@
     }
 
     // Unified initialization for first-load and HTMX swaps
-    (function () {
+    document.addEventListener('DOMContentLoaded', function () {
         if (window.statsInterval) clearInterval(window.statsInterval);
 
         refreshStats();
@@ -923,6 +923,6 @@
             const toggle = document.getElementById('maintenance-toggle');
             if (toggle) toggle.checked = d.maintenance_mode;
         }).catch(() => { });
-    })();
+    });
 </script>
 {% endblock %}

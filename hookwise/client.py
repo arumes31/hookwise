@@ -55,7 +55,7 @@ class ConnectWiseClient:
 
     def find_open_ticket(self, summary_contains: str) -> Optional[Dict[str, Any]]:
         try:
-            conditions = f"closedFlag=false AND summary contains '{summary_contains}'"
+            conditions = f"closedFlag=false AND status/name != 'Completed' AND summary contains '{summary_contains}'"
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(
                 f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30
@@ -67,6 +67,17 @@ class ConnectWiseClient:
             return None
         except requests.exceptions.RequestException as e:
             logger.error(f"Error finding ticket: {e}")
+            return None
+
+    def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
+        try:
+            response = self.session.get(
+                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, timeout=30
+            )
+            response.raise_for_status()
+            return cast(Dict[str, Any], response.json())
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error getting ticket {ticket_id}: {e}")
             return None
 
     def create_ticket(
