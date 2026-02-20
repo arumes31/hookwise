@@ -1251,8 +1251,8 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         preview.textContent = (prefix ? prefix + ' ' : '') + 'Source Name';
     }
 
-    document.addEventListener('DOMContentLoaded', async function () {
-        const form = document.getElementById('endpoint-form');
+    function initFormSelects(content) {
+        const form = content.getElementById ? content.getElementById('endpoint-form') : document.getElementById('endpoint-form');
         if (!form || form.dataset.initialized) return;
         form.dataset.initialized = 'true';
 
@@ -1284,7 +1284,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
 
         const loadBoardDetails = async (boardName) => {
             if (!boardName) {
-                [statusSelect, typeSelect, subtypeSelect, itemSelect].forEach(s => s.innerHTML = '<option value="">-- Select Board --</option>');
+                [statusSelect, closeStatusSelect, typeSelect, subtypeSelect, itemSelect].forEach(s => s.innerHTML = '<option value="">-- Select Board --</option>');
                 return;
             }
 
@@ -1328,39 +1328,40 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             } catch (e) { console.error('Error parsing maintenance windows', e); }
         }
 
-
         // Fetch Boards
-        try {
-            const res = await fetch('/api/cw/boards');
-            const boards = await res.json();
-            boardSelect.innerHTML = '<option value="">-- Use Default --</option>';
-            boards.forEach(b => {
-                const opt = document.createElement('option');
-                opt.value = b.name;
-                opt.textContent = b.name;
-                if (b.name === boardHidden) opt.selected = true;
-                boardSelect.appendChild(opt);
-            });
-            if (boardHidden) loadBoardDetails(boardHidden);
-        } catch (e) {
-            boardSelect.innerHTML = '<option value="">Error loading boards</option>';
-        }
+        (async () => {
+            try {
+                const res = await fetch('/api/cw/boards');
+                const boards = await res.json();
+                boardSelect.innerHTML = '<option value="">-- Use Default --</option>';
+                boards.forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.name;
+                    opt.textContent = b.name;
+                    if (b.name === boardHidden) opt.selected = true;
+                    boardSelect.appendChild(opt);
+                });
+                if (boardHidden) loadBoardDetails(boardHidden);
+            } catch (e) {
+                boardSelect.innerHTML = '<option value="">Error loading boards</option>';
+            }
 
-        // Fetch Priorities
-        try {
-            const res = await fetch('/api/cw/priorities');
-            const priorities = await res.json();
-            prioritySelect.innerHTML = '<option value="">-- Use Default --</option>';
-            priorities.forEach(p => {
-                const opt = document.createElement('option');
-                opt.value = p.name;
-                opt.textContent = p.name;
-                if (p.name === priorityHidden) opt.selected = true;
-                prioritySelect.appendChild(opt);
-            });
-        } catch (e) {
-            prioritySelect.innerHTML = '<option value="">Error loading priorities</option>';
-        }
+            // Fetch Priorities
+            try {
+                const res = await fetch('/api/cw/priorities');
+                const priorities = await res.json();
+                prioritySelect.innerHTML = '<option value="">-- Use Default --</option>';
+                priorities.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.name;
+                    opt.textContent = p.name;
+                    if (p.name === priorityHidden) opt.selected = true;
+                    prioritySelect.appendChild(opt);
+                });
+            } catch (e) {
+                prioritySelect.innerHTML = '<option value="">Error loading priorities</option>';
+            }
+        })();
 
         // Debounce helper
         function debounce(func, wait) {
@@ -1391,7 +1392,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             }
         }
 
-        // Initialize Routing Rules (Move to after boards/priorities fetched)
+        // Initialize Routing Rules
         const rulesRaw = document.getElementById('routing_rules').value;
         if (rulesRaw) {
             try {
@@ -1415,6 +1416,18 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 }
             }, 500));
         }
-    });
+    }
+
+    // Use htmx.onLoad for HTMX navigation compatibility (fires on both first load and HTMX swaps)
+    if (typeof htmx !== 'undefined') {
+        htmx.onLoad(function (content) {
+            initFormSelects(content);
+        });
+    } else {
+        document.addEventListener('DOMContentLoaded', function () {
+            initFormSelects(document);
+        });
+    }
+
 </script>
 {% endblock %}

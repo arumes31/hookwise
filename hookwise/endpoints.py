@@ -45,6 +45,7 @@ def _register() -> None:
                 customer_id_default=request.form.get("customer_id_default"),
                 board=request.form.get("board"),
                 status=request.form.get("status"),
+                close_status=request.form.get("close_status"),
                 ticket_type=request.form.get("ticket_type"),
                 subtype=request.form.get("subtype"),
                 item=request.form.get("item"),
@@ -83,6 +84,7 @@ def _register() -> None:
             config.customer_id_default = request.form.get("customer_id_default")
             config.board = request.form.get("board")
             config.status = request.form.get("status")
+            config.close_status = request.form.get("close_status")
             config.ticket_type = request.form.get("ticket_type")
             config.subtype = request.form.get("subtype")
             config.item = request.form.get("item")
@@ -141,7 +143,7 @@ def _register() -> None:
         field = request.json.get("field")
         value = request.json.get("value")
 
-        if field in ["board", "priority"]:
+        if field in ["board", "priority", "close_status", "status"]:
             setattr(config, field, value)
             db.session.commit()
             log_audit("quick_update", id, f"Endpoint {config.name} {field} updated to {value}")
@@ -157,6 +159,7 @@ def _register() -> None:
             customer_id_default=config.customer_id_default,
             board=config.board,
             status=config.status,
+            close_status=config.close_status,
             ticket_type=config.ticket_type,
             subtype=config.subtype,
             item=config.item,
