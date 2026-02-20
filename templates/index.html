@@ -625,10 +625,10 @@
     }
 
     // Live Dashboard Logic (Refined)
-    let isPaused = false;
-    let absoluteTime = false;
-    let currentDashboardPayload = null;
-    let isDashboardPretty = true;
+    var isPaused = typeof isPaused !== 'undefined' ? isPaused : false;
+    var absoluteTime = typeof absoluteTime !== 'undefined' ? absoluteTime : false;
+    var currentDashboardPayload = typeof currentDashboardPayload !== 'undefined' ? currentDashboardPayload : null;
+    var isDashboardPretty = typeof isDashboardPretty !== 'undefined' ? isDashboardPretty : true;
 
     function updateDashboardPayloadDisplay() {
         const display = document.getElementById('payload-display');
