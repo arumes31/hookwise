@@ -742,15 +742,20 @@ window.stopLoading = function () {
     setTimeout(() => bar.style.width = '0%', 500);
 };
 
-const originalFetch = window.fetch;
-window.fetch = function (resource, options) {
-    if (options && ['POST', 'PUT', 'DELETE'].includes(options.method)) {
-        if (!options.headers) options.headers = {};
-        options.headers['X-CSRFToken'] = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    }
-    startLoading();
-    return originalFetch.apply(this, arguments).finally(() => stopLoading());
-};
+if (!window.originalFetch) {
+    window.originalFetch = window.fetch;
+    window.fetch = function (resource, options) {
+        if (options && ['POST', 'PUT', 'DELETE'].includes(options.method)) {
+            if (!options.headers) options.headers = {};
+            const csrfTokenMeta = document.querySelector('meta[name="csrf-token"]');
+            if (csrfTokenMeta) {
+                options.headers['X-CSRFToken'] = csrfTokenMeta.getAttribute('content');
+            }
+        }
+        startLoading();
+        return window.originalFetch.apply(this, arguments).finally(() => stopLoading());
+    };
+}
 
 async function initAutoSave() {
     const form = document.getElementById('endpoint-form');
