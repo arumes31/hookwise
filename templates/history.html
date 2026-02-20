@@ -377,7 +377,7 @@
             const term = document.getElementById('history-search').value;
             const from = document.getElementById('date-from').value;
             const to = document.getElementById('date-to').value;
-            window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${from}&date_to=${to}`;
+            window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`;
         }
 
         function viewPayload(id) {
