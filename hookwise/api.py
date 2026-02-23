@@ -147,7 +147,183 @@ def _register() -> None:
         log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
         return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
 
-    # --- Stats ---
+    @main_bp.route("/endpoint/dry-run/<id>", methods=["POST"])
+    @auth_required
+    def dry_run_endpoint(id: str) -> Any:
+        """Simulate webhook processing without calling ConnectWise or Redis."""
+        config = WebhookConfig.query.get_or_404(id)
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+        except Exception:
+            return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
+
+        from .tasks import is_in_maintenance
+        from .utils import resolve_jsonpath
+
+        steps = []
+        result: dict[str, Any] = {}
+
+        # Step 1: Maintenance window
+        maintenance_active = is_in_maintenance(config)
+        steps.append({
+            "step": "Maintenance Window",
+            "active": maintenance_active,
+            "result": "skipped" if maintenance_active else "ok",
+        })
+        if maintenance_active:
+            return jsonify({"action": "skip", "reason": "maintenance_window", "steps": steps})
+
+        # Step 2: JSON mapping
+        json_mapping: dict[str, str] = {}
+        if config.json_mapping:
+            try:
+                json_mapping = json.loads(config.json_mapping)
+            except Exception:
+                pass
+
+        import re as _re
+        mapped_vals: dict[str, str] = {}
+        overridable = [
+            "summary", "description", "customer_id",
+            "ticket_type", "subtype", "item", "priority", "board", "status",
+        ]
+        for field in overridable:
+            if field in json_mapping:
+                mapping_val = json_mapping[field]
+                if isinstance(mapping_val, str) and " " in mapping_val:
+                    token_re = _re.compile(r"(\$\S+|[^\s]+)")
+                    tokens = token_re.findall(mapping_val)
+                    resolved: list[tuple[str, bool]] = []
+                    any_resolved = False
+                    for tok in tokens:
+                        if tok.startswith("$"):
+                            r_val = resolve_jsonpath(data, tok)
+                            if r_val is not None and str(r_val).strip():
+                                resolved.append((str(r_val).strip(), True))
+                                any_resolved = True
+                            else:
+                                resolved.append(("", True))
+                        else:
+                            resolved.append((tok, False))
+                    if any_resolved:
+                        output_parts = []
+                        for i, (v, is_var) in enumerate(resolved):
+                            if is_var:
+                                if v:
+                                    output_parts.append(v)
+                            else:
+                                left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
+                                right_ok = any(resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved)))
+                                if left_ok or right_ok:
+                                    output_parts.append(v)
+                        if output_parts:
+                            mapped_vals[field] = " ".join(output_parts)
+                else:
+                    r = resolve_jsonpath(data, mapping_val)
+                    if r is not None:
+                        mapped_vals[field] = str(r)
+        steps.append({"step": "JSONPath Mapping", "resolved": mapped_vals})
+
+        # Step 3: Routing rules
+        routing_rules: list[dict[str, Any]] = []
+        if config.routing_rules:
+            try:
+                routing_rules = json.loads(config.routing_rules)
+            except Exception:
+                pass
+        matched_rules = []
+        for rule in routing_rules:
+            rule_path = rule.get("path")
+            rule_regex = rule.get("regex")
+            if rule_path and rule_regex:
+                val = str(resolve_jsonpath(data, rule_path))
+                if _re.search(rule_regex, val, _re.IGNORECASE):
+                    matched_rules.append({
+                        "regex": rule_regex,
+                        "path": rule_path,
+                        "overrides": rule.get("overrides", {}),
+                    })
+        steps.append({"step": "Routing Rules", "matched": matched_rules})
+
+        # Step 4: Trigger field evaluation
+        trigger_field = config.trigger_field or ""
+        open_value = config.open_value or ""
+        close_value = config.close_value or ""
+        actual_val = str(resolve_jsonpath(data, trigger_field)) if trigger_field else ""
+        open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
+        close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
+        if actual_val in open_triggers:
+            alert_type = "DOWN"
+        elif actual_val in close_triggers:
+            alert_type = "UP"
+        else:
+            alert_type = "GENERIC"
+
+        steps.append({
+            "step": "Trigger Evaluation",
+            "trigger_field": trigger_field,
+            "actual_value": actual_val,
+            "alert_type": alert_type,
+        })
+
+        # Step 5: Predicted action
+        prefix = config.ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
+        mapped_summary = mapped_vals.get("summary")
+        monitor_name = data.get("monitor", {}).get("name", data.get("title", "Unknown Source"))
+        ticket_summary = f"{prefix} {mapped_summary}" if mapped_summary else f"{prefix} {monitor_name}"
+        predicted_action = (
+            "create_ticket" if alert_type == "DOWN"
+            else "close_ticket" if alert_type == "UP"
+            else "add_note_or_skip"
+        )
+
+        result = {
+            "action": predicted_action,
+            "alert_type": alert_type,
+            "ticket_summary": ticket_summary,
+            "company_id": mapped_vals.get("customer_id", config.company_id or ""),
+            "board": matched_rules[0].get("overrides", {}).get("board", mapped_vals.get("board", config.board or "")),
+            "steps": steps,
+        }
+        return jsonify(result)
+
+    # --- LLM Health ---
+
+    def _get_llm_health() -> dict[str, Any]:
+        import time as _time
+
+        import requests as _req
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://hookwise-llm:11434")
+        t0 = _time.monotonic()
+        try:
+            resp = _req.get(f"{ollama_host}/api/tags", timeout=5)
+            resp.raise_for_status()
+            payload = resp.json()
+            models = [m.get("name") for m in payload.get("models", [])]
+            return {
+                "status": "ok",
+                "models": models,
+                "model": models[0] if models else "unknown",
+                "response_ms": round((_time.monotonic() - t0) * 1000),
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "response_ms": round((_time.monotonic() - t0) * 1000),
+            }
+
+    @main_bp.route("/health/llm")
+    @auth_required
+    def health_llm() -> Any:
+        return jsonify(_get_llm_health())
+
+    @main_bp.route("/api/health/llm")
+    @auth_required
+    def api_health_llm() -> Any:
+        return jsonify(_get_llm_health())
+
+
 
     @main_bp.route("/api/stats")
     @auth_required

@@ -1,0 +1,117 @@
+<!-- Dry Run / Payload Simulation Modal -->
+<div id="dryRunModal"
+    style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.55); align-items:center; justify-content:center;">
+    <div
+        style="background:var(--surface,#1e1e2e); border:1px solid var(--border,#333); border-radius:12px; width:min(700px,95vw); max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div
+            style="padding:18px 22px; border-bottom:1px solid var(--border,#333); display:flex; align-items:center; justify-content:space-between;">
+            <h5 style="margin:0; font-size:1rem; font-weight:600;">🧪 Dry Run — Payload Simulation</h5>
+            <button id="dryRunClose"
+                style="background:none; border:none; color:inherit; font-size:1.2rem; cursor:pointer;"
+                title="Close">✕</button>
+        </div>
+        <div style="padding:18px 22px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:14px;">
+            <p style="margin:0; font-size:0.85rem; opacity:0.7;">Paste a raw JSON payload below to simulate processing
+                against this endpoint. Nothing will be sent to ConnectWise.</p>
+            <textarea id="dryRunPayload"
+                style="width:100%; box-sizing:border-box; min-height:160px; font-family:monospace; font-size:0.82rem; background:var(--bg,#13131f); border:1px solid var(--border,#333); border-radius:8px; padding:12px; color:inherit; resize:vertical;"
+                placeholder='{"monitor":{"name":"My Server"},"heartbeat":{"status":"0"},"msg":"Host unreachable"}'></textarea>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <button id="dryRunSubmit"
+                    style="padding:8px 20px; border-radius:8px; border:none; background:var(--accent,#7c6aff); color:#fff; font-weight:600; cursor:pointer;">▶
+                    Run Simulation</button>
+                <span id="dryRunLoading" style="display:none; font-size:0.82rem; opacity:0.6;">Simulating…</span>
+            </div>
+            <div id="dryRunResult" style="display:none;">
+                <hr style="border-color:var(--border,#333); margin:0;">
+                <h6 style="margin:10px 0 6px; font-size:0.88rem; font-weight:600;">Result</h6>
+                <div id="dryRunActionBadge" style="margin-bottom:10px;"></div>
+                <div id="dryRunDetails" style="font-size:0.82rem; display:flex; flex-direction:column; gap:6px;"></div>
+                <h6 style="margin:12px 0 6px; font-size:0.88rem; font-weight:600;">Steps</h6>
+                <div id="dryRunSteps"
+                    style="font-size:0.8rem; font-family:monospace; background:var(--bg,#13131f); border:1px solid var(--border,#333); border-radius:8px; padding:12px; white-space:pre-wrap; overflow-x:auto;">
+                </div>
+            </div>
+            <div id="dryRunError" style="display:none; color:#ff6b6b; font-size:0.85rem;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const modal = document.getElementById('dryRunModal');
+        const closeBtn = document.getElementById('dryRunClose');
+        const submitBtn = document.getElementById('dryRunSubmit');
+        const loading = document.getElementById('dryRunLoading');
+        const resultEl = document.getElementById('dryRunResult');
+        const errorEl = document.getElementById('dryRunError');
+        const badgeEl = document.getElementById('dryRunActionBadge');
+        const detailEl = document.getElementById('dryRunDetails');
+        const stepsEl = document.getElementById('dryRunSteps');
+        const endpointId = document.body.dataset.endpointId || '';
+
+        const actionColors = {
+            create_ticket: '#22c55e',
+            close_ticket: '#60a5fa',
+            add_note_or_skip: '#f59e0b',
+            skip: '#9ca3af',
+        };
+
+        function openModal() {
+            modal.style.display = 'flex';
+            resultEl.style.display = 'none';
+            errorEl.style.display = 'none';
+            document.getElementById('dryRunPayload').focus();
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+        submitBtn.addEventListener('click', async () => {
+            const payload = document.getElementById('dryRunPayload').value.trim();
+            if (!payload) return;
+            let parsed;
+            try { parsed = JSON.parse(payload); } catch (e) {
+                errorEl.textContent = '⚠ Invalid JSON: ' + e.message;
+                errorEl.style.display = 'block';
+                resultEl.style.display = 'none';
+                return;
+            }
+            errorEl.style.display = 'none';
+            loading.style.display = 'inline';
+            submitBtn.disabled = true;
+            try {
+                const resp = await fetch(`/endpoint/dry-run/${endpointId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(parsed),
+                });
+                const data = await resp.json();
+                const color = actionColors[data.action] || '#e5e7eb';
+                badgeEl.innerHTML = `<span style="background:${color}22; color:${color}; padding:4px 12px; border-radius:20px; font-weight:700; font-size:0.85rem;">${(data.action || '').replace(/_/g, ' ').toUpperCase()}</span>`;
+                detailEl.innerHTML = [
+                    data.ticket_summary ? `<div><span style="opacity:.6">Ticket Summary:</span> <strong>${data.ticket_summary}</strong></div>` : '',
+                    data.company_id ? `<div><span style="opacity:.6">Company ID:</span> <strong>${data.company_id}</strong></div>` : '',
+                    data.board ? `<div><span style="opacity:.6">Board:</span> <strong>${data.board}</strong></div>` : '',
+                    data.reason ? `<div><span style="opacity:.6">Reason:</span> <strong>${data.reason}</strong></div>` : '',
+                ].join('');
+                stepsEl.textContent = JSON.stringify(data.steps, null, 2);
+                resultEl.style.display = 'block';
+            } catch (e) {
+                errorEl.textContent = 'Request failed: ' + e.message;
+                errorEl.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+
+        // Expose open function for buttons on the page
+        window.openDryRunModal = openModal;
+    })();
+</script>

@@ -1,0 +1,68 @@
+# docker-compose.override.yml - Optional configuration overrides for HookWise
+#
+# Copy this file to docker-compose.override.yml and uncomment the lines you need.
+# Docker Compose automatically merges this file on top of docker-compose.yml.
+#
+# Usage:
+#   docker compose up -d
+#   (No extra -f flag needed — override.yml is picked up automatically)
+
+services:
+  hookwise-proxy:
+    environment:
+      # ── LLM Tuning ──────────────────────────────────────────────────────────
+      # Maximum tokens the LLM may generate per RCA note.
+      # Increase if notes are truncated; decrease for faster responses.
+      # Default: 512. See README §Tuning Output Length for RAM/load guidance.
+      # - "LLM_MAX_TOKENS=512"
+
+      # Seconds to wait for Ollama to respond before giving up.
+      # Increase on slow CPU-only hosts. Default: 180.
+      # - "LLM_TIMEOUT=180"
+
+      # ── Deduplication ───────────────────────────────────────────────────────
+      # How long (seconds) a ticket is cached as "open" before re-checking CW.
+      # Lower = more CW API calls; higher = more chance of stale state.
+      # Default: 300 (5 minutes).
+      # - "VIABILITY_TTL=300"
+
+      # ── Model Selection ─────────────────────────────────────────────────────
+      # Ollama model to use for RCA analysis. Pull with:
+      #   docker exec -it hookwise-llm ollama pull <model>
+      # Default: phi3
+      # - "AI_MODEL=phi3"
+
+      # ── Security & Access ───────────────────────────────────────────────────
+      # Redirect all HTTP traffic to HTTPS. Requires a reverse proxy with TLS.
+      # - "FORCE_HTTPS=true"
+
+      # Comma-separated CIDR list of IPs that may access the GUI without auth.
+      # - "GUI_TRUSTED_IPS=10.0.0.0/8,192.168.1.100"
+
+      # ── Logging ─────────────────────────────────────────────────────────────
+      # Days to retain webhook logs before auto-cleanup. Default: 30.
+      # - "LOG_RETENTION_DAYS=30"
+
+      # ── Debug ───────────────────────────────────────────────────────────────
+      # Enable verbose Flask debug mode. NEVER use in production.
+      # - "DEBUG_MODE=false"
+
+  hookwise-worker:
+    environment:
+      # Worker overrides mirror the proxy. Add any shared env vars here.
+      # - "LLM_MAX_TOKENS=512"
+      # - "LLM_TIMEOUT=180"
+      # - "VIABILITY_TTL=300"
+
+  hookwise-llm:
+    # ── GPU Passthrough (uncomment for NVIDIA GPU) ───────────────────────────
+    # Enables GPU acceleration — dramatically reduces LLM inference time.
+    # Requires nvidia-container-toolkit installed on the host.
+    #
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]

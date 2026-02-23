@@ -555,6 +555,18 @@
                     </div>
                 </div>
 
+                <div class="bg-black bg-opacity-25 rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-secondary small">LLM (Ollama)</span>
+                        <span id="hud-llm-status" class="font-monospace small text-secondary">—</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1" id="hud-llm-model-row"
+                        style="display:none!important;">
+                        <span class="text-secondary small">Active Model</span>
+                        <span id="hud-llm-model" class="font-monospace text-info small"></span>
+                    </div>
+                </div>
+
                 <div class="d-grid">
                     <button class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Close</button>
                 </div>
@@ -915,6 +927,31 @@
         }
 
         modal.show();
+
+        // Fetch LLM health asynchronously when HUD opens
+        const llmStatus = document.getElementById('hud-llm-status');
+        const llmModelRow = document.getElementById('hud-llm-model-row');
+        const llmModel = document.getElementById('hud-llm-model');
+        if (llmStatus) {
+            llmStatus.textContent = '…';
+            fetch('/api/health/llm').then(r => r.json()).then(d => {
+                if (d.status === 'ok') {
+                    llmStatus.textContent = `✅ OK (${d.response_ms}ms)`;
+                    llmStatus.className = 'font-monospace small text-success';
+                    if (d.model) {
+                        llmModel.textContent = d.model;
+                        llmModelRow.style.display = '';
+                    }
+                } else {
+                    llmStatus.textContent = '❌ Offline';
+                    llmStatus.className = 'font-monospace small text-danger';
+                    llmModelRow.style.display = 'none';
+                }
+            }).catch(() => {
+                llmStatus.textContent = '⚠ Unreachable';
+                llmStatus.className = 'font-monospace small text-warning';
+            });
+        }
     }
 
     // Unified initialization for first-load and HTMX swaps
