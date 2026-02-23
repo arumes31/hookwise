@@ -538,8 +538,10 @@ def handle_webhook_logic(
                         
                         # 2. Try wildcard matches if no exact match found
                         if not mapping:
-                            from sqlalchemy import or_
                             import fnmatch
+
+                            from sqlalchemy import or_
+
                             # Find all mappings that contain wildcards (* or ?)
                             wildcard_mappings = GlobalMapping.query.filter(
                                 or_(
@@ -565,15 +567,28 @@ def handle_webhook_logic(
                                 available_companies = [c.get("identifier") for c in companies if c.get("identifier")]
                                 
                                 if available_companies:
+                                    companies_str = ", ".join(available_companies)
                                     llm_prompt = (
-                                        f"Match this incoming tenant string: '{tenant_val}' to the best option from this list of company identifiers from ConnectWise: {', '.join(available_companies)}. "
-                                        f"Respond with ONLY the exact string from the list that matches best. If none match reasonably well, reply with exactly 'NONE'."
+                                        f"Match this incoming tenant string: '{tenant_val}' to the best option "
+                                        f"from this list of company identifiers from ConnectWise: {companies_str}. "
+                                        "Respond with ONLY the exact string from the list that matches best. "
+                                        "If none match reasonably well, reply with exactly 'NONE'."
                                     )
                                     llm_resp = call_llm(llm_prompt)
-                                    if llm_resp and llm_resp.strip() != "NONE" and llm_resp.strip() in available_companies:
+                                    if (
+                                        llm_resp
+                                        and llm_resp.strip() != "NONE"
+                                        and llm_resp.strip() in available_companies
+                                    ):
                                         company_id = llm_resp.strip()
-                                        logger.info(f"LLM fallback matched: {tenant_val} -> {company_id}", extra=extra)
-                                        log_entry.matched_rule = (log_entry.matched_rule or "") + f" [LLM Global: {tenant_val} -> {company_id}]"
+                                        logger.info(
+                                            f"LLM fallback matched: {tenant_val} -> {company_id}",
+                                            extra=extra,
+                                        )
+                                        log_entry.matched_rule = (
+                                            (log_entry.matched_rule or "")
+                                            + f" [LLM Global: {tenant_val} -> {company_id}]"
+                                        )
 
                         if mapping and not company_id:
                             company_id = mapping.company_id
