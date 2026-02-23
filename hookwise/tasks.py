@@ -394,9 +394,9 @@ def handle_webhook_logic(
                             if output_parts:
                                 mapped_vals[field] = " ".join(output_parts)
                     else:
-                        val = resolve_jsonpath(data, mapping_val)
-                        if val is not None:
-                            mapped_vals[field] = str(val)
+                        mapped_raw = resolve_jsonpath(data, mapping_val)
+                        if mapped_raw is not None:
+                            mapped_vals[field] = str(mapped_raw)
 
             mapped_summary = mapped_vals.get("summary")
             mapped_description = mapped_vals.get("description")
@@ -569,12 +569,12 @@ def handle_webhook_logic(
                     tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
                     tenant_val = None
                     for tf in tenant_fields:
-                        val = resolve_jsonpath(data, f"$.{tf}")
-                        if not val:
+                        tenant_raw = resolve_jsonpath(data, f"$.{tf}")
+                        if not tenant_raw:
                             # Try nested commonly used paths like .TaskInfo.Tenant
-                            val = resolve_jsonpath(data, f"$.TaskInfo.{tf}")
-                        if val:
-                            tenant_val = str(val)
+                            tenant_raw = resolve_jsonpath(data, f"$.TaskInfo.{tf}")
+                        if tenant_raw:
+                            tenant_val = str(tenant_raw)
                             break
 
                     if tenant_val:
