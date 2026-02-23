@@ -360,14 +360,16 @@ def handle_webhook_logic(
                         # Support multiple $ variables separated by spaces
                         parts = mapping_val.split(" ")
                         resolved_parts = []
+                        any_jsonpath_resolved = False
                         for part in parts:
-                            if part.startswith("$."):
+                            if part.startswith("$"):
                                 r_val = resolve_jsonpath(data, part)
                                 if r_val is not None and str(r_val).strip():
                                     resolved_parts.append(str(r_val).strip())
+                                    any_jsonpath_resolved = True
                             else:
                                 resolved_parts.append(part)
-                        if resolved_parts:
+                        if resolved_parts and any_jsonpath_resolved:
                             mapped_vals[field] = " ".join(resolved_parts)
                     else:
                         val = resolve_jsonpath(data, mapping_val)
