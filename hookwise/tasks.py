@@ -482,7 +482,7 @@ def handle_webhook_logic(
                             if not is_closed and status_name not in closed_statuses:
                                 is_usable = True
                                 if not is_replay:
-                                    redis_client.set(viable_key, "1", ex=300)
+                                    redis_client.set(viable_key, "1", ex=30)
 
                     if is_usable:    
                         note_text = (
