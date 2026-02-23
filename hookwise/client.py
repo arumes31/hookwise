@@ -141,30 +141,47 @@ class ConnectWiseClient:
             logger.error(error_msg)
             return None
 
-    def close_ticket(self, ticket_id: int, resolution: str) -> bool:
+    def close_ticket(self, ticket_id: int, resolution: str, status_name: Optional[str] = None) -> bool:
+        target_status = status_name or self.status_closed
+        patch_payload = [{"op": "replace", "path": "/status/name", "value": target_status}]
         try:
-            patch_payload = [{"op": "replace", "path": "/status/name", "value": self.status_closed}]
             response = self.session.patch(
                 f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
             )
-            response.raise_for_status()
-            note_payload = {
-                "text": resolution,
-                "detailDescriptionFlag": True,
-                "internalAnalysisFlag": False,
-                "resolutionFlag": True,
-            }
-            self.session.post(
+            if not response.ok:
+                logger.error(
+                    "Error closing ticket #%s with status '%s': %s - %s",
+                    ticket_id, target_status, response.status_code, response.text,
+                )
+                return False
+        except requests.exceptions.RequestException as e:
+            logger.error("Request exception closing ticket #%s: %s", ticket_id, e)
+            return False
+
+        note_payload = {
+            "text": resolution,
+            "detailDescriptionFlag": True,
+            "internalAnalysisFlag": False,
+            "resolutionFlag": True,
+        }
+        try:
+            note_response = self.session.post(
                 f"{self.base_url}/service/tickets/{ticket_id}/notes",
                 headers=self.headers,
                 json=note_payload,
                 timeout=30,
             )
-            logger.info(f"Closed ticket #{ticket_id}")
-            return True
+            if note_response.status_code not in [200, 201]:
+                logger.error(
+                    "Error adding closing note to ticket #%s: %s - %s",
+                    ticket_id, note_response.status_code, note_response.text,
+                )
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error closing ticket #{ticket_id}: {e}")
-            return False
+            logger.error("Request exception adding closing note to ticket #%s: %s", ticket_id, e)
+
+        logger.info("Closed ticket #%s", ticket_id)
+        return True
+
 
     def add_ticket_note(self, ticket_id: int, note_text: str, is_internal: bool = False) -> bool:
         try:
@@ -180,11 +197,14 @@ class ConnectWiseClient:
                 json=note_payload,
                 timeout=30,
             )
-            response.raise_for_status()
+            if response.status_code not in [200, 201]:
+                logger.error(f"Error adding note to ticket #{ticket_id}: {response.status_code} - {response.text}")
+                return False
+                
             logger.info(f"Added note to ticket #{ticket_id}")
             return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error adding note to ticket #{ticket_id}: {e}")
+            logger.error(f"Request exception adding note to ticket #{ticket_id}: {e}")
             return False
 
     def get_boards(self) -> List[Dict[str, Any]]:
