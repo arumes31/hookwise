@@ -212,6 +212,24 @@ By default, HookWise uses `phi3:latest`. You can swap this for `llama3`, `mistra
 ### The RCA System Prompt
 The analysis is guided by a global system prompt that tells the AI to be concise and focused on remediation. You can customize the **RCA Instructions** per endpoint in the Web GUI, allowing different alerts to receive different styles of analysis (e.g., "Developer-focused" vs "Support-focused").
 
+### 🎚️ Tuning Output Length (`LLM_MAX_TOKENS`)
+
+The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is allowed to generate per RCA response. If your notes appear **cut off mid-sentence**, this value is too low.
+
+| Value | Expected Output | RAM Impact | Best For |
+|-------|----------------|-----------|---------|
+| `100` | 1–2 sentences (often truncated) | ~2–3 GB | Testing only — not recommended |
+| `256` | Short paragraph, may truncate complex alerts | ~2–3 GB | Low-RAM environments (≤ 4 GB) |
+| `512` *(default)* | Full RCA with 3–5 bullet points | ~3–4 GB | Most deployments |
+| `1024` | Detailed multi-section analysis | ~4–6 GB | High-volume or complex MSP environments |
+| `2048` | Very long, comprehensive notes | ~6–8 GB | Dedicated LLM host with 8+ GB RAM |
+
+> [!TIP]
+> Set `LLM_MAX_TOKENS=512` in your `docker-compose.yml` or `.env`. Larger values increase **response time** linearly — expect ~5–10s per 512 tokens on a 4-core host.
+
+> [!NOTE]
+> Token ≠ word. Roughly 1 token ≈ 0.75 words. `512` tokens ≈ ~380 words — enough for a complete, structured RCA note.
+
 ---
 
 ## ⚙️ Extensive Configuration
@@ -232,6 +250,7 @@ The analysis is guided by a global system prompt that tells the AI to be concise
 | `GUI_TRUSTED_IPS`| CIDR list (e.g., `10.0.0.0/24, 192.168.1.5`). |
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
 | `FORCE_HTTPS` | Redirects all traffic to TLS. |
+| `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
 
 ---
 

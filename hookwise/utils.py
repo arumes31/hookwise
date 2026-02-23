@@ -32,7 +32,7 @@ def call_llm(
                 "prompt": prompt,
                 "system": system_prompt,
                 "stream": False,
-                "options": {"num_predict": 100, "temperature": 0.1},
+                "options": {"num_predict": int(os.environ.get("LLM_MAX_TOKENS", "512")), "temperature": 0.1},
             },
             timeout=90,
         )
