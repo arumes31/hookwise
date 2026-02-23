@@ -143,6 +143,34 @@ def test_close_ticket_on_up_signal(mock_cw, mock_redis, app):
 
 @patch("hookwise.tasks.redis_client")
 @patch("hookwise.tasks.cw_client")
+def test_close_ticket_with_custom_status(mock_cw, mock_redis, app):
+    """Test that an UP signal closes a ticket with a custom status name."""
+    mock_redis.get.return_value = b"123"
+    mock_cw.close_ticket.return_value = True
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Test Custom Close",
+            trigger_field="status",
+            open_value="0",
+            close_value="1",
+            close_status="Completed",
+            board="Test Board",
+        )
+        db.session.add(config)
+        db.session.commit()
+        config_id = config.id
+
+        data = {"status": "1", "monitor": {"name": "CustomServer"}, "msg": "UP"}
+        handle_webhook_logic(config_id, data, "req-custom-close-1")
+
+        mock_cw.close_ticket.assert_called_once()
+        call_kwargs = mock_cw.close_ticket.call_args.kwargs
+        assert call_kwargs["status_name"] == "Completed"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
 def test_maintenance_window_blocks_processing(mock_cw, mock_redis, app):
     """Test that webhooks during a maintenance window are skipped."""
     import json

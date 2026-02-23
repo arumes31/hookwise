@@ -613,7 +613,7 @@ def handle_webhook_logic(
 
                 if ticket_id:
                     resolution = f"Resource {monitor_name} is back UP.\nMessage: {msg}\nID: {request_id}"
-                    if cw_client.close_ticket(ticket_id, resolution):
+                    if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
                         redis_client.delete(cache_key)
                         log_to_web(
                             f"UP alert: Closed ticket (ID: {ticket_id})",

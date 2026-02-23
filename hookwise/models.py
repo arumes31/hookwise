@@ -41,6 +41,7 @@ class WebhookConfig(Base):
     customer_id_default = db.Column(db.String(50))
     board = db.Column(db.String(100))
     status = db.Column(db.String(100))
+    close_status = db.Column(db.String(100))
     ticket_type = db.Column(db.String(100))
     subtype = db.Column(db.String(100))
     item = db.Column(db.String(100))
@@ -80,6 +81,7 @@ class WebhookConfig(Base):
             "customer_id_default": self.customer_id_default,
             "board": self.board,
             "status": self.status,
+            "close_status": self.close_status,
             "ticket_type": self.ticket_type,
             "subtype": self.subtype,
             "item": self.item,
