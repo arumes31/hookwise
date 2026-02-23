@@ -489,7 +489,7 @@ def handle_webhook_logic(
                         redis_client.delete(viable_key)
                         ticket_id = None
 
-                existing_ticket = cw_client.find_open_ticket(ticket_summary)
+                existing_ticket = cw_client.find_open_ticket(ticket_summary, close_status=config.close_status)
                 if existing_ticket:
                     ticket_id = existing_ticket["id"]
                     note_text = (

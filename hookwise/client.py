@@ -53,10 +53,12 @@ class ConnectWiseClient:
         session.mount("http://", adapter)
         return session
 
-    def find_open_ticket(self, summary_contains: str) -> Optional[Dict[str, Any]]:
+    def find_open_ticket(self, summary_contains: str, close_status: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:
             safe_summary = summary_contains.replace("'", "''")
-            excluded_statuses = [self.status_closed, "Cancelled"]
+            excluded_statuses = [self.status_closed, "Cancelled", "Completed"]
+            if close_status:
+                excluded_statuses.append(close_status)
             status_clauses = " AND ".join([f"status/name != '{s}'" for s in excluded_statuses])
             
             conditions = (
