@@ -385,7 +385,10 @@ def handle_webhook_logic(
                                 else:
                                     # Include literal only if a neighbour variable resolved
                                     left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
-                                    right_ok = any(resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved)))
+                                    right_ok = any(
+                                        resolved[j][0] and resolved[j][1]
+                                        for j in range(i + 1, len(resolved))
+                                    )
                                     if left_ok or right_ok:
                                         output_parts.append(val)
                             if output_parts:
