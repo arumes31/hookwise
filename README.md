@@ -243,6 +243,14 @@ The analysis is guided by a global system prompt that tells the AI to be concise
 | **Description**| `$.msg` | Extracts the alert body. |
 | **Company** | `$.tags.client_id` | Maps dynamic client IDs. |
 
+#### 🔗 Multi-Variable Mapping
+HookWise supports combining multiple JSONPath variables in a single field. Simply space-separate the paths. Empty or null variables in the payload will be automatically ignored.
+
+- **Example Mapping**: `"summary": "$.TaskInfo.Tenant $.TaskInfo.Name"`
+- **Payload 1**: `{"TaskInfo": {"Tenant": "Acme", "Name": "SRV01"}}` -> **Result**: `Acme SRV01`
+- **Payload 2**: `{"TaskInfo": {"Name": "SRV01"}}` -> **Result**: `SRV01` (Tenant is missing/null and ignored)
+- **Payload 3**: `{"TaskInfo": {"Tenant": "Acme"}}` -> **Result**: `Acme`
+
 ### Placeholder Templates
 Use these in your "Ticket Description Template":
 - `{{ monitor_name }}`: The alert source name.
