@@ -430,7 +430,11 @@ def handle_webhook_logic(
                 alert_type = "GENERIC"
 
             prefix = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-            ticket_summary = mapped_summary or (f"{prefix} {monitor_name}" if prefix else monitor_name)
+            
+            if mapped_summary:
+                ticket_summary = f"{prefix} {mapped_summary}" if prefix else mapped_summary
+            else:
+                ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
 
             cache_key = f"{CACHE_PREFIX}{config_id}:{monitor_name}"
 
