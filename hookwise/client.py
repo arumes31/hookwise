@@ -149,7 +149,10 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
             )
             if response.status_code != 200:
-                logger.error(f"Error closing ticket #{ticket_id} with status '{target_status}': {response.status_code} - {response.text}")
+                logger.error(
+                    f"Error closing ticket #{ticket_id} with status '{target_status}': "
+                    f"{response.status_code} - {response.text}"
+                )
                 return False
 
             note_payload = {
@@ -165,7 +168,10 @@ class ConnectWiseClient:
                 timeout=30,
             )
             if note_response.status_code not in [200, 201]:
-                logger.error(f"Error adding closing note to ticket #{ticket_id}: {note_response.status_code} - {note_response.text}")
+                logger.error(
+                    f"Error adding closing note to ticket #{ticket_id}: "
+                    f"{note_response.status_code} - {note_response.text}"
+                )
             
             logger.info(f"Closed ticket #{ticket_id}")
             return True
