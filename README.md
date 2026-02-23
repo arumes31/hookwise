@@ -223,6 +223,7 @@ The analysis is guided by a global system prompt that tells the AI to be concise
 | `CW_SERVICE_BOARD` | Primary board if not overridden. |
 | `CW_STATUS_NEW` | Initial status for new tickets. |
 | `CW_STATUS_CLOSED` | Status used when an `UP` alert is received. |
+| `VIABILITY_TTL` | Seconds a ticket is cached as "open" before re-checking ConnectWise (Default: `300`). |
 
 ### System & Security
 | Variable | Usage |
@@ -242,6 +243,18 @@ The analysis is guided by a global system prompt that tells the AI to be concise
 | **Summary** | `$.monitor.name` | Extracts Uptime Kuma monitor name. |
 | **Description**| `$.msg` | Extracts the alert body. |
 | **Company** | `$.tags.client_id` | Maps dynamic client IDs. |
+
+#### 🔗 Multi-Variable Mapping
+HookWise supports combining multiple JSONPath variables in a single field. Simply space-separate the paths. Empty or null variables in the payload will be automatically ignored. Any segment not starting with `$` is treated as **literal text**.
+
+> [!NOTE]
+> The field will only be overridden if **at least one** JSONPath resolves to a non-empty value. Literal-only results are ignored to prevent accidental data loss.
+
+- **Example Mapping**: `"summary": "$.TaskInfo.Tenant $.TaskInfo.Name"`
+- **Payload 1**: `{"TaskInfo": {"Tenant": "Acme", "Name": "SRV01"}}` -> **Result**: `Acme SRV01`
+- **Payload 2**: `{"TaskInfo": {"Name": "SRV01"}}` -> **Result**: `SRV01`
+- **Payload 3**: `"summary": "Prefix $.SomePath"` where `$.SomePath` is missing -> Result: **No Override** (Default monitor name is used).
+- **Payload 4**: `"summary": "Prefix $.SomePath"` where `$.SomePath` exists -> Result: `Prefix Value`
 
 ### Placeholder Templates
 Use these in your "Ticket Description Template":

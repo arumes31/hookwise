@@ -26,6 +26,8 @@ PSA_TASK_DURATION = Histogram("hookwise_psa_task_seconds", "Time spent on PSA ta
 # Redis Cache setup
 CACHE_PREFIX = "hookwise_ticket:"
 CACHE_TTL = 3600 * 24  # 24 hours
+_raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
+VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
 cw_client = ConnectWiseClient()
 
@@ -355,9 +357,46 @@ def handle_webhook_logic(
             mapped_vals = {}
             for field in overridable_fields:
                 if field in json_mapping:
-                    val = resolve_jsonpath(data, json_mapping[field])
-                    if val is not None:
-                        mapped_vals[field] = str(val)
+                    mapping_val = json_mapping[field]
+                    if isinstance(mapping_val, str) and " " in mapping_val:
+                        # Tokenize: identify $-variable tokens vs literal text tokens
+                        token_re = re.compile(r"(\$\S+|[^\s]+)")
+                        tokens = token_re.findall(mapping_val)
+                        # Resolve each token
+                        resolved: list[tuple[str, bool]] = []  # (value, is_variable)
+                        any_jsonpath_resolved = False
+                        for tok in tokens:
+                            if tok.startswith("$"):
+                                r_val = resolve_jsonpath(data, tok)
+                                if r_val is not None and str(r_val).strip():
+                                    resolved.append((str(r_val).strip(), True))
+                                    any_jsonpath_resolved = True
+                                else:
+                                    resolved.append(("", True))  # failed variable
+                            else:
+                                resolved.append((tok, False))  # literal
+                        if any_jsonpath_resolved:
+                            # Drop literals that are only adjacent to failed variables
+                            output_parts = []
+                            for i, (val, is_var) in enumerate(resolved):
+                                if is_var:
+                                    if val:
+                                        output_parts.append(val)
+                                else:
+                                    # Include literal only if a neighbour variable resolved
+                                    left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
+                                    right_ok = any(
+                                        resolved[j][0] and resolved[j][1]
+                                        for j in range(i + 1, len(resolved))
+                                    )
+                                    if left_ok or right_ok:
+                                        output_parts.append(val)
+                            if output_parts:
+                                mapped_vals[field] = " ".join(output_parts)
+                    else:
+                        mapped_raw = resolve_jsonpath(data, mapping_val)
+                        if mapped_raw is not None:
+                            mapped_vals[field] = str(mapped_raw)
 
             mapped_summary = mapped_vals.get("summary")
             mapped_description = mapped_vals.get("description")
@@ -446,7 +485,9 @@ def handle_webhook_logic(
                     viable_key = f"{cache_key}:viable"
                     is_usable = False
                     
-                    if redis_client.get(viable_key):
+                    is_replay = request_id.startswith(("replay_", "test_"))
+                    
+                    if not is_replay and redis_client.get(viable_key):
                         is_usable = True
                     else:
                         ticket_data = cw_client.get_ticket(ticket_id)
@@ -456,12 +497,16 @@ def handle_webhook_logic(
                         else:
                             is_closed = ticket_data.get("closedFlag", False)
                             status_name = ticket_data.get("status", {}).get("name", "")
-                            closed_statuses = {"Completed", "Cancelled"}
+                            closed_statuses = {"Completed", "Cancelled", "Closed"}
+                            if cw_client.status_closed:
+                                closed_statuses.add(cw_client.status_closed)
                             if config.close_status:
                                 closed_statuses.add(config.close_status)
+                                
                             if not is_closed and status_name not in closed_statuses:
                                 is_usable = True
-                                redis_client.set(viable_key, "1", ex=300)
+                                if not is_replay:
+                                    redis_client.set(viable_key, "1", ex=VIABILITY_TTL)
 
                     if is_usable:    
                         note_text = (
@@ -524,12 +569,12 @@ def handle_webhook_logic(
                     tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
                     tenant_val = None
                     for tf in tenant_fields:
-                        val = resolve_jsonpath(data, f"$.{tf}")
-                        if not val:
+                        tenant_raw = resolve_jsonpath(data, f"$.{tf}")
+                        if not tenant_raw:
                             # Try nested commonly used paths like .TaskInfo.Tenant
-                            val = resolve_jsonpath(data, f"$.TaskInfo.{tf}")
-                        if val:
-                            tenant_val = str(val)
+                            tenant_raw = resolve_jsonpath(data, f"$.TaskInfo.{tf}")
+                        if tenant_raw:
+                            tenant_val = str(tenant_raw)
                             break
 
                     if tenant_val:
