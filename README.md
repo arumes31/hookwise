@@ -251,6 +251,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
 | `FORCE_HTTPS` | Redirects all traffic to TLS. |
 | `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
+| `LLM_TIMEOUT` | Seconds to wait for the LLM to respond (Default: `180`). Increase on slow/CPU-only hosts. |
 
 ---
 

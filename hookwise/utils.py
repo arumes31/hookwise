@@ -34,7 +34,7 @@ def call_llm(
                 "stream": False,
                 "options": {"num_predict": int(os.environ.get("LLM_MAX_TOKENS", "512")), "temperature": 0.1},
             },
-            timeout=90,
+            timeout=int(os.environ.get("LLM_TIMEOUT", "180")),
         )
         response.raise_for_status()
         return cast(str, response.json().get("response", "").strip())
