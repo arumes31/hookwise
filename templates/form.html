@@ -398,6 +398,7 @@
                                             <option value="uptime_kuma">Uptime Kuma</option>
                                             <option value="grafana">Grafana</option>
                                             <option value="zabbix">Zabbix</option>
+                                            <option value="cipp">CIPP</option>
                                         </select>
                                         <button type="button"
                                             class="btn btn-sm btn-link text-info p-0 text-decoration-none"
@@ -1035,6 +1036,12 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             trigger_field: 'event_value',
             open_value: '1',
             close_value: '0'
+        },
+        cipp: {
+            json_mapping: '{\n  "summary": "$.TaskInfo.Name",\n  "description": "$.TaskInfo.Results",\n  "ticket_type": "$.TaskInfo.Command"\n}',
+            trigger_field: 'TaskInfo.TaskState',
+            open_value: 'Pending',
+            close_value: 'Resolved'
         }
     };
 
