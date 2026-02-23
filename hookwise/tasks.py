@@ -564,7 +564,7 @@ def handle_webhook_logic(
                             companies = cw_client.get_companies()
                             if companies:
                                 # Create a list of identifiers (typically 'identifier' or 'name')
-                                available_companies = [c.get("identifier") for c in companies if c.get("identifier")]
+                                available_companies = [str(c.get("identifier")) for c in companies if c.get("identifier")]
                                 
                                 if available_companies:
                                     companies_str = ", ".join(available_companies)
