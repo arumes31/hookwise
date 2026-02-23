@@ -355,9 +355,24 @@ def handle_webhook_logic(
             mapped_vals = {}
             for field in overridable_fields:
                 if field in json_mapping:
-                    val = resolve_jsonpath(data, json_mapping[field])
-                    if val is not None:
-                        mapped_vals[field] = str(val)
+                    mapping_val = json_mapping[field]
+                    if isinstance(mapping_val, str) and " " in mapping_val:
+                        # Support multiple $ variables separated by spaces
+                        parts = mapping_val.split(" ")
+                        resolved_parts = []
+                        for part in parts:
+                            if part.startswith("$."):
+                                r_val = resolve_jsonpath(data, part)
+                                if r_val is not None and str(r_val).strip():
+                                    resolved_parts.append(str(r_val).strip())
+                            else:
+                                resolved_parts.append(part)
+                        if resolved_parts:
+                            mapped_vals[field] = " ".join(resolved_parts)
+                    else:
+                        val = resolve_jsonpath(data, mapping_val)
+                        if val is not None:
+                            mapped_vals[field] = str(val)
 
             mapped_summary = mapped_vals.get("summary")
             mapped_description = mapped_vals.get("description")
@@ -446,7 +461,9 @@ def handle_webhook_logic(
                     viable_key = f"{cache_key}:viable"
                     is_usable = False
                     
-                    if redis_client.get(viable_key):
+                    is_replay = request_id.startswith("replay_") or request_id.startswith("test_")
+                    
+                    if not is_replay and redis_client.get(viable_key):
                         is_usable = True
                     else:
                         ticket_data = cw_client.get_ticket(ticket_id)
@@ -456,12 +473,16 @@ def handle_webhook_logic(
                         else:
                             is_closed = ticket_data.get("closedFlag", False)
                             status_name = ticket_data.get("status", {}).get("name", "")
-                            closed_statuses = {"Completed", "Cancelled"}
+                            closed_statuses = {"Completed", "Cancelled", "Closed"}
+                            if cw_client.status_closed:
+                                closed_statuses.add(cw_client.status_closed)
                             if config.close_status:
                                 closed_statuses.add(config.close_status)
+                                
                             if not is_closed and status_name not in closed_statuses:
                                 is_usable = True
-                                redis_client.set(viable_key, "1", ex=300)
+                                if not is_replay:
+                                    redis_client.set(viable_key, "1", ex=300)
 
                     if is_usable:    
                         note_text = (
