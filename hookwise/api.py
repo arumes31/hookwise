@@ -323,6 +323,25 @@ def _register() -> None:
     def api_health_llm() -> Any:
         return jsonify(_get_llm_health())
 
+    @main_bp.route("/endpoint/dry-run-llm/<id>", methods=["POST"])
+    @auth_required
+    def dry_run_llm(id: str) -> Any:
+        """Run the LLM RCA prompt against the provided payload without creating any ticket."""
+        config = WebhookConfig.query.get_or_404(id)
+        data = request.get_json(force=True, silent=True) or {}
+        from .utils import call_llm
+        rca_prompt = (
+            "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
+            f"steps. Be concise and technical. Payload: {json.dumps(data)}"
+        )
+        system_prompt = config.rca_instructions or (
+            "You are a helpful assistant specialized in ConnectWise ticketing and alert analysis. "
+            "Be concise and return only the requested value."
+        )
+        result = call_llm(rca_prompt, system_prompt=system_prompt)
+        if result:
+            return jsonify({"status": "ok", "rca": result})
+        return jsonify({"status": "error", "rca": "LLM returned no response — check OLLAMA_HOST and model."}), 502
 
 
     @main_bp.route("/api/stats")

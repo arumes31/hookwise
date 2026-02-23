@@ -33,6 +33,24 @@
                 </div>
             </div>
             <div id="dryRunError" style="display:none; color:#ff6b6b; font-size:0.85rem;"></div>
+
+            <hr style="border-color:var(--border,#333); margin:4px 0;">
+            <h6 style="margin:8px 0 4px; font-size:0.88rem; font-weight:600;">🧠 Test LLM (RCA Preview)</h6>
+            <p style="margin:0 0 8px; font-size:0.8rem; opacity:0.6;">Send the payload above to the LLM and preview the
+                generated RCA note. Reuses the payload entered above.</p>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <button id="dryRunLlmSubmit"
+                    style="padding:8px 20px; border-radius:8px; border:none; background:#a855f7; color:#fff; font-weight:600; cursor:pointer;">🧠
+                    Run RCA</button>
+                <span id="dryRunLlmLoading" style="display:none; font-size:0.82rem; opacity:0.6;">Asking LLM… (may take
+                    10–30s)</span>
+            </div>
+            <div id="dryRunLlmResult" style="display:none; margin-top:10px;">
+                <div id="dryRunLlmOutput"
+                    style="font-size:0.82rem; font-family:monospace; background:var(--bg,#13131f); border:1px solid #a855f730; border-radius:8px; padding:12px; white-space:pre-wrap; overflow-x:auto; line-height:1.55;">
+                </div>
+            </div>
+            <div id="dryRunLlmError" style="display:none; color:#ff6b6b; font-size:0.82rem; margin-top:6px;"></div>
         </div>
     </div>
 </div>
@@ -108,6 +126,48 @@
             } finally {
                 loading.style.display = 'none';
                 submitBtn.disabled = false;
+            }
+        });
+
+        // LLM RCA test
+        const llmSubmitBtn = document.getElementById('dryRunLlmSubmit');
+        const llmLoading = document.getElementById('dryRunLlmLoading');
+        const llmResultEl = document.getElementById('dryRunLlmResult');
+        const llmOutputEl = document.getElementById('dryRunLlmOutput');
+        const llmErrorEl = document.getElementById('dryRunLlmError');
+
+        llmSubmitBtn.addEventListener('click', async () => {
+            const payload = document.getElementById('dryRunPayload').value.trim();
+            if (!payload) { llmErrorEl.textContent = '⚠ Enter a payload first.'; llmErrorEl.style.display = 'block'; return; }
+            let parsed;
+            try { parsed = JSON.parse(payload); } catch (e) {
+                llmErrorEl.textContent = '⚠ Invalid JSON: ' + e.message;
+                llmErrorEl.style.display = 'block'; return;
+            }
+            llmErrorEl.style.display = 'none';
+            llmLoading.style.display = 'inline';
+            llmSubmitBtn.disabled = true;
+            llmResultEl.style.display = 'none';
+            try {
+                const resp = await fetch(`/endpoint/dry-run-llm/${endpointId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(parsed),
+                });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    llmOutputEl.textContent = data.rca;
+                    llmResultEl.style.display = 'block';
+                } else {
+                    llmErrorEl.textContent = '❌ ' + (data.rca || 'LLM error');
+                    llmErrorEl.style.display = 'block';
+                }
+            } catch (e) {
+                llmErrorEl.textContent = 'Request failed: ' + e.message;
+                llmErrorEl.style.display = 'block';
+            } finally {
+                llmLoading.style.display = 'none';
+                llmSubmitBtn.disabled = false;
             }
         });
 
