@@ -142,25 +142,29 @@ class ConnectWiseClient:
             return None
 
     def close_ticket(self, ticket_id: int, resolution: str, status_name: Optional[str] = None) -> bool:
+        target_status = status_name or self.status_closed
+        patch_payload = [{"op": "replace", "path": "/status/name", "value": target_status}]
         try:
-            target_status = status_name or self.status_closed
-            patch_payload = [{"op": "replace", "path": "/status/name", "value": target_status}]
             response = self.session.patch(
                 f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
             )
-            if response.status_code != 200:
+            if not response.ok:
                 logger.error(
-                    f"Error closing ticket #{ticket_id} with status '{target_status}': "
-                    f"{response.status_code} - {response.text}"
+                    "Error closing ticket #%s with status '%s': %s - %s",
+                    ticket_id, target_status, response.status_code, response.text,
                 )
                 return False
+        except requests.exceptions.RequestException as e:
+            logger.error("Request exception closing ticket #%s: %s", ticket_id, e)
+            return False
 
-            note_payload = {
-                "text": resolution,
-                "detailDescriptionFlag": True,
-                "internalAnalysisFlag": False,
-                "resolutionFlag": True,
-            }
+        note_payload = {
+            "text": resolution,
+            "detailDescriptionFlag": True,
+            "internalAnalysisFlag": False,
+            "resolutionFlag": True,
+        }
+        try:
             note_response = self.session.post(
                 f"{self.base_url}/service/tickets/{ticket_id}/notes",
                 headers=self.headers,
@@ -169,15 +173,15 @@ class ConnectWiseClient:
             )
             if note_response.status_code not in [200, 201]:
                 logger.error(
-                    f"Error adding closing note to ticket #{ticket_id}: "
-                    f"{note_response.status_code} - {note_response.text}"
+                    "Error adding closing note to ticket #%s: %s - %s",
+                    ticket_id, note_response.status_code, note_response.text,
                 )
-            
-            logger.info(f"Closed ticket #{ticket_id}")
-            return True
         except requests.exceptions.RequestException as e:
-            logger.error(f"Request exception closing ticket #{ticket_id}: {e}")
-            return False
+            logger.error("Request exception adding closing note to ticket #%s: %s", ticket_id, e)
+
+        logger.info("Closed ticket #%s", ticket_id)
+        return True
+
 
     def add_ticket_note(self, ticket_id: int, note_text: str, is_internal: bool = False) -> bool:
         try:

@@ -452,7 +452,10 @@ def handle_webhook_logic(
                         else:
                             is_closed = ticket_data.get("closedFlag", False)
                             status_name = ticket_data.get("status", {}).get("name", "")
-                            if not is_closed and status_name not in ["Completed", "Cancelled"]:
+                            closed_statuses = {"Completed", "Cancelled"}
+                            if config.close_status:
+                                closed_statuses.add(config.close_status)
+                            if not is_closed and status_name not in closed_statuses:
                                 is_usable = True
                                 redis_client.set(viable_key, "1", ex=300)
 

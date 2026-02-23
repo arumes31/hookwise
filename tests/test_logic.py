@@ -165,8 +165,11 @@ def test_close_ticket_with_custom_status(mock_cw, mock_redis, app):
         handle_webhook_logic(config_id, data, "req-custom-close-1")
 
         mock_cw.close_ticket.assert_called_once()
-        call_kwargs = mock_cw.close_ticket.call_args.kwargs
+        call_args = mock_cw.close_ticket.call_args
+        assert call_args.args[0] == 123  # ticket_id
+        call_kwargs = call_args.kwargs
         assert call_kwargs["status_name"] == "Completed"
+        mock_redis.delete.assert_called_once()
 
 
 @patch("hookwise.tasks.redis_client")
