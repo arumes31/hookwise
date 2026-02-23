@@ -223,6 +223,7 @@ The analysis is guided by a global system prompt that tells the AI to be concise
 | `CW_SERVICE_BOARD` | Primary board if not overridden. |
 | `CW_STATUS_NEW` | Initial status for new tickets. |
 | `CW_STATUS_CLOSED` | Status used when an `UP` alert is received. |
+| `VIABILITY_TTL` | Seconds a ticket is cached as "open" before re-checking ConnectWise (Default: `300`). |
 
 ### System & Security
 | Variable | Usage |
