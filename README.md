@@ -232,6 +232,7 @@ The analysis is guided by a global system prompt that tells the AI to be concise
 | `GUI_TRUSTED_IPS`| CIDR list (e.g., `10.0.0.0/24, 192.168.1.5`). |
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
 | `FORCE_HTTPS` | Redirects all traffic to TLS. |
+| `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
 
 ---
 
