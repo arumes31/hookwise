@@ -164,7 +164,7 @@
         const company = btn.getAttribute('data-m-company');
         const desc = btn.getAttribute('data-m-desc');
 
-        document.getElementById('editMappingForm').action = `/tenantmap/edit/${id}`;
+        document.getElementById('editMappingForm').setAttribute('action', `/tenantmap/edit/${encodeURIComponent(id)}`);
         document.getElementById('edit_tenant_value').value = tenant;
         document.getElementById('edit_company_id').value = company;
         document.getElementById('edit_description').value = desc;
