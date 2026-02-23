@@ -533,8 +533,49 @@ def handle_webhook_logic(
                             break
 
                     if tenant_val:
+                        # 1. Try exact match
                         mapping = GlobalMapping.query.filter_by(tenant_value=tenant_val).first()
-                        if mapping:
+                        
+                        # 2. Try wildcard matches if no exact match found
+                        if not mapping:
+                            from sqlalchemy import or_
+                            import fnmatch
+                            # Find all mappings that contain wildcards (* or ?)
+                            wildcard_mappings = GlobalMapping.query.filter(
+                                or_(
+                                    GlobalMapping.tenant_value.like('%*%'),
+                                    GlobalMapping.tenant_value.like('%?%')
+                                )
+                            ).all()
+                            
+                            # Check if the tenant value matches any of these wildcard patterns
+                            for w_mapping in wildcard_mappings:
+                                if w_mapping.tenant_value and fnmatch.fnmatch(tenant_val, w_mapping.tenant_value):
+                                    mapping = w_mapping
+                                    break
+                        
+                        # 3. Try LLM semantic match if still no match
+                        if not mapping:
+                            from .utils import call_llm
+                            
+                            # Get all companies from ConnectWise
+                            companies = cw_client.get_companies()
+                            if companies:
+                                # Create a list of identifiers (typically 'identifier' or 'name')
+                                available_companies = [c.get("identifier") for c in companies if c.get("identifier")]
+                                
+                                if available_companies:
+                                    llm_prompt = (
+                                        f"Match this incoming tenant string: '{tenant_val}' to the best option from this list of company identifiers from ConnectWise: {', '.join(available_companies)}. "
+                                        f"Respond with ONLY the exact string from the list that matches best. If none match reasonably well, reply with exactly 'NONE'."
+                                    )
+                                    llm_resp = call_llm(llm_prompt)
+                                    if llm_resp and llm_resp.strip() != "NONE" and llm_resp.strip() in available_companies:
+                                        company_id = llm_resp.strip()
+                                        logger.info(f"LLM fallback matched: {tenant_val} -> {company_id}", extra=extra)
+                                        log_entry.matched_rule = (log_entry.matched_rule or "") + f" [LLM Global: {tenant_val} -> {company_id}]"
+
+                        if mapping and not company_id:
                             company_id = mapping.company_id
                             logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
                             log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"

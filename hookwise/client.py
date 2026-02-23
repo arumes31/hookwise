@@ -207,6 +207,16 @@ class ConnectWiseClient:
             logger.error(f"Request exception adding note to ticket #{ticket_id}: {e}")
             return False
 
+    def get_companies(self) -> List[Dict[str, Any]]:
+        try:
+            # ConnectWise uses /company/companies
+            response = self.session.get(f"{self.base_url}/company/companies", headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return cast(List[Dict[str, Any]], response.json())
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching companies: {e}")
+            return []
+
     def get_boards(self) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=30)
