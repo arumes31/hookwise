@@ -493,6 +493,15 @@
             if (hasNext && sentinel) {
                 sentinel.classList.remove('d-none');
                 standardPagination.classList.add('d-none');
+
+                function finishInfiniteScroll() {
+                    hasNext = false;
+                    observer.unobserve(sentinel);
+                    sentinel.classList.add('d-none');
+                    // Restore standard pagination so user can jump pages or see they're at the end
+                    standardPagination.classList.remove('d-none');
+                }
+
                 const observer = new IntersectionObserver(async (entries) => {
                     if (entries[0].isIntersecting && hasNext) {
                         currentPage++;
@@ -502,25 +511,18 @@
                         try {
                             const res = await fetch(url);
                             const html = await res.text();
-                            if (html.trim()) {
+                            if (html.trim() && html.includes('<tr')) {
                                 tableBody.insertAdjacentHTML('beforeend', html);
-                                // Read signal from server in next turn or via marker
-                                // For now, we assume if we got data, we might have more
-                                // But real robust way is server signaling.
-                                // If the server returns no more <tr> tags, or a specific marker:
-                                if (!html.includes('<tr>')) {
-                                    hasNext = false;
-                                    observer.unobserve(sentinel);
-                                    sentinel.classList.add('d-none');
+                                // If this was the last page, end infinite scroll
+                                if (!SERVER_DATA.hasNext && currentPage >= SERVER_DATA.currentPage) {
+                                    finishInfiniteScroll();
                                 }
                             } else {
-                                hasNext = false;
-                                observer.unobserve(sentinel);
-                                sentinel.classList.add('d-none');
+                                finishInfiniteScroll();
                             }
                         } catch (e) { console.error('Error fetching next page', e); }
                     }
-                }, { threshold: 1.0 });
+                }, { threshold: 0.1 });
                 observer.observe(sentinel);
             }
 
