@@ -159,13 +159,20 @@
                     body: JSON.stringify(parsed),
                     signal: ctrl.signal,
                 });
-                const data = await resp.json();
-                if (data.status === 'ok') {
-                    llmOutputEl.textContent = data.rca;
-                    llmResultEl.style.display = 'block';
-                } else {
-                    llmErrorEl.textContent = '❌ ' + (data.rca || 'LLM error');
+                if (!resp.ok) {
+                    const raw = await resp.text();
+                    console.error('LLM dry-run non-OK response', resp.status, raw.slice(0, 300));
+                    llmErrorEl.textContent = `❌ Server error ${resp.status} ${resp.statusText}`;
                     llmErrorEl.style.display = 'block';
+                } else {
+                    const data = await resp.json();
+                    if (data.status === 'ok') {
+                        llmOutputEl.textContent = data.rca;
+                        llmResultEl.style.display = 'block';
+                    } else {
+                        llmErrorEl.textContent = '❌ ' + (data.rca || 'LLM error');
+                        llmErrorEl.style.display = 'block';
+                    }
                 }
             } catch (e) {
                 llmErrorEl.textContent = e.name === 'AbortError' ? '⏱ LLM timed out (>6 min)' : 'Request failed: ' + e.message;
