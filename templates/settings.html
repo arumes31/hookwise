@@ -272,14 +272,19 @@
 <script>
     async function generateApiKey() {
         if (!await hwConfirm('Are you sure you want to generate a new master API key?', { title: 'Regenerate API Key', okText: 'Regenerate' })) return;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         try {
-            const res = await fetch('/admin/generate-api-key', { method: 'POST' });
+            const res = await fetch('/admin/generate-api-key', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+            });
+            if (!res.ok) { showToast(`Server error ${res.status}`, 'danger'); return; }
             const data = await res.json();
             if (data.status === 'success') {
                 document.getElementById('master-api-key').value = data.api_key;
                 showToast('New API key generated', 'success');
             }
-        } catch (e) { showToast('Error generating API key', 'danger'); }
+        } catch (e) { showToast('Error generating API key: ' + e.message, 'danger'); }
     }
 
     async function restoreConfig() {
@@ -292,6 +297,7 @@
         try {
             const res = await fetch('/admin/restore', {
                 method: 'POST',
+                headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
                 body: formData
             });
             const data = await res.json();
@@ -306,7 +312,8 @@
 
     async function deleteAllLogs() {
         if (!await hwConfirm('Are you SURE you want to delete ALL history logs? This cannot be undone.', { title: 'Purge All Logs', okText: 'Purge' })) return;
-        fetch('/history/delete-all', { method: 'POST' })
+        const _csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        fetch('/history/delete-all', { method: 'POST', headers: { 'X-CSRFToken': _csrf } })
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
@@ -324,7 +331,10 @@
     async function clearCache() {
         if (!await hwConfirm('Clear ConnectWise API cache? This will cause the next requests to be slower as data is refetched.', { title: 'Clear Cache', okText: 'Clear' })) return;
         try {
-            const res = await fetch('/admin/clear-cache', { method: 'POST' });
+            const res = await fetch('/admin/clear-cache', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+            });
             const data = await res.json();
             if (data.status === 'success') {
                 showToast(`Cache cleared! Removed ${data.count} keys.`, 'success');
@@ -349,7 +359,10 @@
         try {
             const res = await fetch('/admin/llm-test', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                },
                 body: JSON.stringify({ prompt: query })
             });
             const data = await res.json();
