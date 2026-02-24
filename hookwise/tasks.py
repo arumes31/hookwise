@@ -507,6 +507,9 @@ def handle_webhook_logic(
             if len(ticket_summary) > 99:
                 ticket_summary = ticket_summary[:96] + "..."
 
+            if not ticket_summary.strip():
+                ticket_summary = f"{prefix} Summary unavailable" if prefix else "Summary unavailable"
+
             cache_key = f"{CACHE_PREFIX}{config_id}:{ticket_summary}"
 
             ticket_id = None

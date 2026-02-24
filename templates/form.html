@@ -377,7 +377,7 @@
                                     from Summary <span class="badge bg-secondary ms-1 fw-normal"
                                         style="font-size: 0.7em;">Optional</span></label>
                                 <input type="text" class="form-control bg-dark border-secondary text-light small"
-                                    id="summary_remove_strings" name="summary_remove_strings"
+                                    id="summary_remove_strings" name="summary_remove_strings" maxlength="500"
                                     placeholder="e.g. *All Tenants (AllTenants): , [Alert]"
                                     value="{{ config.summary_remove_strings if config else '' }}"
                                     data-tooltip="Comma-separated list of strings to remove from the final ticket summary.">

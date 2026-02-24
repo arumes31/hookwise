@@ -171,6 +171,7 @@ def _register() -> None:
             close_value=config.close_value,
             ticket_prefix=config.ticket_prefix,
             description_template=config.description_template,
+            summary_remove_strings=config.summary_remove_strings,
             json_mapping=config.json_mapping,
             routing_rules=config.routing_rules,
             maintenance_windows=config.maintenance_windows,
