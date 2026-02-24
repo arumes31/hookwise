@@ -317,6 +317,8 @@ def handle_webhook_logic(
             db.session.add(log_entry)
 
         log_entry.retry_count = retry_count
+        if source_ip:
+            config.last_ip = source_ip
         db.session.commit()
 
         try:
