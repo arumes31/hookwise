@@ -498,7 +498,7 @@ def handle_webhook_logic(
             else:
                 ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
 
-            cache_key = f"{CACHE_PREFIX}{config_id}:{monitor_name}"
+            cache_key = f"{CACHE_PREFIX}{config_id}:{ticket_summary}"
 
             ticket_id = None
             if alert_type == "DOWN" or alert_type == "GENERIC":
