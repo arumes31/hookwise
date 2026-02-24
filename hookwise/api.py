@@ -336,7 +336,7 @@ def _register() -> None:
             "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
             f"steps. Be concise and technical. Payload: {json.dumps(data)}"
         )
-        system_prompt = config.rca_instructions or (
+        system_prompt = config.ai_prompt_template or (
             "You are a helpful assistant specialized in ConnectWise ticketing and alert analysis. "
             "Be concise and return only the requested value."
         )
