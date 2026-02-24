@@ -32,6 +32,7 @@ def _register() -> None:
         search = request.args.get("search", "")
         date_from = request.args.get("date_from", "")
         date_to = request.args.get("date_to", "")
+        endpoint_id = request.args.get("endpoint_id", "")
         per_page = 25
 
         query = WebhookLog.query
@@ -49,6 +50,9 @@ def _register() -> None:
                     | (WebhookLog.error_message.ilike(f"%{search}%"))
                 )
 
+        if endpoint_id:
+            query = query.filter(WebhookLog.config_id == endpoint_id)
+
         if date_from:
             from datetime import datetime
 
@@ -64,6 +68,8 @@ def _register() -> None:
         debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
         cw_url = os.environ.get("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0").rstrip("/")
 
+        all_configs = WebhookConfig.query.filter_by(is_draft=False).order_by(WebhookConfig.name).all()
+
         if request.args.get("partial") == "true":
             return render_template("history_rows.html", logs=pagination.items, cw_url=cw_url)
 
@@ -74,6 +80,8 @@ def _register() -> None:
             search=search,
             date_from=date_from,
             date_to=date_to,
+            endpoint_id=endpoint_id,
+            all_configs=all_configs,
             debug_mode=debug_mode,
             cw_url=cw_url,
         )

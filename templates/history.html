@@ -28,6 +28,13 @@
             style="width: 130px;" onchange="searchHistory()">
         <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white"
             style="width: 130px;" onchange="searchHistory()">
+        <select id="endpoint-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+            style="width: 200px;" onchange="searchHistory()">
+            <option value="">All Endpoints</option>
+            {% for cfg in all_configs %}
+            <option value="{{ cfg.id }}" {% if cfg.id==endpoint_id %}selected{% endif %}>{{ cfg.name }}</option>
+            {% endfor %}
+        </select>
         <div class="input-group input-group-sm" style="width: 250px;">
             <input type="text" id="history-search" class="form-control bg-dark border-secondary text-white"
                 placeholder="Search Ticket or Request ID...">
@@ -377,7 +384,8 @@
         const term = document.getElementById('history-search').value;
         const from = document.getElementById('date-from').value;
         const to = document.getElementById('date-to').value;
-        window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}`;
+        const endpoint = document.getElementById('endpoint-filter').value;
+        window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}&endpoint_id=${encodeURIComponent(endpoint)}`;
     }
 
     function viewPayload(id) {
