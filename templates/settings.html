@@ -270,19 +270,22 @@
 </div>
 
 <script>
+    const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
     async function generateApiKey() {
         if (!await hwConfirm('Are you sure you want to generate a new master API key?', { title: 'Regenerate API Key', okText: 'Regenerate' })) return;
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         try {
             const res = await fetch('/admin/generate-api-key', {
                 method: 'POST',
-                headers: { 'X-CSRFToken': csrfToken },
+                headers: { 'X-CSRFToken': CSRF_TOKEN },
             });
             if (!res.ok) { showToast(`Server error ${res.status}`, 'danger'); return; }
             const data = await res.json();
             if (data.status === 'success') {
                 document.getElementById('master-api-key').value = data.api_key;
                 showToast('New API key generated', 'success');
+            } else {
+                showToast('Failed: ' + (data.message || data.error || JSON.stringify(data)), 'danger');
             }
         } catch (e) { showToast('Error generating API key: ' + e.message, 'danger'); }
     }
@@ -297,29 +300,36 @@
         try {
             const res = await fetch('/admin/restore', {
                 method: 'POST',
-                headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                headers: { 'X-CSRFToken': CSRF_TOKEN },
                 body: formData
             });
+            if (!res.ok) {
+                const text = await res.text();
+                showToast(`Server error ${res.status}: ${text.slice(0, 80)}`, 'danger');
+                return;
+            }
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('Configuration restored!', 'success');
                 setTimeout(() => window.location.reload(), 1000);
             } else {
-                showToast('Restore failed: ' + data.message, 'danger');
+                showToast('Restore failed: ' + (data.message || data.error || 'unknown error'), 'danger');
             }
-        } catch (e) { showToast('Error uploading file', 'danger'); }
+        } catch (e) { showToast('Error uploading file: ' + e.message, 'danger'); }
     }
 
     async function deleteAllLogs() {
         if (!await hwConfirm('Are you SURE you want to delete ALL history logs? This cannot be undone.', { title: 'Purge All Logs', okText: 'Purge' })) return;
-        const _csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
-        fetch('/history/delete-all', { method: 'POST', headers: { 'X-CSRFToken': _csrf } })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('All logs deleted', 'success');
-                }
-            });
+        try {
+            const res = await fetch('/history/delete-all', { method: 'POST', headers: { 'X-CSRFToken': CSRF_TOKEN } });
+            if (!res.ok) throw new Error(`Server error ${res.status}`);
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('All logs deleted', 'success');
+            } else {
+                showToast('Failed: ' + (data.message || data.error || 'unknown error'), 'danger');
+            }
+        } catch (e) { showToast('Error deleting logs: ' + e.message, 'danger'); }
     }
 
     async function confirmDisable2FA() {
@@ -333,15 +343,16 @@
         try {
             const res = await fetch('/admin/clear-cache', {
                 method: 'POST',
-                headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                headers: { 'X-CSRFToken': CSRF_TOKEN },
             });
+            if (!res.ok) throw new Error(`Server error ${res.status}`);
             const data = await res.json();
             if (data.status === 'success') {
                 showToast(`Cache cleared! Removed ${data.count} keys.`, 'success');
             } else {
-                showToast('Error clearing cache: ' + data.message, 'danger');
+                showToast('Error clearing cache: ' + (data.message || data.error || 'unknown error'), 'danger');
             }
-        } catch (e) { showToast('Error communicating with server', 'danger'); }
+        } catch (e) { showToast('Error communicating with server: ' + e.message, 'danger'); }
     }
 
     async function testLLM() {
@@ -361,17 +372,18 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    'X-CSRFToken': CSRF_TOKEN,
                 },
                 body: JSON.stringify({ prompt: query })
             });
+            if (!res.ok) throw new Error(`Server error ${res.status}`);
             const data = await res.json();
             if (data.status === 'success') {
                 resultArea.textContent = data.result;
                 container.classList.remove('d-none');
                 showToast('LLM response received', 'success');
             } else {
-                showToast('LLM test failed: ' + (data.message || 'Unknown error'), 'danger');
+                showToast('LLM test failed: ' + (data.message || data.error || 'Unknown error'), 'danger');
             }
         } catch (e) {
             showToast('Error calling LLM: ' + e.message, 'danger');
