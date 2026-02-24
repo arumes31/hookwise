@@ -356,6 +356,7 @@ def _register() -> None:
     def dry_run_llm_status(task_id: str) -> Any:
         """Poll the result of an enqueued LLM RCA task."""
         from celery.result import AsyncResult
+
         from .tasks import celery
         result = AsyncResult(task_id, app=celery)
         if result.state == "PENDING" or result.state == "STARTED":
