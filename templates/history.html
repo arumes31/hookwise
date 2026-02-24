@@ -354,19 +354,22 @@
     }
 
     function exportCSV() {
-        const rows = ["Timestamp,Config,Status,Ticket,Request ID"];
+        const rows = ["Timestamp,Endpoint,Status,Source IP,Retries,Ticket,Request ID,Matched Rule"];
         const escapeCSV = (val) => `"${(val || '').toString().replace(/"/g, '""')}"`;
 
         document.querySelectorAll('table tbody tr').forEach(tr => {
             const tds = tr.querySelectorAll('td');
-            if (tds.length < 8) return;
+            if (tds.length < 9) return; // Ensure all columns are present
 
             const cells = [
-                escapeCSV(tds[1].textContent.trim()),
-                escapeCSV(tds[2].textContent.trim()),
-                escapeCSV(tds[3].textContent.trim()),
-                escapeCSV(tds[6].textContent.trim()),
-                escapeCSV(tds[7].dataset.requestId || tds[7].textContent.trim())
+                escapeCSV(tds[1].textContent.trim()), // Timestamp
+                escapeCSV(tds[2].textContent.trim()), // Endpoint
+                escapeCSV(tds[3].textContent.trim().replace(/\s+/g, ' ')), // Status (cleaning up badge whitespace)
+                escapeCSV(tds[4].textContent.trim()), // Source IP
+                escapeCSV(tds[5].textContent.trim()), // Retries
+                escapeCSV(tds[6].textContent.trim().replace(/\s+/g, ' ')), // Ticket ID (cleaning whitespace inside links/SVGs)
+                escapeCSV(tds[7].dataset.requestId || tds[7].textContent.trim()), // Request ID
+                escapeCSV(tds[8].textContent.trim().replace(/\s+/g, ' '))  // Matched Rule
             ];
             rows.push(cells.join(','));
         });
