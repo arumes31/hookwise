@@ -38,7 +38,14 @@
                             </p>
                         </div>
                     </div>
-                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        {% if config %}
+                        <button type="button" onclick="openDryRunModal()" class="btn btn-outline-warning btn-sm"
+                            title="Simulate payload processing without creating a ticket">🧪 Dry Run</button>
+                        {% endif %}
+                        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to
+                            Dashboard</a>
+                    </div>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -1441,6 +1448,10 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         });
     }
 
-
 </script>
+
+{% if config %}
+<meta name="hookwise-endpoint-id" content="{{ config.id }}">
+{% endif %}
+{% include 'dry_run_modal.html' %}
 {% endblock %}
