@@ -307,9 +307,11 @@ def _register() -> None:
                 "response_ms": round((_time.monotonic() - t0) * 1000),
             }
         except Exception as e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning("LLM health check failed: %s", e)
             return {
                 "status": "error",
-                "error": str(e),
+                "error": type(e).__name__,
                 "response_ms": round((_time.monotonic() - t0) * 1000),
             }
 
