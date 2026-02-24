@@ -67,6 +67,7 @@
         const detailEl = document.getElementById('dryRunDetails');
         const stepsEl = document.getElementById('dryRunSteps');
         const endpointId = (document.querySelector('meta[name="hookwise-endpoint-id"]') || {}).content || '';
+        const csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
         const actionColors = {
             create_ticket: '#22c55e',
@@ -106,7 +107,7 @@
             try {
                 const resp = await fetch(`/endpoint/dry-run/${endpointId}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                     body: JSON.stringify(parsed),
                 });
                 const data = await resp.json();
@@ -151,7 +152,7 @@
             try {
                 const resp = await fetch(`/endpoint/dry-run-llm/${endpointId}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                     body: JSON.stringify(parsed),
                 });
                 const data = await resp.json();
