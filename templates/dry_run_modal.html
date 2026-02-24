@@ -150,10 +150,13 @@
             llmSubmitBtn.disabled = true;
             llmResultEl.style.display = 'none';
             try {
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), 360000); // 6 min — matches server LLM_TIMEOUT
                 const resp = await fetch(`/endpoint/dry-run-llm/${endpointId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                     body: JSON.stringify(parsed),
+                    signal: ctrl.signal,
                 });
                 const data = await resp.json();
                 if (data.status === 'ok') {
@@ -164,9 +167,10 @@
                     llmErrorEl.style.display = 'block';
                 }
             } catch (e) {
-                llmErrorEl.textContent = 'Request failed: ' + e.message;
+                llmErrorEl.textContent = e.name === 'AbortError' ? '⏱ LLM timed out (>6 min)' : 'Request failed: ' + e.message;
                 llmErrorEl.style.display = 'block';
             } finally {
+                clearTimeout(timer);
                 llmLoading.style.display = 'none';
                 llmSubmitBtn.disabled = false;
             }
