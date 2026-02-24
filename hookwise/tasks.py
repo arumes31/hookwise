@@ -84,6 +84,29 @@ class ContextTask(Task):  # type: ignore[misc]
 celery.Task = ContextTask
 
 
+@celery.task(name="hookwise.run_llm_rca")  # type: ignore[untyped-decorator]
+def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]) -> dict:
+    """Run LLM root cause analysis in background so the HTTP request returns immediately."""
+    from .utils import call_llm
+
+    rca_prompt = (
+        "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
+        f"steps. Be concise and technical. Payload: {json.dumps(payload)}"
+    )
+    system_prompt = ai_prompt_template or (
+        "You are a helpful assistant specialized in ConnectWise ticketing and alert analysis. "
+        "Be concise and return only the requested value."
+    )
+    try:
+        result = call_llm(rca_prompt, system_prompt=system_prompt)
+        if result:
+            return {"status": "ok", "rca": result}
+        return {"status": "error", "rca": "LLM returned no response — check OLLAMA_HOST and model."}
+    except Exception as e:
+        logger.error("run_llm_rca task error: %s", e)
+        return {"status": "error", "rca": f"LLM error: {type(e).__name__}"}
+
+
 @celery.task(name="hookwise.cleanup_logs")  # type: ignore[untyped-decorator]
 def cleanup_logs() -> None:
     """Remove logs older than retention period."""

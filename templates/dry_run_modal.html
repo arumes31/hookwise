@@ -150,35 +150,67 @@
             llmLoading.style.display = 'inline';
             llmSubmitBtn.disabled = true;
             llmResultEl.style.display = 'none';
+
+            let pollInterval = null;
+            const stopPolling = () => { if (pollInterval) { clearInterval(pollInterval); pollInterval = null; } };
+
             try {
-                const ctrl = new AbortController();
-                const timer = setTimeout(() => ctrl.abort(), 360000); // 6 min — matches server LLM_TIMEOUT
-                const resp = await fetch(`/endpoint/dry-run-llm/${endpointId}`, {
+                // Step 1: enqueue — returns immediately with task_id
+                const enqueueResp = await fetch(`/endpoint/dry-run-llm/${endpointId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                     body: JSON.stringify(parsed),
-                    signal: ctrl.signal,
                 });
-                if (!resp.ok) {
-                    const raw = await resp.text();
-                    console.error('LLM dry-run non-OK response', resp.status, raw.slice(0, 300));
-                    llmErrorEl.textContent = `❌ Server error ${resp.status} ${resp.statusText}`;
+                if (!enqueueResp.ok) {
+                    const raw = await enqueueResp.text();
+                    console.error('LLM enqueue failed', enqueueResp.status, raw.slice(0, 300));
+                    llmErrorEl.textContent = `❌ Server error ${enqueueResp.status} ${enqueueResp.statusText}`;
                     llmErrorEl.style.display = 'block';
-                } else {
-                    const data = await resp.json();
-                    if (data.status === 'ok') {
-                        llmOutputEl.textContent = data.rca;
-                        llmResultEl.style.display = 'block';
-                    } else {
-                        llmErrorEl.textContent = '❌ ' + (data.rca || 'LLM error');
-                        llmErrorEl.style.display = 'block';
-                    }
+                    llmLoading.style.display = 'none';
+                    llmSubmitBtn.disabled = false;
+                    return;
                 }
+                const { task_id } = await enqueueResp.json();
+
+                // Step 2: poll /status/<task_id> every 2 seconds
+                const deadline = Date.now() + 420000; // 7 min hard stop
+                pollInterval = setInterval(async () => {
+                    if (Date.now() > deadline) {
+                        stopPolling();
+                        llmErrorEl.textContent = '⏱ LLM timed out — no result after 7 minutes.';
+                        llmErrorEl.style.display = 'block';
+                        llmLoading.style.display = 'none';
+                        llmSubmitBtn.disabled = false;
+                        return;
+                    }
+                    try {
+                        const pollResp = await fetch(`/endpoint/dry-run-llm/status/${task_id}`, {
+                            headers: { 'X-CSRFToken': csrfToken },
+                        });
+                        const pollData = await pollResp.json();
+                        if (pollData.status === 'pending') return; // still running
+                        stopPolling();
+                        if (pollData.status === 'ok') {
+                            llmOutputEl.textContent = pollData.rca;
+                            llmResultEl.style.display = 'block';
+                        } else {
+                            llmErrorEl.textContent = '❌ ' + (pollData.rca || 'LLM error');
+                            llmErrorEl.style.display = 'block';
+                        }
+                        llmLoading.style.display = 'none';
+                        llmSubmitBtn.disabled = false;
+                    } catch (pe) {
+                        stopPolling();
+                        llmErrorEl.textContent = 'Poll error: ' + pe.message;
+                        llmErrorEl.style.display = 'block';
+                        llmLoading.style.display = 'none';
+                        llmSubmitBtn.disabled = false;
+                    }
+                }, 2000);
             } catch (e) {
-                llmErrorEl.textContent = e.name === 'AbortError' ? '⏱ LLM timed out (>6 min)' : 'Request failed: ' + e.message;
+                stopPolling();
+                llmErrorEl.textContent = 'Request failed: ' + e.message;
                 llmErrorEl.style.display = 'block';
-            } finally {
-                clearTimeout(timer);
                 llmLoading.style.display = 'none';
                 llmSubmitBtn.disabled = false;
             }
