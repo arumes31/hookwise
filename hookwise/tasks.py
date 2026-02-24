@@ -558,7 +558,7 @@ def handle_webhook_logic(
                     db.session.commit()
                     return
 
-                company_id_match = re.search(r"#CW(\w+)", monitor_name)
+                company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
                 company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else None)
 
                 # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
