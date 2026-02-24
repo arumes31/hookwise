@@ -344,14 +344,9 @@ def _register() -> None:
             data = request.get_json(force=True, silent=True) or {}
             from .utils import call_llm
 
-            # Truncate payload to avoid bloating the prompt and extending LLM response time
-            payload_str = json.dumps(data)
-            if len(payload_str) > 4000:
-                payload_str = payload_str[:4000] + "… [truncated]"
-
             rca_prompt = (
                 "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
-                f"steps. Be concise and technical. Payload: {payload_str}"
+                f"steps. Be concise and technical. Payload: {json.dumps(data)}"
             )
             system_prompt = config.ai_prompt_template or (
                 "You are a helpful assistant specialized in ConnectWise ticketing and alert analysis. "
