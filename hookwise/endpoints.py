@@ -55,6 +55,7 @@ def _register() -> None:
                 close_value=request.form.get("close_value") or "1",
                 ticket_prefix=request.form.get("ticket_prefix"),
                 description_template=request.form.get("description_template"),
+                summary_remove_strings=request.form.get("summary_remove_strings"),
                 json_mapping=request.form.get("json_mapping"),
                 routing_rules=request.form.get("routing_rules"),
                 maintenance_windows=request.form.get("maintenance_windows"),
@@ -94,6 +95,7 @@ def _register() -> None:
             config.close_value = request.form.get("close_value") or "1"
             config.ticket_prefix = request.form.get("ticket_prefix")
             config.description_template = request.form.get("description_template")
+            config.summary_remove_strings = request.form.get("summary_remove_strings")
             config.json_mapping = request.form.get("json_mapping")
             config.routing_rules = request.form.get("routing_rules")
             config.maintenance_windows = request.form.get("maintenance_windows")

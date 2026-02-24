@@ -373,6 +373,21 @@
                             </div>
 
                             <div class="mb-4">
+                                <label for="summary_remove_strings" class="form-label fw-bold text-light">Remove Strings
+                                    from Summary <span class="badge bg-secondary ms-1 fw-normal"
+                                        style="font-size: 0.7em;">Optional</span></label>
+                                <input type="text" class="form-control bg-dark border-secondary text-light small"
+                                    id="summary_remove_strings" name="summary_remove_strings"
+                                    placeholder="e.g. *All Tenants (AllTenants): , [Alert]"
+                                    value="{{ config.summary_remove_strings if config else '' }}"
+                                    data-tooltip="Comma-separated list of strings to remove from the final ticket summary.">
+                                <div class="form-text text-muted small mt-1">
+                                    <i class="fas fa-info-circle me-1"></i> Exact match. Leading/trailing spaces inside
+                                    the comma-separated values are preserved.
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <label for="json_mapping" class="form-label fw-bold mb-0 text-light">Field Mapping
                                         (JSON)</label>

@@ -51,6 +51,7 @@ class WebhookConfig(Base):
     close_value = db.Column(db.String(50), default="1")
     ticket_prefix = db.Column(db.String(100))
     description_template = db.Column(db.Text)
+    summary_remove_strings = db.Column(db.String(500), nullable=True)
     json_mapping = db.Column(db.Text)  # JSON string for field mappings
     routing_rules = db.Column(db.Text)  # JSON string for regex routing
     maintenance_windows = db.Column(db.Text)  # JSON string for maintenance intervals
@@ -91,6 +92,7 @@ class WebhookConfig(Base):
             "close_value": self.close_value,
             "ticket_prefix": self.ticket_prefix,
             "description_template": self.description_template,
+            "summary_remove_strings": self.summary_remove_strings,
             "json_mapping": self.json_mapping,
             "routing_rules": self.routing_rules,
             "maintenance_windows": self.maintenance_windows,

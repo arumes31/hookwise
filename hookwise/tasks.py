@@ -499,6 +499,13 @@ def handle_webhook_logic(
                 ticket_summary = f"{prefix} {mapped_summary}" if prefix else mapped_summary
             else:
                 ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
+            
+            if config.summary_remove_strings:
+                for s in config.summary_remove_strings.split(","):
+                    ticket_summary = ticket_summary.replace(s, "")
+            
+            if len(ticket_summary) > 99:
+                ticket_summary = ticket_summary[:96] + "..."
 
             cache_key = f"{CACHE_PREFIX}{config_id}:{ticket_summary}"
 
@@ -709,33 +716,35 @@ def handle_webhook_logic(
                     severity=mapped_vals.get("severity"),
                     impact=mapped_vals.get("impact"),
                 )
-                if new_ticket:
-                    ticket_id = new_ticket["id"]
-                    redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
-                    log_to_web(
-                        f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})",
-                        "warning" if alert_type == "DOWN" else "info",
-                        config_name,
-                        data=data,
-                        ticket_id=ticket_id,
+                if not new_ticket:
+                    raise Exception("Failed to create ticket: ConnectWise API returned an error.")
+                
+                ticket_id = new_ticket["id"]
+                redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
+                log_to_web(
+                    f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})",
+                    "warning" if alert_type == "DOWN" else "info",
+                    config_name,
+                    data=data,
+                    ticket_id=ticket_id,
+                )
+                PSA_TASK_COUNT.labels(type="create", result="success")  # Kept for dynamic registration if needed
+                log_psa_task(task_type="create", result="success")
+                log_entry.action = "create"
+
+                # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
+                if config.ai_rca_enabled:
+                    from .utils import call_llm
+
+                    rca_prompt = (
+                        "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
+                        f"steps. Be concise and technical. Payload: {json.dumps(data)}"
                     )
-                    PSA_TASK_COUNT.labels(type="create", result="success")  # Kept for dynamic registration if needed
-                    log_psa_task(task_type="create", result="success")
-                    log_entry.action = "create"
-
-                    # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
-                    if config.ai_rca_enabled:
-                        from .utils import call_llm
-
-                        rca_prompt = (
-                            "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
-                            f"steps. Be concise and technical. Payload: {json.dumps(data)}"
-                        )
-                        rca_response = call_llm(rca_prompt)
-                        if rca_response:
-                            note_text = f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}"
-                            cw_client.add_ticket_note(ticket_id, note_text, is_internal=True)
-                            log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
+                    rca_response = call_llm(rca_prompt)
+                    if rca_response:
+                        note_text = f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}"
+                        cw_client.add_ticket_note(ticket_id, note_text, is_internal=True)
+                        log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
 
             elif alert_type == "UP":
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
