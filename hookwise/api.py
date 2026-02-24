@@ -802,7 +802,7 @@ def _register() -> None:
         results["summary"] = results.get("summary") or (f"{prefix} {monitor_name}" if prefix else monitor_name)
         steps.append(f"Final Ticket Summary: '{results['summary']}'")
 
-        company_id_match = re.search(r"#CW(\w+)", monitor_name)
+        company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
         results["company"] = results.get("customer_id") or (
             company_id_match.group(1) if company_id_match else config_data.get("customer_id_default")
         )
