@@ -372,20 +372,7 @@
                                     data-tooltip="Custom ticket description using placeholders.">{{ config.description_template if config else '' }}</textarea>
                             </div>
 
-                            <div class="mb-4">
-                                <label for="summary_remove_strings" class="form-label fw-bold text-light">Remove Strings
-                                    from Summary <span class="badge bg-secondary ms-1 fw-normal"
-                                        style="font-size: 0.7em;">Optional</span></label>
-                                <input type="text" class="form-control bg-dark border-secondary text-light small"
-                                    id="summary_remove_strings" name="summary_remove_strings" maxlength="500"
-                                    placeholder="e.g. *All Tenants (AllTenants): , [Alert]"
-                                    value="{{ config.summary_remove_strings if config else '' }}"
-                                    data-tooltip="Comma-separated list of strings to remove from the final ticket summary.">
-                                <div class="form-text text-muted small mt-1">
-                                    <i class="fas fa-info-circle me-1"></i> Exact match. Leading/trailing spaces inside
-                                    the comma-separated values are preserved.
-                                </div>
-                            </div>
+
 
                             <div class="mb-4">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -432,6 +419,28 @@
                                     id="json_mapping" name="json_mapping" rows="3"
                                     placeholder='{"summary": "$.title", "description": "$.msg"}'
                                     data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label fw-bold mb-0 text-light">Remove Strings from Summary <span
+                                            class="badge bg-secondary ms-1 fw-normal"
+                                            style="font-size: 0.7em;">Optional</span></label>
+                                    <button type="button" class="btn btn-sm btn-outline-info"
+                                        onclick="addRemoveString()">
+                                        <i class="fas fa-plus me-1"></i>Add String
+                                    </button>
+                                </div>
+                                <div id="remove-strings-container" class="mb-2">
+                                    <!-- Dynamic string inputs added here -->
+                                </div>
+                                <!-- Hidden textarea maintains the actual comma-separated value for form submission -->
+                                <textarea class="d-none" id="summary_remove_strings"
+                                    name="summary_remove_strings">{{ config.summary_remove_strings if config else '' }}</textarea>
+                                <div class="form-text text-muted small mt-1">
+                                    <i class="fas fa-info-circle me-1"></i> Exact match. Leading/trailing spaces inside
+                                    the values are preserved.
+                                </div>
                             </div>
 
                             <div class="mb-4">
@@ -869,6 +878,34 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         });
         document.getElementById('maintenance_windows').value = JSON.stringify(windows);
     }
+    function syncRemoveStrings() {
+        const container = document.getElementById('remove-strings-container');
+        const inputs = container.querySelectorAll('.remove-string-input');
+        // Map to values, preserving entirely blank strings if they specifically want space formatting, 
+        // but typically we'll just ignore empty boxes. We use filter to discard empty inputs.
+        const values = Array.from(inputs).map(i => i.value).filter(v => v !== "");
+        document.getElementById('summary_remove_strings').value = values.join(',');
+    }
+
+    function addRemoveString(value = '') {
+        const container = document.getElementById('remove-strings-container');
+        const div = document.createElement('div');
+        div.className = 'd-flex gap-2 mb-2 remove-string-entry';
+
+        // Escape quotes to prevent HTML injection in the value attribute
+        const escapedValue = value.replace(/"/g, '&quot;');
+
+        div.innerHTML = `
+            <input type="text" class="form-control bg-dark border-secondary text-light small remove-string-input" 
+                placeholder="e.g. *All Tenants (AllTenants): " value="${escapedValue}" maxlength="500"
+                oninput="syncRemoveStrings()">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.remove-string-entry').remove(); syncRemoveStrings();">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+        container.appendChild(div);
+    }
+
     function addRoutingRule(rule = {}) {
         const container = document.getElementById('rules-container');
         const count = container.querySelectorAll('.rule-entry').length;
@@ -1403,6 +1440,15 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                     const rules = JSON.parse(rulesRaw);
                     rules.forEach(r => addRoutingRule(r));
                 } catch (e) { console.error('Error parsing routing rules', e); }
+            }
+
+            // Initialize Remove Strings
+            const removeStringsRaw = document.getElementById('summary_remove_strings').value;
+            if (removeStringsRaw) {
+                // We split by comma to render the individual boxes but don't trim arbitrarily,
+                // because the user might have specifically requested a leading space to be removed.
+                const removeStrings = removeStringsRaw.split(',');
+                removeStrings.forEach(s => addRemoveString(s));
             }
         })();
 
