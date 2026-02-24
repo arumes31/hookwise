@@ -281,7 +281,7 @@ def _register() -> None:
             "action": predicted_action,
             "alert_type": alert_type,
             "ticket_summary": ticket_summary,
-            "company_id": mapped_vals.get("customer_id", config.company_id or ""),
+            "company_id": mapped_vals.get("customer_id", config.customer_id_default or ""),
             "board": matched_rules[0].get("overrides", {}).get("board", mapped_vals.get("board", config.board or "")),
             "steps": steps,
         }
