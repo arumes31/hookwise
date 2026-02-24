@@ -115,6 +115,7 @@
                 badgeEl.innerHTML = `<span style="background:${color}22; color:${color}; padding:4px 12px; border-radius:20px; font-weight:700; font-size:0.85rem;">${(data.action || '').replace(/_/g, ' ').toUpperCase()}</span>`;
                 detailEl.innerHTML = [
                     data.ticket_summary ? `<div><span style="opacity:.6">Ticket Summary:</span> <strong>${data.ticket_summary}</strong></div>` : '',
+                    data.description ? `<div style="margin-top:6px;"><span style="opacity:.6">Description:</span><pre style="margin:4px 0 0; font-size:0.78rem; white-space:pre-wrap; background:var(--bg,#13131f); border:1px solid var(--border,#333); border-radius:6px; padding:8px; max-height:120px; overflow-y:auto;">${data.description}</pre></div>` : '',
                     data.company_id ? `<div><span style="opacity:.6">Company ID:</span> <strong>${data.company_id}</strong></div>` : '',
                     data.board ? `<div><span style="opacity:.6">Board:</span> <strong>${data.board}</strong></div>` : '',
                     data.reason ? `<div><span style="opacity:.6">Reason:</span> <strong>${data.reason}</strong></div>` : '',
