@@ -165,13 +165,8 @@
     </div>
 </div>
 
-<div id="infinite-sentinel" class="text-center py-4 d-none">
-    <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Loading more...</span>
-    </div>
-</div>
 
-<nav id="standard-pagination" class="mt-4">
+<nav class="mt-4">
     <ul class="pagination justify-content-center">
         {% if pagination.has_prev %}
         <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
@@ -241,9 +236,7 @@
 
 <script id="server-data" type="application/json">
     {
-        "debugMode": {{ debug_mode | tojson }},
-        "currentPage": {{ pagination.page | tojson }},
-        "hasNext": {{ pagination.has_next | tojson }}
+        "debugMode": {{ debug_mode | tojson }}
     }
 </script>
 
@@ -481,50 +474,6 @@
                 document.getElementById('date-to').value = "{{ date_to or '' }}";
             }
 
-            const tableBody = document.querySelector('table tbody');
-            if (!tableBody || tableBody.dataset.initialized) return;
-            tableBody.dataset.initialized = 'true';
-            let currentPage = SERVER_DATA.currentPage;
-            let hasNext = SERVER_DATA.hasNext;
-
-            const sentinel = document.getElementById('infinite-sentinel');
-            const standardPagination = document.getElementById('standard-pagination');
-
-            if (hasNext && sentinel) {
-                sentinel.classList.remove('d-none');
-                standardPagination.classList.add('d-none');
-
-                function finishInfiniteScroll() {
-                    hasNext = false;
-                    observer.unobserve(sentinel);
-                    sentinel.classList.add('d-none');
-                    // Restore standard pagination so user can jump pages or see they're at the end
-                    standardPagination.classList.remove('d-none');
-                }
-
-                const observer = new IntersectionObserver(async (entries) => {
-                    if (entries[0].isIntersecting && hasNext) {
-                        currentPage++;
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('page', currentPage);
-                        url.searchParams.set('partial', 'true');
-                        try {
-                            const res = await fetch(url);
-                            const html = await res.text();
-                            if (html.trim() && html.includes('<tr')) {
-                                tableBody.insertAdjacentHTML('beforeend', html);
-                                // If this was the last page, end infinite scroll
-                                if (!SERVER_DATA.hasNext && currentPage >= SERVER_DATA.currentPage) {
-                                    finishInfiniteScroll();
-                                }
-                            } else {
-                                finishInfiniteScroll();
-                            }
-                        } catch (e) { console.error('Error fetching next page', e); }
-                    }
-                }, { threshold: 0.1 });
-                observer.observe(sentinel);
-            }
 
             const socket = getSocket();
             if (socket) {
