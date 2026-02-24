@@ -131,7 +131,7 @@
                     <h5 class="modal-title fw-bold text-light">Edit Global Mapping</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <form id="editMappingForm" method="POST">
+                <form id="editMappingForm" method="POST" action="/tenantmap/edit/0" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
