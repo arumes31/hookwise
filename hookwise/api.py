@@ -339,31 +339,32 @@ def _register() -> None:
     @main_bp.route("/endpoint/dry-run-llm/<id>", methods=["POST"])
     @auth_required
     def dry_run_llm(id: str) -> Any:
-        """Run the LLM RCA prompt against the provided payload without creating any ticket."""
+        """Enqueue an LLM RCA task and return the task_id immediately — avoids proxy timeouts."""
         try:
             config = WebhookConfig.query.get_or_404(id)
             data = request.get_json(force=True, silent=True) or {}
-            from .utils import call_llm
-
-            rca_prompt = (
-                "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
-                f"steps. Be concise and technical. Payload: {json.dumps(data)}"
-            )
-            system_prompt = config.ai_prompt_template or (
-                "You are a helpful assistant specialized in ConnectWise ticketing and alert analysis. "
-                "Be concise and return only the requested value."
-            )
-            result = call_llm(rca_prompt, system_prompt=system_prompt)
-            if result:
-                return jsonify({"status": "ok", "rca": result})
-            return jsonify({
-                "status": "error",
-                "rca": "LLM returned no response — check OLLAMA_HOST and model.",
-            }), 502
+            from .tasks import run_llm_rca
+            task = run_llm_rca.delay(id, data, config.ai_prompt_template)
+            return jsonify({"task_id": task.id})
         except Exception as e:
             import logging as _logging
-            _logging.getLogger(__name__).error("dry_run_llm error: %s", e)
+            _logging.getLogger(__name__).error("dry_run_llm enqueue error: %s", e)
             return jsonify({"status": "error", "rca": f"Server error: {type(e).__name__}"}), 500
+
+    @main_bp.route("/endpoint/dry-run-llm/status/<task_id>", methods=["GET"])
+    @auth_required
+    def dry_run_llm_status(task_id: str) -> Any:
+        """Poll the result of an enqueued LLM RCA task."""
+        from celery.result import AsyncResult
+
+        from .tasks import celery
+        result = AsyncResult(task_id, app=celery)
+        if result.state == "PENDING" or result.state == "STARTED":
+            return jsonify({"status": "pending"})
+        if result.state == "SUCCESS":
+            return jsonify(result.result)
+        # FAILURE or other
+        return jsonify({"status": "error", "rca": f"Task failed: {result.state}"}), 500
 
 
     @main_bp.route("/api/stats")
