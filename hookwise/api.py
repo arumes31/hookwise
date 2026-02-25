@@ -447,7 +447,7 @@ def _register() -> None:
         # Single query instead of 7 separate COUNT queries
         rows = (
             db.session.query(db.func.date(WebhookLog.created_at).label("day"), db.func.count(WebhookLog.id))
-            .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status == "processed")
+            .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status.in_(["processed", "skipped"]))
             .group_by(db.func.date(WebhookLog.created_at))
             .all()
         )
