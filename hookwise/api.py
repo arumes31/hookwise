@@ -411,8 +411,16 @@ def _register() -> None:
             .filter(WebhookConfig.is_draft.is_(False), WebhookLog.created_at >= today_start)
             .count()
         )
-        success_rate = (tickets_created / total_today * 100) if total_today > 0 else 100
-
+        successful_attempts = (
+            WebhookLog.query.join(WebhookConfig)
+            .filter(
+                WebhookConfig.is_draft.is_(False),
+                WebhookLog.status.in_(["processed", "skipped"]),
+                WebhookLog.created_at >= today_start,
+            )
+            .count()
+        )
+        success_rate = (successful_attempts / total_today * 100) if total_today > 0 else 100
         avg_proc = (
             db.session.query(func.avg(WebhookLog.processing_time))
             .filter(WebhookLog.created_at >= today_start, WebhookLog.status == "processed")
@@ -439,7 +447,7 @@ def _register() -> None:
         # Single query instead of 7 separate COUNT queries
         rows = (
             db.session.query(db.func.date(WebhookLog.created_at).label("day"), db.func.count(WebhookLog.id))
-            .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status == "processed")
+            .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status.in_(["processed", "skipped"]))
             .group_by(db.func.date(WebhookLog.created_at))
             .all()
         )
