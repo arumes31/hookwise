@@ -8,6 +8,10 @@
         {% if log.status == 'processed' %}
         <span
             class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">PROCESSED</span>
+        {% if log.action %}
+        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 ms-1">{{
+            log.action.upper() }}</span>
+        {% endif %}
         {% elif log.status == 'skipped' %}
         <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">SKIPPED</span>
         {% elif log.status == 'failed' %}
