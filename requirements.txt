@@ -4,7 +4,7 @@ bidict==0.23.1
 billiard==4.2.4
 blinker==1.9.0
 celery==5.6.2
-certifi==2026.1.4
+certifi==2026.2.25
 cffi==2.0.0
 charset-normalizer==3.4.4
 click==8.3.1
