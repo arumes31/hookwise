@@ -62,7 +62,7 @@ ruff==0.15.2
 segno==1.6.6
 simple-websocket==1.1.0
 six==1.17.0
-SQLAlchemy==2.0.46
+SQLAlchemy==2.0.47
 types-requests==2.32.4.20260107
 typing_extensions==4.15.0
 tzdata==2025.3
