@@ -6,7 +6,7 @@ blinker==1.9.0
 celery==5.6.2
 certifi==2026.1.4
 cffi==2.0.0
-charset-normalizer==3.4.4
+charset-normalizer==3.4.5
 click==8.3.1
 click-didyoumean==0.3.1
 click-plugins==1.1.1.2
