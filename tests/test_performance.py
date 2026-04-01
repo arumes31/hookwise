@@ -1,9 +1,12 @@
 import time
+
 import pytest
+from flask import json
+
 from hookwise import create_app
 from hookwise.extensions import db
-from hookwise.models import WebhookConfig, User
-from flask import json
+from hookwise.models import User, WebhookConfig
+
 
 @pytest.fixture
 def app():
