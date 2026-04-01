@@ -1,3 +1,4 @@
+import os
 import time
 
 import pytest
@@ -10,9 +11,10 @@ from hookwise.models import User, WebhookConfig
 
 @pytest.fixture
 def app():
+    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
     app = create_app()
     app.config["TESTING"] = True
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["WTF_CSRF_ENABLED"] = False
     return app
 
 @pytest.fixture
@@ -58,8 +60,9 @@ def test_reorder_performance(client, app):
     duration = end_time - start_time
     print(f"\nReorder {num_endpoints} endpoints took: {duration:.4f} seconds")
 
-    # Verify order was updated
+    # Verify order was updated with a bulk fetch
     with app.app_context():
+        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(new_order)).all()
+        config_map = {c.id: c for c in configs}
         for i, config_id in enumerate(new_order):
-            config = WebhookConfig.query.get(config_id)
-            assert config.display_order == i
+            assert config_map[config_id].display_order == i
