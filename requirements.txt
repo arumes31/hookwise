@@ -52,7 +52,7 @@ Pygments==2.19.2
 pyotp==2.9.0
 pytest==9.0.2
 python-dateutil==2.9.0.post0
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 python-engineio==4.13.1
 python-socketio==5.16.1
 redis==7.2.0
