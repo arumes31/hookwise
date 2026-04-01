@@ -50,6 +50,45 @@ def test_decrypt_unencrypted_returns_input(app):
         assert decrypt_string(raw) == raw
 
 
+def test_encrypt_decrypt_empty_string(app):
+    """Empty string or None should be returned as is."""
+    with app.app_context():
+        assert encrypt_string("") == ""
+        assert decrypt_string("") == ""
+        assert encrypt_string(None) is None
+        assert decrypt_string(None) is None
+
+
+def test_encrypt_decrypt_unicode(app):
+    """Unicode strings should be handled correctly."""
+    with app.app_context():
+        unicode_str = "S3crët-T0kën-Välüë-🚀"
+        encrypted = encrypt_string(unicode_str)
+        assert encrypted != unicode_str
+        assert decrypt_string(encrypted) == unicode_str
+
+
+def test_decrypt_invalid_token(app):
+    """Invalid tokens (malformed Fernet) should return the original input."""
+    with app.app_context():
+        # Looks like Fernet but is invalid/corrupted
+        invalid_token = "gAAAAABl-ThisIsInvalidTokenValue-xyz="
+        assert decrypt_string(invalid_token) == invalid_token
+
+
+def test_decrypt_with_different_key(app):
+    """Decryption with a different key should return the original input."""
+    from cryptography.fernet import Fernet
+    with app.app_context():
+        other_key = Fernet.generate_key().decode()
+        other_f = Fernet(other_key.encode())
+        plaintext = "secret-info"
+        encrypted_with_other = other_f.encrypt(plaintext.encode()).decode()
+
+        # Should fail to decrypt with app's key and return the cipher_text
+        assert decrypt_string(encrypted_with_other) == encrypted_with_other
+
+
 # --- JSONPath ---
 
 
