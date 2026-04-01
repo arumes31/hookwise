@@ -29,10 +29,18 @@ def _register() -> None:
     @auth_required
     def reorder_endpoints() -> Any:
         order = request.json.get("order", [])
+        if not order:
+            return jsonify({"status": "success"})
+
+        # Bulk fetch all relevant configs
+        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(order)).all()
+        config_map = {c.id: c for c in configs}
+
         for index, config_id in enumerate(order):
-            config = WebhookConfig.query.get(config_id)
+            config = config_map.get(config_id)
             if config:
                 config.display_order = index
+
         db.session.commit()
         return jsonify({"status": "success"})
 
