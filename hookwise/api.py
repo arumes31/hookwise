@@ -481,12 +481,19 @@ def _register() -> None:
             action = row[1]
             count = row[2]
             
-            try:
-                d = datetime.strptime(day_str.split(" ")[0], "%Y-%m-%d").date()
-            except ValueError as e:
-                import logging
-                logging.error(f"Failed to parse date '{day_str}': {e}")
-                continue
+            from datetime import date
+            if isinstance(row[0], date):
+                d = row[0]
+            else:
+                try:
+                    d = date.fromisoformat(str(row[0]).split(" ")[0])
+                except ValueError:
+                    try:
+                        d = datetime.strptime(str(row[0]).split(" ")[0], "%Y-%m-%d").date()
+                    except ValueError as e:
+                        import logging
+                        logging.error(f"Failed to parse date '{row[0]}': {e}")
+                        continue
 
             if period == "weekly":
                 year, week, _ = d.isocalendar()
@@ -510,16 +517,25 @@ def _register() -> None:
         now = datetime.now(timezone.utc).date()
         
         if period == "weekly":
-            for i in range(3, -1, -1):
-                d = now - timedelta(days=i*7)
+            seen_weeks = set()
+            weeks_data = []
+            
+            j = 0
+            while len(seen_weeks) < 4 and j < 60:
+                d = now - timedelta(days=j)
                 year, week, _ = d.isocalendar()
                 k = f"{year}-W{week}"
-                history_data.append({
-                    "date": f"W{week}", 
-                    "created": counts_by_group.get(k, {}).get("created", 0),
-                    "updated": counts_by_group.get(k, {}).get("updated", 0),
-                    "closed": counts_by_group.get(k, {}).get("closed", 0)
-                })
+                if k not in seen_weeks:
+                    seen_weeks.add(k)
+                    weeks_data.append({
+                        "date": f"W{week}", 
+                        "created": counts_by_group.get(k, {}).get("created", 0),
+                        "updated": counts_by_group.get(k, {}).get("updated", 0),
+                        "closed": counts_by_group.get(k, {}).get("closed", 0)
+                    })
+                j += 1
+                
+            history_data.extend(reversed(weeks_data))
         elif period == "monthly":
             for i in range(5, -1, -1):
                 total_months = now.year * 12 + now.month - 1 - i
