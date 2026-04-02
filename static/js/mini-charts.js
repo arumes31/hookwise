@@ -48,7 +48,7 @@ window.MiniChart = {
         
         let max = 1;
         datasets.forEach(ds => {
-            const dsMax = Math.max(...ds.data);
+            const dsMax = ds.data.length ? Math.max(...ds.data) : 0;
             if (dsMax > max) max = dsMax;
         });
 
@@ -90,6 +90,8 @@ window.MiniChart = {
             ctx.font = '10px sans-serif';
             ctx.textAlign = 'right';
             const textWidth = ctx.measureText(ds.name).width;
+            
+            if (legendX - textWidth - 12 < padding) return;
             
             ctx.fillStyle = '#94a3b8';
             ctx.fillText(ds.name, legendX, 10);

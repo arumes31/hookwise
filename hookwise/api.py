@@ -481,13 +481,12 @@ def _register() -> None:
             action = row[1]
             count = row[2]
             
-            # Use YYYY-MM-DD instead of full datetime string if the DB returned just date part.
-            # Handle potential spaces if DB formats differently, but %Y-%m-%d is standard sqlite/pg date()
-            d_parts = day_str.split(" ")[0].split("-")
-            if len(d_parts) == 3:
-                d = datetime(int(d_parts[0]), int(d_parts[1]), int(d_parts[2])).date()
-            else:
+            try:
                 d = datetime.strptime(day_str.split(" ")[0], "%Y-%m-%d").date()
+            except ValueError as e:
+                import logging
+                logging.error(f"Failed to parse date '{day_str}': {e}")
+                continue
 
             if period == "weekly":
                 year, week, _ = d.isocalendar()
@@ -523,11 +522,9 @@ def _register() -> None:
                 })
         elif period == "monthly":
             for i in range(5, -1, -1):
-                m = now.month - i
-                y = now.year
-                while m < 1:
-                    m += 12
-                    y -= 1
+                total_months = now.year * 12 + now.month - 1 - i
+                y, m_0 = divmod(total_months, 12)
+                m = m_0 + 1
                 k = f"{y}-{m:02d}"
                 # short month name
                 month_name = datetime(y, m, 1).strftime("%b")
