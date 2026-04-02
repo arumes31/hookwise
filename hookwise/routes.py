@@ -78,8 +78,9 @@ def index() -> Any:
     last_statuses = {}
     last_errors = {}
     for log in latest_logs:
-        last_statuses[log.config_id] = log.status
-        last_errors[log.config_id] = log.error_message if log.status == "failed" else None
+        status = "failed" if log.status == "dlq" else log.status
+        last_statuses[log.config_id] = status
+        last_errors[log.config_id] = log.error_message if status == "failed" else None
 
     # Sparkline data: counts per config per day for last 7 days (1 query instead of 7*N)
     seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).date()
