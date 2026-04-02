@@ -40,7 +40,10 @@ def index() -> Any:
     # Structure: {config_id: {status: count}}
     counts: Dict[str, Dict[str, int]] = {}
     for cid, status, cnt in count_rows:
-        counts.setdefault(cid, {})[status] = cnt
+        if status == "dlq":
+            status = "failed"
+        counts.setdefault(cid, {})
+        counts[cid][status] = counts[cid].get(status, 0) + cnt
 
     # Aggregated all time counts grouped by config and status
     total_count_rows = (
@@ -51,7 +54,10 @@ def index() -> Any:
     
     total_counts: Dict[str, Dict[str, int]] = {}
     for cid, status, cnt in total_count_rows:
-        total_counts.setdefault(cid, {})[status] = cnt
+        if status == "dlq":
+            status = "failed"
+        total_counts.setdefault(cid, {})
+        total_counts[cid][status] = total_counts[cid].get(status, 0) + cnt
 
     # Latest log per config (1 query instead of N)
     latest_subq = (
@@ -72,8 +78,9 @@ def index() -> Any:
     last_statuses = {}
     last_errors = {}
     for log in latest_logs:
-        last_statuses[log.config_id] = log.status
-        last_errors[log.config_id] = log.error_message if log.status == "failed" else None
+        status = "failed" if log.status == "dlq" else log.status
+        last_statuses[log.config_id] = status
+        last_errors[log.config_id] = log.error_message if status == "failed" else None
 
     # Sparkline data: counts per config per day for last 7 days (1 query instead of 7*N)
     seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).date()
