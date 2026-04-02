@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Tuple, cast
 
@@ -480,7 +480,6 @@ def _register() -> None:
             action = row[1]
             count = row[2]
             
-            from datetime import date
             if isinstance(row[0], date):
                 d = row[0]
             else:
@@ -513,26 +512,29 @@ def _register() -> None:
                 counts_by_group[group_key]["closed"] += count
 
         history_data: list[dict[str, Any]] = []
-        now = datetime.now(timezone.utc).date()
+        now: date = datetime.now(timezone.utc).date()
         
         if period == "weekly":
-            seen_weeks: set[str] = set()
+            def generate_weeks(start_date: date, count: int):
+                seen: set[tuple[int, int]] = set()
+                for j in range(60):
+                    d = start_date - timedelta(days=j)
+                    year, week, _ = d.isocalendar()
+                    if (year, week) not in seen:
+                        seen.add((year, week))
+                        yield year, week
+                        if len(seen) == count:
+                            break
+
             weeks_data: list[dict[str, Any]] = []
-            
-            j = 0
-            while len(seen_weeks) < 4 and j < 60:
-                d = now - timedelta(days=j)
-                year, week, _ = d.isocalendar()
+            for year, week in generate_weeks(now, 4):
                 k = f"{year}-W{week}"
-                if k not in seen_weeks:
-                    seen_weeks.add(k)
-                    weeks_data.append({
-                        "date": f"W{week}", 
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0)
-                    })
-                j += 1
+                weeks_data.append({
+                    "date": f"W{week}", 
+                    "created": counts_by_group.get(k, {}).get("created", 0),
+                    "updated": counts_by_group.get(k, {}).get("updated", 0),
+                    "closed": counts_by_group.get(k, {}).get("closed", 0)
+                })
                 
             history_data.extend(reversed(weeks_data))
         elif period == "monthly":
