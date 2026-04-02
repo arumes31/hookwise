@@ -42,6 +42,17 @@ def index() -> Any:
     for cid, status, cnt in count_rows:
         counts.setdefault(cid, {})[status] = cnt
 
+    # Aggregated all time counts grouped by config and status
+    total_count_rows = (
+        db.session.query(WebhookLog.config_id, WebhookLog.status, func.count(WebhookLog.id))
+        .group_by(WebhookLog.config_id, WebhookLog.status)
+        .all()
+    )
+    
+    total_counts: Dict[str, Dict[str, int]] = {}
+    for cid, status, cnt in total_count_rows:
+        total_counts.setdefault(cid, {})[status] = cnt
+
     # Latest log per config (1 query instead of N)
     latest_subq = (
         db.session.query(WebhookLog.config_id, func.max(WebhookLog.created_at).label("max_created"))
@@ -82,6 +93,7 @@ def index() -> Any:
     for config in configs:
         cid = config.id
         counts.setdefault(cid, {"processed": 0, "failed": 0, "skipped": 0})
+        total_counts.setdefault(cid, {"processed": 0, "failed": 0, "skipped": 0})
         last_statuses.setdefault(cid, "none")
         last_errors.setdefault(cid, None)
         config_spark = []
@@ -98,6 +110,7 @@ def index() -> Any:
         "index.html",
         configs=configs,
         counts=counts,
+        total_counts=total_counts,
         last_statuses=last_statuses,
         last_errors=last_errors,
         sparklines=sparklines,

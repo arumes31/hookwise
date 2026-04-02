@@ -360,21 +360,21 @@
                 <div class="tech-grid mb-4">
                     <div class="tech-item">
                         <div class="tech-label text-success">SUCCESS</div>
-                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('processed', 0) }}</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('processed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('processed', 0) }}</span></div>
                         <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
-                            Total 24H</div>
+                            24H / Total</div>
                     </div>
                     <div class="tech-item">
                         <div class="tech-label text-danger">FAILED</div>
-                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('failed', 0) }}</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('failed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('failed', 0) }}</span></div>
                         <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
-                            Recent</div>
+                            24H / Total</div>
                     </div>
                     <div class="tech-item">
                         <div class="tech-label text-warning">SKIPPED</div>
-                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('skipped', 0) }}</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('skipped', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('skipped', 0) }}</span></div>
                         <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
-                            Dedupe</div>
+                            24H / Total</div>
                     </div>
                     <div class="tech-item">
                         <div class="tech-label text-primary">LAST SEEN</div>
