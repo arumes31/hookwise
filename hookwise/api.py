@@ -512,12 +512,12 @@ def _register() -> None:
             elif action == "close":
                 counts_by_group[group_key]["closed"] += count
 
-        history_data = []
+        history_data: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc).date()
         
         if period == "weekly":
-            seen_weeks = set()
-            weeks_data = []
+            seen_weeks: set[str] = set()
+            weeks_data: list[dict[str, Any]] = []
             
             j = 0
             while len(seen_weeks) < 4 and j < 60:
