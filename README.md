@@ -5,7 +5,7 @@
 # HookWise
 
 [![CI Status](https://github.com/arumes31/hookwise/actions/workflows/ci.yml/badge.svg?branch=v2_test)](https://github.com/arumes31/hookwise/actions/workflows/ci.yml)
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg?logo=docker&logoColor=white)](https://www.docker.com/)
