@@ -477,7 +477,6 @@ def _register() -> None:
 
         counts_by_group = {}
         for row in rows:
-            day_str = str(row[0])
             action = row[1]
             count = row[2]
             
