@@ -5,50 +5,70 @@
     <div class="col-md-8">
         <div class="card glass-card shadow-lg">
             <div class="card-body p-4">
-                <h6 class="text-secondary text-uppercase small ls-wide mb-3">Tickets Created (Last 7 Days)</h6>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="text-secondary text-uppercase small ls-wide mb-0">Ticket History</h6>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <input type="radio" class="btn-check" name="chartPeriod" id="periodDaily" value="daily" checked autocomplete="off" onchange="window.dashboardState.chartPeriod = 'daily'; refreshStats();">
+                        <label class="btn btn-outline-secondary text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;" for="periodDaily">Daily</label>
+                        
+                        <input type="radio" class="btn-check" name="chartPeriod" id="periodWeekly" value="weekly" autocomplete="off" onchange="window.dashboardState.chartPeriod = 'weekly'; refreshStats();">
+                        <label class="btn btn-outline-secondary text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;" for="periodWeekly">Weekly</label>
+                        
+                        <input type="radio" class="btn-check" name="chartPeriod" id="periodMonthly" value="monthly" autocomplete="off" onchange="window.dashboardState.chartPeriod = 'monthly'; refreshStats();">
+                        <label class="btn btn-outline-secondary text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;" for="periodMonthly">Monthly</label>
+                    </div>
+                </div>
                 <canvas id="historyChart" height="100"></canvas>
             </div>
         </div>
     </div>
     <div class="col-md-4">
-        <div class="row g-4">
-            <div class="col-12">
-                <div class="card glass-card shadow-lg">
-                    <div class="card-body text-center p-3">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Created Today</h6>
-                        <h2 class="fw-bold mb-0 text-white" id="stat-created">0</h2>
+        <div class="row g-3">
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #3b82f6;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Created</h6>
+                        <h3 class="fw-bold mb-0 text-white" id="stat-created">0</h3>
                     </div>
                 </div>
             </div>
-            <div class="col-12">
-                <div class="card glass-card shadow-lg" style="--accent: #10b981;">
-                    <div class="card-body text-center p-3">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Closed Today</h6>
-                        <h2 class="fw-bold mb-0 text-white" id="stat-closed">0</h2>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #f59e0b;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Updated</h6>
+                        <h3 class="fw-bold mb-0 text-white" id="stat-updated">0</h3>
                     </div>
                 </div>
             </div>
-            <div class="col-12">
-                <div class="card glass-card shadow-lg" style="--accent: #f59e0b;">
-                    <div class="card-body text-center p-3">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Success Rate</h6>
-                        <h2 class="fw-bold mb-0 text-white"><span id="stat-rate">100</span>%</h2>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #10b981;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Closed</h6>
+                        <h3 class="fw-bold mb-0 text-white" id="stat-closed">0</h3>
                     </div>
                 </div>
             </div>
-            <div class="col-12">
-                <div class="card glass-card shadow-lg" style="--accent: #bc8cff;">
-                    <div class="card-body text-center p-3">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Avg. Latency</h6>
-                        <h2 class="fw-bold mb-0 text-white"><span id="stat-latency">0</span>s</h2>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #bc8cff;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Succ Rate</h6>
+                        <h3 class="fw-bold mb-0 text-white"><span id="stat-rate">100</span><span class="fs-6 opacity-75">%</span></h3>
                     </div>
                 </div>
             </div>
-            <div class="col-12">
-                <div class="card glass-card shadow-lg" style="--accent: #ef4444;">
-                    <div class="card-body text-center p-3">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2">Failed Attempts</h6>
-                        <h2 class="fw-bold mb-0 text-white" id="stat-failed">0</h2>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #a3a3a3;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Avg Latency</h6>
+                        <h3 class="fw-bold mb-0 text-white"><span id="stat-latency">0</span><span class="fs-6 opacity-75">s</span></h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #ef4444;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Failed</h6>
+                        <h3 class="fw-bold mb-0 text-white" id="stat-failed">0</h3>
                     </div>
                 </div>
             </div>
@@ -842,15 +862,17 @@
 
         Promise.all([
             fetch('/api/stats').then(res => res.json()),
-            fetch('/api/stats/history').then(res => res.json())
+            fetch(`/api/stats/history?period=${window.dashboardState.chartPeriod || 'daily'}`).then(res => res.json())
         ]).then(([data, historyData]) => {
             const elCreated = document.getElementById('stat-created');
+            const elUpdated = document.getElementById('stat-updated');
             const elClosed = document.getElementById('stat-closed');
             const elRate = document.getElementById('stat-rate');
             const elFailed = document.getElementById('stat-failed');
             const elLatency = document.getElementById('stat-latency');
 
             if (elCreated) elCreated.textContent = data.created_today;
+            if (elUpdated) elUpdated.textContent = data.updated_today;
             if (elClosed) elClosed.textContent = data.closed_today;
             if (elRate) elRate.textContent = data.success_rate;
             if (elFailed) elFailed.textContent = data.failed_today;
@@ -858,8 +880,17 @@
 
             if (typeof MiniChart !== 'undefined') {
                 const labels = historyData.map(d => d.date);
-                const counts = historyData.map(d => d.count);
-                MiniChart.renderBar('historyChart', labels, counts);
+                if (MiniChart.renderMultiBar && historyData.length > 0 && historyData[0].created !== undefined) {
+                    const datasets = [
+                        { name: 'Created', data: historyData.map(d => d.created), color: '#3b82f6' },
+                        { name: 'Updated', data: historyData.map(d => d.updated), color: '#f59e0b' },
+                        { name: 'Closed', data: historyData.map(d => d.closed), color: '#10b981' }
+                    ];
+                    MiniChart.renderMultiBar('historyChart', labels, datasets);
+                } else {
+                    const counts = historyData.map(d => d.count || d.created || 0);
+                    MiniChart.renderBar('historyChart', labels, counts);
+                }
             }
         })
             .catch(err => console.error('Error fetching stats:', err))

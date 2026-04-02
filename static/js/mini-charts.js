@@ -33,6 +33,73 @@ window.MiniChart = {
             ctx.fillText(val, x + barWidth / 2, y - 5);
         });
     },
+    renderMultiBar: function(canvasId, labels, datasets) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        const padding = 30;
+        const chartWidth = width - padding * 2;
+        const chartHeight = height - padding * 2;
+        
+        ctx.clearRect(0, 0, width, height);
+        if (!labels || labels.length === 0 || !datasets || datasets.length === 0) return;
+        
+        let max = 1;
+        datasets.forEach(ds => {
+            const dsMax = Math.max(...ds.data);
+            if (dsMax > max) max = dsMax;
+        });
+
+        const numGroups = labels.length;
+        const numBarsPerGroup = datasets.length;
+        
+        const groupWidth = chartWidth / numGroups * 0.8;
+        const groupSpacing = chartWidth / numGroups * 0.2;
+        const barWidth = groupWidth / numBarsPerGroup;
+        
+        labels.forEach((label, i) => {
+            const groupX = padding + i * (groupWidth + groupSpacing);
+            
+            datasets.forEach((ds, j) => {
+                const val = ds.data[i] || 0;
+                const h = (val / max) * chartHeight;
+                const x = groupX + j * barWidth;
+                const y = height - padding - h;
+                
+                ctx.fillStyle = ds.color || '#3b82f6';
+                ctx.fillRect(x, y, barWidth - 1, h);
+                
+                if (val > 0) {
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.font = '9px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(val, x + barWidth / 2, y - 4);
+                }
+            });
+            
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, groupX + groupWidth / 2, height - 10);
+        });
+
+        let legendX = width - padding;
+        datasets.slice().reverse().forEach(ds => {
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'right';
+            const textWidth = ctx.measureText(ds.name).width;
+            
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText(ds.name, legendX, 10);
+            
+            ctx.fillStyle = ds.color || '#3b82f6';
+            ctx.fillRect(legendX - textWidth - 12, 2, 8, 8);
+            
+            legendX -= textWidth + 20;
+        });
+    },
     renderLine: function(canvasId, data, color = '#3b82f6') {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
