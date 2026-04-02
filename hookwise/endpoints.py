@@ -29,10 +29,25 @@ def _register() -> None:
     @auth_required
     def reorder_endpoints() -> Any:
         order = request.json.get("order", [])
+        if not order:
+            return jsonify({"status": "success"})
+
+        # Validation: check for duplicates in the payload
+        if len(set(order)) != len(order):
+            return jsonify({"status": "error", "message": "Duplicate IDs in order"}), 400
+
+        # Bulk fetch all relevant configs
+        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(order)).all()
+        config_map = {c.id: c for c in configs}
+
+        # Validation: check for unknown IDs
+        if len(configs) != len(order):
+            return jsonify({"status": "error", "message": "One or more unknown IDs in order"}), 400
+
         for index, config_id in enumerate(order):
-            config = WebhookConfig.query.get(config_id)
-            if config:
-                config.display_order = index
+            config = config_map[config_id]
+            config.display_order = index
+
         db.session.commit()
         return jsonify({"status": "success"})
 
