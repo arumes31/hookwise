@@ -47,3 +47,13 @@ Thumbs.db
 # test
 *.exe
 CHANGELOG.md
+# Scratch / Tools
+report*.json
+flask_report.json
+flask_ext_report.json
+full_report.json
+parse_report.py
+compare_reqs.py
+generate_final_reqs.py
+requirements_final.txt
+requirements_updated.txt
