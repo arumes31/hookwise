@@ -465,7 +465,11 @@ def _register() -> None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
 
         rows = (
-            db.session.query(db.func.date(WebhookLog.created_at).label("day"), WebhookLog.action, db.func.count(WebhookLog.id))
+            db.session.query(
+                db.func.date(WebhookLog.created_at).label("day"),
+                WebhookLog.action,
+                db.func.count(WebhookLog.id),
+            )
             .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status == "processed")
             .group_by(db.func.date(WebhookLog.created_at), WebhookLog.action)
             .all()
