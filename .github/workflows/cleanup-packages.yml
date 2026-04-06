@@ -1,0 +1,31 @@
+name: Cleanup Old GHCR Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (if true, will not delete anything)'
+        type: boolean
+        default: true
+      keep_last_n:
+        description: 'Number of extra versions to keep (besides latest/main)'
+        type: number
+        default: 5
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old package versions
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package-name: ${{ github.event.repository.name }}
+          exclude-tags: ^(main|latest)$
+          keep-n-tagged: ${{ inputs.keep_last_n }}
+          dry-run: ${{ inputs.dry_run }}
+          # Only target container packages
+          package-type: container
