@@ -211,67 +211,73 @@ def check_webhook_timeouts() -> None:
         now = datetime.now(timezone.utc)
 
         for config in configs:
-            # Fallback to created_at if last_seen_at is None
-            last_activity = config.last_seen_at or config.created_at
+            try:
+                # Fallback to created_at if last_seen_at is None
+                last_activity = config.last_seen_at or config.created_at
 
-            if not last_activity:
-                continue
+                if not last_activity:
+                    continue
 
-            # SQLite might return naive datetimes, ensure timezone-aware comparison
-            if last_activity.tzinfo is None:
-                last_activity = last_activity.replace(tzinfo=timezone.utc)
+                # SQLite might return naive datetimes, ensure timezone-aware comparison
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=timezone.utc)
 
-            diff = now - last_activity
-            hours_since_activity = diff.total_seconds() / 3600
+                diff = now - last_activity
+                hours_since_activity = diff.total_seconds() / 3600
 
-            # Defensive check: Ensure timeout_hours is an int
-            timeout_limit = getattr(config, "timeout_hours", 24) or 24
+                # Defensive check: Ensure timeout_hours is an int
+                timeout_limit = getattr(config, "timeout_hours", 24) or 24
 
-            if hours_since_activity > timeout_limit:
-                # Timeout threshold exceeded
-                if not config.timeout_ticket_id:
-                    # No ticket open yet, create one
-                    summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
-                    description = (
-                        f"The webhook endpoint '{config.name}' has not received any data for over "
-                        f"{config.timeout_hours} hours.\n"
-                        f"Last seen: {config.last_seen_at if config.last_seen_at else 'Never'}\n"
-                        f"Endpoint ID: {config.id}"
-                    )
-
-                    # Create ticket using endpoint settings (board, status, priority)
-                    new_ticket = cw_client.create_ticket(
-                        summary=summary,
-                        description=description,
-                        monitor_name=config.name,
-                        company_id=config.customer_id_default,
-                        board=config.board,
-                        status=config.status,
-                        priority=config.priority,
-                        ticket_type=config.ticket_type,
-                        subtype=config.subtype,
-                        item=config.item,
-                    )
-
-                    if new_ticket:
-                        config.timeout_ticket_id = new_ticket["id"]
-                        updates += 1
-                        logger.warning(
-                            f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'"
+                if hours_since_activity > timeout_limit:
+                    # Timeout threshold exceeded
+                    if not config.timeout_ticket_id:
+                        # No ticket open yet, create one
+                        summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
+                        description = (
+                            f"The webhook endpoint '{config.name}' has not received any data for over "
+                            f"{config.timeout_hours} hours.\n"
+                            f"Last seen: {config.last_seen_at if config.last_seen_at else 'Never'}\n"
+                            f"Endpoint ID: {config.id}"
                         )
-                        log_msg = (
-                            f"Timeout alert: Created ticket #{config.timeout_ticket_id} "
-                            f"(No data for {config.timeout_hours}h)"
+
+                        # Create ticket using endpoint settings (board, status, priority)
+                        new_ticket = cw_client.create_ticket(
+                            summary=summary,
+                            description=description,
+                            monitor_name=config.name,
+                            company_id=config.customer_id_default,
+                            board=config.board,
+                            status=config.status,
+                            priority=config.priority,
+                            ticket_type=config.ticket_type,
+                            subtype=config.subtype,
+                            item=config.item,
                         )
-                        log_to_web(log_msg, "warning", config.name)
-                    else:
-                        logger.warning(
-                            f"Failed to create timeout ticket for endpoint '{config.name}'. "
-                            "Ticket creation returned None."
-                        )
+
+                        if new_ticket:
+                            config.timeout_ticket_id = new_ticket["id"]
+                            updates += 1
+                            logger.warning(
+                                f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'"
+                            )
+                            log_msg = (
+                                f"Timeout alert: Created ticket #{config.timeout_ticket_id} "
+                                f"(No data for {config.timeout_hours}h)"
+                            )
+                            log_to_web(log_msg, "warning", config.name)
+
+                            # Persist immediately to prevent ghost tickets on later failures
+                            db.session.commit()
+                        else:
+                            logger.warning(
+                                f"Failed to create timeout ticket for endpoint '{config.name}'. "
+                                "Ticket creation returned None."
+                            )
+            except Exception as loop_e:
+                logger.error(f"Error processing timeout for endpoint '{config.name}': {loop_e}")
+                db.session.rollback()
 
         if updates > 0:
-            db.session.commit()
             logger.info(f"Timeout check completed. Created {updates} tickets.")
 
     except Exception as e:
@@ -368,6 +374,25 @@ def is_in_maintenance(config: WebhookConfig) -> bool:
     return False
 
 
+def _resolve_timeout_alert(config: WebhookConfig) -> None:
+    """Update heartbeat timestamp and close any open timeout tickets."""
+    from .models import db
+
+    config.last_seen_at = datetime.now(timezone.utc)
+
+    if config.timeout_ticket_id:
+        ticket_id = config.timeout_ticket_id
+        resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
+        if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
+            config.timeout_ticket_id = None
+            logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
+            log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
+        else:
+            logger.error(f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'")
+
+    db.session.commit()
+
+
 def handle_webhook_logic(
     config_id: str,
     data: Dict[str, Any],
@@ -410,6 +435,9 @@ def handle_webhook_logic(
         try:
             # 2. Check Maintenance Window
             if is_in_maintenance(config):
+                # Ensure heartbeat is updated even in maintenance
+                _resolve_timeout_alert(config)
+
                 log_entry.status = "skipped"
                 log_entry.error_message = "Skipped: Maintenance Window Active"
                 log_entry.processing_time = time.time() - start_time
@@ -433,22 +461,8 @@ def handle_webhook_logic(
             json_mapping_str = config.json_mapping
             routing_rules_str = config.routing_rules
 
-            config.last_seen_at = datetime.now(timezone.utc)
-
-            # Close timeout ticket if it exists
-            if config.timeout_ticket_id:
-                ticket_id = config.timeout_ticket_id
-                resolution = (
-                    f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
-                )
-                if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
-                    config.timeout_ticket_id = None
-                    logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
-                    log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
-                else:
-                    logger.error(f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'")
-
-            db.session.commit()
+            # Heartbeat update and timeout resolution
+            _resolve_timeout_alert(config)
 
             # Parse JSON mappings and routing rules
             json_mapping = {}

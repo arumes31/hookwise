@@ -266,3 +266,45 @@ def test_webhook_timeout_alerts(mock_cw, mock_redis, app):
         mock_cw.close_ticket.assert_called_once_with(999, ANY, status_name=config.close_status)
         db.session.refresh(config)
         assert config.timeout_ticket_id is None
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_maintenance_window_resolves_timeout(mock_cw, mock_redis, app):
+    """Test that a webhook during maintenance still resolves an open timeout alert."""
+    from datetime import datetime, timedelta, timezone
+    from hookwise.tasks import handle_webhook_logic
+
+    with app.app_context():
+        # 1. Create endpoint with an open timeout ticket and a maintenance window
+        # Current time is ~14:00, maintenance "12:00-16:00" will cover it
+        config = WebhookConfig(
+            name="Maint Resolution Test",
+            timeout_alerts_enabled=True,
+            timeout_ticket_id=888,
+            maintenance_windows="12:00-16:00",
+            is_enabled=True,
+            is_draft=False,
+            last_seen_at=datetime.now(timezone.utc) - timedelta(hours=5),
+        )
+        db.session.add(config)
+        db.session.commit()
+        config_id = config.id
+        old_last_seen = config.last_seen_at
+
+        # 2. Simulate webhook arrival during maintenance
+        mock_cw.close_ticket.return_value = True
+        handle_webhook_logic(config_id, {"status": "ok"}, "maint-req-1")
+
+        # 3. Verify:
+        # - Ticket was closed
+        mock_cw.close_ticket.assert_called_once()
+
+        # - Config state updated
+        db.session.refresh(config)
+        assert config.timeout_ticket_id is None
+        assert config.last_seen_at > old_last_seen
+
+        # - But data was NOT pushed to CW (normal maintenance behavior)
+        mock_cw.create_ticket.assert_not_called()
+        mock_cw.find_open_ticket.assert_not_called()
