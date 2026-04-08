@@ -224,7 +224,10 @@ def check_webhook_timeouts() -> None:
             diff = now - last_activity
             hours_since_activity = diff.total_seconds() / 3600
 
-            if hours_since_activity > config.timeout_hours:
+            # Defensive check: Ensure timeout_hours is an int
+            timeout_limit = getattr(config, "timeout_hours", 24) or 24
+
+            if hours_since_activity > timeout_limit:
                 # Timeout threshold exceeded
                 if not config.timeout_ticket_id:
                     # No ticket open yet, create one

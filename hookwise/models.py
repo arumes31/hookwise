@@ -77,7 +77,7 @@ class WebhookConfig(Base):
 
     # Timeout Monitoring
     timeout_alerts_enabled = db.Column(db.Boolean, default=False, nullable=False)
-    timeout_hours = db.Column(db.Integer, default=24)
+    timeout_hours = db.Column(db.Integer, default=24, nullable=False)
     timeout_ticket_id = db.Column(db.Integer, nullable=True)
 
     def to_dict(self, include_token: bool = False) -> Dict[str, Any]:

@@ -517,7 +517,7 @@
                                 </div>
                                 <div class="input-group input-group-sm mb-0">
                                     <input type="number" class="form-control bg-dark border-secondary text-light text-center"
-                                        id="timeout_hours" name="timeout_hours" min="1" max="168"
+                                        id="timeout_hours" name="timeout_hours" min="1" max="168" step="1" required
                                         value="{{ config.timeout_hours if config else '24' }}" style="max-width: 80px;">
                                     <span class="input-group-text bg-dark border-secondary text-secondary">hours</span>
                                 </div>

@@ -22,8 +22,8 @@ def upgrade():
         batch_op.create_index(batch_op.f("ix_audit_log_created_at"), ["created_at"], unique=False)
 
     with op.batch_alter_table("webhook_config", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("timeout_alerts_enabled", sa.Boolean(), nullable=False))
-        batch_op.add_column(sa.Column("timeout_hours", sa.Integer(), nullable=True))
+        batch_op.add_column(sa.Column("timeout_alerts_enabled", sa.Boolean(), server_default=sa.text("false"), nullable=False))
+        batch_op.add_column(sa.Column("timeout_hours", sa.Integer(), server_default=sa.text("24"), nullable=False))
         batch_op.add_column(sa.Column("timeout_ticket_id", sa.Integer(), nullable=True))
 
     with op.batch_alter_table("webhook_log", schema=None) as batch_op:

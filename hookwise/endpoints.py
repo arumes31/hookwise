@@ -51,6 +51,17 @@ def _register() -> None:
         db.session.commit()
         return jsonify({"status": "success"})
 
+    def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
+        """Safely parse an integer from form data with bounds checking."""
+        val = request.form.get(key)
+        if not val or not val.strip():
+            return default
+        try:
+            parsed = int(val)
+            return max(min_val, min(max_val, parsed))
+        except (ValueError, TypeError):
+            return default
+
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
     def new_endpoint() -> Any:
@@ -81,7 +92,7 @@ def _register() -> None:
                 global_routing_enabled=request.form.get("global_routing_enabled") == "true",
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
-                timeout_hours=int(request.form.get("timeout_hours", 24)),
+                timeout_hours=_get_int_form_value("timeout_hours", 24),
             )
             db.session.add(config)
             db.session.commit()
@@ -123,7 +134,7 @@ def _register() -> None:
             config.global_routing_enabled = request.form.get("global_routing_enabled") == "true"
             config.ai_prompt_template = request.form.get("ai_prompt_template")
             config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
-            config.timeout_hours = int(request.form.get("timeout_hours", 24))
+            config.timeout_hours = _get_int_form_value("timeout_hours", 24)
 
             db.session.commit()
             log_audit("update", config.id, f"Endpoint {config.name} updated")
