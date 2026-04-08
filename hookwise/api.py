@@ -173,11 +173,13 @@ def _register() -> None:
 
         # Step 1: Maintenance window
         maintenance_active = is_in_maintenance(config)
-        steps.append({
-            "step": "Maintenance Window",
-            "active": maintenance_active,
-            "result": "skipped" if maintenance_active else "ok",
-        })
+        steps.append(
+            {
+                "step": "Maintenance Window",
+                "active": maintenance_active,
+                "result": "skipped" if maintenance_active else "ok",
+            }
+        )
         if maintenance_active:
             return jsonify({"action": "skip", "reason": "maintenance_window", "steps": steps})
 
@@ -190,10 +192,18 @@ def _register() -> None:
                 pass
 
         import re as _re
+
         mapped_vals: dict[str, str] = {}
         overridable = [
-            "summary", "description", "customer_id",
-            "ticket_type", "subtype", "item", "priority", "board", "status",
+            "summary",
+            "description",
+            "customer_id",
+            "ticket_type",
+            "subtype",
+            "item",
+            "priority",
+            "board",
+            "status",
         ]
         for field in overridable:
             if field in json_mapping:
@@ -246,11 +256,13 @@ def _register() -> None:
             if rule_path and rule_regex:
                 val = str(resolve_jsonpath(data, rule_path))
                 if _re.search(rule_regex, val, _re.IGNORECASE):
-                    matched_rules.append({
-                        "regex": rule_regex,
-                        "path": rule_path,
-                        "overrides": rule.get("overrides", {}),
-                    })
+                    matched_rules.append(
+                        {
+                            "regex": rule_regex,
+                            "path": rule_path,
+                            "overrides": rule.get("overrides", {}),
+                        }
+                    )
         steps.append({"step": "Routing Rules", "matched": matched_rules})
 
         # Step 4: Trigger field evaluation
@@ -267,12 +279,14 @@ def _register() -> None:
         else:
             alert_type = "GENERIC"
 
-        steps.append({
-            "step": "Trigger Evaluation",
-            "trigger_field": trigger_field,
-            "actual_value": actual_val,
-            "alert_type": alert_type,
-        })
+        steps.append(
+            {
+                "step": "Trigger Evaluation",
+                "trigger_field": trigger_field,
+                "actual_value": actual_val,
+                "alert_type": alert_type,
+            }
+        )
 
         # Step 5: Predicted action
         prefix = config.ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
@@ -280,9 +294,7 @@ def _register() -> None:
         monitor_name = data.get("monitor", {}).get("name", data.get("title", "Unknown Source"))
         ticket_summary = f"{prefix} {mapped_summary}" if mapped_summary else f"{prefix} {monitor_name}"
         predicted_action = (
-            "create_ticket" if alert_type == "DOWN"
-            else "close_ticket" if alert_type == "UP"
-            else "add_note_or_skip"
+            "create_ticket" if alert_type == "DOWN" else "close_ticket" if alert_type == "UP" else "add_note_or_skip"
         )
 
         result = {
@@ -291,9 +303,9 @@ def _register() -> None:
             "ticket_summary": ticket_summary,
             "description": mapped_vals.get("description") or data.get("msg", ""),
             "company_id": mapped_vals.get("customer_id", config.customer_id_default or ""),
-            "board": (matched_rules[0] if matched_rules else {}).get("overrides", {}).get(
-                "board", mapped_vals.get("board", config.board or "")
-            ),
+            "board": (matched_rules[0] if matched_rules else {})
+            .get("overrides", {})
+            .get("board", mapped_vals.get("board", config.board or "")),
             "steps": steps,
         }
         return jsonify(result)
@@ -304,6 +316,7 @@ def _register() -> None:
         import time as _time
 
         import requests as _req
+
         ollama_host = os.environ.get("OLLAMA_HOST", "http://hookwise-llm:11434")
         t0 = _time.monotonic()
         try:
@@ -319,6 +332,7 @@ def _register() -> None:
             }
         except Exception as e:
             import logging as _logging
+
             _logging.getLogger(__name__).warning("LLM health check failed: %s", e)
             return {
                 "status": "error",
@@ -344,10 +358,12 @@ def _register() -> None:
             config = WebhookConfig.query.get_or_404(id)
             data = request.get_json(force=True, silent=True) or {}
             from .tasks import run_llm_rca
+
             task = run_llm_rca.delay(id, data, config.ai_prompt_template)
             return jsonify({"task_id": task.id})
         except Exception as e:
             import logging as _logging
+
             _logging.getLogger(__name__).error("dry_run_llm enqueue error: %s", e)
             return jsonify({"status": "error", "rca": f"Server error: {type(e).__name__}"}), 500
 
@@ -358,6 +374,7 @@ def _register() -> None:
         from celery.result import AsyncResult
 
         from .tasks import celery
+
         result = AsyncResult(task_id, app=celery)
         if result.state == "PENDING" or result.state == "STARTED":
             return jsonify({"status": "pending"})
@@ -365,7 +382,6 @@ def _register() -> None:
             return jsonify(result.result)
         # FAILURE or other
         return jsonify({"status": "error", "rca": f"Task failed: {result.state}"}), 500
-
 
     @main_bp.route("/api/stats")
     @auth_required
@@ -454,14 +470,14 @@ def _register() -> None:
     @auth_required
     def get_stats_history() -> Response:
         period = request.args.get("period", "daily")
-        
+
         if period == "weekly":
             days = 28
         elif period == "monthly":
             days = 180
         else:
             days = 7
-            
+
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
 
         rows = (
@@ -479,7 +495,7 @@ def _register() -> None:
         for row in rows:
             action = row[1]
             count = row[2]
-            
+
             if isinstance(row[0], date):
                 d = row[0]
             else:
@@ -490,6 +506,7 @@ def _register() -> None:
                         d = datetime.strptime(str(row[0]).split(" ")[0], "%Y-%m-%d").date()
                     except ValueError as e:
                         import logging
+
                         logging.error(f"Failed to parse date '{row[0]}': {e}")
                         continue
 
@@ -500,10 +517,10 @@ def _register() -> None:
                 group_key = d.strftime("%Y-%m")
             else:
                 group_key = d.strftime("%m-%d")
-                
+
             if group_key not in counts_by_group:
                 counts_by_group[group_key] = {"created": 0, "updated": 0, "closed": 0}
-                
+
             if action == "create":
                 counts_by_group[group_key]["created"] += count
             elif action == "update":
@@ -513,8 +530,9 @@ def _register() -> None:
 
         history_data: list[dict[str, Any]] = []
         now: date = datetime.now(timezone.utc).date()
-        
+
         if period == "weekly":
+
             def generate_weeks(start_date: date, count: int):
                 seen: set[tuple[int, int]] = set()
                 for j in range(60):
@@ -529,13 +547,15 @@ def _register() -> None:
             weeks_data: list[dict[str, Any]] = []
             for year, week in generate_weeks(now, 4):
                 k = f"{year}-W{week}"
-                weeks_data.append({
-                    "date": f"W{week}", 
-                    "created": counts_by_group.get(k, {}).get("created", 0),
-                    "updated": counts_by_group.get(k, {}).get("updated", 0),
-                    "closed": counts_by_group.get(k, {}).get("closed", 0)
-                })
-                
+                weeks_data.append(
+                    {
+                        "date": f"W{week}",
+                        "created": counts_by_group.get(k, {}).get("created", 0),
+                        "updated": counts_by_group.get(k, {}).get("updated", 0),
+                        "closed": counts_by_group.get(k, {}).get("closed", 0),
+                    }
+                )
+
             history_data.extend(reversed(weeks_data))
         elif period == "monthly":
             for i in range(5, -1, -1):
@@ -545,23 +565,27 @@ def _register() -> None:
                 k = f"{y}-{m:02d}"
                 # short month name
                 month_name = datetime(y, m, 1).strftime("%b")
-                history_data.append({
-                    "date": month_name, 
-                    "created": counts_by_group.get(k, {}).get("created", 0),
-                    "updated": counts_by_group.get(k, {}).get("updated", 0),
-                    "closed": counts_by_group.get(k, {}).get("closed", 0)
-                })
+                history_data.append(
+                    {
+                        "date": month_name,
+                        "created": counts_by_group.get(k, {}).get("created", 0),
+                        "updated": counts_by_group.get(k, {}).get("updated", 0),
+                        "closed": counts_by_group.get(k, {}).get("closed", 0),
+                    }
+                )
         else:
             for i in range(6, -1, -1):
                 d = now - timedelta(days=i)
                 k = d.strftime("%m-%d")
-                history_data.append({
-                    "date": k, 
-                    "created": counts_by_group.get(k, {}).get("created", 0),
-                    "updated": counts_by_group.get(k, {}).get("updated", 0),
-                    "closed": counts_by_group.get(k, {}).get("closed", 0)
-                })
-                
+                history_data.append(
+                    {
+                        "date": k,
+                        "created": counts_by_group.get(k, {}).get("created", 0),
+                        "updated": counts_by_group.get(k, {}).get("updated", 0),
+                        "closed": counts_by_group.get(k, {}).get("closed", 0),
+                    }
+                )
+
         return jsonify(history_data)
 
     # --- ConnectWise Proxy ---

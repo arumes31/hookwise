@@ -79,6 +79,7 @@ def test_decrypt_invalid_token(app):
 def test_decrypt_with_different_key(app):
     """Decryption with a different key should return the original input."""
     from cryptography.fernet import Fernet
+
     with app.app_context():
         other_key = Fernet.generate_key().decode()
         other_f = Fernet(other_key.encode())

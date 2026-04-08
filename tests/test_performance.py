@@ -17,6 +17,7 @@ def app():
     app.config["WTF_CSRF_ENABLED"] = False
     return app
 
+
 @pytest.fixture
 def client(app):
     with app.app_context():
@@ -32,6 +33,7 @@ def client(app):
             yield client
         db.session.remove()
         db.drop_all()
+
 
 def test_reorder_performance(client, app):
     num_endpoints = 100
@@ -51,9 +53,7 @@ def test_reorder_performance(client, app):
     new_order = endpoint_ids[::-1]
 
     start_time = time.time()
-    response = client.post("/endpoint/reorder",
-                           data=json.dumps({"order": new_order}),
-                           content_type='application/json')
+    response = client.post("/endpoint/reorder", data=json.dumps({"order": new_order}), content_type="application/json")
     end_time = time.time()
 
     assert response.status_code == 200

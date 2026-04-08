@@ -51,7 +51,7 @@ def index() -> Any:
         .group_by(WebhookLog.config_id, WebhookLog.status)
         .all()
     )
-    
+
     total_counts: Dict[str, Dict[str, int]] = {}
     for cid, status, cnt in total_count_rows:
         if status == "dlq":

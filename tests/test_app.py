@@ -132,15 +132,17 @@ def test_last_seen_at_updates(mock_cw, mock_redis, app, sample_config):
         config = WebhookConfig.query.get(sample_config)
         assert config.last_seen_at is not None
 
+
 @patch("hookwise.tasks.redis_client")
 @patch("hookwise.tasks.cw_client")
 def test_duplicate_alert_updates_usable_ticket(mock_cw, mock_redis, app, sample_config):
     """Test tracking cache hits that trigger a duplicate alert trace."""
+
     def mock_redis_get(key):
         if key.endswith(":viable"):
             return None
         return b"99"
-    
+
     mock_redis.get.side_effect = mock_redis_get
     mock_cw.get_ticket.return_value = {"id": 99, "closedFlag": False, "status": {"name": "New"}}
     mock_cw.add_ticket_note.return_value = True
