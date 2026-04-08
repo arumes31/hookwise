@@ -266,7 +266,8 @@ def check_webhook_timeouts() -> None:
                         log_to_web(log_msg, "warning", config.name)
                     else:
                         logger.warning(
-                            f"Failed to create timeout ticket for endpoint '{config.name}'. Ticket creation returned None."
+                            f"Failed to create timeout ticket for endpoint '{config.name}'. "
+                            "Ticket creation returned None."
                         )
 
         if updates > 0:
