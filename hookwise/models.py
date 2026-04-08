@@ -74,6 +74,11 @@ class WebhookConfig(Base):
     bearer_auth_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = db.Column(db.DateTime)
+    
+    # Timeout Monitoring
+    timeout_alerts_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    timeout_hours = db.Column(db.Integer, default=24)
+    timeout_ticket_id = db.Column(db.Integer, nullable=True)
 
     def to_dict(self, include_token: bool = False) -> Dict[str, Any]:
         d = {
@@ -106,6 +111,9 @@ class WebhookConfig(Base):
             "config_health_status": self.config_health_status,
             "config_health_message": self.config_health_message,
             "last_ip": self.last_ip,
+            "timeout_alerts_enabled": self.timeout_alerts_enabled,
+            "timeout_hours": self.timeout_hours,
+            "timeout_ticket_id": self.timeout_ticket_id,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
         }

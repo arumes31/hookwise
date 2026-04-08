@@ -13,13 +13,19 @@ from hookwise.utils import resolve_jsonpath
 
 @pytest.fixture
 def app():
-    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+    # Use a file-based sqlite for testing to ensure connection persistence
+    test_db = "test_hookwise.db"
+    if os.path.exists(test_db):
+        os.remove(test_db)
+    os.environ["DATABASE_URL"] = f"sqlite:///{test_db}"
     app = create_app()
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.create_all()
         yield app
         db.drop_all()
+    if os.path.exists(test_db):
+        os.remove(test_db)
 
 
 @pytest.fixture
@@ -204,3 +210,45 @@ def test_maintenance_window_blocks_processing(mock_cw, mock_redis, app):
 
         # Should NOT create a ticket during maintenance
         mock_cw.create_ticket.assert_not_called()
+
+
+@patch("hookwise.tasks.cw_client")
+def test_webhook_timeout_alerts(mock_cw, app):
+    """Test that a timeout triggers a ticket and a new webhook closes it."""
+    from datetime import datetime, timedelta, timezone
+    from hookwise.tasks import check_webhook_timeouts, handle_webhook_logic
+
+    with app.app_context():
+        # 1. Create endpoint with 2-hour timeout
+        config = WebhookConfig(
+            name="Timeout Test",
+            timeout_alerts_enabled=True,
+            timeout_hours=2,
+            is_enabled=True,
+            is_draft=False,
+            board="Test Board",
+            last_seen_at=datetime.now(timezone.utc) - timedelta(hours=3)
+        )
+        db.session.add(config)
+        db.session.commit()
+        config_id = config.id
+
+        # 2. Run timeout check
+        mock_cw.create_ticket.return_value = {"id": 999}
+        mock_cw.find_open_ticket.return_value = None  # Ensure it doesn't return a MagicMock
+        check_webhook_timeouts()
+
+        # Verify ticket was created
+        mock_cw.create_ticket.assert_called_once()
+        db.session.refresh(config)
+        assert config.timeout_ticket_id == 999
+
+        # 3. Simulate new webhook arrival
+        mock_cw.close_ticket.return_value = True
+        handle_webhook_logic(config_id, {"status": "ok"}, "request-123")
+
+        # Verify ticket was closed
+        from unittest.mock import ANY
+        mock_cw.close_ticket.assert_called_once_with(999, ANY, status_name=config.close_status)
+        db.session.refresh(config)
+        assert config.timeout_ticket_id is None

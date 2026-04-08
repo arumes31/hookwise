@@ -58,6 +58,10 @@ celery.conf.beat_schedule = {
         "task": "hookwise.verify_endpoint_health",
         "schedule": 900.0,  # Every 15 minutes
     },
+    "check-timeouts-every-30m": {
+        "task": "hookwise.check_webhook_timeouts",
+        "schedule": 1800.0,  # Every 30 minutes
+    },
 }
 
 _app = None
@@ -190,6 +194,77 @@ def verify_endpoint_health() -> None:
 
     except Exception as e:
         logger.error(f"Health verification task failed: {e}")
+        db.session.rollback()
+
+
+@celery.task(name="hookwise.check_webhook_timeouts")  # type: ignore[untyped-decorator]
+def check_webhook_timeouts() -> None:
+    """Check for endpoints that have not received data within the configured timeout period."""
+    from .extensions import db
+    from .models import WebhookConfig
+
+    try:
+        # Only check enabled, non-draft endpoints with timeout alerts enabled
+        configs = WebhookConfig.query.filter_by(
+            timeout_alerts_enabled=True,
+            is_enabled=True,
+            is_draft=False
+        ).all()
+        
+        updates = 0
+        now = datetime.now(timezone.utc)
+        
+        for config in configs:
+            # Fallback to created_at if last_seen_at is None
+            last_activity = config.last_seen_at or config.created_at
+            
+            if not last_activity:
+                continue
+                
+            # SQLite might return naive datetimes, ensute timezone-aware comparison
+            if last_activity.tzinfo is None:
+                last_activity = last_activity.replace(tzinfo=timezone.utc)
+                
+            diff = now - last_activity
+            hours_since_activity = diff.total_seconds() / 3600
+            
+            if hours_since_activity > config.timeout_hours:
+                # Timeout threshold exceeded
+                if not config.timeout_ticket_id:
+                    # No ticket open yet, create one
+                    summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
+                    description = (
+                        f"The webhook endpoint '{config.name}' has not received any data for over {config.timeout_hours} hours.\n"
+                        f"Last seen: {config.last_seen_at if config.last_seen_at else 'Never'}\n"
+                        f"Endpoint ID: {config.id}"
+                    )
+                    
+                    # Create ticket using endpoint settings (board, status, priority)
+                    new_ticket = cw_client.create_ticket(
+                        summary=summary,
+                        description=description,
+                        monitor_name=config.name,
+                        company_id=config.customer_id_default,
+                        board=config.board,
+                        status=config.status,
+                        priority=config.priority,
+                        ticket_type=config.ticket_type,
+                        subtype=config.subtype,
+                        item=config.item
+                    )
+                    
+                    if new_ticket:
+                        config.timeout_ticket_id = new_ticket["id"]
+                        updates += 1
+                        logger.warning(f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'")
+                        log_to_web(f"Timeout alert: Created ticket #{config.timeout_ticket_id} (No data for {config.timeout_hours}h)", "warning", config.name)
+
+        if updates > 0:
+            db.session.commit()
+            logger.info(f"Timeout check completed. Created {updates} tickets.")
+            
+    except Exception as e:
+        logger.error(f"Webhook timeout check task failed: {e}")
         db.session.rollback()
 
 
@@ -348,6 +423,18 @@ def handle_webhook_logic(
             routing_rules_str = config.routing_rules
 
             config.last_seen_at = datetime.now(timezone.utc)
+
+            # Close timeout ticket if it exists
+            if config.timeout_ticket_id:
+                ticket_id = config.timeout_ticket_id
+                resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
+                if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
+                    config.timeout_ticket_id = None
+                    logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
+                    log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
+                else:
+                    logger.error(f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'")
+
             db.session.commit()
 
             # Parse JSON mappings and routing rules

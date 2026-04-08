@@ -80,6 +80,8 @@ def _register() -> None:
                 bearer_auth_enabled=request.form.get("bearer_auth_enabled") == "true",
                 global_routing_enabled=request.form.get("global_routing_enabled") == "true",
                 ai_prompt_template=request.form.get("ai_prompt_template"),
+                timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
+                timeout_hours=int(request.form.get("timeout_hours", 24)),
             )
             db.session.add(config)
             db.session.commit()
@@ -120,6 +122,8 @@ def _register() -> None:
             config.bearer_auth_enabled = request.form.get("bearer_auth_enabled") == "true"
             config.global_routing_enabled = request.form.get("global_routing_enabled") == "true"
             config.ai_prompt_template = request.form.get("ai_prompt_template")
+            config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
+            config.timeout_hours = int(request.form.get("timeout_hours", 24))
 
             db.session.commit()
             log_audit("update", config.id, f"Endpoint {config.name} updated")
@@ -195,6 +199,8 @@ def _register() -> None:
             bearer_auth_enabled=config.bearer_auth_enabled,
             global_routing_enabled=config.global_routing_enabled,
             ai_prompt_template=config.ai_prompt_template,
+            timeout_alerts_enabled=config.timeout_alerts_enabled,
+            timeout_hours=config.timeout_hours,
         )
         new_config.bearer_token = encrypt_string(secrets.token_urlsafe(32))
 
