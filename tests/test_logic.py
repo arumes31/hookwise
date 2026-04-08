@@ -273,6 +273,7 @@ def test_webhook_timeout_alerts(mock_cw, mock_redis, app):
 def test_maintenance_window_resolves_timeout(mock_cw, mock_redis, app):
     """Test that a webhook during maintenance still resolves an open timeout alert."""
     from datetime import datetime, timedelta, timezone
+
     from hookwise.tasks import handle_webhook_logic
 
     with app.app_context():
