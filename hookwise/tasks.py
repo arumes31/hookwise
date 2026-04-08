@@ -217,7 +217,7 @@ def check_webhook_timeouts() -> None:
             if not last_activity:
                 continue
 
-            # SQLite might return naive datetimes, ensute timezone-aware comparison
+            # SQLite might return naive datetimes, ensure timezone-aware comparison
             if last_activity.tzinfo is None:
                 last_activity = last_activity.replace(tzinfo=timezone.utc)
 
@@ -264,6 +264,10 @@ def check_webhook_timeouts() -> None:
                             f"(No data for {config.timeout_hours}h)"
                         )
                         log_to_web(log_msg, "warning", config.name)
+                    else:
+                        logger.warning(
+                            f"Failed to create timeout ticket for endpoint '{config.name}'. Ticket creation returned None."
+                        )
 
         if updates > 0:
             db.session.commit()

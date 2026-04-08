@@ -13,19 +13,30 @@ from hookwise.utils import resolve_jsonpath
 
 @pytest.fixture
 def app():
-    # Use a file-based sqlite for testing to ensure connection persistence
-    test_db = "test_hookwise.db"
-    if os.path.exists(test_db):
-        os.remove(test_db)
-    os.environ["DATABASE_URL"] = f"sqlite:///{test_db}"
+    import tempfile
+
+    # Use a unique temporary file for the sqlite database to ensure process isolation
+    fd, path = tempfile.mkstemp(suffix=".db", prefix="test_hookwise_")
+    os.close(fd)
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{path}"
     app = create_app()
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.create_all()
         yield app
+        db.session.remove()
         db.drop_all()
-    if os.path.exists(test_db):
-        os.remove(test_db)
+
+    # Dispose engine to close all connections and release the file lock on Windows
+    with app.app_context():
+        db.engine.dispose()
+
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except PermissionError:
+            pass  # Fallback for Windows lock issues in some environments
 
 
 @pytest.fixture
@@ -212,8 +223,9 @@ def test_maintenance_window_blocks_processing(mock_cw, mock_redis, app):
         mock_cw.create_ticket.assert_not_called()
 
 
+@patch("hookwise.tasks.redis_client")
 @patch("hookwise.tasks.cw_client")
-def test_webhook_timeout_alerts(mock_cw, app):
+def test_webhook_timeout_alerts(mock_cw, mock_redis, app):
     """Test that a timeout triggers a ticket and a new webhook closes it."""
     from datetime import datetime, timedelta, timezone
 
