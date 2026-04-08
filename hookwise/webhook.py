@@ -51,12 +51,13 @@ def _register() -> None:
                     source_ip=request.remote_addr,
                     status="failed",
                     error_message=error_msg,
-                    processing_time=0.0
+                    processing_time=0.0,
                 )
                 db.session.add(log_entry)
                 db.session.commit()
             except Exception as _e:
                 import logging
+
                 logging.getLogger(__name__).error(f"Failed to log webhook rejection: {_e}")
                 db.session.rollback()
 

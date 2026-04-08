@@ -64,7 +64,7 @@ class WebhookConfig(Base):
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
     global_routing_enabled = db.Column(db.Boolean, default=False, nullable=False)
-    
+
     # Health & Security
     config_health_status = db.Column(db.String(20), default="OK")  # OK, WARNING, ERROR
     config_health_message = db.Column(db.String(255), nullable=True)
@@ -74,7 +74,7 @@ class WebhookConfig(Base):
     bearer_auth_enabled = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = db.Column(db.DateTime)
-    
+
     # Timeout Monitoring
     timeout_alerts_enabled = db.Column(db.Boolean, default=False, nullable=False)
     timeout_hours = db.Column(db.Integer, default=24)

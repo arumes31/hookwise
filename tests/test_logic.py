@@ -216,6 +216,7 @@ def test_maintenance_window_blocks_processing(mock_cw, mock_redis, app):
 def test_webhook_timeout_alerts(mock_cw, app):
     """Test that a timeout triggers a ticket and a new webhook closes it."""
     from datetime import datetime, timedelta, timezone
+
     from hookwise.tasks import check_webhook_timeouts, handle_webhook_logic
 
     with app.app_context():
@@ -227,7 +228,7 @@ def test_webhook_timeout_alerts(mock_cw, app):
             is_enabled=True,
             is_draft=False,
             board="Test Board",
-            last_seen_at=datetime.now(timezone.utc) - timedelta(hours=3)
+            last_seen_at=datetime.now(timezone.utc) - timedelta(hours=3),
         )
         db.session.add(config)
         db.session.commit()
@@ -249,6 +250,7 @@ def test_webhook_timeout_alerts(mock_cw, app):
 
         # Verify ticket was closed
         from unittest.mock import ANY
+
         mock_cw.close_ticket.assert_called_once_with(999, ANY, status_name=config.close_status)
         db.session.refresh(config)
         assert config.timeout_ticket_id is None

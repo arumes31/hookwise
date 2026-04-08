@@ -205,40 +205,37 @@ def check_webhook_timeouts() -> None:
 
     try:
         # Only check enabled, non-draft endpoints with timeout alerts enabled
-        configs = WebhookConfig.query.filter_by(
-            timeout_alerts_enabled=True,
-            is_enabled=True,
-            is_draft=False
-        ).all()
-        
+        configs = WebhookConfig.query.filter_by(timeout_alerts_enabled=True, is_enabled=True, is_draft=False).all()
+
         updates = 0
         now = datetime.now(timezone.utc)
-        
+
         for config in configs:
             # Fallback to created_at if last_seen_at is None
             last_activity = config.last_seen_at or config.created_at
-            
+
             if not last_activity:
                 continue
-                
+
             # SQLite might return naive datetimes, ensute timezone-aware comparison
             if last_activity.tzinfo is None:
                 last_activity = last_activity.replace(tzinfo=timezone.utc)
-                
+
             diff = now - last_activity
             hours_since_activity = diff.total_seconds() / 3600
-            
+
             if hours_since_activity > config.timeout_hours:
                 # Timeout threshold exceeded
                 if not config.timeout_ticket_id:
                     # No ticket open yet, create one
                     summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
                     description = (
-                        f"The webhook endpoint '{config.name}' has not received any data for over {config.timeout_hours} hours.\n"
+                        f"The webhook endpoint '{config.name}' has not received any data for over "
+                        f"{config.timeout_hours} hours.\n"
                         f"Last seen: {config.last_seen_at if config.last_seen_at else 'Never'}\n"
                         f"Endpoint ID: {config.id}"
                     )
-                    
+
                     # Create ticket using endpoint settings (board, status, priority)
                     new_ticket = cw_client.create_ticket(
                         summary=summary,
@@ -250,19 +247,25 @@ def check_webhook_timeouts() -> None:
                         priority=config.priority,
                         ticket_type=config.ticket_type,
                         subtype=config.subtype,
-                        item=config.item
+                        item=config.item,
                     )
-                    
+
                     if new_ticket:
                         config.timeout_ticket_id = new_ticket["id"]
                         updates += 1
-                        logger.warning(f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'")
-                        log_to_web(f"Timeout alert: Created ticket #{config.timeout_ticket_id} (No data for {config.timeout_hours}h)", "warning", config.name)
+                        logger.warning(
+                            f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'"
+                        )
+                        log_msg = (
+                            f"Timeout alert: Created ticket #{config.timeout_ticket_id} "
+                            f"(No data for {config.timeout_hours}h)"
+                        )
+                        log_to_web(log_msg, "warning", config.name)
 
         if updates > 0:
             db.session.commit()
             logger.info(f"Timeout check completed. Created {updates} tickets.")
-            
+
     except Exception as e:
         logger.error(f"Webhook timeout check task failed: {e}")
         db.session.rollback()
@@ -427,7 +430,9 @@ def handle_webhook_logic(
             # Close timeout ticket if it exists
             if config.timeout_ticket_id:
                 ticket_id = config.timeout_ticket_id
-                resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
+                resolution = (
+                    f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
+                )
                 if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
                     config.timeout_ticket_id = None
                     logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
@@ -498,8 +503,7 @@ def handle_webhook_logic(
                                     # Include literal only if a neighbour variable resolved
                                     left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
                                     right_ok = any(
-                                        resolved[j][0] and resolved[j][1]
-                                        for j in range(i + 1, len(resolved))
+                                        resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved))
                                     )
                                     if left_ok or right_ok:
                                         output_parts.append(val)
@@ -538,7 +542,7 @@ def handle_webhook_logic(
                     if re.search(rule_regex, val, re.IGNORECASE):
                         logger.info(f"Routing rule matched: {rule_regex} on {rule_path}", extra=extra)
                         log_entry.matched_rule = f"Match: {rule_regex} on {rule_path}"
-                        
+
                         if rule_overrides.get("drop"):
                             log_entry.status = "skipped"
                             log_entry.error_message = f"Skipped: Dropped by routing rule ({rule_regex})"
@@ -581,16 +585,16 @@ def handle_webhook_logic(
                 alert_type = "GENERIC"
 
             prefix = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-            
+
             if mapped_summary:
                 ticket_summary = f"{prefix} {mapped_summary}" if prefix else mapped_summary
             else:
                 ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
-            
+
             if config.summary_remove_strings:
                 for s in config.summary_remove_strings.split(","):
                     ticket_summary = ticket_summary.replace(s, "")
-            
+
             if len(ticket_summary) > 99:
                 ticket_summary = ticket_summary[:96] + "..."
 
@@ -606,9 +610,9 @@ def handle_webhook_logic(
                     ticket_id = int(cached_val.decode())
                     viable_key = f"{cache_key}:viable"
                     is_usable = False
-                    
+
                     is_replay = request_id.startswith(("replay_", "test_"))
-                    
+
                     if not is_replay and redis_client.get(viable_key):
                         is_usable = True
                     else:
@@ -624,13 +628,13 @@ def handle_webhook_logic(
                                 closed_statuses.add(cw_client.status_closed)
                             if config.close_status:
                                 closed_statuses.add(config.close_status)
-                                
+
                             if not is_closed and status_name not in closed_statuses:
                                 is_usable = True
                                 if not is_replay:
                                     redis_client.set(viable_key, "1", ex=VIABILITY_TTL)
 
-                    if is_usable:    
+                    if is_usable:
                         note_text = (
                             f"Duplicate {alert_type} alert detected. Updated details:\n"
                             f"Message: {msg}\nRequest ID: {request_id}"
@@ -702,7 +706,7 @@ def handle_webhook_logic(
                     if tenant_val:
                         # 1. Try exact match
                         mapping = GlobalMapping.query.filter_by(tenant_value=tenant_val).first()
-                        
+
                         # 2. Try wildcard matches if no exact match found
                         if not mapping:
                             import fnmatch
@@ -711,22 +715,19 @@ def handle_webhook_logic(
 
                             # Find all mappings that contain wildcards (* or ?)
                             wildcard_mappings = GlobalMapping.query.filter(
-                                or_(
-                                    GlobalMapping.tenant_value.like('%*%'),
-                                    GlobalMapping.tenant_value.like('%?%')
-                                )
+                                or_(GlobalMapping.tenant_value.like("%*%"), GlobalMapping.tenant_value.like("%?%"))
                             ).all()
-                            
+
                             # Check if the tenant value matches any of these wildcard patterns
                             for w_mapping in wildcard_mappings:
                                 if w_mapping.tenant_value and fnmatch.fnmatch(tenant_val, w_mapping.tenant_value):
                                     mapping = w_mapping
                                     break
-                        
+
                         # 3. Try LLM semantic match if still no match
                         if not mapping:
                             from .utils import call_llm
-                            
+
                             # Get all companies from ConnectWise
                             companies = cw_client.get_companies()
                             if companies:
@@ -734,7 +735,7 @@ def handle_webhook_logic(
                                 available_companies = [
                                     str(c.get("identifier")) for c in companies if c.get("identifier")
                                 ]
-                                
+
                                 if available_companies:
                                     companies_str = ", ".join(available_companies)
                                     llm_prompt = (
@@ -755,9 +756,8 @@ def handle_webhook_logic(
                                             extra=extra,
                                         )
                                         log_entry.matched_rule = (
-                                            (log_entry.matched_rule or "")
-                                            + f" [LLM Global: {tenant_val} -> {company_id}]"
-                                        )
+                                            log_entry.matched_rule or ""
+                                        ) + f" [LLM Global: {tenant_val} -> {company_id}]"
 
                         if mapping and not company_id:
                             company_id = mapping.company_id
@@ -808,7 +808,7 @@ def handle_webhook_logic(
                 )
                 if not new_ticket:
                     raise Exception("Failed to create ticket: ConnectWise API returned an error.")
-                
+
                 ticket_id = new_ticket["id"]
                 redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
                 log_to_web(

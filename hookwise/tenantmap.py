@@ -65,7 +65,7 @@ def edit_mapping(id: str) -> Any:
         mapping.tenant_value = tenant_value.strip()
         mapping.company_id = company_id.strip()
         mapping.description = description.strip() if description else None
-        
+
         db.session.commit()
         log_audit(
             "update_mapping",

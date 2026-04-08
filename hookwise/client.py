@@ -60,11 +60,8 @@ class ConnectWiseClient:
             if close_status:
                 excluded_statuses.append(close_status)
             status_clauses = " AND ".join([f"status/name != '{s}'" for s in excluded_statuses])
-            
-            conditions = (
-                f"closedFlag=false AND {status_clauses} "
-                f"AND summary contains '{safe_summary}'"
-            )
+
+            conditions = f"closedFlag=false AND {status_clauses} AND summary contains '{safe_summary}'"
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(
                 f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30
@@ -153,7 +150,10 @@ class ConnectWiseClient:
             if not response.ok:
                 logger.error(
                     "Error closing ticket #%s with status '%s': %s - %s",
-                    ticket_id, target_status, response.status_code, response.text,
+                    ticket_id,
+                    target_status,
+                    response.status_code,
+                    response.text,
                 )
                 return False
         except requests.exceptions.RequestException as e:
@@ -176,14 +176,15 @@ class ConnectWiseClient:
             if note_response.status_code not in [200, 201]:
                 logger.error(
                     "Error adding closing note to ticket #%s: %s - %s",
-                    ticket_id, note_response.status_code, note_response.text,
+                    ticket_id,
+                    note_response.status_code,
+                    note_response.text,
                 )
         except requests.exceptions.RequestException as e:
             logger.error("Request exception adding closing note to ticket #%s: %s", ticket_id, e)
 
         logger.info("Closed ticket #%s", ticket_id)
         return True
-
 
     def add_ticket_note(self, ticket_id: int, note_text: str, is_internal: bool = False) -> bool:
         try:
@@ -202,7 +203,7 @@ class ConnectWiseClient:
             if response.status_code not in [200, 201]:
                 logger.error(f"Error adding note to ticket #{ticket_id}: {response.status_code} - {response.text}")
                 return False
-                
+
             logger.info(f"Added note to ticket #{ticket_id}")
             return True
         except requests.exceptions.RequestException as e:
