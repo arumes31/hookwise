@@ -808,12 +808,14 @@
         function addLogToStream(data, isInitialHistory = false) {
             if (!isInitialHistory && window.dashboardState.isPaused) return;
 
-            if (logContainer.querySelector('.lightgrey')) {
+            // Purge the "Initializing" placeholder if it exists
+            const placeholder = logContainer.querySelector('.italic');
+            if (placeholder) {
                 logContainer.innerHTML = '';
             }
 
             const logEntry = document.createElement('div');
-            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light`;
+            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light animate-fade-in`;
             logEntry.dataset.timestamp = data.timestamp;
 
             const isError = data.level === 'warning' || data.level === 'error';
@@ -827,21 +829,29 @@
                     <span class="text-secondary font-monospace" style="font-size: 0.7rem;">${timeStr}</span>
                     <span class="fw-bold text-light">${escapeHtml(data.config_name)}</span>
                     
-                    <!-- Flow Icons -->
-                    <div class="d-flex align-items-center bg-dark bg-opacity-50 rounded px-2 py-1 ms-2 border border-secondary border-opacity-10">
-                        <!-- Step 1: Ingest -->
-                        <span class="text-success" title="Payload Received"><i class="fas fa-satellite-dish"></i></span>
-                        <span class="text-secondary mx-1 opacity-25">&rarr;</span>
-                        
-                        <!-- Step 2: Processing -->
-                        <span class="text-${statusColor}" title="${escapeHtml(data.message)}">
-                            <i class="fas fa-cog ${isError ? 'fa-spin text-danger' : ''}"></i>
+                    <!-- Flow Icons (SVG Bootstrap Icons) -->
+                    <div class="d-flex align-items-center bg-dark bg-opacity-50 rounded px-2 py-1 ms-2 border border-secondary border-opacity-10" style="gap: 6px;">
+                        <!-- Step 1: Payload Received (Transmit) -->
+                        <span class="text-success opacity-75 d-flex" title="Payload Received">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm6 10.792l-4.25-4.25a.5.5 0 0 1 .708-.708L8 9.378l3.542-3.544a.5.5 0 0 1 .708.708L8 10.792z"/>
+                            </svg>
                         </span>
+                        <span class="text-secondary opacity-25" style="font-size: 0.6rem;">&rarr;</span>
                         
-                        <!-- Step 3: Action -->
-                         <span class="text-secondary mx-1 opacity-25">&rarr;</span>
-                        <span class="text-${data.ticket_id ? 'primary' : 'secondary'}" title="${data.ticket_id ? 'Ticket Created' : 'No Action'}">
-                            <i class="fas fa-ticket-alt"></i>
+                        <!-- Step 2: Processing (Gear) -->
+                        <span class="text-${statusColor} d-flex ${isError ? 'spin text-danger' : 'opacity-75'}" title="${escapeHtml(data.message)}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.31a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.31-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.17-.31a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.31.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
+                            </svg>
+                        </span>
+                        <span class="text-secondary opacity-25" style="font-size: 0.6rem;">&rarr;</span>
+                        
+                        <!-- Step 3: Action (Ticket) -->
+                        <span class="text-${data.ticket_id ? 'primary' : 'secondary opacity-50'} d-flex" title="${data.ticket_id ? 'Ticket Created' : 'No Action'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M0 4.5A1.5 1.5 0 0 1 1.5 3h13A1.5 1.5 0 0 1 16 4.5V6a.5.5 0 0 1-.5.5 1.5 1.5 0 0 0 0 3 .5.5 0 0 1 .5.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 11.5V10a.5.5 0 0 1 .5-.5 1.5 1.5 0 1 0 0-3 .5.5 0 0 1-.5-.5V4.5Zm4 1h8v1H4v-1Zm0 3h8v1H4v-1Zm0 3h8v1H4v-1Z"/>
+                            </svg>
                         </span>
                     </div>
 
@@ -852,7 +862,9 @@
                     ${data.ticket_id ? `<a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
                     
                     <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" data-payload='${escapeHtml(JSON.stringify(data.payload))}'>
-                        <i class="fas fa-expand"></i>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-arrows-angle-expand" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 1 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707z"/>
+                        </svg>
                     </button>
                 </div>
             `;
