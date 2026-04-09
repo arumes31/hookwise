@@ -109,6 +109,15 @@ def index() -> Any:
             config_spark.append(spark_map.get(cid, {}).get(day, 0))
         sparklines[cid] = config_spark
 
+    next_stale_times = {}
+    for config in configs:
+        if config.timeout_alerts_enabled:
+            last_activity = config.last_seen_at or config.created_at
+            if last_activity:
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=timezone.utc)
+                next_stale_times[config.id] = last_activity + timedelta(hours=config.timeout_hours or 24)
+
     base_url = request.url_root.rstrip("/")
     debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
     cw_url = os.environ.get("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0").rstrip("/")
@@ -121,6 +130,7 @@ def index() -> Any:
         last_statuses=last_statuses,
         last_errors=last_errors,
         sparklines=sparklines,
+        next_stale_times=next_stale_times,
         base_url=base_url,
         debug_mode=debug_mode,
         cw_url=cw_url,
