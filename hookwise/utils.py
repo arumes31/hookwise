@@ -178,11 +178,11 @@ def log_audit(action: str, config_id: Optional[str] = None, details: Optional[st
 
     user = "System"
     if has_request_context():
-        user = session.get("username", None)
-        if not user and getattr(request, "authorization", None):
-            user = request.authorization.username
-        if not user:
-            user = "System"
+        sess_user = session.get("username")
+        if sess_user:
+            user = str(sess_user)
+        elif getattr(request, "authorization", None) and request.authorization is not None and getattr(request.authorization, "username", None):
+            user = str(request.authorization.username)
 
     audit = AuditLog(config_id=config_id, action=action, user=user, details=details)
     db.session.add(audit)
