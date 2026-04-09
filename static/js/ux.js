@@ -597,12 +597,18 @@ window.testPath = function () {
 };
 
 // Error Troubleshooting Links
-window.getTroubleshootingLink = function (message) {
+function getTroubleshootingLink(message) {
     const baseUrl = 'https://docs.connectwise.com/search?q=';
     if (message.includes('401')) return baseUrl + 'API+Authentication';
     if (message.includes('404')) return baseUrl + 'Resource+Not+Found';
     if (message.includes('error')) return baseUrl + 'Troubleshooting';
     return null;
+}
+
+window.escapeHtml = function (text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 };
 
 window.copyToClipboard = function (text) {
