@@ -266,9 +266,10 @@ def check_webhook_timeouts() -> None:
                             item=config.item,
                         )
 
+                        import time
+
                         from .models import WebhookLog
                         from .utils import log_audit
-                        import time
 
                         if new_ticket:
                             config.timeout_ticket_id = new_ticket["id"]
@@ -301,7 +302,11 @@ def check_webhook_timeouts() -> None:
                                 f"Failed to create timeout ticket for endpoint '{config.name}'. "
                                 "Ticket creation returned None."
                             )
-                            log_to_web(f"Timeout alert failure: Could not create ticket for {config.name}", "error", config.name)
+                            log_to_web(
+                                f"Timeout alert failure: Could not create ticket for {config.name}",
+                                "error",
+                                config.name
+                            )
                             log_audit("timeout_error", config.id, "Failed to create timeout ticket in CW API")
 
                             req_id = f"timeout-err-{int(time.time())}"
@@ -430,9 +435,10 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
             logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
             log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
             
+            import time
+
             from .models import WebhookLog
             from .utils import log_audit
-            import time
             log_audit("timeout_resolve", config.id, f"Automatically closed timeout ticket #{ticket_id}")
             log_entry = WebhookLog(
                 config_id=config.id,
