@@ -43,6 +43,9 @@ def _register() -> None:
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
+            elif log.status == "skipped":
+                message = f"Skipped: {log.error_message or 'No action required'}"
+                level = "info"
             elif log.status == "processed":
                 if log.action == "create":
                     message = f"Created NEW ticket (ID: {log.ticket_id})"
@@ -54,20 +57,21 @@ def _register() -> None:
                 elif log.action == "close":
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
-                elif log.action == "skipped":
-                    message = f"Skipped: {log.error_message or 'No action required'}"
-                    level = "info"
+                # Removed the dead 'skipped' action branch as it's handled by log.status
                     
+            payload_data = {"raw": log.payload}
+            if log.payload and log.payload.startswith("{"):
+                try:
+                    payload_data = json.loads(log.payload)
+                except json.JSONDecodeError:
+                    pass
+
             history.append({
                 "timestamp": log.created_at.isoformat(),
                 "message": message,
                 "level": level,
                 "config_name": log.config.name if log.config else "System",
-                "payload": (
-                    json.loads(log.payload)
-                    if (log.payload and log.payload.startswith("{"))
-                    else {"raw": log.payload}
-                ),
+                "payload": payload_data,
                 "ticket_id": log.ticket_id
             })
         return jsonify(history)
