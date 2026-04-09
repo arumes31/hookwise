@@ -224,13 +224,18 @@
                 </div>
                 <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
                     ACTIVITY STREAM</div>
-                <button class="btn btn-sm btn-link p-0 text-secondary" onclick="clearLog()" data-tooltip="Clear Stream">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                        class="bi bi-trash-fill" viewBox="0 0 16 16">
-                        <path
-                            d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
-                    </svg>
-                </button>
+                <div class="d-flex gap-3">
+                    <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now">
+                        <i class="fas fa-clock"></i>
+                    </button>
+                    <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                            class="bi bi-trash-fill" viewBox="0 0 16 16">
+                            <path
+                                d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div id="log-container" class="bg-transparent text-white font-monospace p-3"
@@ -722,8 +727,45 @@
 
         if (clearBtn) {
             clearBtn.addEventListener('click', () => {
-                logContainer.innerHTML = '<div class="lightgrey opacity-50 italic">Waiting for activity...</div>';
+                clearLog();
             });
+        }
+
+        const btnTrigger = document.getElementById('btn-trigger-timeout');
+        const btnClear = document.getElementById('btn-clear-stream');
+        if (btnTrigger) btnTrigger.addEventListener('click', triggerTimeoutCheck);
+        if (btnClear) btnClear.addEventListener('click', clearLog);
+
+        function clearLog() {
+            logContainer.innerHTML = '<div class="text-secondary opacity-50 italic">Log cleared. Waiting for new activity...</div>';
+        }
+
+        async function triggerTimeoutCheck() {
+            const btn = document.getElementById('btn-trigger-timeout');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            
+            try {
+                btn.disabled = true;
+                icon.className = 'fas fa-spinner fa-spin';
+                
+                const res = await fetch('/api/activity/trigger-timeout-check', { method: 'POST' });
+                const result = await res.json();
+                
+                if (result.status === 'success') {
+                    showToast('Timeout check triggered. Check worker logs for details.', 'success');
+                } else {
+                    showToast(result.message || 'Failed to trigger check.', 'danger');
+                }
+            } catch (err) {
+                console.error('Trigger failed', err);
+                showToast('API Communication error.', 'danger');
+            } finally {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    icon.className = 'fas fa-clock';
+                }, 2000);
+            }
         }
 
         if (pauseBtn) {
@@ -763,25 +805,22 @@
             });
         }
 
-        socket.on('new_log', (data) => {
-            if (window.dashboardState.isPaused) return;
+        function addLogToStream(data, isInitialHistory = false) {
+            if (!isInitialHistory && window.dashboardState.isPaused) return;
 
             if (logContainer.querySelector('.lightgrey')) {
                 logContainer.innerHTML = '';
             }
 
             const logEntry = document.createElement('div');
-            // Advanced Flow View Logic
+            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light`;
+            logEntry.dataset.timestamp = data.timestamp;
+
             const isError = data.level === 'warning' || data.level === 'error';
             const statusColor = isError ? 'danger' : 'success';
 
-            // Flow Steps
-            // 1. Ingest (always success if we are here)
-            // 2. Auth (assumed success if processed)
-            // 3. Mapping (Rule matched?)
-            // 4. ConnectWise (Ticket created?)
-
-            const timeStr = new Date(data.timestamp).toLocaleTimeString();
+            const date = new Date(data.timestamp);
+            const timeStr = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
 
             let flowHtml = `
                 <div class="d-flex align-items-center gap-2 small">
@@ -812,24 +851,58 @@
                     
                     ${data.ticket_id ? `<a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
                     
-                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0" onclick="showPayloadModal('${escapeHtml(JSON.stringify(data.payload))}')">
+                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" data-payload='${escapeHtml(JSON.stringify(data.payload))}'>
                         <i class="fas fa-expand"></i>
                     </button>
                 </div>
             `;
-
-            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light`;
             logEntry.innerHTML = flowHtml;
 
-            logContainer.appendChild(logEntry);
-            logContainer.scrollTop = logContainer.scrollHeight;
+            if (isInitialHistory) {
+                logContainer.appendChild(logEntry);
+            } else {
+                logContainer.insertBefore(logEntry, logContainer.firstChild);
+            }
 
-            if (window.notifyFailure && isError) window.notifyFailure(data);
+            if (!isInitialHistory) {
+                // Future: Add scroll-lock logic here if needed
+            }
+
+            if (!isInitialHistory && window.notifyFailure && isError) {
+                const notifyData = {...data, level: data.level === 'error' ? 'danger' : data.level};
+                window.notifyFailure(notifyData);
+            }
 
             while (logContainer.childNodes.length > 200) {
-                logContainer.removeChild(logContainer.firstChild);
+                if (isInitialHistory) {
+                    logContainer.removeChild(logContainer.firstChild);
+                } else {
+                    logContainer.removeChild(logContainer.lastChild);
+                }
             }
-        });
+        }
+
+        async function loadActivityHistory() {
+            try {
+                const res = await fetch('/api/activity/history');
+                const history = await res.json();
+                if (history && history.length > 0) {
+                    history.forEach(log => addLogToStream(log, true));
+                }
+            } catch (err) {
+                console.error('Failed to load activity history', err);
+            }
+        }
+
+        if (socket) {
+            socket.on('new_log', (data) => {
+                addLogToStream(data);
+            });
+        }
+
+        // Load history initially
+        loadActivityHistory();
+
 
         // Log Filter Logic
         if (logFilter) {
@@ -840,6 +913,15 @@
                 });
             });
         }
+
+        // Delegated listener for payload modal to avoid inline onclick escapes
+        logContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('.log-expand-payload');
+            if (btn) {
+                const payload = btn.getAttribute('data-payload');
+                if (window.showPayloadModal) window.showPayloadModal(payload);
+            }
+        });
     });
 
     function copyModalPayload() {

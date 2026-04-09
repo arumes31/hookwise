@@ -11,7 +11,7 @@ from celery import Celery, Task
 from prometheus_client import Counter, Histogram
 
 from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
-from .extensions import db, redis_client
+from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
@@ -37,11 +37,7 @@ def make_celery(app_name: str) -> Celery:
     redis_host = os.environ.get("REDIS_HOST", "localhost")
     redis_port = os.environ.get("REDIS_PORT", 6379)
 
-    default_url = (
-        f"redis://:{redis_password}@{redis_host}:{redis_port}/0"
-        if redis_password
-        else f"redis://{redis_host}:{redis_port}/0"
-    )
+    default_url = build_redis_uri(redis_password, redis_host, redis_port, db=0)
     redis_url = os.environ.get("CELERY_BROKER_URL", default_url)
 
     celery = Celery(app_name, broker=redis_url, backend=redis_url)
@@ -206,6 +202,7 @@ def check_webhook_timeouts() -> None:
     try:
         # Only check enabled, non-draft endpoints with timeout alerts enabled
         configs = WebhookConfig.query.filter_by(timeout_alerts_enabled=True, is_enabled=True, is_draft=False).all()
+        logger.info(f"Starting timeout check for {len(configs)} endpoints with alerts enabled.")
 
         updates = 0
         now = datetime.now(timezone.utc)
@@ -216,6 +213,7 @@ def check_webhook_timeouts() -> None:
                 last_activity = config.last_seen_at or config.created_at
 
                 if not last_activity:
+                    logger.debug(f"Skipping '{config.name}': No activity date recorded yet.")
                     continue
 
                 # SQLite might return naive datetimes, ensure timezone-aware comparison
@@ -227,6 +225,11 @@ def check_webhook_timeouts() -> None:
 
                 # Defensive check: Ensure timeout_hours is an int
                 timeout_limit = getattr(config, "timeout_hours", 24) or 24
+
+                logger.debug(
+                    f"Checking '{config.name}': {hours_since_activity:.2f}h since activity "
+                    f"(Alert Threshold: {timeout_limit}h)"
+                )
 
                 if hours_since_activity > timeout_limit:
                     # Determine if it's time to send/repeat an alert
@@ -240,6 +243,11 @@ def check_webhook_timeouts() -> None:
                         time_since_alert = now - alert_at
                         if time_since_alert.total_seconds() / 3600 >= timeout_limit:
                             is_repeat_alert = True
+                        else:
+                            logger.debug(
+                                f"Stale endpoint '{config.name}' already has an open alert and "
+                                f"has not reached the repeat interval yet ({timeout_limit}h)."
+                            )
 
                     if is_first_alert or is_repeat_alert:
                         # Verify if an existing timeout ticket was closed so we can raise another
@@ -439,7 +447,9 @@ def check_webhook_timeouts() -> None:
                 db.session.rollback()
 
         if updates > 0:
-            logger.info(f"Timeout check completed. Created {updates} tickets.")
+            logger.info(f"Timeout check completed. Updated {updates} configuration(s)/ticket(s).")
+        else:
+            logger.info("Timeout check completed. No alerts written; endpoints may be stale or pending repeat.")
 
     except Exception as e:
         logger.error(f"Webhook timeout check task failed: {e}")
