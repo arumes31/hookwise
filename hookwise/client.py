@@ -9,6 +9,14 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
+class ConnectWiseError(Exception):
+    pass
+
+class TicketNotFoundError(ConnectWiseError):
+    pass
+
+class TicketRequestError(ConnectWiseError):
+    pass
 
 class ConnectWiseClient:
     def __init__(self) -> None:
@@ -80,11 +88,15 @@ class ConnectWiseClient:
             response = self.session.get(
                 f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, timeout=30
             )
+            if response.status_code == 404:
+                raise TicketNotFoundError(f"Ticket {ticket_id} not found")
             response.raise_for_status()
             return cast(Dict[str, Any], response.json())
         except requests.exceptions.RequestException as e:
+            if hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 404:
+                raise TicketNotFoundError(f"Ticket {ticket_id} not found") from e
             logger.error(f"Error getting ticket {ticket_id}: {e}")
-            return None
+            raise TicketRequestError(str(e)) from e
 
     def create_ticket(
         self,
@@ -147,6 +159,8 @@ class ConnectWiseClient:
             response = self.session.patch(
                 f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
             )
+            if response.status_code == 404:
+                raise TicketNotFoundError(f"Ticket {ticket_id} not found")
             if not response.ok:
                 logger.error(
                     "Error closing ticket #%s with status '%s': %s - %s",
@@ -157,8 +171,10 @@ class ConnectWiseClient:
                 )
                 return False
         except requests.exceptions.RequestException as e:
+            if hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 404:
+                raise TicketNotFoundError(f"Ticket {ticket_id} not found") from e
             logger.error("Request exception closing ticket #%s: %s", ticket_id, e)
-            return False
+            raise TicketRequestError(str(e)) from e
 
         note_payload = {
             "text": resolution,

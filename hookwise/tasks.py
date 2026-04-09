@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, cast
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
 
-from .client import ConnectWiseClient
+from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
@@ -233,14 +233,26 @@ def check_webhook_timeouts() -> None:
                     
                     # Verify if an existing timeout ticket was closed so we can raise another
                     if config.timeout_ticket_id:
-                        ticket_data = cw_client.get_ticket(config.timeout_ticket_id)
-                        if ticket_data and ticket_data.get("closedFlag", False):
+                        try:
+                            # Verify if an existing timeout ticket was closed so we can raise another
+                            ticket_data = cw_client.get_ticket(config.timeout_ticket_id)
+                            if ticket_data and ticket_data.get("closedFlag", False):
+                                logger.info(
+                                    f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
+                                    "was manually closed. Clearing to allow a new alert."
+                                )
+                                config.timeout_ticket_id = None
+                                db.session.commit()
+                        except TicketNotFoundError:
                             logger.info(
                                 f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
-                                "was manually closed. Clearing to allow a new alert."
+                                "was deleted or no longer exists. Clearing to allow a new alert."
                             )
                             config.timeout_ticket_id = None
                             db.session.commit()
+                        except ConnectWiseError as e:
+                            logger.warning(f"Transient error looking up timeout ticket: {e}")
+                            # Keep it, don't clear.
 
                     if not config.timeout_ticket_id:
                         # No ticket open yet, create one
@@ -282,7 +294,12 @@ def check_webhook_timeouts() -> None:
                                 f"(No data for {config.timeout_hours}h)"
                             )
                             log_to_web(log_msg, "warning", config.name)
-                            log_audit("timeout_alert", config.id, f"Created timeout ticket #{config.timeout_ticket_id}")
+                            log_audit(
+                                "timeout_alert",
+                                config.id,
+                                f"Created timeout ticket #{config.timeout_ticket_id}",
+                                commit=False
+                            )
 
                             req_id = f"timeout-{int(time.time())}"
                             log_entry = WebhookLog(
@@ -307,7 +324,12 @@ def check_webhook_timeouts() -> None:
                                 "error",
                                 config.name
                             )
-                            log_audit("timeout_error", config.id, "Failed to create timeout ticket in CW API")
+                            log_audit(
+                                "timeout_error",
+                                config.id,
+                                "Failed to create timeout ticket in CW API",
+                                commit=False
+                            )
 
                             req_id = f"timeout-err-{int(time.time())}"
                             log_entry = WebhookLog(
@@ -431,33 +453,45 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
     if config.timeout_ticket_id:
         ticket_id = config.timeout_ticket_id
         resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
-        if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
-            logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
-            log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
-            
-            import time
-
-            from .models import WebhookLog
-            from .utils import log_audit
-            log_audit("timeout_resolve", config.id, f"Automatically closed timeout ticket #{ticket_id}")
-            log_entry = WebhookLog(
-                config_id=config.id,
-                request_id=f"timeout-resolved-{int(time.time())}",
-                payload=json.dumps({"alert": "timeout_resolved", "ticket_id": ticket_id}),
-                status="processed",
-                action="update",
-                ticket_id=ticket_id,
-                source_ip="system"
-            )
-            db.session.add(log_entry)
-        else:
-            logger.warning(
-                f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. "
-                "It may be already closed or deleted. Clearing ID to prevent deadlock."
-            )
         
-        # Always clear the ticket ID so future timeouts can trigger successfully
-        config.timeout_ticket_id = None
+        try:
+            if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
+                logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
+                log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
+                
+                import time
+
+                from .models import WebhookLog
+                from .utils import log_audit
+                log_audit(
+                    "timeout_resolve",
+                    config.id,
+                    f"Automatically closed timeout ticket #{ticket_id}",
+                    commit=False
+                )
+                log_entry = WebhookLog(
+                    config_id=config.id,
+                    request_id=f"timeout-resolved-{int(time.time())}",
+                    payload=json.dumps({"alert": "timeout_resolved", "ticket_id": ticket_id}),
+                    status="processed",
+                    action="update",
+                    ticket_id=ticket_id,
+                    source_ip="system"
+                )
+                db.session.add(log_entry)
+                config.timeout_ticket_id = None
+            else:
+                logger.warning(
+                    f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. "
+                )
+        except TicketNotFoundError:
+            logger.warning(
+                f"Timeout ticket #{ticket_id} for endpoint '{config.name}' "
+                "is already closed or deleted. Clearing ID to prevent deadlock."
+            )
+            config.timeout_ticket_id = None
+        except ConnectWiseError as e:
+            logger.error(f"Transient error closing timeout ticket #{ticket_id}: {e}")
 
     db.session.commit()
 
