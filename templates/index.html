@@ -844,7 +844,7 @@
                     
                     ${data.ticket_id ? `<a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
                     
-                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0" onclick="showPayloadModal('${escapeHtml(JSON.stringify(data.payload))}')">
+                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" data-payload='${escapeHtml(JSON.stringify(data.payload))}'>
                         <i class="fas fa-expand"></i>
                     </button>
                 </div>
@@ -858,13 +858,13 @@
             }
 
             if (!isInitialHistory) {
-                // Ensure the view shows the new item if at the top
-                if (logContainer.scrollTop === 0) {
-                     // Keep it at 0
-                }
+                // Future: Add scroll-lock logic here if needed
             }
 
-            if (!isInitialHistory && window.notifyFailure && isError) window.notifyFailure(data);
+            if (!isInitialHistory && window.notifyFailure && isError) {
+                const notifyData = {...data, level: data.level === 'error' ? 'danger' : data.level};
+                window.notifyFailure(notifyData);
+            }
 
             while (logContainer.childNodes.length > 200) {
                 if (isInitialHistory) {
@@ -880,9 +880,7 @@
                 const res = await fetch('/api/activity/history');
                 const history = await res.json();
                 if (history && history.length > 0) {
-                    history.reverse().forEach(log => addLogToStream(log, true));
-                    // Scroll to bottom of the loaded history
-                    logContainer.scrollTop = logContainer.scrollHeight;
+                    history.forEach(log => addLogToStream(log, true));
                 }
             } catch (err) {
                 console.error('Failed to load activity history', err);
@@ -906,6 +904,15 @@
                 });
             });
         }
+
+        // Delegated listener for payload modal to avoid inline onclick escapes
+        logContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('.log-expand-payload');
+            if (btn) {
+                const payload = btn.getAttribute('data-payload');
+                if (window.showPayloadModal) window.showPayloadModal(payload);
+            }
+        });
     });
 
     function copyModalPayload() {

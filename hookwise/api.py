@@ -11,6 +11,7 @@ from typing import Any, Tuple, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
+from sqlalchemy.orm import joinedload
 
 from .extensions import db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
@@ -29,7 +30,8 @@ def _register() -> None:
     @auth_required
     def get_activity_history() -> Any:
         logs = (
-            WebhookLog.query.order_by(WebhookLog.created_at.desc())
+            WebhookLog.query.options(joinedload(WebhookLog.config))
+            .order_by(WebhookLog.created_at.desc())
             .limit(50)
             .all()
         )
@@ -60,10 +62,10 @@ def _register() -> None:
                 # Removed the dead 'skipped' action branch as it's handled by log.status
                     
             payload_data = {"raw": log.payload}
-            if log.payload and log.payload.startswith("{"):
+            if log.payload and log.payload.startswith(("{", "[")):
                 try:
                     payload_data = json.loads(log.payload)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, TypeError):
                     pass
 
             history.append({

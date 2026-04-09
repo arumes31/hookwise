@@ -11,7 +11,7 @@ from celery import Celery, Task
 from prometheus_client import Counter, Histogram
 
 from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
-from .extensions import db, redis_client
+from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
@@ -37,11 +37,7 @@ def make_celery(app_name: str) -> Celery:
     redis_host = os.environ.get("REDIS_HOST", "localhost")
     redis_port = os.environ.get("REDIS_PORT", 6379)
 
-    default_url = (
-        f"redis://:{redis_password}@{redis_host}:{redis_port}/0"
-        if redis_password
-        else f"redis://{redis_host}:{redis_port}/0"
-    )
+    default_url = build_redis_uri(redis_password, redis_host, redis_port, db=0)
     redis_url = os.environ.get("CELERY_BROKER_URL", default_url)
 
     celery = Celery(app_name, broker=redis_url, backend=redis_url)

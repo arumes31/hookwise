@@ -9,17 +9,20 @@ from flask_socketio import SocketIO
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 
+
+def build_redis_uri(password, host, port, db=0):
+    """Securely build a Redis URI with URL-encoded password."""
+    quoted_password = urllib.parse.quote(password, safe="") if password else None
+    if quoted_password:
+        return f"redis://:{quoted_password}@{host}:{port}/{db}"
+    return f"redis://{host}:{port}/{db}"
+
 _redis_password = os.environ.get("REDIS_PASSWORD")
-_redis_password_quoted = urllib.parse.quote(_redis_password, safe="") if _redis_password else None
 _redis_host = os.environ.get("REDIS_HOST", "localhost")
 _redis_port = os.environ.get("REDIS_PORT", 6379)
 _limiter_storage = os.environ.get("LIMITER_STORAGE_URI")
 if not _limiter_storage:
-    _limiter_storage = (
-        f"redis://:{_redis_password_quoted}@{_redis_host}:{_redis_port}/0"
-        if _redis_password_quoted
-        else f"redis://{_redis_host}:{_redis_port}/0"
-    )
+    _limiter_storage = build_redis_uri(_redis_password, _redis_host, _redis_port, db=0)
 
 
 db = SQLAlchemy()
@@ -37,13 +40,18 @@ def header_whitelist():
     return "user_id" in session
 
 
-_socketio_message_queue = (
-    f"redis://:{_redis_password_quoted}@{_redis_host}:{_redis_port}/0"
-    if _redis_password_quoted
-    else f"redis://{_redis_host}:{_redis_port}/0"
-)
+_socketio_message_queue = build_redis_uri(_redis_password, _redis_host, _redis_port, db=0)
+
+# SocketIO Security: Read allowed origins from env with a safe default for development
+_allowed_origins_raw = os.environ.get("SOCKETIO_ALLOWED_ORIGINS")
+if _allowed_origins_raw:
+    _allowed_origins = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+else:
+    # Safe defaults for local development
+    _allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
+
 socketio = SocketIO(
-    cors_allowed_origins="*",
+    cors_allowed_origins=_allowed_origins,
     async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"),
     message_queue=_socketio_message_queue,
 )
