@@ -398,11 +398,18 @@
                     </div>
                     <div class="tech-item">
                         <div class="tech-label text-primary">LAST SEEN</div>
-                        <div class="small mb-1 fw-bold text-white text-truncate" style="font-size: 0.7rem;">
+                        <div class="small fw-bold text-white text-truncate" style="font-size: 0.7rem;">
                             {{ config.last_seen_at.strftime('%H:%M %m/%d') if config.last_seen_at else 'NEVER' }}
                         </div>
-                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">UTC
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1 {{ 'mb-2' if config.timeout_alerts_enabled else 'mb-1' }}" style="font-size: 0.5rem;">UTC
                             Time</div>
+                        
+                        {% if config.timeout_alerts_enabled and next_stale_times.get(config.id) %}
+                        <div class="tech-label text-warning mt-1" style="font-size: 0.5rem;">NEXT STALE</div>
+                        <div class="small fw-bold text-warning opacity-75 text-truncate" style="font-size: 0.65rem;">
+                            {{ next_stale_times[config.id].strftime('%H:%M %m/%d') }}
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>

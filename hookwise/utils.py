@@ -169,22 +169,36 @@ def decrypt_string(cipher_text: str) -> str:
         return cipher_text  # Return as is if decryption fails (might be unencrypted)
 
 
-def log_audit(action: str, config_id: Optional[str] = None, details: Optional[str] = None) -> None:
+def log_audit(
+    action: str,
+    config_id: Optional[str] = None,
+    details: Optional[str] = None,
+    commit: bool = True,
+    db_session: Any = None,
+) -> None:
     """Helper to log configuration changes."""
-    from flask import request, session
+    from flask import has_request_context, request, session
 
     from .extensions import db
     from .models import AuditLog
 
-    user = session.get("username", None)
-    if not user and request.authorization:
-        user = request.authorization.username
-    if not user:
-        user = "System"
+    user = "System"
+    if has_request_context():
+        sess_user = session.get("username")
+        if sess_user:
+            user = str(sess_user)
+        elif (
+            getattr(request, "authorization", None)
+            and request.authorization is not None
+            and getattr(request.authorization, "username", None)
+        ):
+            user = str(request.authorization.username)
 
     audit = AuditLog(config_id=config_id, action=action, user=user, details=details)
-    db.session.add(audit)
-    db.session.commit()
+    target_session = db_session if db_session is not None else db.session
+    target_session.add(audit)
+    if commit:
+        target_session.commit()
 
 
 def mask_secrets(data: Any) -> Any:
