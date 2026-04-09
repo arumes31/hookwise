@@ -474,7 +474,7 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
                     request_id=f"timeout-resolved-{int(time.time())}",
                     payload=json.dumps({"alert": "timeout_resolved", "ticket_id": ticket_id}),
                     status="processed",
-                    action="update",
+                    action="close",
                     ticket_id=ticket_id,
                     source_ip="system"
                 )
@@ -972,10 +972,23 @@ def handle_webhook_logic(
 
                 if ticket_id:
                     resolution = f"Resource {monitor_name} is back UP.\nMessage: {msg}\nID: {request_id}"
-                    if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
+                    try:
+                        cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
                         redis_client.delete(cache_key)
                         log_to_web(
                             f"UP alert: Closed ticket (ID: {ticket_id})",
+                            "success",
+                            config_name,
+                            data=data,
+                            ticket_id=ticket_id,
+                        )
+                        PSA_TASK_COUNT.labels(type="close", result="success")
+                        log_psa_task(task_type="close", result="success")
+                        log_entry.action = "close"
+                    except TicketNotFoundError:
+                        redis_client.delete(cache_key)
+                        log_to_web(
+                            f"UP alert: Ticket (ID: {ticket_id}) was already closed/missing",
                             "success",
                             config_name,
                             data=data,
