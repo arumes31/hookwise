@@ -287,12 +287,6 @@
         }).join('');
     }
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     function toggleAllLogs() {
         const checkAll = document.getElementById('check-all-logs');
         document.querySelectorAll('.log-check').forEach(c => c.checked = checkAll.checked);
