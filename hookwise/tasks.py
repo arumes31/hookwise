@@ -973,18 +973,30 @@ def handle_webhook_logic(
                 if ticket_id:
                     resolution = f"Resource {monitor_name} is back UP.\nMessage: {msg}\nID: {request_id}"
                     try:
-                        cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
-                        redis_client.delete(cache_key)
-                        log_to_web(
-                            f"UP alert: Closed ticket (ID: {ticket_id})",
-                            "success",
-                            config_name,
-                            data=data,
-                            ticket_id=ticket_id,
-                        )
-                        PSA_TASK_COUNT.labels(type="close", result="success")
-                        log_psa_task(task_type="close", result="success")
-                        log_entry.action = "close"
+                        success = cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
+                        if success:
+                            redis_client.delete(cache_key)
+                            log_to_web(
+                                f"UP alert: Closed ticket (ID: {ticket_id})",
+                                "success",
+                                config_name,
+                                data=data,
+                                ticket_id=ticket_id,
+                            )
+                            PSA_TASK_COUNT.labels(type="close", result="success")
+                            log_psa_task(task_type="close", result="success")
+                            log_entry.action = "close"
+                        else:
+                            log_to_web(
+                                f"UP alert: Failed to close ticket (ID: {ticket_id})",
+                                "error",
+                                config_name,
+                                data=data,
+                                ticket_id=ticket_id,
+                            )
+                            PSA_TASK_COUNT.labels(type="close", result="failure")
+                            log_psa_task(task_type="close", result="failure")
+                            log_entry.action = "failed"
                     except TicketNotFoundError:
                         redis_client.delete(cache_key)
                         log_to_web(
