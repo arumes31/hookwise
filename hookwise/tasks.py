@@ -449,7 +449,7 @@ def check_webhook_timeouts() -> None:
         if updates > 0:
             logger.info(f"Timeout check completed. Updated {updates} configuration(s)/ticket(s).")
         else:
-            logger.info("Timeout check completed. No stale endpoints detected.")
+            logger.info("Timeout check completed. No alerts written; endpoints may be stale or alert repeat is pending.")
 
     except Exception as e:
         logger.error(f"Webhook timeout check task failed: {e}")

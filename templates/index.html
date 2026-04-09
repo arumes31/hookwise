@@ -225,10 +225,10 @@
                 <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
                     ACTIVITY STREAM</div>
                 <div class="d-flex gap-3">
-                    <button class="btn btn-sm btn-link p-0 text-warning" onclick="triggerTimeoutCheck()" data-tooltip="Run Timeout Monitor Now">
+                    <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now">
                         <i class="fas fa-clock"></i>
                     </button>
-                    <button class="btn btn-sm btn-link p-0 text-secondary" onclick="clearLog()" data-tooltip="Clear Stream">
+                    <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                             class="bi bi-trash-fill" viewBox="0 0 16 16">
                             <path
@@ -731,14 +731,21 @@
             });
         }
 
+        const btnTrigger = document.getElementById('btn-trigger-timeout');
+        const btnClear = document.getElementById('btn-clear-stream');
+        if (btnTrigger) btnTrigger.addEventListener('click', triggerTimeoutCheck);
+        if (btnClear) btnClear.addEventListener('click', clearLog);
+
         function clearLog() {
             logContainer.innerHTML = '<div class="text-secondary opacity-50 italic">Log cleared. Waiting for new activity...</div>';
         }
 
         async function triggerTimeoutCheck() {
+            const btn = document.getElementById('btn-trigger-timeout');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            
             try {
-                const btn = event.currentTarget;
-                const icon = btn.querySelector('i');
                 btn.disabled = true;
                 icon.className = 'fas fa-spinner fa-spin';
                 
@@ -750,14 +757,14 @@
                 } else {
                     showToast(result.message || 'Failed to trigger check.', 'danger');
                 }
-                
+            } catch (err) {
+                console.error('Trigger failed', err);
+                showToast('API Communication error.', 'danger');
+            } finally {
                 setTimeout(() => {
                     btn.disabled = false;
                     icon.className = 'fas fa-clock';
                 }, 2000);
-            } catch (err) {
-                console.error('Trigger failed', err);
-                showToast('API Communication error.', 'danger');
             }
         }
 
@@ -887,9 +894,11 @@
             }
         }
 
-        socket.on('new_log', (data) => {
-            addLogToStream(data);
-        });
+        if (socket) {
+            socket.on('new_log', (data) => {
+                addLogToStream(data);
+            });
+        }
 
         // Load history initially
         loadActivityHistory();
