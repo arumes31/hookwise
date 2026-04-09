@@ -63,7 +63,11 @@ def _register() -> None:
                 "message": message,
                 "level": level,
                 "config_name": log.config.name if log.config else "System",
-                "payload": json.loads(log.payload) if (log.payload and log.payload.startswith("{")) else {"raw": log.payload},
+                "payload": (
+                    json.loads(log.payload)
+                    if (log.payload and log.payload.startswith("{"))
+                    else {"raw": log.payload}
+                ),
                 "ticket_id": log.ticket_id
             })
         return jsonify(history)
