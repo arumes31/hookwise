@@ -79,6 +79,7 @@ class WebhookConfig(Base):
     timeout_alerts_enabled = db.Column(db.Boolean, default=False, nullable=False)
     timeout_hours = db.Column(db.Integer, default=24, nullable=False)
     timeout_ticket_id = db.Column(db.Integer, nullable=True)
+    last_stale_alert_at = db.Column(db.DateTime, nullable=True)
 
     def to_dict(self, include_token: bool = False) -> Dict[str, Any]:
         d = {
@@ -114,6 +115,7 @@ class WebhookConfig(Base):
             "timeout_alerts_enabled": self.timeout_alerts_enabled,
             "timeout_hours": self.timeout_hours,
             "timeout_ticket_id": self.timeout_ticket_id,
+            "last_stale_alert_at": self.last_stale_alert_at.isoformat() if self.last_stale_alert_at else None,
             "created_at": self.created_at.isoformat(),
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
         }
