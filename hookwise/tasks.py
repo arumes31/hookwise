@@ -230,6 +230,18 @@ def check_webhook_timeouts() -> None:
 
                 if hours_since_activity > timeout_limit:
                     # Timeout threshold exceeded
+                    
+                    # Verify if an existing timeout ticket was closed so we can raise another
+                    if config.timeout_ticket_id:
+                        ticket_data = cw_client.get_ticket(config.timeout_ticket_id)
+                        if ticket_data and ticket_data.get("closedFlag", False):
+                            logger.info(
+                                f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
+                                "was manually closed. Clearing to allow a new alert."
+                            )
+                            config.timeout_ticket_id = None
+                            db.session.commit()
+
                     if not config.timeout_ticket_id:
                         # No ticket open yet, create one
                         summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
@@ -384,11 +396,16 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
         ticket_id = config.timeout_ticket_id
         resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
         if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
-            config.timeout_ticket_id = None
             logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
             log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
         else:
-            logger.error(f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'")
+            logger.warning(
+                f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. "
+                "It may be already closed or deleted. Clearing ID to prevent deadlock."
+            )
+        
+        # Always clear the ticket ID so future timeouts can trigger successfully
+        config.timeout_ticket_id = None
 
     db.session.commit()
 
