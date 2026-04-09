@@ -171,7 +171,7 @@ def decrypt_string(cipher_text: str) -> str:
 
 def log_audit(action: str, config_id: Optional[str] = None, details: Optional[str] = None) -> None:
     """Helper to log configuration changes."""
-    from flask import request, session, has_request_context
+    from flask import has_request_context, request, session
 
     from .extensions import db
     from .models import AuditLog
