@@ -24,6 +24,50 @@ def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
+    
+    @main_bp.route("/api/activity/history")
+    @auth_required
+    def get_activity_history() -> Any:
+        logs = (
+            WebhookLog.query.order_by(WebhookLog.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        history = []
+        for log in logs:
+            # Reconstruct the message based on status and action
+            # This mimics the log_to_web calls in tasks.py
+            message = log.error_message or "Processed"
+            level = "info"
+            
+            if log.status == "failed":
+                message = log.error_message or "Unknown error"
+                level = "error"
+            elif log.status == "processed":
+                if log.action == "create":
+                    message = f"Created NEW ticket (ID: {log.ticket_id})"
+                    level = "warning"
+                elif log.action == "update":
+                    if not log.error_message:
+                        message = f"Updated existing ticket (ID: {log.ticket_id})"
+                    level = "info"
+                elif log.action == "close":
+                    message = f"Closed ticket (ID: {log.ticket_id})"
+                    level = "success"
+                elif log.action == "skipped":
+                    message = f"Skipped: {log.error_message or 'No action required'}"
+                    level = "info"
+                    
+            history.append({
+                "timestamp": log.created_at.isoformat(),
+                "message": message,
+                "level": level,
+                "config_name": log.config.name if log.config else "System",
+                "payload": json.loads(log.payload) if (log.payload and log.payload.startswith("{")) else {"raw": log.payload},
+                "ticket_id": log.ticket_id
+            })
+        return jsonify(history)
+
 
     @main_bp.route("/history")
     @auth_required

@@ -763,25 +763,22 @@
             });
         }
 
-        socket.on('new_log', (data) => {
-            if (window.dashboardState.isPaused) return;
+        function addLogToStream(data, isInitialHistory = false) {
+            if (!isInitialHistory && window.dashboardState.isPaused) return;
 
             if (logContainer.querySelector('.lightgrey')) {
                 logContainer.innerHTML = '';
             }
 
             const logEntry = document.createElement('div');
-            // Advanced Flow View Logic
+            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light`;
+            logEntry.dataset.timestamp = data.timestamp;
+
             const isError = data.level === 'warning' || data.level === 'error';
             const statusColor = isError ? 'danger' : 'success';
 
-            // Flow Steps
-            // 1. Ingest (always success if we are here)
-            // 2. Auth (assumed success if processed)
-            // 3. Mapping (Rule matched?)
-            // 4. ConnectWise (Ticket created?)
-
-            const timeStr = new Date(data.timestamp).toLocaleTimeString();
+            const date = new Date(data.timestamp);
+            const timeStr = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
 
             let flowHtml = `
                 <div class="d-flex align-items-center gap-2 small">
@@ -817,19 +814,53 @@
                     </button>
                 </div>
             `;
-
-            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light`;
             logEntry.innerHTML = flowHtml;
 
-            logContainer.appendChild(logEntry);
-            logContainer.scrollTop = logContainer.scrollHeight;
+            if (isInitialHistory) {
+                logContainer.appendChild(logEntry);
+            } else {
+                logContainer.insertBefore(logEntry, logContainer.firstChild);
+            }
 
-            if (window.notifyFailure && isError) window.notifyFailure(data);
+            if (!isInitialHistory) {
+                // Ensure the view shows the new item if at the top
+                if (logContainer.scrollTop === 0) {
+                     // Keep it at 0
+                }
+            }
+
+            if (!isInitialHistory && window.notifyFailure && isError) window.notifyFailure(data);
 
             while (logContainer.childNodes.length > 200) {
-                logContainer.removeChild(logContainer.firstChild);
+                if (isInitialHistory) {
+                    logContainer.removeChild(logContainer.firstChild);
+                } else {
+                    logContainer.removeChild(logContainer.lastChild);
+                }
             }
+        }
+
+        async function loadActivityHistory() {
+            try {
+                const res = await fetch('/api/activity/history');
+                const history = await res.json();
+                if (history && history.length > 0) {
+                    history.reverse().forEach(log => addLogToStream(log, true));
+                    // Scroll to bottom of the loaded history
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            } catch (err) {
+                console.error('Failed to load activity history', err);
+            }
+        }
+
+        socket.on('new_log', (data) => {
+            addLogToStream(data);
         });
+
+        // Load history initially
+        loadActivityHistory();
+
 
         // Log Filter Logic
         if (logFilter) {

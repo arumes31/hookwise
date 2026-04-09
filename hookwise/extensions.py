@@ -35,7 +35,16 @@ def header_whitelist():
     return "user_id" in session
 
 
-socketio = SocketIO(cors_allowed_origins="*", async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"))
+_socketio_message_queue = (
+    f"redis://:{_redis_password}@{_redis_host}:{_redis_port}/0"
+    if _redis_password
+    else f"redis://{_redis_host}:{_redis_port}/0"
+)
+socketio = SocketIO(
+    cors_allowed_origins="*",
+    async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"),
+    message_queue=_socketio_message_queue,
+)
 
 redis_client: redis.Redis = redis.Redis(
     host=_redis_host,
