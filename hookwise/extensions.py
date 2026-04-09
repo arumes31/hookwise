@@ -44,10 +44,15 @@ _socketio_message_queue = build_redis_uri(_redis_password, _redis_host, _redis_p
 
 # SocketIO Security: Read allowed origins from env with a safe default for development
 _allowed_origins_raw = os.environ.get("SOCKETIO_ALLOWED_ORIGINS")
-if _allowed_origins_raw:
+_allowed_origins: str | list[str]
+if _allowed_origins_raw == "*":
+    _allowed_origins = "*"
+elif _allowed_origins_raw:
     _allowed_origins = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
+    if not _allowed_origins:
+        _allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
 else:
-    # Safe defaults for local development
+    # Default to localhost if nothing is specified
     _allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
 
 socketio = SocketIO(
