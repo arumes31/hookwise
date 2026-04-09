@@ -54,6 +54,17 @@ services:
       - postgres
       - hookwise-llm
 
+  hookwise-beat:
+    image: ghcr.io/arumes31/hookwise:latest
+    container_name: hookwise-beat
+    restart: unless-stopped
+    command: celery -A worker.celery beat --loglevel=info
+    environment: *env
+    depends_on:
+      - redis
+      - postgres
+      - hookwise-llm
+
   hookwise-llm:
     image: ollama/ollama:latest
     container_name: hookwise-llm
