@@ -224,13 +224,18 @@
                 </div>
                 <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
                     ACTIVITY STREAM</div>
-                <button class="btn btn-sm btn-link p-0 text-secondary" onclick="clearLog()" data-tooltip="Clear Stream">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                        class="bi bi-trash-fill" viewBox="0 0 16 16">
-                        <path
-                            d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
-                    </svg>
-                </button>
+                <div class="d-flex gap-3">
+                    <button class="btn btn-sm btn-link p-0 text-warning" onclick="triggerTimeoutCheck()" data-tooltip="Run Timeout Monitor Now">
+                        <i class="fas fa-clock"></i>
+                    </button>
+                    <button class="btn btn-sm btn-link p-0 text-secondary" onclick="clearLog()" data-tooltip="Clear Stream">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
+                            class="bi bi-trash-fill" viewBox="0 0 16 16">
+                            <path
+                                d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div id="log-container" class="bg-transparent text-white font-monospace p-3"
@@ -722,8 +727,38 @@
 
         if (clearBtn) {
             clearBtn.addEventListener('click', () => {
-                logContainer.innerHTML = '<div class="lightgrey opacity-50 italic">Waiting for activity...</div>';
+                clearLog();
             });
+        }
+
+        function clearLog() {
+            logContainer.innerHTML = '<div class="text-secondary opacity-50 italic">Log cleared. Waiting for new activity...</div>';
+        }
+
+        async function triggerTimeoutCheck() {
+            try {
+                const btn = event.currentTarget;
+                const icon = btn.querySelector('i');
+                btn.disabled = true;
+                icon.className = 'fas fa-spinner fa-spin';
+                
+                const res = await fetch('/api/activity/trigger-timeout-check', { method: 'POST' });
+                const result = await res.json();
+                
+                if (result.status === 'success') {
+                    showToast('Timeout check triggered. Check worker logs for details.', 'success');
+                } else {
+                    showToast(result.message || 'Failed to trigger check.', 'danger');
+                }
+                
+                setTimeout(() => {
+                    btn.disabled = false;
+                    icon.className = 'fas fa-clock';
+                }, 2000);
+            } catch (err) {
+                console.error('Trigger failed', err);
+                showToast('API Communication error.', 'danger');
+            }
         }
 
         if (pauseBtn) {

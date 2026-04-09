@@ -76,6 +76,18 @@ def _register() -> None:
             })
         return jsonify(history)
 
+    @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
+    @auth_required
+    def trigger_timeout_check() -> Any:
+        from .tasks import check_webhook_timeouts
+        # Trigger the task in the background
+        task = check_webhook_timeouts.delay()
+        return jsonify({
+            "status": "success",
+            "message": "Manual timeout check triggered in background.",
+            "task_id": task.id
+        })
+
 
     @main_bp.route("/history")
     @auth_required

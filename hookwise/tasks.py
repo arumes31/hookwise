@@ -206,6 +206,7 @@ def check_webhook_timeouts() -> None:
     try:
         # Only check enabled, non-draft endpoints with timeout alerts enabled
         configs = WebhookConfig.query.filter_by(timeout_alerts_enabled=True, is_enabled=True, is_draft=False).all()
+        logger.info(f"Starting timeout check for {len(configs)} endpoints with alerts enabled.")
 
         updates = 0
         now = datetime.now(timezone.utc)
@@ -216,6 +217,7 @@ def check_webhook_timeouts() -> None:
                 last_activity = config.last_seen_at or config.created_at
 
                 if not last_activity:
+                    logger.debug(f"Skipping '{config.name}': No activity date recorded yet.")
                     continue
 
                 # SQLite might return naive datetimes, ensure timezone-aware comparison
@@ -227,6 +229,11 @@ def check_webhook_timeouts() -> None:
 
                 # Defensive check: Ensure timeout_hours is an int
                 timeout_limit = getattr(config, "timeout_hours", 24) or 24
+
+                logger.debug(
+                    f"Checking '{config.name}': {hours_since_activity:.2f}h since activity "
+                    f"(Alert Threshold: {timeout_limit}h)"
+                )
 
                 if hours_since_activity > timeout_limit:
                     # Determine if it's time to send/repeat an alert
@@ -240,6 +247,11 @@ def check_webhook_timeouts() -> None:
                         time_since_alert = now - alert_at
                         if time_since_alert.total_seconds() / 3600 >= timeout_limit:
                             is_repeat_alert = True
+                        else:
+                            logger.debug(
+                                f"Stale endpoint '{config.name}' already has an open alert and "
+                                f"has not reached the repeat interval yet ({timeout_limit}h)."
+                            )
 
                     if is_first_alert or is_repeat_alert:
                         # Verify if an existing timeout ticket was closed so we can raise another
@@ -439,7 +451,9 @@ def check_webhook_timeouts() -> None:
                 db.session.rollback()
 
         if updates > 0:
-            logger.info(f"Timeout check completed. Created {updates} tickets.")
+            logger.info(f"Timeout check completed. Updated {updates} configuration(s)/ticket(s).")
+        else:
+            logger.info("Timeout check completed. No stale endpoints detected.")
 
     except Exception as e:
         logger.error(f"Webhook timeout check task failed: {e}")
