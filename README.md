@@ -117,7 +117,7 @@ sequenceDiagram
 - **Regex Rule Engine:** Route `CRITICAL` alerts to the "Emergency" board and `WARN` alerts to "Tiling" automatically.
 - **Smart Maintenance:** Define recurring maintenance windows (Daily, Weekly, Once) with support for overnight schedules (e.g., 22:00 to 04:00) using UTC-normalized logic.
 - **Company Mapping:** Supports `#CW<ID>` in titles or dynamic lookups from payload fields.
-- **Webhook Timeout Alerts (Heartbeat):** Automatically trigger a ticket if an endpoint hasn't received data within a configured threshold (e.g., "No data for 24h"). The ticket clears itself as soon as the next webhook arrives.
+- **Webhook Timeout Alerts (Heartbeat):** Automatically trigger a ticket if an endpoint hasn't received data within a configured threshold (e.g., "No data for 24h"). Alerts repeat at the same hourly interval if the endpoint remains stale, adding a note to the existing ticket or creating a new one if it was closed. The alert state resets as soon as the next webhook arrives.
 
 ### 🧠 AI-Powered Insights
 HookWise can generate automated troubleshoot guides using local LLMs. It analyzes the raw payload and adds an **internal note** to the ticket with:
