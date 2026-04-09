@@ -266,6 +266,10 @@ def check_webhook_timeouts() -> None:
                             item=config.item,
                         )
 
+                        from .models import WebhookLog
+                        from .utils import log_audit
+                        import time
+
                         if new_ticket:
                             config.timeout_ticket_id = new_ticket["id"]
                             updates += 1
@@ -277,14 +281,41 @@ def check_webhook_timeouts() -> None:
                                 f"(No data for {config.timeout_hours}h)"
                             )
                             log_to_web(log_msg, "warning", config.name)
+                            log_audit("timeout_alert", config.id, f"Created timeout ticket #{config.timeout_ticket_id}")
 
-                            # Persist immediately to prevent ghost tickets on later failures
+                            req_id = f"timeout-{int(time.time())}"
+                            log_entry = WebhookLog(
+                                config_id=config.id,
+                                request_id=req_id,
+                                payload=json.dumps({"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}),
+                                status="processed",
+                                action="create",
+                                ticket_id=config.timeout_ticket_id,
+                                source_ip="system",
+                                error_message=f"Created timeout ticket #{config.timeout_ticket_id}"
+                            )
+                            db.session.add(log_entry)
                             db.session.commit()
                         else:
                             logger.warning(
                                 f"Failed to create timeout ticket for endpoint '{config.name}'. "
                                 "Ticket creation returned None."
                             )
+                            log_to_web(f"Timeout alert failure: Could not create ticket for {config.name}", "error", config.name)
+                            log_audit("timeout_error", config.id, "Failed to create timeout ticket in CW API")
+
+                            req_id = f"timeout-err-{int(time.time())}"
+                            log_entry = WebhookLog(
+                                config_id=config.id,
+                                request_id=req_id,
+                                payload=json.dumps({"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}),
+                                status="failed",
+                                action="create",
+                                source_ip="system",
+                                error_message="Failed to create ticket in ConnectWise API. Check board/status config."
+                            )
+                            db.session.add(log_entry)
+                            db.session.commit()
             except Exception as loop_e:
                 logger.error(f"Error processing timeout for endpoint '{config.name}': {loop_e}")
                 db.session.rollback()
@@ -398,6 +429,21 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
         if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
             logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
             log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
+            
+            from .models import WebhookLog
+            from .utils import log_audit
+            import time
+            log_audit("timeout_resolve", config.id, f"Automatically closed timeout ticket #{ticket_id}")
+            log_entry = WebhookLog(
+                config_id=config.id,
+                request_id=f"timeout-resolved-{int(time.time())}",
+                payload=json.dumps({"alert": "timeout_resolved", "ticket_id": ticket_id}),
+                status="processed",
+                action="update",
+                ticket_id=ticket_id,
+                source_ip="system"
+            )
+            db.session.add(log_entry)
         else:
             logger.warning(
                 f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. "
