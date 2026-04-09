@@ -30,7 +30,7 @@ def _register() -> None:
     @auth_required
     def get_activity_history() -> Any:
         logs = (
-            WebhookLog.query.options(joinedload(WebhookLog.config))
+            WebhookLog.query.options(joinedload(WebhookLog.config))  # type: ignore[arg-type]
             .order_by(WebhookLog.created_at.desc())
             .limit(50)
             .all()
