@@ -171,16 +171,18 @@ def decrypt_string(cipher_text: str) -> str:
 
 def log_audit(action: str, config_id: Optional[str] = None, details: Optional[str] = None) -> None:
     """Helper to log configuration changes."""
-    from flask import request, session
+    from flask import request, session, has_request_context
 
     from .extensions import db
     from .models import AuditLog
 
-    user = session.get("username", None)
-    if not user and request.authorization:
-        user = request.authorization.username
-    if not user:
-        user = "System"
+    user = "System"
+    if has_request_context():
+        user = session.get("username", None)
+        if not user and getattr(request, "authorization", None):
+            user = request.authorization.username
+        if not user:
+            user = "System"
 
     audit = AuditLog(config_id=config_id, action=action, user=user, details=details)
     db.session.add(audit)
