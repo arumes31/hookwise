@@ -116,7 +116,21 @@ def index() -> Any:
             if last_activity:
                 if last_activity.tzinfo is None:
                     last_activity = last_activity.replace(tzinfo=timezone.utc)
-                next_stale_times[config.id] = last_activity + timedelta(hours=config.timeout_hours or 24)
+                
+                # Calculation: Next stale is either last_seen + timeout OR last_alert + timeout
+                # We show whichever is further in the future
+                timeout_delta = timedelta(hours=config.timeout_hours or 24)
+                
+                next_alert_from_seen = last_activity + timeout_delta
+                
+                if config.last_stale_alert_at:
+                    last_alert = config.last_stale_alert_at
+                    if last_alert.tzinfo is None:
+                        last_alert = last_alert.replace(tzinfo=timezone.utc)
+                    next_alert_from_alert = last_alert + timeout_delta
+                    next_stale_times[config.id] = max(next_alert_from_seen, next_alert_from_alert)
+                else:
+                    next_stale_times[config.id] = next_alert_from_seen
 
     base_url = request.url_root.rstrip("/")
     debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
