@@ -232,6 +232,7 @@ def _register() -> None:
     def delete_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         name = config.name
+        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
         db.session.delete(config)
         db.session.commit()
         log_audit("delete", id, f"Endpoint {name} deleted")
