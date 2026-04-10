@@ -126,7 +126,9 @@ class WebhookConfig(Base):
 
 class WebhookLog(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    config_id = db.Column(db.String(64), db.ForeignKey("webhook_config.id"), nullable=False, index=True)
+    config_id = db.Column(
+        db.String(64), db.ForeignKey("webhook_config.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     request_id = db.Column(db.String(100), nullable=False, index=True)
     payload = db.Column(db.Text, nullable=False)  # JSON string
     headers = db.Column(db.Text)  # JSON string
@@ -142,7 +144,9 @@ class WebhookLog(Base):
     retry_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
-    config = db.relationship("WebhookConfig", backref=db.backref("logs", lazy=True))
+    config = db.relationship(
+        "WebhookConfig", backref=db.backref("logs", lazy=True, cascade="all, delete-orphan", passive_deletes=True)
+    )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
