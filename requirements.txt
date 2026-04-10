@@ -50,7 +50,7 @@ psycopg2-binary==2.9.11
 pycparser==3.0
 pygments==2.20.0
 pyotp==2.9.0
-pytest==9.0.2
+pytest==9.0.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-engineio==4.13.1
