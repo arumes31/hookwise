@@ -22,7 +22,7 @@ Flask-Migrate==4.1.0
 flask-socketio==5.6.1
 Flask-SQLAlchemy==3.1.1
 Flask-WTF==1.2.2
-greenlet==3.3.2
+greenlet==3.4.0
 gunicorn==25.3.0
 h11==0.16.0
 idna==3.11
