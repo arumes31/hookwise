@@ -142,7 +142,7 @@ class WebhookLog(Base):
     retry_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
-    config = db.relationship("WebhookConfig", backref=db.backref("logs", lazy=True))
+    config = db.relationship("WebhookConfig", backref=db.backref("logs", lazy=True, cascade="all, delete-orphan"))
 
     def to_dict(self) -> Dict[str, Any]:
         return {

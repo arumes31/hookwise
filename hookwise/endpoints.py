@@ -8,7 +8,7 @@ from typing import Any
 from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db
-from .models import WebhookConfig
+from .models import WebhookConfig, WebhookLog
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 
@@ -244,6 +244,7 @@ def _register() -> None:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        WebhookLog.query.filter(WebhookLog.config_id.in_(ids)).delete(synchronize_session=False)
         WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
         log_audit("bulk_delete", None, f"Deleted endpoints: {', '.join(ids)}")
