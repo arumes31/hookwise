@@ -169,3 +169,27 @@ def test_check_auth_disabled_when_no_env():
     os.environ.pop("GUI_USERNAME", None)
     os.environ.pop("GUI_PASSWORD", None)
     assert check_auth("anything", "anything") is True
+
+
+@patch.dict(os.environ, {"GUI_USERNAME": "admin"}, clear=True)
+def test_check_auth_disabled_missing_password():
+    """Auth should be disabled if GUI_PASSWORD is not set."""
+    assert check_auth("any", "any") is True
+
+
+@patch.dict(os.environ, {"GUI_PASSWORD": "pass"}, clear=True)
+def test_check_auth_disabled_missing_username():
+    """Auth should be disabled if GUI_USERNAME is not set."""
+    assert check_auth("any", "any") is True
+
+
+@patch.dict(os.environ, {"GUI_USERNAME": "", "GUI_PASSWORD": "pass"}, clear=True)
+def test_check_auth_disabled_empty_username():
+    """Auth should be disabled if GUI_USERNAME is empty."""
+    assert check_auth("any", "any") is True
+
+
+@patch.dict(os.environ, {"GUI_USERNAME": "admin", "GUI_PASSWORD": ""}, clear=True)
+def test_check_auth_disabled_empty_password():
+    """Auth should be disabled if GUI_PASSWORD is empty."""
+    assert check_auth("any", "any") is True
