@@ -1136,8 +1136,8 @@ def handle_webhook_logic(
                 try:
                     # Capture response body if available (e.g., from requests)
                     error_msg += f" | Details: {e.response.text}"
-                except Exception:
-                    pass
+                except Exception as nested_e:
+                    logger.debug(f"Could not extract response text: {nested_e}")
 
             log_entry.error_message = error_msg
             log_entry.processing_time = time.time() - start_time
