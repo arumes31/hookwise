@@ -65,7 +65,7 @@ six==1.17.0
 sqlalchemy==2.0.48
 types-requests==2.33.0.20260402
 typing_extensions==4.15.0
-tzdata==2025.3
+tzdata==2026.1
 tzlocal==5.3.1
 urllib3==2.6.3
 vine==5.1.0
