@@ -271,7 +271,6 @@ def _register() -> None:
             except Exception:
                 pass
 
-        import re as _re
 
         mapped_vals: dict[str, str] = {}
         overridable = [
@@ -289,7 +288,7 @@ def _register() -> None:
             if field in json_mapping:
                 mapping_val = json_mapping[field]
                 if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = _re.compile(r"(\$\S+|[^\s]+)")
+                    token_re = re.compile(r"(\$\S+|[^\s]+)")
                     tokens = token_re.findall(mapping_val)
                     resolved: list[tuple[str, bool]] = []
                     any_resolved = False
@@ -335,7 +334,7 @@ def _register() -> None:
             rule_regex = rule.get("regex")
             if rule_path and rule_regex:
                 val = str(resolve_jsonpath(data, rule_path))
-                if _re.search(rule_regex, val, _re.IGNORECASE):
+                if re.search(rule_regex, val, re.IGNORECASE):
                     matched_rules.append(
                         {
                             "regex": rule_regex,
