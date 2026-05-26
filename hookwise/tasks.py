@@ -144,9 +144,43 @@ def verify_endpoint_health() -> None:
         priorities = cw_client.get_priorities()
         priority_names = {p["name"] for p in priorities}
 
-        status_cache: Dict[int, Any] = {}
-
         configs = WebhookConfig.query.filter_by(is_enabled=True).all()
+
+        # Pre-populate status cache to avoid N+1 API calls
+        status_cache: Dict[int, Any] = {}
+        unique_bids = {board_map[c.board] for c in configs if c.board and c.board in board_map and c.status}
+
+        if unique_bids:
+            bid_list = list(unique_bids)
+            keys = [f"hookwise_cw_statuses_{bid}" for bid in bid_list]
+            try:
+                cached_data = redis_client.mget(keys)
+            except Exception as e:
+                logger.warning(f"Redis MGET failed in health check: {e}")
+                cached_data = [None] * len(bid_list)
+
+            for i, bid in enumerate(bid_list):
+                raw = cached_data[i]
+                if raw:
+                    try:
+                        statuses = json.loads(raw)
+                        status_cache[bid] = {s["name"] for s in statuses}
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                if bid not in status_cache:
+                    # Fallback to API if not in Redis
+                    statuses = cw_client.get_board_statuses(bid)
+                    if statuses:
+                        status_cache[bid] = {s["name"] for s in statuses}
+                        # Update global cache (aligns with API route cache)
+                        try:
+                            redis_client.set(f"hookwise_cw_statuses_{bid}", json.dumps(statuses), ex=3600)
+                        except Exception:
+                            pass
+                    else:
+                        status_cache[bid] = set()
+
         updates = 0
 
         for config in configs:
@@ -160,11 +194,8 @@ def verify_endpoint_health() -> None:
                     # 2. Check Status
                     if config.status:
                         bid = board_map[config.board]
-                        if bid not in status_cache:
-                            statuses = cw_client.get_board_statuses(bid)
-                            status_cache[bid] = {s["name"] for s in statuses}
-
-                        if config.status not in status_cache[bid]:
+                        # status_cache is already populated
+                        if config.status not in status_cache.get(bid, set()):
                             errors.append(f"Status '{config.status}' not found")
 
             # 3. Check Priority
