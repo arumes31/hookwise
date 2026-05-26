@@ -193,3 +193,19 @@ def test_check_auth_disabled_empty_username():
 def test_check_auth_disabled_empty_password():
     """Auth should be disabled if GUI_PASSWORD is empty."""
     assert check_auth("any", "any") is True
+
+def test_get_fernet_missing_key():
+    """get_fernet should raise RuntimeError if ENCRYPTION_KEY is missing."""
+    with patch("hookwise.utils._fernet_instance", None):
+        with patch.dict(os.environ, {}, clear=True):
+            from hookwise.utils import get_fernet
+            with pytest.raises(RuntimeError, match="ENCRYPTION_KEY environment variable is not set"):
+                get_fernet()
+
+def test_get_fernet_invalid_key():
+    """get_fernet should raise RuntimeError if ENCRYPTION_KEY is invalid."""
+    with patch("hookwise.utils._fernet_instance", None):
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": "invalid-key-not-base64"}, clear=True):
+            from hookwise.utils import get_fernet
+            with pytest.raises(RuntimeError, match="Invalid ENCRYPTION_KEY"):
+                get_fernet()
