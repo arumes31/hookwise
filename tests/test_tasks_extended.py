@@ -27,6 +27,7 @@ def app():
     with app.app_context():
         db.create_all()
         yield app
+        db.session.remove()
         db.drop_all()
 
     with app.app_context():
@@ -81,7 +82,12 @@ def test_timeout_fallback_to_created_at(app, mock_cw, mock_redis):
     with app.app_context():
         now = datetime.now(timezone.utc)
         c = WebhookConfig(
-            name="Fallback", timeout_alerts_enabled=True, is_enabled=True, is_draft=False, last_seen_at=None, timeout_hours=2
+            name="Fallback",
+            timeout_alerts_enabled=True,
+            is_enabled=True,
+            is_draft=False,
+            last_seen_at=None,
+            timeout_hours=2,
         )
         c.created_at = now - timedelta(hours=3)
         db.session.add(c)

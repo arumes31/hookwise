@@ -14,7 +14,7 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
-from .utils import log_audit, log_to_web, resolve_jsonpath
+from .utils import log_to_web, resolve_jsonpath
 
 logger = logging.getLogger(__name__)
 
