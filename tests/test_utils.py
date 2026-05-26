@@ -1,13 +1,15 @@
-"""Tests for utility functions: encryption, jsonpath, masking, auth."""
+"""Tests for utility functions: encryption, jsonpath, masking, auth, and LLM."""
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.utils import (
+    call_llm,
     check_auth,
     decrypt_string,
     encrypt_string,
@@ -193,3 +195,74 @@ def test_check_auth_disabled_empty_username():
 def test_check_auth_disabled_empty_password():
     """Auth should be disabled if GUI_PASSWORD is empty."""
     assert check_auth("any", "any") is True
+
+
+# --- LLM ---
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_success(mock_post):
+    """Test successful LLM call."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"response": "Hello from LLM"}
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt")
+
+    assert result == "Hello from LLM"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert kwargs["json"]["prompt"] == "test prompt"
+    assert "You are a helpful assistant" in kwargs["json"]["system"]
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_custom_system_prompt(mock_post):
+    """Test LLM call with a custom system prompt."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"response": "Custom response"}
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt", system_prompt="Custom system prompt")
+
+    assert result == "Custom response"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert kwargs["json"]["system"] == "Custom system prompt"
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_http_error(mock_post):
+    """Test LLM call with HTTP error."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("500 Server Error")
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt")
+
+    assert result is None
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_exception(mock_post):
+    """Test LLM call with connection exception."""
+    mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+
+    result = call_llm("test prompt")
+
+    assert result is None
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_empty_response(mock_post):
+    """Test LLM call with empty/missing response field."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}  # Missing "response" key
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt")
+
+    assert result == ""  # response.json().get("response", "").strip() -> ""
