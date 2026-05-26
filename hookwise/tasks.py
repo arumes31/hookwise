@@ -5,7 +5,7 @@ import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
@@ -154,7 +154,7 @@ def verify_endpoint_health() -> None:
             bid_list = list(unique_bids)
             keys = [f"hookwise_cw_statuses_{bid}" for bid in bid_list]
             try:
-                cached_data = redis_client.mget(keys)
+                cached_data: List[Optional[bytes]] = cast(List[Optional[bytes]], redis_client.mget(keys))
             except Exception as e:
                 logger.warning(f"Redis MGET failed in health check: {e}")
                 cached_data = [None] * len(bid_list)
