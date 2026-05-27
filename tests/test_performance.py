@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -35,7 +36,9 @@ def client(app):
         db.drop_all()
 
 
-def test_reorder_performance(client, app):
+@patch("hookwise.tasks.redis_client")
+def test_reorder_performance(mock_redis, client, app):
+    mock_redis.get.return_value = None
     num_endpoints = 100
     endpoint_ids = []
 
