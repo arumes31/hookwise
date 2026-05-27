@@ -5,13 +5,11 @@ import os
 import re
 import secrets
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
-from datetime import timedelta, timezone
 from typing import Any, Tuple, cast
 
-from flask import (Response, current_app, flash, jsonify, redirect,
-                   render_template, request, session, url_for)
+from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
 
