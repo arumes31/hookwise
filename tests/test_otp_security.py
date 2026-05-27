@@ -1,9 +1,11 @@
-import pytest
 import pyotp
+import pytest
+
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import User
 from hookwise.utils import decrypt_string, encrypt_string
+
 
 @pytest.fixture
 def app():
