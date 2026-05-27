@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -12,10 +13,12 @@ from hookwise.models import User, WebhookConfig
 @pytest.fixture
 def app():
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    return app
+    with patch("hookwise.tasks.redis_client") as mock_redis:
+        mock_redis.get.return_value = None
+        app = create_app()
+        app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
+        yield app
 
 
 @pytest.fixture
@@ -35,7 +38,9 @@ def client(app):
         db.drop_all()
 
 
-def test_reorder_performance(client, app):
+@patch("hookwise.tasks.redis_client")
+def test_reorder_performance(mock_redis, client, app):
+    mock_redis.get.return_value = None
     num_endpoints = 100
     endpoint_ids = []
 
