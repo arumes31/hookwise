@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -30,12 +31,16 @@ def client(app):
             with client.session_transaction() as sess:
                 sess["user_id"] = user.id
                 sess["username"] = user.username
+                sess["role"] = "admin"
             yield client
         db.session.remove()
         db.drop_all()
 
 
-def test_reorder_performance(client, app):
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.extensions.redis_client")
+@patch("hookwise.api.redis_client")
+def test_reorder_performance(mock_redis_api, mock_redis_ext, mock_redis_tasks, client, app):
     num_endpoints = 100
     endpoint_ids = []
 

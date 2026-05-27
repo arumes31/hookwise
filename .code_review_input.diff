@@ -1,0 +1,78 @@
+diff --git a/tests/test_performance.py b/tests/test_performance.py
+index xxxxxxx..xxxxxxx 100644
+--- a/tests/test_performance.py
++++ b/tests/test_performance.py
+@@ -1,6 +1,7 @@
+ import os
+ import time
++from unittest.mock import patch
+
+ import pytest
+ from flask import json
+@@ -31,11 +32,15 @@ def client(app):
+             with client.session_transaction() as sess:
+                 sess["user_id"] = user.id
+                 sess["username"] = user.username
++                sess["role"] = "admin"
+             yield client
+         db.session.remove()
+         db.drop_all()
+
+
++@patch("hookwise.tasks.redis_client")
++@patch("hookwise.extensions.redis_client")
++@patch("hookwise.api.redis_client")
+ def test_reorder_performance(client, app):
+     num_endpoints = 100
+     endpoint_ids = []
+diff --git a/tests/test_tasks.py b/tests/test_tasks.py
+new file mode 100644
+index 0000000..xxxxxxx
+--- /dev/null
++++ b/tests/test_tasks.py
+@@ -0,0 +1,48 @@
++from unittest.mock import patch
++import pytest
++from hookwise.tasks import run_llm_rca
++
++def test_run_llm_rca_success():
++    payload = {"key": "value"}
++    config_id = "test-config"
++    ai_prompt_template = "Custom prompt"
++
++    with patch("hookwise.utils.call_llm") as mock_call_llm:
++        mock_call_llm.return_value = "Possible root cause: CPU spike"
++
++        result = run_llm_rca(config_id, payload, ai_prompt_template)
++
++        assert result["status"] == "ok"
++        assert result["rca"] == "Possible root cause: CPU spike"
++        mock_call_llm.assert_called_once()
++
++def test_run_llm_rca_no_response():
++    payload = {"key": "value"}
++    config_id = "test-config"
++    ai_prompt_template = None
++
++    with patch("hookwise.utils.call_llm") as mock_call_llm:
++        mock_call_llm.return_value = None
++
++        result = run_llm_rca(config_id, payload, ai_prompt_template)
++
++        assert result["status"] == "error"
++        assert "no response" in result["rca"]
++
++def test_run_llm_rca_exception():
++    payload = {"key": "value"}
++    config_id = "test-config"
++    ai_prompt_template = None
++
++    with patch("hookwise.utils.call_llm") as mock_call_llm, +         patch("hookwise.tasks.logger") as mock_logger:
++
++        mock_call_llm.side_effect = Exception("Connection refused")
++
++        result = run_llm_rca(config_id, payload, ai_prompt_template)
++
++        assert result["status"] == "error"
++        assert result["rca"] == "LLM error: Exception"
++        mock_logger.error.assert_called_once()
