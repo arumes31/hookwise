@@ -5,7 +5,7 @@ import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Set, Tuple, cast
 
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
@@ -129,6 +129,44 @@ def cleanup_logs() -> None:
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
 
+
+def _get_board_statuses(board_id: int, status_cache: Dict[int, Set[str]]) -> Set[str]:
+    """Get board statuses from cache or fetch from ConnectWise."""
+    if board_id not in status_cache:
+        statuses = cw_client.get_board_statuses(board_id)
+        status_cache[board_id] = {s["name"] for s in statuses}
+    return status_cache[board_id]
+
+
+def _validate_config_health(
+    config: "WebhookConfig",
+    board_map: Dict[str, int],
+    priority_names: Set[str],
+    status_cache: Dict[int, Set[str]],
+) -> Tuple[str, str]:
+    """Validate a single config and return its health status and message."""
+    errors = []
+
+    # 1. Check Board
+    if config.board:
+        if config.board not in board_map:
+            errors.append(f"Board '{config.board}' not found")
+        elif config.status:
+            # 2. Check Status
+            bid = board_map[config.board]
+            board_statuses = _get_board_statuses(bid, status_cache)
+            if config.status not in board_statuses:
+                errors.append(f"Status '{config.status}' not found")
+
+    # 3. Check Priority
+    if config.priority and config.priority not in priority_names:
+        errors.append(f"Priority '{config.priority}' not found")
+
+    if errors:
+        return "ERROR", " | ".join(errors)
+    return "OK", "Configuration validated"
+
+
 @celery.task(name="hookwise.verify_endpoint_health")  # type: ignore[untyped-decorator]
 def verify_endpoint_health() -> None:
     """Validate endpoint configurations against ConnectWise."""
@@ -144,39 +182,13 @@ def verify_endpoint_health() -> None:
         priorities = cw_client.get_priorities()
         priority_names = {p["name"] for p in priorities}
 
-        status_cache: Dict[int, Any] = {}
+        status_cache: Dict[int, Set[str]] = {}
 
         configs = WebhookConfig.query.filter_by(is_enabled=True).all()
         updates = 0
 
         for config in configs:
-            errors = []
-
-            # 1. Check Board
-            if config.board:
-                if config.board not in board_map:
-                    errors.append(f"Board '{config.board}' not found")
-                else:
-                    # 2. Check Status
-                    if config.status:
-                        bid = board_map[config.board]
-                        if bid not in status_cache:
-                            statuses = cw_client.get_board_statuses(bid)
-                            status_cache[bid] = {s["name"] for s in statuses}
-
-                        if config.status not in status_cache[bid]:
-                            errors.append(f"Status '{config.status}' not found")
-
-            # 3. Check Priority
-            if config.priority and config.priority not in priority_names:
-                errors.append(f"Priority '{config.priority}' not found")
-
-            # Determine Status
-            new_status = "OK"
-            new_msg = "Configuration validated"
-            if errors:
-                new_status = "ERROR"
-                new_msg = " | ".join(errors)
+            new_status, new_msg = _validate_config_health(config, board_map, priority_names, status_cache)
 
             # Update if changed
             if config.config_health_status != new_status or config.config_health_message != new_msg:
