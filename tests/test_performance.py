@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -12,10 +13,11 @@ from hookwise.models import User, WebhookConfig
 @pytest.fixture
 def app():
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    return app
+    with patch("hookwise.tasks.redis_client"):
+        app = create_app()
+        app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
+        yield app
 
 
 @pytest.fixture
@@ -52,9 +54,14 @@ def test_reorder_performance(client, app):
     # Reverse the order for the request
     new_order = endpoint_ids[::-1]
 
-    start_time = time.time()
-    response = client.post("/endpoint/reorder", data=json.dumps({"order": new_order}), content_type="application/json")
-    end_time = time.time()
+    with patch("hookwise.api.redis_client"), patch("hookwise.tasks.redis_client"):
+        start_time = time.time()
+        response = client.post(
+            "/endpoint/reorder",
+            data=json.dumps({"order": new_order}),
+            content_type="application/json"
+        )
+        end_time = time.time()
 
     assert response.status_code == 200
     duration = end_time - start_time
