@@ -12,19 +12,9 @@ from .models import WebhookConfig, WebhookLog
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 
-def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
-    """Safely parse an integer from form data with bounds checking."""
-    val = request.form.get(key)
-    if not val or not val.strip():
-        return default
-    try:
-        parsed = int(val)
-        return max(min_val, min(max_val, parsed))
-    except (ValueError, TypeError):
-        return default
+def _register() -> None:
+    from .routes import main_bp
 
-
-def _register_display_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
     @auth_required
     def toggle_pin(id: str) -> Any:
@@ -61,22 +51,17 @@ def _register_display_routes(main_bp: Any) -> None:
         db.session.commit()
         return jsonify({"status": "success"})
 
-    @main_bp.route("/endpoint/quick-update/<id>", methods=["POST"])
-    @auth_required
-    def quick_update_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        field = request.json.get("field")
-        value = request.json.get("value")
+    def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
+        """Safely parse an integer from form data with bounds checking."""
+        val = request.form.get(key)
+        if not val or not val.strip():
+            return default
+        try:
+            parsed = int(val)
+            return max(min_val, min(max_val, parsed))
+        except (ValueError, TypeError):
+            return default
 
-        if field in ["board", "priority", "close_status", "status"]:
-            setattr(config, field, value)
-            db.session.commit()
-            log_audit("quick_update", id, f"Endpoint {config.name} {field} updated to {value}")
-            return jsonify({"status": "success"})
-        return jsonify({"status": "error", "message": "Invalid field"}), 400
-
-
-def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
     def new_endpoint() -> Any:
@@ -157,17 +142,45 @@ def _register_crud_routes(main_bp: Any) -> None:
             return redirect(url_for("main.index"))
         return render_template("form.html", config=config, base_url=request.url_root.rstrip("/"))
 
-    @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
     @auth_required
-    def delete_endpoint(id: str) -> Any:
+    def toggle_endpoint(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
-        name = config.name
-        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
-        db.session.delete(config)
+        config.is_enabled = not config.is_enabled
         db.session.commit()
-        log_audit("delete", id, f"Endpoint {name} deleted")
-        flash(f'Endpoint "{name}" deleted.')
+        action = "enable" if config.is_enabled else "disable"
+        log_audit(action, id, f"Endpoint {config.name} {action}d")
+        return jsonify({"status": "success", "is_enabled": config.is_enabled})
+
+    @main_bp.route("/endpoint/rotate-token/<id>", methods=["POST"])
+    @auth_required
+    def rotate_token(id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(id)
+        new_token = secrets.token_urlsafe(32)
+        config.bearer_token = encrypt_string(new_token)
+        config.last_rotated_at = datetime.now(timezone.utc)
+        db.session.commit()
+        log_audit("rotate_token", id, f"Token for {config.name} rotated")
+
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+            return jsonify({"status": "success", "token": new_token})
+
+        flash(f'Token for "{config.name}" rotated successfully!')
         return redirect(url_for("main.index"))
+
+    @main_bp.route("/endpoint/quick-update/<id>", methods=["POST"])
+    @auth_required
+    def quick_update_endpoint(id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(id)
+        field = request.json.get("field")
+        value = request.json.get("value")
+
+        if field in ["board", "priority", "close_status", "status"]:
+            setattr(config, field, value)
+            db.session.commit()
+            log_audit("quick_update", id, f"Endpoint {config.name} {field} updated to {value}")
+            return jsonify({"status": "success"})
+        return jsonify({"status": "error", "message": "Invalid field"}), 400
 
     @main_bp.route("/endpoint/clone/<id>", methods=["POST"])
     @auth_required
@@ -208,42 +221,24 @@ def _register_crud_routes(main_bp: Any) -> None:
         flash(f'Endpoint "{config.name}" cloned successfully!')
         return redirect(url_for("main.index"))
 
-
-def _register_action_routes(main_bp: Any) -> None:
-    @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
-    @auth_required
-    def toggle_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        config.is_enabled = not config.is_enabled
-        db.session.commit()
-        action = "enable" if config.is_enabled else "disable"
-        log_audit(action, id, f"Endpoint {config.name} {action}d")
-        return jsonify({"status": "success", "is_enabled": config.is_enabled})
-
-    @main_bp.route("/endpoint/rotate-token/<id>", methods=["POST"])
-    @auth_required
-    def rotate_token(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        new_token = secrets.token_urlsafe(32)
-        config.bearer_token = encrypt_string(new_token)
-        config.last_rotated_at = datetime.now(timezone.utc)
-        db.session.commit()
-        log_audit("rotate_token", id, f"Token for {config.name} rotated")
-
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
-            return jsonify({"status": "success", "token": new_token})
-
-        flash(f'Token for "{config.name}" rotated successfully!')
-        return redirect(url_for("main.index"))
-
     @main_bp.route("/endpoint/token/<id>")
     @auth_required
     def get_endpoint_token(id: str) -> Any:
         config = WebhookConfig.query.get_or_404(id)
         return jsonify({"token": decrypt_string(config.bearer_token)})
 
+    @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
+    @auth_required
+    def delete_endpoint(id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(id)
+        name = config.name
+        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
+        db.session.delete(config)
+        db.session.commit()
+        log_audit("delete", id, f"Endpoint {name} deleted")
+        flash(f'Endpoint "{name}" deleted.')
+        return redirect(url_for("main.index"))
 
-def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
     @auth_required
     def bulk_delete_endpoints() -> Any:
@@ -297,15 +292,6 @@ def _register_bulk_routes(main_bp: Any) -> None:
             mimetype="application/json",
             headers={"Content-Disposition": "attachment;filename=hookwise_export.json"},
         )
-
-
-def _register() -> None:
-    from .routes import main_bp
-
-    _register_display_routes(main_bp)
-    _register_crud_routes(main_bp)
-    _register_action_routes(main_bp)
-    _register_bulk_routes(main_bp)
 
 
 _register()
