@@ -8,6 +8,7 @@ import pytest
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.utils import (
+    call_llm,
     check_auth,
     decrypt_string,
     encrypt_string,
@@ -193,3 +194,61 @@ def test_check_auth_disabled_empty_username():
 def test_check_auth_disabled_empty_password():
     """Auth should be disabled if GUI_PASSWORD is empty."""
     assert check_auth("any", "any") is True
+
+
+# --- LLM ---
+
+
+def test_call_llm_success():
+    """Test successful LLM call and response extraction."""
+    with patch("requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"response": "  Clean Response  "}
+
+        result = call_llm("test prompt")
+
+        assert result == "Clean Response"
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        assert kwargs["json"]["prompt"] == "test prompt"
+
+
+def test_call_llm_http_error():
+    """Test LLM call with an HTTP error response."""
+    import requests
+
+    with patch("requests.post") as mock_post:
+        mock_post.return_value.status_code = 500
+        mock_post.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError("Server Error")
+
+        result = call_llm("test prompt")
+
+        assert result is None
+
+
+def test_call_llm_exception():
+    """Test LLM call with a connection exception."""
+    import requests
+
+    with patch("requests.post") as mock_post:
+        mock_post.side_effect = requests.exceptions.ConnectionError("Connection Failed")
+
+        result = call_llm("test prompt")
+
+        assert result is None
+
+
+@patch.dict(os.environ, {"OLLAMA_HOST": "http://test-host:11434", "LLM_MAX_TOKENS": "128", "LLM_TIMEOUT": "10"})
+def test_call_llm_env_vars():
+    """Test LLM call respects environment variables."""
+    with patch("requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"response": "ok"}
+
+        call_llm("test prompt")
+
+        mock_post.assert_called_once()
+        args, kwargs = mock_post.call_args
+        assert args[0] == "http://test-host:11434/api/generate"
+        assert kwargs["json"]["options"]["num_predict"] == 128
+        assert kwargs["timeout"] == 10
