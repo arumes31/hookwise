@@ -245,7 +245,9 @@ def _register() -> None:
         except Exception:
             return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
 
-        from .tasks import is_in_maintenance
+        import re as _re
+
+        from .tasks import TOKEN_RE, is_in_maintenance
         from .utils import resolve_jsonpath
 
         steps = []
@@ -271,7 +273,6 @@ def _register() -> None:
             except Exception:
                 pass
 
-        import re as _re
 
         mapped_vals: dict[str, str] = {}
         overridable = [
@@ -289,8 +290,7 @@ def _register() -> None:
             if field in json_mapping:
                 mapping_val = json_mapping[field]
                 if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = _re.compile(r"(\$\S+|[^\s]+)")
-                    tokens = token_re.findall(mapping_val)
+                    tokens = TOKEN_RE.findall(mapping_val)
                     resolved: list[tuple[str, bool]] = []
                     any_resolved = False
                     for tok in tokens:
