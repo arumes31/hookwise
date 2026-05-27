@@ -7,7 +7,7 @@ import secrets
 import time
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
-from typing import Any, Tuple, cast
+from typing import Any, Dict, Tuple, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
@@ -967,17 +967,9 @@ def _register() -> None:
         log_audit("feedback_submitted", None, f"Feedback: {message} | UA: {data.get('ua')}")
         return jsonify({"status": "success"})
 
-    @main_bp.route("/api/debug/process", methods=["POST"])
-    @auth_required
-    def debug_process() -> Any:
-        data = request.json.get("payload")
-        config_data = request.json.get("config", {})
-        if not data:
-            return jsonify({"status": "error", "message": "No sample payload provided"}), 400
-
-        steps = []
-        results = {}
-
+    def _determine_alert_type(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         trigger_field = config_data.get("trigger_field", "heartbeat.status")
         actual_val = str(resolve_jsonpath(data, trigger_field))
         steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
@@ -993,6 +985,9 @@ def _register() -> None:
             results["alert_type"] = "GENERIC"
         steps.append(f"Alert type determined as: {results['alert_type']}")
 
+    def _apply_json_mapping(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         mapping_str = config_data.get("json_mapping")
         if mapping_str:
             try:
@@ -1005,6 +1000,9 @@ def _register() -> None:
             except Exception as e:
                 steps.append(f"Error parsing JSON Mapping: {e}")
 
+    def _apply_routing_rules(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         rules_str = config_data.get("routing_rules")
         if rules_str:
             try:
@@ -1025,6 +1023,9 @@ def _register() -> None:
             except Exception as e:
                 steps.append(f"Error parsing Routing Rules: {e}")
 
+    def _resolve_summary_and_company(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         monitor = data.get("monitor", {})
         monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
         prefix = config_data.get("ticket_prefix", "Alert:")
@@ -1036,6 +1037,22 @@ def _register() -> None:
             company_id_match.group(1) if company_id_match else config_data.get("customer_id_default")
         )
         steps.append(f"Target Company Identifier: '{results['company']}'")
+
+    @main_bp.route("/api/debug/process", methods=["POST"])
+    @auth_required
+    def debug_process() -> Any:
+        data = request.json.get("payload")
+        config_data = request.json.get("config", {})
+        if not data:
+            return jsonify({"status": "error", "message": "No sample payload provided"}), 400
+
+        steps = []
+        results = {}
+
+        _determine_alert_type(data, config_data, results, steps)
+        _apply_json_mapping(data, config_data, results, steps)
+        _apply_routing_rules(data, config_data, results, steps)
+        _resolve_summary_and_company(data, config_data, results, steps)
 
         return jsonify({"status": "success", "steps": steps, "results": results})
 
