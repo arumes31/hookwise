@@ -31,7 +31,7 @@ VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() 
 
 cw_client = ConnectWiseClient()
 _cached_mappings = None
-_last_cache_update = 0
+_last_cache_update = 0.0
 CACHE_REFRESH_INTERVAL = 300  # 5 minutes
 
 def get_all_global_mappings() -> list[dict[str, Any]]:
@@ -956,11 +956,9 @@ def handle_webhook_logic(
                             import fnmatch
 
                             for w_mapping in all_mappings:
-                                has_wildcard = w_mapping.get("tenant_value") and (
-                                    "*" in w_mapping.get("tenant_value") or "?" in w_mapping.get("tenant_value")
-                                )
-                                if has_wildcard:
-                                    if fnmatch.fnmatch(tenant_val, w_mapping.get("tenant_value")):
+                                t_val = w_mapping.get("tenant_value")
+                                if isinstance(t_val, str) and ("*" in t_val or "?" in t_val):
+                                    if fnmatch.fnmatch(tenant_val, t_val):
                                         mapping = w_mapping
                                         break
                         # 3. Try LLM semantic match if still no match
