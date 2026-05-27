@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -35,7 +36,15 @@ def client(app):
         db.drop_all()
 
 
-def test_reorder_performance(client, app):
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.api.redis_client")
+@patch("hookwise.extensions.redis_client")
+def test_reorder_performance(mock_ext_redis, mock_api_redis, mock_tasks_redis, client, app):
+    # Mock redis to avoid ConnectionError
+    for r in [mock_ext_redis, mock_api_redis, mock_tasks_redis]:
+        r.get.return_value = None
+        r.ping.return_value = True
+
     num_endpoints = 100
     endpoint_ids = []
 
