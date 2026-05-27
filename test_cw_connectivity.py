@@ -24,17 +24,21 @@ def load_credentials() -> Optional[Dict[str, str]]:
     print(f"Private Key: {'*' * 8}" if private_key else "Private Key: Not Set")
     print(f"Client ID: {client_id if client_id else 'Not Set'}")
 
-    if not all([company, public_key, private_key]):
+    if not company or not public_key or not private_key:
         print("ERROR: Missing required credentials (CW_COMPANY, CW_PUBLIC_KEY, CW_PRIVATE_KEY)")
         return None
 
-    return {
+    creds = {
         "base_url": base_url,
         "company": company,
         "public_key": public_key,
         "private_key": private_key,
-        "client_id": client_id,
     }
+
+    if client_id:
+        creds["client_id"] = client_id
+
+    return creds
 
 
 def get_auth_headers(creds: Dict[str, str]) -> Dict[str, str]:
