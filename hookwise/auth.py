@@ -25,9 +25,33 @@ def _bp() -> Any:
 # This module is imported at the bottom of routes.py, so main_bp already exists.
 
 
-def _register() -> None:
-    from .routes import main_bp
+def _verify_credentials(username: str | None, password: str | None) -> User | None:
+    """Verify user credentials and return the User object if successful."""
+    if not username or not password:
+        return None
+    user = User.query.filter_by(username=username).first()
+    if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
+        return user
+    return None
 
+
+def _verify_otp(otp: str | None, secret: str | None) -> bool:
+    """Verify the provided OTP against the secret."""
+    if not otp or not secret:
+        return False
+    return pyotp.TOTP(cast(str, secret)).verify(cast(str, otp))
+
+
+def _generate_qr_data(username: str, secret: str) -> str:
+    """Generate a base64-encoded QR code for 2FA setup."""
+    totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=username, issuer_name="HookWise")
+    qr = segno.make(totp_uri)
+    out = io.BytesIO()
+    qr.save(out, kind="png", scale=5)
+    return f"data:image/png;base64,{base64.b64encode(out.getvalue()).decode()}"
+
+
+def _register_login_routes(main_bp: Any) -> None:
     @main_bp.route("/login", methods=["GET", "POST"])
     @limiter.limit("5 per minute")
     def login() -> Any:
@@ -40,7 +64,7 @@ def _register() -> None:
                 otp = request.form.get("otp")
                 user = User.query.get(pending_user_id)
 
-                if user and pyotp.TOTP(cast(str, user.otp_secret)).verify(cast(str, otp)):
+                if user and _verify_otp(otp, user.otp_secret):
                     # Success
                     session["user_id"] = user.id
                     session["username"] = user.username
@@ -60,8 +84,8 @@ def _register() -> None:
             username = request.form.get("username")
             password = request.form.get("password")
 
-            user = User.query.filter_by(username=username).first()
-            if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
+            user = _verify_credentials(username, password)
+            if user:
                 if user.is_2fa_enabled:
                     session["pending_user_id"] = user.id
                     return render_template("login.html", step="2fa")
@@ -81,6 +105,8 @@ def _register() -> None:
 
         return render_template("login.html")
 
+
+def _register_2fa_routes(main_bp: Any) -> None:
     @main_bp.route("/settings/2fa/setup", methods=["GET", "POST"])
     @auth_required
     def setup_2fa() -> Any:
@@ -92,7 +118,7 @@ def _register() -> None:
         if request.method == "POST":
             otp = request.form.get("otp")
             secret = session.get("pending_otp_secret")
-            if secret and pyotp.TOTP(cast(str, secret)).verify(cast(str, otp)):
+            if _verify_otp(otp, secret):
                 user.otp_secret = secret
                 user.is_2fa_enabled = True
                 db.session.commit()
@@ -105,12 +131,7 @@ def _register() -> None:
         # GET: Generate secret and QR code
         secret = pyotp.random_base32()
         session["pending_otp_secret"] = secret
-        totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user.username, issuer_name="HookWise")
-
-        qr = segno.make(totp_uri)
-        out = io.BytesIO()
-        qr.save(out, kind="png", scale=5)
-        qr_data = f"data:image/png;base64,{base64.b64encode(out.getvalue()).decode()}"
+        qr_data = _generate_qr_data(user.username, secret)
 
         return render_template("setup_2fa.html", qr_data=qr_data, secret=secret)
 
@@ -125,12 +146,22 @@ def _register() -> None:
         flash("2FA has been disabled.", "warning")
         return redirect(url_for("main.settings"))
 
+
+def _register_logout_routes(main_bp: Any) -> None:
     @main_bp.route("/logout")
     def logout() -> Any:
         username = session.get("username")
         session.clear()
         log_audit("logout", None, f"User {username} logged out")
         return redirect(url_for("main.login"))
+
+
+def _register() -> None:
+    from .routes import main_bp
+
+    _register_login_routes(main_bp)
+    _register_2fa_routes(main_bp)
+    _register_logout_routes(main_bp)
 
 
 _register()
