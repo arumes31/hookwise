@@ -1,5 +1,6 @@
 import os
 from unittest.mock import patch
+
 import pytest
 
 os.environ["SOCKETIO_ASYNC_MODE"] = "threading"
@@ -9,6 +10,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["TESTING"] = "true"
 os.environ["LIMITER_STORAGE_URI"] = "memory://"
 os.environ["GUI_PASSWORD"] = "testpass"
+
 
 @pytest.fixture(autouse=True)
 def mock_redis():
