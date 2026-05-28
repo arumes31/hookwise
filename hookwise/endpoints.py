@@ -12,9 +12,19 @@ from .models import WebhookConfig, WebhookLog
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 
-def _register() -> None:
-    from .routes import main_bp
+def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
+    """Safely parse an integer from form data with bounds checking."""
+    val = request.form.get(key)
+    if not val or not val.strip():
+        return default
+    try:
+        parsed = int(val)
+        return max(min_val, min(max_val, parsed))
+    except (ValueError, TypeError):
+        return default
 
+
+def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
     @auth_required
     def toggle_pin(id: str) -> Any:
@@ -50,17 +60,6 @@ def _register() -> None:
 
         db.session.commit()
         return jsonify({"status": "success"})
-
-    def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
-        """Safely parse an integer from form data with bounds checking."""
-        val = request.form.get(key)
-        if not val or not val.strip():
-            return default
-        try:
-            parsed = int(val)
-            return max(min_val, min(max_val, parsed))
-        except (ValueError, TypeError):
-            return default
 
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
@@ -239,6 +238,8 @@ def _register() -> None:
         flash(f'Endpoint "{name}" deleted.')
         return redirect(url_for("main.index"))
 
+
+def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
     @auth_required
     def bulk_delete_endpoints() -> Any:
@@ -292,6 +293,13 @@ def _register() -> None:
             mimetype="application/json",
             headers={"Content-Disposition": "attachment;filename=hookwise_export.json"},
         )
+
+
+def _register() -> None:
+    from .routes import main_bp
+
+    _register_crud_routes(main_bp)
+    _register_bulk_routes(main_bp)
 
 
 _register()
