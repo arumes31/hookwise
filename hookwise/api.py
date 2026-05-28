@@ -25,7 +25,7 @@ def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -41,7 +41,7 @@ def _register() -> None:
             # This mimics the log_to_web calls in tasks.py
             message = log.error_message or "Processed"
             level = "info"
-            
+
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
@@ -66,7 +66,7 @@ def _register() -> None:
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
+
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
@@ -74,36 +74,32 @@ def _register() -> None:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
+            history.append(
+                {
+                    "timestamp": log.created_at.isoformat(),
+                    "message": message,
+                    "level": level,
+                    "config_name": log.config.name if log.config else "System",
+                    "payload": payload_data,
+                    "ticket_id": log.ticket_id,
+                }
+            )
         return jsonify(history)
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -546,88 +542,58 @@ def _register() -> None:
             }
         )
 
-    @main_bp.route("/api/stats/history")
-    @auth_required
-    def get_stats_history() -> Response:
-        period = request.args.get("period", "daily")
-
+    def _get_stats_period_days(period: str) -> int:
+        """Map period name to number of days."""
         if period == "weekly":
-            days = 28
-        elif period == "monthly":
-            days = 180
-        else:
-            days = 7
+            return 28
+        if period == "monthly":
+            return 180
+        return 7
 
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+    def _parse_stats_row_date(row_date: Any) -> date | None:
+        """Safely parse date from database row."""
+        if isinstance(row_date, date):
+            return row_date
+        try:
+            return date.fromisoformat(str(row_date).split(" ")[0])
+        except ValueError:
+            try:
+                return datetime.strptime(str(row_date).split(" ")[0], "%Y-%m-%d").date()
+            except ValueError as e:
+                import logging
 
-        rows = (
-            db.session.query(
-                db.func.date(WebhookLog.created_at).label("day"),
-                WebhookLog.action,
-                db.func.count(WebhookLog.id),
-            )
-            .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status == "processed")
-            .group_by(db.func.date(WebhookLog.created_at), WebhookLog.action)
-            .all()
-        )
+                logging.error(f"Failed to parse date '{row_date}': {e}")
+                return None
 
-        counts_by_group = {}
-        for row in rows:
-            action = row[1]
-            count = row[2]
+    def _get_stats_group_key(period: str, d: date) -> str:
+        """Generate group key for a date and period."""
+        if period == "weekly":
+            year, week, _ = d.isocalendar()
+            return f"{year}-W{week}"
+        if period == "monthly":
+            return d.strftime("%Y-%m")
+        return d.strftime("%m-%d")
 
-            if isinstance(row[0], date):
-                d = row[0]
-            else:
-                try:
-                    d = date.fromisoformat(str(row[0]).split(" ")[0])
-                except ValueError:
-                    try:
-                        d = datetime.strptime(str(row[0]).split(" ")[0], "%Y-%m-%d").date()
-                    except ValueError as e:
-                        import logging
-
-                        logging.error(f"Failed to parse date '{row[0]}': {e}")
-                        continue
-
-            if period == "weekly":
-                year, week, _ = d.isocalendar()
-                group_key = f"{year}-W{week}"
-            elif period == "monthly":
-                group_key = d.strftime("%Y-%m")
-            else:
-                group_key = d.strftime("%m-%d")
-
-            if group_key not in counts_by_group:
-                counts_by_group[group_key] = {"created": 0, "updated": 0, "closed": 0}
-
-            if action == "create":
-                counts_by_group[group_key]["created"] += count
-            elif action == "update":
-                counts_by_group[group_key]["updated"] += count
-            elif action == "close":
-                counts_by_group[group_key]["closed"] += count
-
+    def _format_stats_history(
+        period: str, counts_by_group: dict[str, dict[str, int]], now: date
+    ) -> list[dict[str, Any]]:
+        """Format the final history data list based on the period."""
         history_data: list[dict[str, Any]] = []
-        now: date = datetime.now(timezone.utc).date()
-
         if period == "weekly":
+            seen: set[tuple[int, int]] = set()
+            weeks: list[tuple[int, int]] = []
+            for j in range(60):
+                d = now - timedelta(days=j)
+                year, week, _ = d.isocalendar()
+                if (year, week) not in seen:
+                    seen.add((year, week))
+                    weeks.append((year, week))
+                    if len(weeks) == 4:
+                        break
 
-            def generate_weeks(start_date: date, count: int):
-                seen: set[tuple[int, int]] = set()
-                for j in range(60):
-                    d = start_date - timedelta(days=j)
-                    year, week, _ = d.isocalendar()
-                    if (year, week) not in seen:
-                        seen.add((year, week))
-                        yield year, week
-                        if len(seen) == count:
-                            break
-
-            weeks_data: list[dict[str, Any]] = []
-            for year, week in generate_weeks(now, 4):
+            for year, week in reversed(weeks):
                 k = f"{year}-W{week}"
-                weeks_data.append(
+                history_data.append(
                     {
                         "date": f"W{week}",
                         "created": counts_by_group.get(k, {}).get("created", 0),
@@ -635,15 +601,12 @@ def _register() -> None:
                         "closed": counts_by_group.get(k, {}).get("closed", 0),
                     }
                 )
-
-            history_data.extend(reversed(weeks_data))
         elif period == "monthly":
             for i in range(5, -1, -1):
                 total_months = now.year * 12 + now.month - 1 - i
                 y, m_0 = divmod(total_months, 12)
                 m = m_0 + 1
                 k = f"{y}-{m:02d}"
-                # short month name
                 month_name = datetime(y, m, 1).strftime("%b")
                 history_data.append(
                     {
@@ -665,7 +628,47 @@ def _register() -> None:
                         "closed": counts_by_group.get(k, {}).get("closed", 0),
                     }
                 )
+        return history_data
 
+    @main_bp.route("/api/stats/history")
+    @auth_required
+    def get_stats_history() -> Response:
+        period = request.args.get("period", "daily")
+        days = _get_stats_period_days(period)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+
+        rows = (
+            db.session.query(
+                db.func.date(WebhookLog.created_at).label("day"),
+                WebhookLog.action,
+                db.func.count(WebhookLog.id),
+            )
+            .filter(db.func.date(WebhookLog.created_at) >= cutoff, WebhookLog.status == "processed")
+            .group_by(db.func.date(WebhookLog.created_at), WebhookLog.action)
+            .all()
+        )
+
+        counts_by_group = {}
+        for row in rows:
+            d = _parse_stats_row_date(row[0])
+            if not d:
+                continue
+
+            group_key = _get_stats_group_key(period, d)
+            if group_key not in counts_by_group:
+                counts_by_group[group_key] = {"created": 0, "updated": 0, "closed": 0}
+
+            action = row[1]
+            count = row[2]
+            if action == "create":
+                counts_by_group[group_key]["created"] += count
+            elif action == "update":
+                counts_by_group[group_key]["updated"] += count
+            elif action == "close":
+                counts_by_group[group_key]["closed"] += count
+
+        now: date = datetime.now(timezone.utc).date()
+        history_data = _format_stats_history(period, counts_by_group, now)
         return jsonify(history_data)
 
     # --- ConnectWise Proxy ---
