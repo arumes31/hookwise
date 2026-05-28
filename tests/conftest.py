@@ -20,8 +20,12 @@ def setup_test_env():
 
 @pytest.fixture(autouse=True)
 def mock_redis():
-    with patch("hookwise.tasks.redis_client") as mock_tasks_redis,          patch("hookwise.api.redis_client") as mock_api_redis,          patch("hookwise.metrics.redis_client") as mock_metrics_redis,          patch("hookwise.extensions.redis_client") as mock_ext_redis:
-
+    with (
+        patch("hookwise.tasks.redis_client") as mock_tasks_redis,
+        patch("hookwise.api.redis_client") as mock_api_redis,
+        patch("hookwise.metrics.redis_client") as mock_metrics_redis,
+        patch("hookwise.extensions.redis_client") as mock_ext_redis,
+    ):
         # Configure mock to return None for common lookups to avoid ConnectionError
         mock_tasks_redis.get.return_value = None
         mock_api_redis.get.return_value = None
