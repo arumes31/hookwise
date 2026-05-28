@@ -14,8 +14,8 @@ from .extensions import socketio as socketio
 _logger = logging.getLogger(__name__)
 
 
-def create_app() -> Flask:
-    app = Flask(__name__, template_folder="../templates", static_folder="../static")
+def _configure_app(app: Flask) -> None:
+    """Configure basic app settings, secret keys, and database URI."""
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
         secret_key = secrets.token_hex(32)
@@ -41,12 +41,25 @@ def create_app() -> Flask:
             "pool_pre_ping": True,
         }
 
-    # Initialize extensions
+    # ProxyFix
+    if os.environ.get("USE_PROXY") == "true":
+        num_proxies = int(os.environ.get("PROXY_FIX_COUNT", 1))
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+            app.wsgi_app, x_for=num_proxies, x_proto=num_proxies, x_host=num_proxies, x_port=num_proxies
+        )
+
+
+def _register_extensions(app: Flask) -> None:
+    """Initialize Flask extensions."""
     db.init_app(app)
     migrate.init_app(app, db)
     limiter.init_app(app)
     socketio.init_app(app)
     csrf.init_app(app)
+
+
+def _register_request_handlers(app: Flask) -> None:
+    """Register before_request and after_request hooks."""
 
     @app.after_request
     def add_header(response: Response) -> Response:
@@ -79,14 +92,6 @@ def create_app() -> Flask:
                 url = request.url.replace("http://", "https://", 1)
                 return redirect(url, code=301)
 
-    # ProxyFix
-    if os.environ.get("USE_PROXY") == "true":
-        num_proxies = int(os.environ.get("PROXY_FIX_COUNT", 1))
-        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
-            app.wsgi_app, x_for=num_proxies, x_proto=num_proxies, x_host=num_proxies, x_port=num_proxies
-        )
-
-    # Request ID middleware
     @app.before_request
     def add_request_id() -> None:
         g.request_id = str(uuid.uuid4())
@@ -111,13 +116,16 @@ def create_app() -> Flask:
                 return jsonify({"status": "error", "message": "Service under maintenance"}), 503
             return render_template("maintenance.html"), 503
 
-    # Register blueprints
-    # Sub-modules (auth, endpoints, webhook, api) are imported at the bottom
-    # of routes.py and register their routes directly on main_bp.
+
+def _register_blueprints(app: Flask) -> None:
+    """Register blueprints."""
     from .routes import main_bp
 
     app.register_blueprint(main_bp)
 
+
+def _init_db_data(app: Flask) -> None:
+    """Initialize database data like the admin user."""
     from .models import User
 
     with app.app_context():
@@ -144,6 +152,10 @@ def create_app() -> Flask:
         except Exception:
             db.session.rollback()
 
+
+def _register_error_handlers(app: Flask) -> None:
+    """Register global error handlers."""
+
     @app.errorhandler(404)
     def page_not_found(e: Any) -> Any:
         return render_template("404.html"), 404
@@ -162,9 +174,23 @@ def create_app() -> Flask:
     def rate_limit_error(e: Any) -> Any:
         return render_template("429.html"), 429
 
-    # Register CLI commands
+
+def _register_commands(app: Flask) -> None:
+    """Register CLI commands."""
     from .commands import clear_cw_cache_command
 
     app.cli.add_command(clear_cw_cache_command)
+
+
+def create_app() -> Flask:
+    app = Flask(__name__, template_folder="../templates", static_folder="../static")
+
+    _configure_app(app)
+    _register_extensions(app)
+    _register_request_handlers(app)
+    _register_blueprints(app)
+    _init_db_data(app)
+    _register_error_handlers(app)
+    _register_commands(app)
 
     return app
