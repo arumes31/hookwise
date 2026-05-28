@@ -21,11 +21,82 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
+def _determine_alert_type(data: Any, config_data: Any, steps: list[str], results: dict[str, Any]) -> None:
+    """Determine the alert type based on the trigger field."""
+    trigger_field = config_data.get("trigger_field", "heartbeat.status")
+    actual_val = str(resolve_jsonpath(data, trigger_field))
+    steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
+
+    open_val = config_data.get("open_value", "0")
+    close_val = config_data.get("close_value", "1")
+
+    if actual_val in [v.strip() for v in open_val.split(",")]:
+        results["alert_type"] = "OPEN (DOWN)"
+    elif actual_val in [v.strip() for v in close_val.split(",")]:
+        results["alert_type"] = "CLOSE (UP)"
+    else:
+        results["alert_type"] = "GENERIC"
+    steps.append(f"Alert type determined as: {results['alert_type']}")
+
+
+def _apply_json_mapping(data: Any, config_data: Any, steps: list[str], results: dict[str, Any]) -> None:
+    """Apply JSON mapping to extract custom fields."""
+    mapping_str = config_data.get("json_mapping")
+    if mapping_str:
+        try:
+            mapping = json.loads(mapping_str)
+            for field, path in mapping.items():
+                val = resolve_jsonpath(data, path)
+                if val is not None:
+                    results[field] = str(val)
+                    steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
+        except Exception as e:
+            steps.append(f"Error parsing JSON Mapping: {e}")
+
+
+def _apply_routing_rules(data: Any, config_data: Any, steps: list[str], results: dict[str, Any]) -> None:
+    """Apply routing rules to override fields."""
+    rules_str = config_data.get("routing_rules")
+    if rules_str:
+        try:
+            rules = json.loads(rules_str)
+            for i, rule in enumerate(rules):
+                path = rule.get("path")
+                regex = rule.get("regex")
+                if path and regex:
+                    val = str(resolve_jsonpath(data, path))
+                    if re.search(regex, val, re.IGNORECASE):
+                        steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
+                        overrides = rule.get("overrides", {})
+                        for k, v in overrides.items():
+                            results[k] = v
+                            steps.append(f"Override applied: {k} -> {v}")
+                    else:
+                        steps.append(f"Rule {i + 1} did NOT match: '{regex}' on '{path}'")
+        except Exception as e:
+            steps.append(f"Error parsing Routing Rules: {e}")
+
+
+def _resolve_summary_and_company(data: Any, config_data: Any, steps: list[str], results: dict[str, Any]) -> None:
+    """Resolve the final ticket summary and company identifier."""
+    monitor = data.get("monitor", {})
+    monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
+    prefix = config_data.get("ticket_prefix", "Alert:")
+    results["summary"] = results.get("summary") or (f"{prefix} {monitor_name}" if prefix else monitor_name)
+    steps.append(f"Final Ticket Summary: '{results['summary']}'")
+
+    company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
+    results["company"] = results.get("customer_id") or (
+        company_id_match.group(1) if company_id_match else config_data.get("customer_id_default")
+    )
+    steps.append(f"Target Company Identifier: '{results['company']}'")
+
+
 def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -41,7 +112,7 @@ def _register() -> None:
             # This mimics the log_to_web calls in tasks.py
             message = log.error_message or "Processed"
             level = "info"
-            
+
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
@@ -66,7 +137,7 @@ def _register() -> None:
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
+
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
@@ -74,36 +145,32 @@ def _register() -> None:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
+            history.append(
+                {
+                    "timestamp": log.created_at.isoformat(),
+                    "message": message,
+                    "level": level,
+                    "config_name": log.config.name if log.config else "System",
+                    "payload": payload_data,
+                    "ticket_id": log.ticket_id,
+                }
+            )
         return jsonify(history)
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -975,67 +1042,13 @@ def _register() -> None:
         if not data:
             return jsonify({"status": "error", "message": "No sample payload provided"}), 400
 
-        steps = []
-        results = {}
+        steps: list[str] = []
+        results: dict[str, Any] = {}
 
-        trigger_field = config_data.get("trigger_field", "heartbeat.status")
-        actual_val = str(resolve_jsonpath(data, trigger_field))
-        steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
-
-        open_val = config_data.get("open_value", "0")
-        close_val = config_data.get("close_value", "1")
-
-        if actual_val in [v.strip() for v in open_val.split(",")]:
-            results["alert_type"] = "OPEN (DOWN)"
-        elif actual_val in [v.strip() for v in close_val.split(",")]:
-            results["alert_type"] = "CLOSE (UP)"
-        else:
-            results["alert_type"] = "GENERIC"
-        steps.append(f"Alert type determined as: {results['alert_type']}")
-
-        mapping_str = config_data.get("json_mapping")
-        if mapping_str:
-            try:
-                mapping = json.loads(mapping_str)
-                for field, path in mapping.items():
-                    val = resolve_jsonpath(data, path)
-                    if val is not None:
-                        results[field] = str(val)
-                        steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
-            except Exception as e:
-                steps.append(f"Error parsing JSON Mapping: {e}")
-
-        rules_str = config_data.get("routing_rules")
-        if rules_str:
-            try:
-                rules = json.loads(rules_str)
-                for i, rule in enumerate(rules):
-                    path = rule.get("path")
-                    regex = rule.get("regex")
-                    if path and regex:
-                        val = str(resolve_jsonpath(data, path))
-                        if re.search(regex, val, re.IGNORECASE):
-                            steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
-                            overrides = rule.get("overrides", {})
-                            for k, v in overrides.items():
-                                results[k] = v
-                                steps.append(f"Override applied: {k} -> {v}")
-                        else:
-                            steps.append(f"Rule {i + 1} did NOT match: '{regex}' on '{path}'")
-            except Exception as e:
-                steps.append(f"Error parsing Routing Rules: {e}")
-
-        monitor = data.get("monitor", {})
-        monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
-        prefix = config_data.get("ticket_prefix", "Alert:")
-        results["summary"] = results.get("summary") or (f"{prefix} {monitor_name}" if prefix else monitor_name)
-        steps.append(f"Final Ticket Summary: '{results['summary']}'")
-
-        company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
-        results["company"] = results.get("customer_id") or (
-            company_id_match.group(1) if company_id_match else config_data.get("customer_id_default")
-        )
-        steps.append(f"Target Company Identifier: '{results['company']}'")
+        _determine_alert_type(data, config_data, steps, results)
+        _apply_json_mapping(data, config_data, steps, results)
+        _apply_routing_rules(data, config_data, steps, results)
+        _resolve_summary_and_company(data, config_data, steps, results)
 
         return jsonify({"status": "success", "steps": steps, "results": results})
 
