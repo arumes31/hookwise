@@ -1,4 +1,3 @@
-from unittest.mock import patch
 
 import pyotp
 import pytest
@@ -27,13 +26,6 @@ def client(app):
         db.drop_all()
 
 
-@pytest.fixture(autouse=True)
-def mock_redis():
-    """Mock Redis to avoid connection errors in before_request check_maintenance."""
-    with patch("hookwise.tasks.redis_client") as mock:
-        # Default behavior: maintenance mode is OFF (None or 'false')
-        mock.get.return_value = None
-        yield mock
 
 
 @pytest.fixture

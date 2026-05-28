@@ -14,3 +14,13 @@ import pytest
 def setup_test_env():
     # Already set at top level, but kept for clarity
     pass
+
+from unittest.mock import patch
+
+@pytest.fixture(autouse=True)
+def mock_redis():
+    """Mock Redis to avoid connection errors in before_request check_maintenance."""
+    with patch("hookwise.tasks.redis_client") as mock:
+        # Default behavior: maintenance mode is OFF (None or 'false')
+        mock.get.return_value = None
+        yield mock
