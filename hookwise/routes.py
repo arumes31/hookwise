@@ -1,7 +1,7 @@
 """
 Main routes module - hub that creates main_bp and imports all sub-route modules.
 Each sub-module imports main_bp and registers its routes directly on it,
-so all url_for('main.xxx') references in templates continue to work.
+so all url_for('main.index') references in templates continue to work.
 """
 
 import os
@@ -116,13 +116,13 @@ def index() -> Any:
             if last_activity:
                 if last_activity.tzinfo is None:
                     last_activity = last_activity.replace(tzinfo=timezone.utc)
-                
+
                 # Calculation: Next stale is either last_seen + timeout OR last_alert + timeout
                 # We show whichever is further in the future
                 timeout_delta = timedelta(hours=config.timeout_hours or 24)
-                
+
                 next_alert_from_seen = last_activity + timeout_delta
-                
+
                 if config.last_stale_alert_at:
                     last_alert = config.last_stale_alert_at
                     if last_alert.tzinfo is None:
