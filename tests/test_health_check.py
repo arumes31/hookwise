@@ -1,19 +1,28 @@
-import pytest
 import os
-import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
+import pytest
+
 from hookwise import create_app
-from hookwise.tasks import verify_endpoint_health, _get_health_check_metadata, _validate_single_config_health
-from hookwise.models import WebhookConfig
 from hookwise.extensions import db
+from hookwise.models import WebhookConfig
+from hookwise.tasks import _get_health_check_metadata, _validate_single_config_health, verify_endpoint_health
+
 
 @pytest.fixture
 def app():
     import tempfile
+
     fd, path = tempfile.mkstemp(suffix=".db", prefix="test_hookwise_")
     os.close(fd)
     os.environ["DATABASE_URL"] = f"sqlite:///{path}"
-    with patch("hookwise.tasks.redis_client"),          patch("hookwise.api.redis_client"),          patch("hookwise.metrics.redis_client"),          patch("hookwise.extensions.redis_client"):
+    # Mocking Redis to avoid connection errors
+    with (
+        patch("hookwise.tasks.redis_client"),
+        patch("hookwise.api.redis_client"),
+        patch("hookwise.metrics.redis_client"),
+        patch("hookwise.extensions.redis_client"),
+    ):
         app = create_app()
         app.config["WTF_CSRF_ENABLED"] = False
         with app.app_context():
@@ -25,6 +34,7 @@ def app():
             db.engine.dispose()
         if os.path.exists(path):
             os.remove(path)
+
 
 @patch("hookwise.tasks.cw_client")
 def test_get_health_check_metadata(mock_cw, app):
@@ -38,17 +48,14 @@ def test_get_health_check_metadata(mock_cw, app):
         assert board_map == {"Board A": 1}
         assert priority_names == {"P1"}
 
+
 @patch("hookwise.tasks.cw_client")
 def test_validate_single_config_health_ok(mock_cw, app):
     mock_cw.get_board_statuses.return_value = [{"name": "New"}]
 
     with app.app_context():
         config = WebhookConfig(
-            name="Config OK",
-            board="Board A",
-            status="New",
-            priority="P1",
-            config_health_status="UNKNOWN"
+            name="Config OK", board="Board A", status="New", priority="P1", config_health_status="UNKNOWN"
         )
         board_map = {"Board A": 1}
         priority_names = {"P1"}
@@ -60,6 +67,7 @@ def test_validate_single_config_health_ok(mock_cw, app):
         assert config.config_health_message == "Configuration validated"
         assert status_cache == {1: {"New"}}
 
+
 def test_validate_single_config_health_error(app):
     with app.app_context():
         config = WebhookConfig(
@@ -67,7 +75,7 @@ def test_validate_single_config_health_error(app):
             board="Board Missing",
             status="Status Missing",
             priority="P Missing",
-            config_health_status="OK"
+            config_health_status="OK",
         )
         board_map = {"Board A": 1}
         priority_names = {"P1"}
@@ -78,6 +86,7 @@ def test_validate_single_config_health_error(app):
         assert config.config_health_status == "ERROR"
         assert "Board 'Board Missing' not found" in config.config_health_message
         assert "Priority 'P Missing' not found" in config.config_health_message
+
 
 @patch("hookwise.tasks.cw_client")
 def test_verify_endpoint_health_integration(mock_cw, app):
@@ -95,7 +104,7 @@ def test_verify_endpoint_health_integration(mock_cw, app):
             config_health_status="UNKNOWN",
             trigger_field="status",
             open_value="down",
-            customer_id_default="TESTCO"
+            customer_id_default="TESTCO",
         )
         db.session.add(config)
         db.session.commit()
