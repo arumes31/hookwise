@@ -29,7 +29,32 @@ CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
+
 cw_client = ConnectWiseClient()
+
+# Global Mapping Cache (TTL: 5 minutes)
+_GLOBAL_MAPPING_CACHE = None
+_GLOBAL_MAPPING_CACHE_TIME = 0
+_GLOBAL_MAPPING_TTL = 300
+
+def _get_global_mappings():
+    """Fetch all GlobalMapping records into an in-memory cache of dictionaries."""
+    global _GLOBAL_MAPPING_CACHE, _GLOBAL_MAPPING_CACHE_TIME
+    from .models import GlobalMapping
+    now = time.time()
+    if _GLOBAL_MAPPING_CACHE is None or now - _GLOBAL_MAPPING_CACHE_TIME > _GLOBAL_MAPPING_TTL:
+        try:
+            # Fetch all at once to avoid N+1 and avoid DetachedInstanceError by using to_dict()
+            mappings = GlobalMapping.query.all()
+            _GLOBAL_MAPPING_CACHE = [m.to_dict() for m in mappings]
+            _GLOBAL_MAPPING_CACHE_TIME = now
+            logger.debug(f"GlobalMapping cache updated with {len(_GLOBAL_MAPPING_CACHE)} records")
+        except Exception as e:
+            logger.error(f"Error updating GlobalMapping cache: {e}")
+            if _GLOBAL_MAPPING_CACHE is None:
+                _GLOBAL_MAPPING_CACHE = []
+    return _GLOBAL_MAPPING_CACHE
+
 
 
 def make_celery(app_name: str) -> Celery:
@@ -916,8 +941,6 @@ def handle_webhook_logic(
 
                 # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
                 if not company_id and config.global_routing_enabled:
-                    from .models import GlobalMapping
-
                     # Try common tenant fields
                     tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
                     tenant_val = None
@@ -931,28 +954,29 @@ def handle_webhook_logic(
                             break
 
                     if tenant_val:
+                        import fnmatch
+                        all_mappings = _get_global_mappings()
+
                         # 1. Try exact match
-                        mapping = GlobalMapping.query.filter_by(tenant_value=tenant_val).first()
+                        mapping_dict = next((m for m in all_mappings if m["tenant_value"] == tenant_val), None)
 
                         # 2. Try wildcard matches if no exact match found
-                        if not mapping:
-                            import fnmatch
-
-                            from sqlalchemy import or_
-
+                        if not mapping_dict:
                             # Find all mappings that contain wildcards (* or ?)
-                            wildcard_mappings = GlobalMapping.query.filter(
-                                or_(GlobalMapping.tenant_value.like("%*%"), GlobalMapping.tenant_value.like("%?%"))
-                            ).all()
-
-                            # Check if the tenant value matches any of these wildcard patterns
-                            for w_mapping in wildcard_mappings:
-                                if w_mapping.tenant_value and fnmatch.fnmatch(tenant_val, w_mapping.tenant_value):
-                                    mapping = w_mapping
+                            for m in all_mappings:
+                                tv = m.get("tenant_value", "")
+                                if tv and ("*" in tv or "?" in tv) and fnmatch.fnmatch(tenant_val, tv):
+                                    mapping_dict = m
                                     break
 
+                        # Set company_id if mapping found
+                        if mapping_dict:
+                            company_id = mapping_dict.get("company_id")
+                            logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
+                            log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
+
                         # 3. Try LLM semantic match if still no match
-                        if not mapping:
+                        if not company_id:
                             from .utils import call_llm
 
                             # Get all companies from ConnectWise
@@ -985,11 +1009,6 @@ def handle_webhook_logic(
                                         log_entry.matched_rule = (
                                             log_entry.matched_rule or ""
                                         ) + f" [LLM Global: {tenant_val} -> {company_id}]"
-
-                        if mapping and not company_id:
-                            company_id = mapping.company_id
-                            logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
-                            log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
 
                 # Fallback to default
                 if not company_id:
