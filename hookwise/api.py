@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload
 
 from .extensions import db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
-from .tasks import celery, cw_client, process_webhook_task, redis_client
+from .tasks import TOKEN_RE, celery, cw_client, process_webhook_task, redis_client
 from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
@@ -289,8 +289,7 @@ def _register() -> None:
             if field in json_mapping:
                 mapping_val = json_mapping[field]
                 if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = _re.compile(r"(\$\S+|[^\s]+)")
-                    tokens = token_re.findall(mapping_val)
+                    tokens = TOKEN_RE.findall(mapping_val)
                     resolved: list[tuple[str, bool]] = []
                     any_resolved = False
                     for tok in tokens:
