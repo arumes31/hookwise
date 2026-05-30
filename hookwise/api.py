@@ -4,28 +4,63 @@ import json
 import os
 import re
 import secrets
-import time
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
-from typing import Any, Tuple, cast
+from typing import Any, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
 
-from .extensions import db, limiter
-from .models import AuditLog, User, WebhookConfig, WebhookLog
-from .tasks import celery, cw_client, process_webhook_task, redis_client
-from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
+from .extensions import db
+from .models import User, WebhookConfig, WebhookLog
+from .tasks import cw_client, redis_client
+from .utils import auth_required, log_audit, resolve_jsonpath
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
+
+
+def _count_webhook_stats_base_query(today_start: datetime) -> Any:
+    """Helper to get the base query for WebhookLog counting."""
+    return WebhookLog.query.join(WebhookConfig).filter(
+        WebhookConfig.is_draft.is_(False),
+        WebhookLog.created_at >= today_start,
+    )
+
+
+def _count_webhook_stats(today_start: datetime, status_list: list[str] | str, action: str | None = None) -> int:
+    """Helper to count WebhookLogs based on status and action since a given start time."""
+    query = _count_webhook_stats_base_query(today_start)
+
+    if isinstance(status_list, list):
+        query = query.filter(WebhookLog.status.in_(status_list))
+    else:
+        query = query.filter(WebhookLog.status == status_list)
+
+    if action:
+        query = query.filter(WebhookLog.action == action)
+
+    return int(query.count())
+
+
+def _calculate_avg_processing_time(today_start: datetime) -> float:
+    """Helper to calculate the average processing time for processed webhooks today."""
+    from sqlalchemy import func
+
+    avg_proc = (
+        db.session.query(func.avg(WebhookLog.processing_time))
+        .filter(WebhookLog.created_at >= today_start, WebhookLog.status == "processed")
+        .scalar()
+        or 0
+    )
+    return float(avg_proc)
 
 
 def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -41,7 +76,7 @@ def _register() -> None:
             # This mimics the log_to_web calls in tasks.py
             message = log.error_message or "Processed"
             level = "info"
-            
+
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
@@ -66,7 +101,7 @@ def _register() -> None:
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
+
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
@@ -74,340 +109,110 @@ def _register() -> None:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
+            history.append(
+                {
+                    "timestamp": log.created_at.isoformat(),
+                    "message": message,
+                    "level": level,
+                    "config_name": log.config.name if log.config else "System",
+                    "payload": payload_data,
+                    "ticket_id": log.ticket_id,
+                }
+            )
         return jsonify(history)
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
-
-    @main_bp.route("/history")
-    @auth_required
-    def history() -> Any:
-        page = request.args.get("page", 1, type=int)
-        search = request.args.get("search", "")
-        date_from = request.args.get("date_from", "")
-        date_to = request.args.get("date_to", "")
-        endpoint_id = request.args.get("endpoint_id", "")
-        per_page = 25
-
-        query = WebhookLog.query
-        if search:
-            if search.startswith("#"):
-                search_id = search[1:]
-                if search_id.isdigit():
-                    query = query.filter(WebhookLog.ticket_id == int(search_id))
-            elif search.isdigit():
-                query = query.filter(WebhookLog.ticket_id == int(search))
-            else:
-                query = query.filter(
-                    (WebhookLog.request_id.ilike(f"%{search}%"))
-                    | (WebhookLog.payload.ilike(f"%{search}%"))
-                    | (WebhookLog.error_message.ilike(f"%{search}%"))
-                )
-
-        if endpoint_id:
-            query = query.filter(WebhookLog.config_id == endpoint_id)
-
-        if date_from:
-            from datetime import datetime
-
-            query = query.filter(WebhookLog.created_at >= datetime.fromisoformat(date_from))
-        if date_to:
-            from datetime import datetime, timedelta
-
-            query = query.filter(WebhookLog.created_at <= datetime.fromisoformat(date_to) + timedelta(days=1))
-
-        pagination = query.order_by(WebhookLog.created_at.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-        debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
-        cw_url = os.environ.get("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0").rstrip("/")
-
-        all_configs = WebhookConfig.query.filter_by(is_draft=False).order_by(WebhookConfig.name).all()
-
-        if request.args.get("partial") == "true":
-            return render_template("history_rows.html", logs=pagination.items, cw_url=cw_url)
-
-        return render_template(
-            "history.html",
-            pagination=pagination,
-            logs=pagination.items,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-            endpoint_id=endpoint_id,
-            all_configs=all_configs,
-            debug_mode=debug_mode,
-            cw_url=cw_url,
-        )
-
-    @main_bp.route("/audit")
-    @auth_required
-    def audit_logs() -> Any:
-        page = request.args.get("page", 1, type=int)
-        per_page = 50
-        pagination = AuditLog.query.order_by(AuditLog.created_at.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-        return render_template("audit.html", pagination=pagination, logs=pagination.items)
-
-    @main_bp.route("/history/replay/<log_id>", methods=["POST"])
-    @auth_required
-    def replay_webhook(log_id: str) -> Any:
-        log_entry = WebhookLog.query.get_or_404(log_id)
-        try:
-            data = json.loads(log_entry.payload)
-            request_id = f"replay_{int(time.time())}_{log_entry.request_id[:8]}"
-            process_webhook_task.delay(log_entry.config_id, data, request_id)
-            log_to_web(
-                f"REPLAY started (Original: {log_entry.request_id[:8]})", "info", log_entry.config.name, data=data
-            )
-            return jsonify({"status": "success", "message": "Replay queued", "request_id": request_id})
-        except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
 
-    @main_bp.route("/history/delete/<id>", methods=["POST"])
+    @main_bp.route("/api/activity/logs")
     @auth_required
-    def delete_log(id: str) -> Any:
-        log_entry = WebhookLog.query.get_or_404(id)
-        db.session.delete(log_entry)
-        db.session.commit()
-        return jsonify({"status": "success"})
+    def get_logs() -> Any:
+        # For historical reasons or frontend compatibility, this might be needed
+        return get_activity_history()
 
-    @main_bp.route("/history/delete-all", methods=["POST"])
+    @main_bp.route("/api/activity/purge", methods=["POST"])
     @auth_required
-    def delete_all_logs() -> Any:
-        WebhookLog.query.delete()
-        db.session.commit()
-        return jsonify({"status": "success", "message": "All logs deleted"})
-
-    @main_bp.route("/history/bulk-delete", methods=["POST"])
-    @auth_required
-    def bulk_delete_logs() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
-            return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookLog.query.filter(WebhookLog.id.in_(ids)).delete(synchronize_session=False)
-        db.session.commit()
-        return jsonify({"status": "success"})
-
-    # --- Endpoint Testing ---
-
-    @main_bp.route("/endpoint/test/<id>", methods=["POST"])
-    @auth_required
-    def test_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        request_id = f"test_{int(time.time())}"
-        data = {
-            "monitor": {"name": f"Test Monitor for {config.name}"},
-            "status": "0",
-            "msg": "Common test message for webhook verification",
-            "heartbeat": {"status": "0"},
-            "title": "Manual Test Trigger",
-            "message": "This is a simulated webhook payload.",
-        }
-        process_webhook_task.delay(id, data, request_id)
-        log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
-        return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
-
-    @main_bp.route("/endpoint/dry-run/<id>", methods=["POST"])
-    @auth_required
-    def dry_run_endpoint(id: str) -> Any:
-        """Simulate webhook processing without calling ConnectWise or Redis."""
-        config = WebhookConfig.query.get_or_404(id)
+    def purge_logs() -> Any:
         try:
-            data = request.get_json(force=True, silent=True) or {}
+            days = int(request.form.get("days", 30))
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
+            db.session.commit()
+            log_audit("purge_logs", None, f"Purged {deleted} logs older than {days} days")
+            return jsonify({"status": "success", "count": deleted})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    # --- Health & Monitoring ---
+
+    @main_bp.route("/health")
+    def health() -> Any:
+        """Lightweight health check for load balancers."""
+        try:
+            # Check Redis
+            redis_client.ping()
+            # Check DB
+            db.session.execute(db.text("SELECT 1"))
+            return jsonify({"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()})
+        except Exception as e:
+            current_app.logger.error(f"Health check failed: {e}")
+            return jsonify({"status": "error", "message": "Service unhealthy"}), 500
+
+    @main_bp.route("/health/services")
+    @auth_required
+    def health_services() -> Any:
+        """Detailed service status for admin dashboard."""
+        status = {"redis": "up", "database": "up", "celery": "up", "connectwise": "up"}
+        try:
+            redis_client.ping()
         except Exception:
-            return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
+            status["redis"] = "down"
+        try:
+            db.session.execute(db.text("SELECT 1"))
+        except Exception:
+            status["database"] = "down"
+        try:
+            from .tasks import celery as celery_tasks
 
-        from .tasks import is_in_maintenance
-        from .utils import resolve_jsonpath
+            inspect = celery_tasks.control.inspect()
+            if not inspect.stats():
+                status["celery"] = "down"
+        except Exception:
+            status["celery"] = "down"
+        try:
+            # Just test connectivity to CW API
+            cw_client.get_ticket_statuses()
+        except Exception:
+            status["connectwise"] = "down"
 
-        steps = []
-        result: dict[str, Any] = {}
-
-        # Step 1: Maintenance window
-        maintenance_active = is_in_maintenance(config)
-        steps.append(
-            {
-                "step": "Maintenance Window",
-                "active": maintenance_active,
-                "result": "skipped" if maintenance_active else "ok",
-            }
-        )
-        if maintenance_active:
-            return jsonify({"action": "skip", "reason": "maintenance_window", "steps": steps})
-
-        # Step 2: JSON mapping
-        json_mapping: dict[str, str] = {}
-        if config.json_mapping:
-            try:
-                json_mapping = json.loads(config.json_mapping)
-            except Exception:
-                pass
-
-        import re as _re
-
-        mapped_vals: dict[str, str] = {}
-        overridable = [
-            "summary",
-            "description",
-            "customer_id",
-            "ticket_type",
-            "subtype",
-            "item",
-            "priority",
-            "board",
-            "status",
-        ]
-        for field in overridable:
-            if field in json_mapping:
-                mapping_val = json_mapping[field]
-                if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = _re.compile(r"(\$\S+|[^\s]+)")
-                    tokens = token_re.findall(mapping_val)
-                    resolved: list[tuple[str, bool]] = []
-                    any_resolved = False
-                    for tok in tokens:
-                        if tok.startswith("$"):
-                            r_val = resolve_jsonpath(data, tok)
-                            if r_val is not None and str(r_val).strip():
-                                resolved.append((str(r_val).strip(), True))
-                                any_resolved = True
-                            else:
-                                resolved.append(("", True))
-                        else:
-                            resolved.append((tok, False))
-                    if any_resolved:
-                        output_parts = []
-                        for i, (v, is_var) in enumerate(resolved):
-                            if is_var:
-                                if v:
-                                    output_parts.append(v)
-                            else:
-                                left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
-                                right_ok = any(resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved)))
-                                if left_ok or right_ok:
-                                    output_parts.append(v)
-                        if output_parts:
-                            mapped_vals[field] = " ".join(output_parts)
-                else:
-                    r = resolve_jsonpath(data, mapping_val)
-                    if r is not None:
-                        mapped_vals[field] = str(r)
-        steps.append({"step": "JSONPath Mapping", "resolved": mapped_vals})
-
-        # Step 3: Routing rules
-        routing_rules: list[dict[str, Any]] = []
-        if config.routing_rules:
-            try:
-                routing_rules = json.loads(config.routing_rules)
-            except Exception:
-                pass
-        matched_rules = []
-        for rule in routing_rules:
-            rule_path = rule.get("path")
-            rule_regex = rule.get("regex")
-            if rule_path and rule_regex:
-                val = str(resolve_jsonpath(data, rule_path))
-                if _re.search(rule_regex, val, _re.IGNORECASE):
-                    matched_rules.append(
-                        {
-                            "regex": rule_regex,
-                            "path": rule_path,
-                            "overrides": rule.get("overrides", {}),
-                        }
-                    )
-        steps.append({"step": "Routing Rules", "matched": matched_rules})
-
-        # Step 4: Trigger field evaluation
-        trigger_field = config.trigger_field or ""
-        open_value = config.open_value or ""
-        close_value = config.close_value or ""
-        actual_val = str(resolve_jsonpath(data, trigger_field)) if trigger_field else ""
-        open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
-        close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
-        if actual_val in open_triggers:
-            alert_type = "DOWN"
-        elif actual_val in close_triggers:
-            alert_type = "UP"
-        else:
-            alert_type = "GENERIC"
-
-        steps.append(
-            {
-                "step": "Trigger Evaluation",
-                "trigger_field": trigger_field,
-                "actual_value": actual_val,
-                "alert_type": alert_type,
-            }
-        )
-
-        # Step 5: Predicted action
-        prefix = config.ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-        mapped_summary = mapped_vals.get("summary")
-        monitor_name = data.get("monitor", {}).get("name", data.get("title", "Unknown Source"))
-        ticket_summary = f"{prefix} {mapped_summary}" if mapped_summary else f"{prefix} {monitor_name}"
-        predicted_action = (
-            "create_ticket" if alert_type == "DOWN" else "close_ticket" if alert_type == "UP" else "add_note_or_skip"
-        )
-
-        result = {
-            "action": predicted_action,
-            "alert_type": alert_type,
-            "ticket_summary": ticket_summary,
-            "description": mapped_vals.get("description") or data.get("msg", ""),
-            "company_id": mapped_vals.get("customer_id", config.customer_id_default or ""),
-            "board": (matched_rules[0] if matched_rules else {})
-            .get("overrides", {})
-            .get("board", mapped_vals.get("board", config.board or "")),
-            "steps": steps,
-        }
-        return jsonify(result)
-
-    # --- LLM Health ---
+        return jsonify(status)
 
     def _get_llm_health() -> dict[str, Any]:
         import time as _time
 
-        import requests as _req
+        from .utils import call_llm
 
-        ollama_host = os.environ.get("OLLAMA_HOST", "http://hookwise-llm:11434")
         t0 = _time.monotonic()
         try:
-            resp = _req.get(f"{ollama_host}/api/tags", timeout=5)
-            resp.raise_for_status()
-            payload = resp.json()
-            models = [m.get("name") for m in payload.get("models", [])]
+            # Use a very short, simple prompt for health check
+            # We don't use 'ping' because we want to verify the model is actually loaded and responding
+            res = call_llm("Respond with exactly one word: OK", timeout=10)
             return {
-                "status": "ok",
-                "models": models,
-                "model": models[0] if models else "unknown",
+                "status": "ok" if res and "OK" in res.upper() else "degraded",
+                "response": res.strip() if res else None,
                 "response_ms": round((_time.monotonic() - t0) * 1000),
             }
         except Exception as e:
@@ -453,9 +258,9 @@ def _register() -> None:
         """Poll the result of an enqueued LLM RCA task."""
         from celery.result import AsyncResult
 
-        from .tasks import celery
+        from .tasks import celery as celery_tasks
 
-        result = AsyncResult(task_id, app=celery)
+        result = AsyncResult(task_id, app=celery_tasks)
         if result.state == "PENDING" or result.state == "STARTED":
             return jsonify({"status": "pending"})
         if result.state == "SUCCESS":
@@ -466,74 +271,19 @@ def _register() -> None:
     @main_bp.route("/api/stats")
     @auth_required
     def get_stats() -> Any:
-        from sqlalchemy import func
-
         today_start = datetime.combine(datetime.now(timezone.utc).date(), dtime.min)
 
-        tickets_created = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "create",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
+        tickets_created = _count_webhook_stats(today_start, "processed", "create")
+        tickets_updated = _count_webhook_stats(today_start, "processed", "update")
+        tickets_closed = _count_webhook_stats(today_start, "processed", "close")
+        failed_attempts = _count_webhook_stats(today_start, ["failed", "dlq"])
 
-        tickets_updated = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "update",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        tickets_closed = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "close",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        failed_attempts = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["failed", "dlq"]),
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        total_today = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(WebhookConfig.is_draft.is_(False), WebhookLog.created_at >= today_start)
-            .count()
-        )
-        successful_attempts = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["processed", "skipped"]),
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
+        # Calculate success rate
+        total_today = _count_webhook_stats_base_query(today_start).count()
+        successful_attempts = _count_webhook_stats(today_start, ["processed", "skipped"])
         success_rate = (successful_attempts / total_today * 100) if total_today > 0 else 100
-        avg_proc = (
-            db.session.query(func.avg(WebhookLog.processing_time))
-            .filter(WebhookLog.created_at >= today_start, WebhookLog.status == "processed")
-            .scalar()
-            or 0
-        )
+
+        avg_proc = _calculate_avg_processing_time(today_start)
 
         return jsonify(
             {
@@ -599,236 +349,23 @@ def _register() -> None:
                 group_key = d.strftime("%m-%d")
 
             if group_key not in counts_by_group:
-                counts_by_group[group_key] = {"created": 0, "updated": 0, "closed": 0}
+                counts_by_group[group_key] = {"create": 0, "update": 0, "close": 0}
+            if action in counts_by_group[group_key]:
+                counts_by_group[group_key][action] = count
 
-            if action == "create":
-                counts_by_group[group_key]["created"] += count
-            elif action == "update":
-                counts_by_group[group_key]["updated"] += count
-            elif action == "close":
-                counts_by_group[group_key]["closed"] += count
-
-        history_data: list[dict[str, Any]] = []
-        now: date = datetime.now(timezone.utc).date()
-
-        if period == "weekly":
-
-            def generate_weeks(start_date: date, count: int):
-                seen: set[tuple[int, int]] = set()
-                for j in range(60):
-                    d = start_date - timedelta(days=j)
-                    year, week, _ = d.isocalendar()
-                    if (year, week) not in seen:
-                        seen.add((year, week))
-                        yield year, week
-                        if len(seen) == count:
-                            break
-
-            weeks_data: list[dict[str, Any]] = []
-            for year, week in generate_weeks(now, 4):
-                k = f"{year}-W{week}"
-                weeks_data.append(
-                    {
-                        "date": f"W{week}",
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0),
-                    }
-                )
-
-            history_data.extend(reversed(weeks_data))
-        elif period == "monthly":
-            for i in range(5, -1, -1):
-                total_months = now.year * 12 + now.month - 1 - i
-                y, m_0 = divmod(total_months, 12)
-                m = m_0 + 1
-                k = f"{y}-{m:02d}"
-                # short month name
-                month_name = datetime(y, m, 1).strftime("%b")
-                history_data.append(
-                    {
-                        "date": month_name,
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0),
-                    }
-                )
-        else:
-            for i in range(6, -1, -1):
-                d = now - timedelta(days=i)
-                k = d.strftime("%m-%d")
-                history_data.append(
-                    {
-                        "date": k,
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0),
-                    }
-                )
-
+        # Sort and fill zeros for sparkline
+        sorted_keys = sorted(counts_by_group.keys())
+        history_data = {
+            "labels": sorted_keys,
+            "created": [counts_by_group[k]["create"] for k in sorted_keys],
+            "updated": [counts_by_group[k]["update"] for k in sorted_keys],
+            "closed": [counts_by_group[k]["close"] for k in sorted_keys],
+        }
         return jsonify(history_data)
 
-    # --- ConnectWise Proxy ---
-
-    @main_bp.route("/api/cw/boards")
+    @main_bp.route("/maintenance-mode")
     @auth_required
-    def get_cw_boards() -> Any:
-        cache_key = "hookwise_cw_boards"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        boards = cw_client.get_boards()
-        if boards:
-            redis_client.set(cache_key, json.dumps(boards), ex=3600)
-        return jsonify(boards)
-
-    @main_bp.route("/api/cw/priorities")
-    @auth_required
-    def get_cw_priorities() -> Any:
-        cache_key = "hookwise_cw_priorities"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        priorities = cw_client.get_priorities()
-        if priorities:
-            redis_client.set(cache_key, json.dumps(priorities), ex=86400)
-        return jsonify(priorities)
-
-    @main_bp.route("/api/cw/statuses/<board_id>")
-    @auth_required
-    def get_cw_statuses(board_id: str) -> Any:
-        cache_key = f"hookwise_cw_statuses_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        statuses = cw_client.get_board_statuses(int(board_id))
-        redis_client.set(cache_key, json.dumps(statuses), ex=3600)
-        return jsonify(statuses)
-
-    @main_bp.route("/api/cw/types/<board_id>")
-    @auth_required
-    def get_cw_types(board_id: str) -> Any:
-        cache_key = f"hookwise_cw_types_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        types = cw_client.get_board_types(int(board_id))
-        redis_client.set(cache_key, json.dumps(types), ex=3600)
-        return jsonify(types)
-
-    @main_bp.route("/api/cw/subtypes/<board_id>")
-    @auth_required
-    def get_cw_subtypes(board_id: str) -> Any:
-        cache_key = f"hookwise_cw_subtypes_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        subtypes = cw_client.get_board_subtypes(int(board_id))
-        redis_client.set(cache_key, json.dumps(subtypes), ex=3600)
-        return jsonify(subtypes)
-
-    @main_bp.route("/api/cw/items/<board_id>")
-    @auth_required
-    def get_cw_items(board_id: str) -> Any:
-        cache_key = f"hookwise_cw_items_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        items = cw_client.get_board_items(int(board_id))
-        redis_client.set(cache_key, json.dumps(items), ex=3600)
-        return jsonify(items)
-
-    @main_bp.route("/api/cw/companies")
-    @auth_required
-    def get_cw_companies() -> Any:
-        search = request.args.get("search")
-        if not search:
-            cache_key = "hookwise_cw_companies_default"
-            cached = redis_client.get(cache_key)
-            if cached:
-                return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
-        companies = cw_client.get_companies(search=search)
-        if not search and companies:
-            redis_client.set("hookwise_cw_companies_default", json.dumps(companies), ex=3600)
-        return jsonify(companies)
-
-    # --- Health & Infrastructure ---
-
-    @main_bp.route("/readyz", methods=["GET"])
-    def readyz() -> Tuple[Response, int]:
-        try:
-            db.session.execute(db.text("SELECT 1"))
-        except Exception as e:
-            current_app.logger.error("Database readiness check failed", exc_info=e)
-            return jsonify({"status": "not ready", "reason": "Database error"}), 503
-        finally:
-            db.session.remove()
-        try:
-            redis_client.ping()
-            return jsonify({"status": "ready"}), 200
-        except Exception as e:
-            return jsonify({"status": "not ready", "reason": str(e)}), 503
-
-    @main_bp.route("/health", methods=["GET"])
-    def health() -> Tuple[Response, int]:
-        try:
-            db.session.execute(db.text("SELECT 1"))
-        except Exception as e:
-            current_app.logger.error(f"Database health check failed: {e}")
-            return jsonify({"status": "error", "message": "Database error"}), 503
-        finally:
-            db.session.remove()
-        try:
-            redis_client.ping()
-            return jsonify({"status": "ok", "timestamp": time.time()}), 200
-        except Exception:
-            return jsonify({"status": "error", "message": "Service unreachable"}), 503
-
-    @main_bp.route("/health/services", methods=["GET"])
-    @limiter.exempt
-    def health_services() -> Tuple[Response, int]:
-        health_data = {"redis": "down", "database": "down", "celery": "down", "timestamp": time.time()}
-        status_code = 200
-
-        try:
-            db.session.execute(db.text("SELECT 1"))
-            health_data["database"] = "up"
-        except Exception as e:
-            current_app.logger.error(f"Database health check failed: {e}")
-            status_code = 503
-        finally:
-            db.session.remove()
-
-        try:
-            redis_client.ping()
-            health_data["redis"] = "up"
-        except Exception as e:
-            current_app.logger.error(f"Redis health check failed: {e}")
-            status_code = 503
-
-        try:
-            inspect = celery.control.inspect(timeout=1.0)
-            stats = inspect.stats()
-            active = inspect.active()
-            health_data["celery"] = "up" if stats else "warning"
-            health_data["celery_active"] = sum(len(tasks) for tasks in active.values()) if active else 0
-        except Exception as e:
-            current_app.logger.error(f"Celery health check failed: {e}")
-            health_data["celery"] = "down"
-
-        return jsonify(health_data), status_code
-
-    # --- Admin ---
-
-    @main_bp.route("/admin/maintenance", methods=["GET", "POST"])
-    @auth_required
-    def maintenance_mode() -> Response:
-        if request.method == "POST":
-            current = redis_client.get("hookwise_maintenance_mode")
-            new_state = "true" if not current or cast(bytes, current).decode() != "true" else "false"
-            redis_client.set("hookwise_maintenance_mode", new_state)
-            log_audit("maintenance_toggle", None, f"Maintenance mode set to {new_state}")
-            return jsonify({"status": "success", "maintenance_mode": new_state == "true"})
+    def get_maintenance_mode() -> Any:
         mode = redis_client.get("hookwise_maintenance_mode")
         return jsonify({"maintenance_mode": mode and cast(bytes, mode).decode() == "true"})
 
@@ -957,6 +494,7 @@ def _register() -> None:
             db.session.commit()
             return jsonify({"status": "success"})
         except Exception as e:
+            db.session.rollback()
             return jsonify({"status": "error", "message": str(e)}), 500
 
     @main_bp.route("/api/feedback", methods=["POST"])
