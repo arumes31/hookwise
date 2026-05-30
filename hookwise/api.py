@@ -20,6 +20,74 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
+def _determine_alert_type(data: dict[str, Any], config_data: dict[str, Any], results: dict[str, Any], steps: list[str]) -> None:
+    trigger_field = config_data.get("trigger_field", "heartbeat.status")
+    actual_val = str(resolve_jsonpath(data, trigger_field))
+    steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
+
+    open_val = config_data.get("open_value", "0")
+    close_val = config_data.get("close_value", "1")
+
+    if actual_val in [v.strip() for v in open_val.split(",")]:
+        results["alert_type"] = "OPEN (DOWN)"
+    elif actual_val in [v.strip() for v in close_val.split(",")]:
+        results["alert_type"] = "CLOSE (UP)"
+    else:
+        results["alert_type"] = "GENERIC"
+    steps.append(f"Alert type determined as: {results['alert_type']}")
+
+
+def _apply_json_mapping(data: dict[str, Any], config_data: dict[str, Any], results: dict[str, Any], steps: list[str]) -> None:
+    mapping_str = config_data.get("json_mapping")
+    if not mapping_str:
+        return
+    try:
+        mapping = json.loads(mapping_str)
+        for field, path in mapping.items():
+            val = resolve_jsonpath(data, path)
+            if val is not None:
+                results[field] = str(val)
+                steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
+    except Exception as e:
+        steps.append(f"Error parsing JSON Mapping: {e}")
+
+
+def _apply_routing_rules(data: dict[str, Any], config_data: dict[str, Any], results: dict[str, Any], steps: list[str]) -> None:
+    rules_str = config_data.get("routing_rules")
+    if not rules_str:
+        return
+    try:
+        rules = json.loads(rules_str)
+        for i, rule in enumerate(rules):
+            path = rule.get("path")
+            regex = rule.get("regex")
+            if path and regex:
+                val = str(resolve_jsonpath(data, path))
+                if re.search(regex, val, re.IGNORECASE):
+                    steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
+                    overrides = rule.get("overrides", {})
+                    for k, v in overrides.items():
+                        results[k] = v
+                        steps.append(f"Override applied: {k} -> {v}")
+                else:
+                    steps.append(f"Rule {i + 1} did NOT match: '{regex}' on '{path}'")
+    except Exception as e:
+        steps.append(f"Error parsing Routing Rules: {e}")
+
+
+def _resolve_summary_and_company(data: dict[str, Any], config_data: dict[str, Any], results: dict[str, Any], steps: list[str]) -> None:
+    monitor = data.get("monitor", {})
+    monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
+    prefix = config_data.get("ticket_prefix", "Alert:")
+    results["summary"] = results.get("summary") or (f"{prefix} {monitor_name}" if prefix else monitor_name)
+    steps.append(f"Final Ticket Summary: '{results['summary']}'")
+
+    company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
+    results["company"] = results.get("customer_id") or (
+        company_id_match.group(1) if company_id_match else config_data.get("customer_id_default")
+    )
+    steps.append(f"Target Company Identifier: '{results['company']}'")
+
 
 def _register() -> None:
     from .routes import main_bp
@@ -248,7 +316,7 @@ def _register() -> None:
         from .tasks import is_in_maintenance
         from .utils import resolve_jsonpath
 
-        steps = []
+        steps: list[Any] = []
         result: dict[str, Any] = {}
 
         # Step 1: Maintenance window
@@ -975,67 +1043,13 @@ def _register() -> None:
         if not data:
             return jsonify({"status": "error", "message": "No sample payload provided"}), 400
 
-        steps = []
-        results = {}
+        steps: list[str] = []
+        results: dict[str, Any] = {}
 
-        trigger_field = config_data.get("trigger_field", "heartbeat.status")
-        actual_val = str(resolve_jsonpath(data, trigger_field))
-        steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
-
-        open_val = config_data.get("open_value", "0")
-        close_val = config_data.get("close_value", "1")
-
-        if actual_val in [v.strip() for v in open_val.split(",")]:
-            results["alert_type"] = "OPEN (DOWN)"
-        elif actual_val in [v.strip() for v in close_val.split(",")]:
-            results["alert_type"] = "CLOSE (UP)"
-        else:
-            results["alert_type"] = "GENERIC"
-        steps.append(f"Alert type determined as: {results['alert_type']}")
-
-        mapping_str = config_data.get("json_mapping")
-        if mapping_str:
-            try:
-                mapping = json.loads(mapping_str)
-                for field, path in mapping.items():
-                    val = resolve_jsonpath(data, path)
-                    if val is not None:
-                        results[field] = str(val)
-                        steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
-            except Exception as e:
-                steps.append(f"Error parsing JSON Mapping: {e}")
-
-        rules_str = config_data.get("routing_rules")
-        if rules_str:
-            try:
-                rules = json.loads(rules_str)
-                for i, rule in enumerate(rules):
-                    path = rule.get("path")
-                    regex = rule.get("regex")
-                    if path and regex:
-                        val = str(resolve_jsonpath(data, path))
-                        if re.search(regex, val, re.IGNORECASE):
-                            steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
-                            overrides = rule.get("overrides", {})
-                            for k, v in overrides.items():
-                                results[k] = v
-                                steps.append(f"Override applied: {k} -> {v}")
-                        else:
-                            steps.append(f"Rule {i + 1} did NOT match: '{regex}' on '{path}'")
-            except Exception as e:
-                steps.append(f"Error parsing Routing Rules: {e}")
-
-        monitor = data.get("monitor", {})
-        monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
-        prefix = config_data.get("ticket_prefix", "Alert:")
-        results["summary"] = results.get("summary") or (f"{prefix} {monitor_name}" if prefix else monitor_name)
-        steps.append(f"Final Ticket Summary: '{results['summary']}'")
-
-        company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
-        results["company"] = results.get("customer_id") or (
-            company_id_match.group(1) if company_id_match else config_data.get("customer_id_default")
-        )
-        steps.append(f"Target Company Identifier: '{results['company']}'")
+        _determine_alert_type(data, config_data, results, steps)
+        _apply_json_mapping(data, config_data, results, steps)
+        _apply_routing_rules(data, config_data, results, steps)
+        _resolve_summary_and_company(data, config_data, results, steps)
 
         return jsonify({"status": "success", "steps": steps, "results": results})
 
