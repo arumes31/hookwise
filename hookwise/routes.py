@@ -1,7 +1,7 @@
 """
 Main routes module - hub that creates main_bp and imports all sub-route modules.
 Each sub-module imports main_bp and registers its routes directly on it,
-so all url_for('main.xxx') references in templates continue to work.
+so all url_for('main.index') references in templates continue to work.
 """
 
 import os
