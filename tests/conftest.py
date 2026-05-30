@@ -1,4 +1,5 @@
 import os
+from unittest.mock import patch
 
 os.environ["SOCKETIO_ASYNC_MODE"] = "threading"
 os.environ["SECRET_KEY"] = "test-secret"
@@ -14,3 +15,22 @@ import pytest
 def setup_test_env():
     # Already set at top level, but kept for clarity
     pass
+
+@pytest.fixture(autouse=True)
+def mock_redis():
+    with patch("hookwise.extensions.redis_client") as mock:
+        mock.get.return_value = None
+        mock.ping.return_value = True
+        yield mock
+
+@pytest.fixture(autouse=True)
+def mock_tasks_redis():
+    with patch("hookwise.tasks.redis_client") as mock:
+        mock.get.return_value = None
+        yield mock
+
+@pytest.fixture(autouse=True)
+def mock_api_redis():
+    with patch("hookwise.api.redis_client") as mock:
+        mock.get.return_value = None
+        yield mock
