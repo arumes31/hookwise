@@ -11,7 +11,7 @@ from .extensions import csrf, db, limiter
 from .metrics import log_webhook_received
 from .models import WebhookConfig, WebhookLog
 from .tasks import process_webhook_task
-from .utils import decrypt_string, log_to_web, mask_secrets
+from .utils import decrypt_string, log_to_web, mask_secrets, parse_ip_network
 
 WEBHOOK_COUNT = Counter("hookwise_webhooks_received_total", "Total webhooks received", ["status", "config_name"])
 
@@ -102,7 +102,7 @@ def _register() -> None:
             trusted = False
             for trusted_range in [ip.strip() for ip in config.trusted_ips.split(",")]:
                 try:
-                    if client_ip and ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
+                    if client_ip and ipaddress.ip_address(client_ip) in parse_ip_network(trusted_range):
                         trusted = True
                         break
                 except ValueError:
