@@ -1,4 +1,5 @@
 import os
+from unittest.mock import MagicMock
 
 os.environ["SOCKETIO_ASYNC_MODE"] = "threading"
 os.environ["SECRET_KEY"] = "test-secret"
@@ -6,8 +7,21 @@ os.environ["ENCRYPTION_KEY"] = "vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E="
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["TESTING"] = "true"
 os.environ["LIMITER_STORAGE_URI"] = "memory://"
+os.environ["GUI_PASSWORD"] = "test-pass"  # Mandatory for startup
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def mock_redis(monkeypatch):
+    mock = MagicMock()
+    mock.get.return_value = None
+    mock.set.return_value = True
+    monkeypatch.setattr("hookwise.extensions.redis_client", mock)
+    # Patch where it might be imported
+    monkeypatch.setattr("hookwise.tasks.redis_client", mock, raising=False)
+    monkeypatch.setattr("hookwise.api.redis_client", mock, raising=False)
+    return mock
 
 
 @pytest.fixture(autouse=True, scope="session")
