@@ -920,11 +920,18 @@ def _register() -> None:
             return jsonify({"status": "error", "message": "No file"}), 400
         try:
             data = json.load(file)
+            config_ids = [c["id"] for c in data if "id" in c]
+            existing_configs = WebhookConfig.query.filter(WebhookConfig.id.in_(config_ids)).all()
+            config_map = {c.id: c for c in existing_configs}
+
             for c in data:
-                config = WebhookConfig.query.get(c["id"])
+                if "id" not in c:
+                    continue
+                config = config_map.get(c["id"])
                 if not config:
                     config = WebhookConfig(id=c["id"])
                     db.session.add(config)
+                    config_map[c["id"]] = config
                 fields = [
                     "name",
                     "customer_id_default",
