@@ -1,11 +1,11 @@
 import json
 from unittest.mock import MagicMock, patch
-import pytest
-from hookwise.metrics import RedisMetricRegistry, log_webhook_received, log_webhook_processed, log_psa_task
+
+from hookwise.metrics import RedisMetricRegistry, log_psa_task, log_webhook_processed, log_webhook_received
+
 
 @patch("hookwise.metrics.redis_client")
 class TestRedisMetricRegistry:
-
     def test_get_redis_key(self, mock_redis):
         labels = {"config_name": "test_config", "status": "success"}
         key = RedisMetricRegistry._get_redis_key("test_metric", labels)
@@ -84,10 +84,13 @@ class TestRedisMetricRegistry:
 
         assert "Failed to sync metrics from Redis: Redis error" in caplog.text
 
+
 def test_helpers():
     with patch.object(RedisMetricRegistry, "incr_counter") as mock_incr:
         log_webhook_received("success", "my_config")
-        mock_incr.assert_called_with("hookwise_webhooks_received_total", {"status": "success", "config_name": "my_config"})
+        mock_incr.assert_called_with(
+            "hookwise_webhooks_received_total", {"status": "success", "config_name": "my_config"}
+        )
 
         log_webhook_processed("123", "failed")
         mock_incr.assert_called_with("hookwise_webhooks_total", {"config_id": "123", "status": "failed"})
