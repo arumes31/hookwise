@@ -5,7 +5,7 @@ import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
@@ -129,54 +129,74 @@ def cleanup_logs() -> None:
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
 
+def _get_health_check_metadata(
+    configs: List[WebhookConfig],
+) -> Tuple[Dict[str, int], Set[str], Dict[int, Set[str]]]:
+    """Fetch boards, priorities, and board statuses from ConnectWise."""
+    boards = cw_client.get_boards()
+    if not boards:
+        return {}, set(), {}
+
+    board_map = {b["name"]: b["id"] for b in boards}
+
+    priorities = cw_client.get_priorities()
+    priority_names = {p["name"] for p in priorities}
+
+    status_cache: Dict[int, Set[str]] = {}
+    unique_board_names = {c.board for c in configs if c.board and c.board in board_map}
+    for bname in unique_board_names:
+        bid = board_map[bname]
+        statuses = cw_client.get_board_statuses(bid)
+        status_cache[bid] = {s["name"] for s in statuses}
+
+    return board_map, priority_names, status_cache
+
+
+def _validate_single_config_health(
+    config: WebhookConfig,
+    board_map: Dict[str, int],
+    priority_names: Set[str],
+    status_cache: Dict[int, Set[str]],
+) -> Tuple[str, str]:
+    """Validate a single configuration and return its health status and message."""
+    errors = []
+
+    # 1. Check Board
+    if config.board:
+        if config.board not in board_map:
+            errors.append(f"Board '{config.board}' not found")
+        else:
+            # 2. Check Status
+            if config.status:
+                bid = board_map[config.board]
+                if bid in status_cache and config.status not in status_cache[bid]:
+                    errors.append(f"Status '{config.status}' not found")
+
+    # 3. Check Priority
+    if config.priority and config.priority not in priority_names:
+        errors.append(f"Priority '{config.priority}' not found")
+
+    if errors:
+        return "ERROR", " | ".join(errors)
+    return "OK", "Configuration validated"
+
+
 @celery.task(name="hookwise.verify_endpoint_health")  # type: ignore[untyped-decorator]
 def verify_endpoint_health() -> None:
     """Validate endpoint configurations against ConnectWise."""
     try:
-        # Fetch global metadata
-        boards = cw_client.get_boards()
-        if not boards:
+        configs = WebhookConfig.query.filter_by(is_enabled=True).all()
+        if not configs:
+            return
+
+        board_map, priority_names, status_cache = _get_health_check_metadata(configs)
+        if not board_map:
             logger.warning("Skipping health check: Unable to fetch boards from CW.")
             return
 
-        board_map = {b["name"]: b["id"] for b in boards}
-
-        priorities = cw_client.get_priorities()
-        priority_names = {p["name"] for p in priorities}
-
-        status_cache: Dict[int, Any] = {}
-
-        configs = WebhookConfig.query.filter_by(is_enabled=True).all()
         updates = 0
-
         for config in configs:
-            errors = []
-
-            # 1. Check Board
-            if config.board:
-                if config.board not in board_map:
-                    errors.append(f"Board '{config.board}' not found")
-                else:
-                    # 2. Check Status
-                    if config.status:
-                        bid = board_map[config.board]
-                        if bid not in status_cache:
-                            statuses = cw_client.get_board_statuses(bid)
-                            status_cache[bid] = {s["name"] for s in statuses}
-
-                        if config.status not in status_cache[bid]:
-                            errors.append(f"Status '{config.status}' not found")
-
-            # 3. Check Priority
-            if config.priority and config.priority not in priority_names:
-                errors.append(f"Priority '{config.priority}' not found")
-
-            # Determine Status
-            new_status = "OK"
-            new_msg = "Configuration validated"
-            if errors:
-                new_status = "ERROR"
-                new_msg = " | ".join(errors)
+            new_status, new_msg = _validate_single_config_health(config, board_map, priority_names, status_cache)
 
             # Update if changed
             if config.config_health_status != new_status or config.config_health_message != new_msg:
@@ -278,10 +298,7 @@ def check_webhook_timeouts() -> None:
 
                         if not config.timeout_ticket_id:
                             # No ticket open yet (or was closed), create one
-                            summary = (
-                                f"[TIMEOUT] Webhook Endpoint: {config.name} - "
-                                f"No data for {config.timeout_hours}h"
-                            )
+                            summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
                             description = (
                                 f"The webhook endpoint '{config.name}' has not received any data for over "
                                 f"{config.timeout_hours} hours.\n"
@@ -307,8 +324,7 @@ def check_webhook_timeouts() -> None:
                                 config.last_stale_alert_at = now
                                 updates += 1
                                 logger.warning(
-                                    f"Created timeout ticket #{config.timeout_ticket_id} "
-                                    f"for endpoint '{config.name}'"
+                                    f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'"
                                 )
                                 log_msg = (
                                     f"Timeout alert: Created ticket #{config.timeout_ticket_id} "
@@ -319,22 +335,21 @@ def check_webhook_timeouts() -> None:
                                     "timeout_alert",
                                     config.id,
                                     f"Created timeout ticket #{config.timeout_ticket_id}",
-                                    commit=False
+                                    commit=False,
                                 )
 
                                 req_id = f"timeout-{int(time.time())}"
                                 log_entry = WebhookLog(
                                     config_id=config.id,
                                     request_id=req_id,
-                                    payload=json.dumps({
-                                        "alert": "stale_endpoint",
-                                        "timeout_hours": config.timeout_hours
-                                    }),
+                                    payload=json.dumps(
+                                        {"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}
+                                    ),
                                     status="processed",
                                     action="create",
                                     ticket_id=config.timeout_ticket_id,
                                     source_ip="system",
-                                    error_message=f"Created timeout ticket #{config.timeout_ticket_id}"
+                                    error_message=f"Created timeout ticket #{config.timeout_ticket_id}",
                                 )
                                 db.session.add(log_entry)
                                 db.session.commit()
@@ -343,27 +358,26 @@ def check_webhook_timeouts() -> None:
                                 log_to_web(
                                     f"Timeout alert failure: Could not create ticket for {config.name}",
                                     "error",
-                                    config.name
+                                    config.name,
                                 )
                                 log_audit(
                                     "timeout_error",
                                     config.id,
                                     "Failed to create timeout ticket in CW API",
-                                    commit=False
+                                    commit=False,
                                 )
 
                                 req_id = f"timeout-err-{int(time.time())}"
                                 log_entry = WebhookLog(
                                     config_id=config.id,
                                     request_id=req_id,
-                                    payload=json.dumps({
-                                        "alert": "stale_endpoint",
-                                        "timeout_hours": config.timeout_hours
-                                    }),
+                                    payload=json.dumps(
+                                        {"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}
+                                    ),
                                     status="failed",
                                     action="create",
                                     source_ip="system",
-                                    error_message="Failed to create ticket in ConnectWise API."
+                                    error_message="Failed to create ticket in ConnectWise API.",
                                 )
                                 db.session.add(log_entry)
                                 db.session.commit()
@@ -387,29 +401,31 @@ def check_webhook_timeouts() -> None:
                                     log_to_web(
                                         f"Timeout alert repeated: Added note to ticket #{config.timeout_ticket_id}",
                                         "warning",
-                                        config.name
+                                        config.name,
                                     )
-                                    
+
                                     log_entry = WebhookLog(
                                         config_id=config.id,
                                         request_id=req_id,
-                                        payload=json.dumps({
-                                            "alert": "stale_endpoint_repeat",
-                                            "timeout_hours": config.timeout_hours,
-                                            "timeout_ticket_id": config.timeout_ticket_id,
-                                            "last_stale_alert_at": (
-                                                config.last_stale_alert_at.isoformat()
-                                                if config.last_stale_alert_at
-                                                else None
-                                            ),
-                                            "created_at": config.created_at.isoformat(),
-                                            "hours_stale": round(hours_since_activity, 2)
-                                        }),
+                                        payload=json.dumps(
+                                            {
+                                                "alert": "stale_endpoint_repeat",
+                                                "timeout_hours": config.timeout_hours,
+                                                "timeout_ticket_id": config.timeout_ticket_id,
+                                                "last_stale_alert_at": (
+                                                    config.last_stale_alert_at.isoformat()
+                                                    if config.last_stale_alert_at
+                                                    else None
+                                                ),
+                                                "created_at": config.created_at.isoformat(),
+                                                "hours_stale": round(hours_since_activity, 2),
+                                            }
+                                        ),
                                         status="processed",
                                         action="update",
                                         ticket_id=config.timeout_ticket_id,
                                         source_ip="system",
-                                        error_message=f"Added repeat alert note to ticket #{config.timeout_ticket_id}"
+                                        error_message=f"Added repeat alert note to ticket #{config.timeout_ticket_id}",
                                     )
                                     db.session.add(log_entry)
                                     db.session.commit()
@@ -421,12 +437,14 @@ def check_webhook_timeouts() -> None:
                                     log_entry = WebhookLog(
                                         config_id=config.id,
                                         request_id=req_id,
-                                        payload=json.dumps({
-                                            "alert": "stale_endpoint_repeat_failed",
-                                            "timeout_hours": config.timeout_hours,
-                                            "timeout_ticket_id": config.timeout_ticket_id,
-                                            "hours_stale": round(hours_since_activity, 2)
-                                        }),
+                                        payload=json.dumps(
+                                            {
+                                                "alert": "stale_endpoint_repeat_failed",
+                                                "timeout_hours": config.timeout_hours,
+                                                "timeout_ticket_id": config.timeout_ticket_id,
+                                                "hours_stale": round(hours_since_activity, 2),
+                                            }
+                                        ),
                                         status="failed",
                                         action="update",
                                         ticket_id=config.timeout_ticket_id,
@@ -434,7 +452,7 @@ def check_webhook_timeouts() -> None:
                                         error_message=(
                                             f"ConnectWise API failed to add repeat alert note to ticket "
                                             f"#{config.timeout_ticket_id}"
-                                        )
+                                        ),
                                     )
                                     db.session.add(log_entry)
                                     db.session.commit()
@@ -555,21 +573,19 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
     if config.timeout_ticket_id:
         ticket_id = config.timeout_ticket_id
         resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
-        
+
         try:
             if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
                 logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
                 log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
-                
+
                 import time
 
                 from .models import WebhookLog
                 from .utils import log_audit
+
                 log_audit(
-                    "timeout_resolve",
-                    config.id,
-                    f"Automatically closed timeout ticket #{ticket_id}",
-                    commit=False
+                    "timeout_resolve", config.id, f"Automatically closed timeout ticket #{ticket_id}", commit=False
                 )
                 log_entry = WebhookLog(
                     config_id=config.id,
@@ -578,14 +594,12 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
                     status="processed",
                     action="close",
                     ticket_id=ticket_id,
-                    source_ip="system"
+                    source_ip="system",
                 )
                 db.session.add(log_entry)
                 config.timeout_ticket_id = None
             else:
-                logger.warning(
-                    f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. "
-                )
+                logger.warning(f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. ")
         except TicketNotFoundError:
             logger.warning(
                 f"Timeout ticket #{ticket_id} for endpoint '{config.name}' "
