@@ -12,56 +12,19 @@ from .models import WebhookConfig, WebhookLog
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 
-def _register() -> None:
-    from .routes import main_bp
+def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
+    """Safely parse an integer from form data with bounds checking."""
+    val = request.form.get(key)
+    if not val or not val.strip():
+        return default
+    try:
+        parsed = int(val)
+        return max(min_val, min(max_val, parsed))
+    except (ValueError, TypeError):
+        return default
 
-    @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
-    @auth_required
-    def toggle_pin(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        config.is_pinned = not config.is_pinned
-        db.session.commit()
-        action = "pin" if config.is_pinned else "unpin"
-        log_audit(action, id, f"Endpoint {config.name} {action}ned")
-        return jsonify({"status": "success", "is_pinned": config.is_pinned})
 
-    @main_bp.route("/endpoint/reorder", methods=["POST"])
-    @auth_required
-    def reorder_endpoints() -> Any:
-        order = request.json.get("order", [])
-        if not order:
-            return jsonify({"status": "success"})
-
-        # Validation: check for duplicates in the payload
-        if len(set(order)) != len(order):
-            return jsonify({"status": "error", "message": "Duplicate IDs in order"}), 400
-
-        # Bulk fetch all relevant configs
-        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(order)).all()
-        config_map = {c.id: c for c in configs}
-
-        # Validation: check for unknown IDs
-        if len(configs) != len(order):
-            return jsonify({"status": "error", "message": "One or more unknown IDs in order"}), 400
-
-        for index, config_id in enumerate(order):
-            config = config_map[config_id]
-            config.display_order = index
-
-        db.session.commit()
-        return jsonify({"status": "success"})
-
-    def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
-        """Safely parse an integer from form data with bounds checking."""
-        val = request.form.get(key)
-        if not val or not val.strip():
-            return default
-        try:
-            parsed = int(val)
-            return max(min_val, min(max_val, parsed))
-        except (ValueError, TypeError):
-            return default
-
+def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
     def new_endpoint() -> Any:
@@ -141,6 +104,109 @@ def _register() -> None:
             flash(f'Endpoint "{config.name}" updated successfully!')
             return redirect(url_for("main.index"))
         return render_template("form.html", config=config, base_url=request.url_root.rstrip("/"))
+
+    @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
+    @auth_required
+    def delete_endpoint(id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(id)
+        name = config.name
+        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
+        db.session.delete(config)
+        db.session.commit()
+        log_audit("delete", id, f"Endpoint {name} deleted")
+        flash(f'Endpoint "{name}" deleted.')
+        return redirect(url_for("main.index"))
+
+
+def _register_bulk_routes(main_bp: Any) -> None:
+    @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
+    @auth_required
+    def bulk_delete_endpoints() -> Any:
+        ids = request.json.get("ids", [])
+        if not ids:
+            return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        WebhookLog.query.filter(WebhookLog.config_id.in_(ids)).delete(synchronize_session=False)
+        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).delete(synchronize_session=False)
+        db.session.commit()
+        log_audit("bulk_delete", None, f"Deleted endpoints: {', '.join(ids)}")
+        return jsonify({"status": "success", "message": f"Deleted {len(ids)} endpoints"})
+
+    @main_bp.route("/endpoint/bulk/pause", methods=["POST"])
+    @auth_required
+    def bulk_pause_endpoints() -> Any:
+        ids = request.json.get("ids", [])
+        if not ids:
+            return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": False}, synchronize_session=False)
+        db.session.commit()
+        log_audit("bulk_pause", None, f"Paused endpoints: {', '.join(ids)}")
+        return jsonify({"status": "success", "message": f"Paused {len(ids)} endpoints"})
+
+    @main_bp.route("/endpoint/bulk/resume", methods=["POST"])
+    @auth_required
+    def bulk_resume_endpoints() -> Any:
+        ids = request.json.get("ids", [])
+        if not ids:
+            return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": True}, synchronize_session=False)
+        db.session.commit()
+        log_audit("bulk_resume", None, f"Resumed endpoints: {', '.join(ids)}")
+        return jsonify({"status": "success", "message": f"Resumed {len(ids)} endpoints"})
+
+    @main_bp.route("/endpoint/bulk/export", methods=["POST"])
+    @auth_required
+    def bulk_export_endpoints() -> Any:
+        ids = request.json.get("ids", [])
+        if not ids:
+            return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()
+        export_data = [c.to_dict() for c in configs]
+        for c in export_data:
+            c.pop("bearer_token", None)
+            c.pop("id", None)
+            c.pop("created_at", None)
+            c.pop("last_seen_at", None)
+
+        return Response(
+            json.dumps(export_data, indent=2),
+            mimetype="application/json",
+            headers={"Content-Disposition": "attachment;filename=hookwise_export.json"},
+        )
+
+
+def _register_action_routes(main_bp: Any) -> None:
+    @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
+    @auth_required
+    def toggle_pin(id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(id)
+        config.is_pinned = not config.is_pinned
+        db.session.commit()
+        action = "pin" if config.is_pinned else "unpin"
+        log_audit(action, id, f"Endpoint {config.name} {action}ned")
+        return jsonify({"status": "success", "is_pinned": config.is_pinned})
+
+    @main_bp.route("/endpoint/reorder", methods=["POST"])
+    @auth_required
+    def reorder_endpoints() -> Any:
+        order = request.json.get("order", [])
+        if not order:
+            return jsonify({"status": "success"})
+
+        if len(set(order)) != len(order):
+            return jsonify({"status": "error", "message": "Duplicate IDs in order"}), 400
+
+        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(order)).all()
+        config_map = {c.id: c for c in configs}
+
+        if len(configs) != len(order):
+            return jsonify({"status": "error", "message": "One or more unknown IDs in order"}), 400
+
+        for index, config_id in enumerate(order):
+            config = config_map[config_id]
+            config.display_order = index
+
+        db.session.commit()
+        return jsonify({"status": "success"})
 
     @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
     @auth_required
@@ -227,71 +293,13 @@ def _register() -> None:
         config = WebhookConfig.query.get_or_404(id)
         return jsonify({"token": decrypt_string(config.bearer_token)})
 
-    @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
-    @auth_required
-    def delete_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        name = config.name
-        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
-        db.session.delete(config)
-        db.session.commit()
-        log_audit("delete", id, f"Endpoint {name} deleted")
-        flash(f'Endpoint "{name}" deleted.')
-        return redirect(url_for("main.index"))
 
-    @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
-    @auth_required
-    def bulk_delete_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
-            return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookLog.query.filter(WebhookLog.config_id.in_(ids)).delete(synchronize_session=False)
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).delete(synchronize_session=False)
-        db.session.commit()
-        log_audit("bulk_delete", None, f"Deleted endpoints: {', '.join(ids)}")
-        return jsonify({"status": "success", "message": f"Deleted {len(ids)} endpoints"})
+def _register() -> None:
+    from .routes import main_bp
 
-    @main_bp.route("/endpoint/bulk/pause", methods=["POST"])
-    @auth_required
-    def bulk_pause_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
-            return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": False}, synchronize_session=False)
-        db.session.commit()
-        log_audit("bulk_pause", None, f"Paused endpoints: {', '.join(ids)}")
-        return jsonify({"status": "success", "message": f"Paused {len(ids)} endpoints"})
-
-    @main_bp.route("/endpoint/bulk/resume", methods=["POST"])
-    @auth_required
-    def bulk_resume_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
-            return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": True}, synchronize_session=False)
-        db.session.commit()
-        log_audit("bulk_resume", None, f"Resumed endpoints: {', '.join(ids)}")
-        return jsonify({"status": "success", "message": f"Resumed {len(ids)} endpoints"})
-
-    @main_bp.route("/endpoint/bulk/export", methods=["POST"])
-    @auth_required
-    def bulk_export_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
-            return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        configs = WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()
-        export_data = [c.to_dict() for c in configs]
-        for c in export_data:
-            c.pop("bearer_token", None)
-            c.pop("id", None)
-            c.pop("created_at", None)
-            c.pop("last_seen_at", None)
-
-        return Response(
-            json.dumps(export_data, indent=2),
-            mimetype="application/json",
-            headers={"Content-Disposition": "attachment;filename=hookwise_export.json"},
-        )
+    _register_crud_routes(main_bp)
+    _register_bulk_routes(main_bp)
+    _register_action_routes(main_bp)
 
 
 _register()
