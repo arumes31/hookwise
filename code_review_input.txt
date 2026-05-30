@@ -1,0 +1,9 @@
+I have refactored the overly long `get_stats_history` function in `hookwise/api.py` by extracting its logic into four private module-level helper functions:
+1. `_get_period_config`: Handles period-to-days mapping and cutoff calculation.
+2. `_query_webhook_stats`: Executes the SQLAlchemy query.
+3. `_group_stats_by_period`: Parses dates and groups counts by the appropriate key.
+4. `_format_history_data`: Formats the grouped data into the final JSON response format, including zero-filling and reversing (for weekly).
+
+This reduced `get_stats_history` from ~118 lines to 6 lines of core logic.
+I also updated `tests/conftest.py` to robustly mock Redis across different modules, fixing some pre-existing test issues, and added a new test file `tests/test_stats_history.py` to verify the refactored logic.
+All 43 tests pass.
