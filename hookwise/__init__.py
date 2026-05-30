@@ -15,7 +15,22 @@ _logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
+    """Application factory for Hookwise."""
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
+
+    _configure_app(app)
+    _register_extensions(app)
+    _register_request_handlers(app)
+    _register_blueprints(app)
+    _init_db_data(app)
+    _register_error_handlers(app)
+    _register_commands(app)
+
+    return app
+
+
+def _configure_app(app: Flask) -> None:
+    """Configure application settings and database."""
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
         secret_key = secrets.token_hex(32)
@@ -27,6 +42,7 @@ def create_app() -> Flask:
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
     db_url = app.config["SQLALCHEMY_DATABASE_URI"]
     if not db_url.startswith("sqlite"):
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
@@ -41,12 +57,18 @@ def create_app() -> Flask:
             "pool_pre_ping": True,
         }
 
-    # Initialize extensions
+
+def _register_extensions(app: Flask) -> None:
+    """Initialize Flask extensions."""
     db.init_app(app)
     migrate.init_app(app, db)
     limiter.init_app(app)
     socketio.init_app(app)
     csrf.init_app(app)
+
+
+def _register_request_handlers(app: Flask) -> None:
+    """Register before_request and after_request handlers."""
 
     @app.after_request
     def add_header(response: Response) -> Response:
@@ -111,13 +133,16 @@ def create_app() -> Flask:
                 return jsonify({"status": "error", "message": "Service under maintenance"}), 503
             return render_template("maintenance.html"), 503
 
-    # Register blueprints
-    # Sub-modules (auth, endpoints, webhook, api) are imported at the bottom
-    # of routes.py and register their routes directly on main_bp.
+
+def _register_blueprints(app: Flask) -> None:
+    """Register application blueprints."""
     from .routes import main_bp
 
     app.register_blueprint(main_bp)
 
+
+def _init_db_data(app: Flask) -> None:
+    """Initialize database data (e.g., default admin user)."""
     from .models import User
 
     with app.app_context():
@@ -137,12 +162,16 @@ def create_app() -> Flask:
                 db.session.add(admin)
                 db.session.commit()
             elif not check_password_hash(admin.password_hash, gui_password):
-                # A6: Sync password hash if GUI_PASSWORD env var changed
+                # Sync password hash if GUI_PASSWORD env var changed
                 admin.password_hash = generate_password_hash(gui_password)
                 db.session.commit()
                 _logger.info("Admin password hash updated to match GUI_PASSWORD.")
         except Exception:
             db.session.rollback()
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Register custom error handlers."""
 
     @app.errorhandler(404)
     def page_not_found(e: Any) -> Any:
@@ -162,9 +191,9 @@ def create_app() -> Flask:
     def rate_limit_error(e: Any) -> Any:
         return render_template("429.html"), 429
 
-    # Register CLI commands
+
+def _register_commands(app: Flask) -> None:
+    """Register CLI commands."""
     from .commands import clear_cw_cache_command
 
     app.cli.add_command(clear_cw_cache_command)
-
-    return app
