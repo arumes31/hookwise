@@ -7,10 +7,12 @@ import pytest
 
 from hookwise import create_app
 from hookwise.extensions import db
+from hookwise.models import AuditLog
 from hookwise.utils import (
     check_auth,
     decrypt_string,
     encrypt_string,
+    log_audit,
     mask_secrets,
     resolve_jsonpath,
 )
@@ -193,3 +195,55 @@ def test_check_auth_disabled_empty_username():
 def test_check_auth_disabled_empty_password():
     """Auth should be disabled if GUI_PASSWORD is empty."""
     assert check_auth("any", "any") is True
+
+# --- Audit Logging ---
+
+
+def test_log_audit_system(app):
+    """log_audit without request context should use 'System' user."""
+    with app.app_context():
+        log_audit("test_action", details="test_details")
+        audit = AuditLog.query.filter_by(action="test_action").first()
+        assert audit is not None
+        assert audit.user == "System"
+        assert audit.details == "test_details"
+
+
+def test_log_audit_session_user(app):
+    """log_audit with session username should use that user."""
+    with app.test_request_context():
+        from flask import session
+        session["username"] = "session_user"
+        log_audit("session_action")
+
+        audit = AuditLog.query.filter_by(action="session_action").first()
+        assert audit is not None
+        assert audit.user == "session_user"
+
+
+def test_log_audit_basic_auth(app):
+    """log_audit with Basic Auth should use the provided username."""
+    with app.test_request_context():
+        from unittest.mock import MagicMock
+
+        from flask import request
+
+        mock_auth = MagicMock()
+        mock_auth.username = "auth_user"
+        with patch.object(request, "authorization", mock_auth):
+            log_audit("auth_action")
+
+            audit = AuditLog.query.filter_by(action="auth_action").first()
+            assert audit is not None
+            assert audit.user == "auth_user"
+
+
+def test_log_audit_custom_session_no_commit(app):
+    """log_audit with custom session and commit=False should not commit."""
+    with app.app_context():
+        from unittest.mock import MagicMock
+        mock_session = MagicMock()
+        log_audit("no_commit", commit=False, db_session=mock_session)
+
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_not_called()
