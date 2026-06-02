@@ -5,7 +5,7 @@ import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, Set, Tuple, cast
 
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
@@ -129,54 +129,70 @@ def cleanup_logs() -> None:
     logger.info(f"Cleaned up {deleted} log entries older than {retention_days} days.")
 
 
+def _get_health_check_metadata() -> Optional[Dict[str, Any]]:
+    """Fetch and prepare metadata for health check."""
+    boards = cw_client.get_boards()
+    if not boards:
+        return None
+
+    priorities = cw_client.get_priorities()
+    return {
+        "board_map": {b["name"]: b["id"] for b in boards},
+        "priority_names": {p["name"] for p in priorities},
+    }
+
+
+def _validate_single_config_health(
+    config: WebhookConfig, board_map: Dict[str, int], priority_names: Set[str], status_cache: Dict[int, Any]
+) -> Tuple[str, str]:
+    """Validate a single configuration and return status and message."""
+    errors = []
+
+    # 1. Check Board
+    if config.board:
+        if config.board not in board_map:
+            errors.append(f"Board '{config.board}' not found")
+        else:
+            # 2. Check Status
+            if config.status:
+                bid = board_map[config.board]
+                if bid not in status_cache:
+                    statuses = cw_client.get_board_statuses(bid)
+                    status_cache[bid] = {s["name"] for s in statuses}
+
+                if config.status not in status_cache[bid]:
+                    errors.append(f"Status '{config.status}' not found")
+
+    # 3. Check Priority
+    if config.priority and config.priority not in priority_names:
+        errors.append(f"Priority '{config.priority}' not found")
+
+    # Determine Status
+    if errors:
+        return "ERROR", " | ".join(errors)
+    return "OK", "Configuration validated"
+
+
 @celery.task(name="hookwise.verify_endpoint_health")  # type: ignore[untyped-decorator]
 def verify_endpoint_health() -> None:
     """Validate endpoint configurations against ConnectWise."""
     try:
-        # Fetch global metadata
-        boards = cw_client.get_boards()
-        if not boards:
+        metadata = _get_health_check_metadata()
+        if not metadata:
             logger.warning("Skipping health check: Unable to fetch boards from CW.")
             return
 
-        board_map = {b["name"]: b["id"] for b in boards}
-
-        priorities = cw_client.get_priorities()
-        priority_names = {p["name"] for p in priorities}
-
+        board_map = metadata["board_map"]
+        priority_names = metadata["priority_names"]
         status_cache: Dict[int, Any] = {}
 
         configs = WebhookConfig.query.filter_by(is_enabled=True).all()
         updates = 0
 
         for config in configs:
-            errors = []
-
-            # 1. Check Board
-            if config.board:
-                if config.board not in board_map:
-                    errors.append(f"Board '{config.board}' not found")
-                else:
-                    # 2. Check Status
-                    if config.status:
-                        bid = board_map[config.board]
-                        if bid not in status_cache:
-                            statuses = cw_client.get_board_statuses(bid)
-                            status_cache[bid] = {s["name"] for s in statuses}
-
-                        if config.status not in status_cache[bid]:
-                            errors.append(f"Status '{config.status}' not found")
-
-            # 3. Check Priority
-            if config.priority and config.priority not in priority_names:
-                errors.append(f"Priority '{config.priority}' not found")
-
-            # Determine Status
-            new_status = "OK"
-            new_msg = "Configuration validated"
-            if errors:
-                new_status = "ERROR"
-                new_msg = " | ".join(errors)
+            new_status, new_msg = _validate_single_config_health(
+                config, board_map, priority_names, status_cache
+            )
 
             # Update if changed
             if config.config_health_status != new_status or config.config_health_message != new_msg:
