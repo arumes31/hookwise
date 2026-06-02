@@ -14,3 +14,17 @@ import pytest
 def setup_test_env():
     # Already set at top level, but kept for clarity
     pass
+
+from unittest.mock import MagicMock
+import sys
+
+@pytest.fixture(autouse=True)
+def mock_redis(monkeypatch):
+    mock = MagicMock()
+    # Mocking in hookwise.extensions
+    monkeypatch.setattr("hookwise.extensions.redis_client", mock)
+    # Mocking in hookwise.tasks
+    monkeypatch.setattr("hookwise.tasks.redis_client", mock)
+    # Mocking in hookwise.api
+    monkeypatch.setattr("hookwise.api.redis_client", mock)
+    return mock
