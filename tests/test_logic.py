@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -13,15 +14,20 @@ from hookwise.utils import resolve_jsonpath
 
 @pytest.fixture
 def app():
-    import tempfile
-
     # Use a unique temporary file for the sqlite database to ensure process isolation
     fd, path = tempfile.mkstemp(suffix=".db", prefix="test_hookwise_")
     os.close(fd)
 
     os.environ["DATABASE_URL"] = f"sqlite:///{path}"
+    os.environ["GUI_PASSWORD"] = "testpass"
+
     app = create_app()
     app.config["WTF_CSRF_ENABLED"] = False
+
+    # Inject our app into the tasks module
+    import hookwise.tasks
+    hookwise.tasks._app = app
+
     with app.app_context():
         db.create_all()
         yield app
