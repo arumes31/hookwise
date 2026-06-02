@@ -4,13 +4,16 @@ import os
 from unittest.mock import patch
 
 import pytest
+from flask import session
 
 from hookwise import create_app
 from hookwise.extensions import db
+from hookwise.models import AuditLog
 from hookwise.utils import (
     check_auth,
     decrypt_string,
     encrypt_string,
+    log_audit,
     mask_secrets,
     resolve_jsonpath,
 )
@@ -193,3 +196,57 @@ def test_check_auth_disabled_empty_username():
 def test_check_auth_disabled_empty_password():
     """Auth should be disabled if GUI_PASSWORD is empty."""
     assert check_auth("any", "any") is True
+
+
+# --- Audit Logging ---
+
+
+def test_log_audit_no_context(app):
+    """When no request context exists, user should be 'System'."""
+    with app.app_context():
+        log_audit(action="test_action", details="test details")
+
+        entry = AuditLog.query.filter_by(action="test_action").first()
+        assert entry is not None
+        assert entry.user == "System"
+        assert entry.details == "test details"
+
+
+def test_log_audit_session_user(app):
+    """When a session username exists, it should be used as the user."""
+    with app.test_request_context():
+        session["username"] = "session_user"
+        log_audit(action="session_action", config_id="cfg1")
+
+        entry = AuditLog.query.filter_by(action="session_action").first()
+        assert entry is not None
+        assert entry.user == "session_user"
+        assert entry.config_id == "cfg1"
+
+
+def test_log_audit_auth_user(app):
+    """When Basic Auth is provided, the username should be used."""
+    import base64
+
+    auth_header = f"Basic {base64.b64encode(b'auth_user:pass').decode()}"
+    with app.test_request_context(headers={"Authorization": auth_header}):
+        log_audit(action="auth_action")
+
+        entry = AuditLog.query.filter_by(action="auth_action").first()
+        assert entry is not None
+        assert entry.user == "auth_user"
+
+
+def test_log_audit_custom_session_and_no_commit(app):
+    """Verify custom DB session is used and commit=False works."""
+    with app.app_context():
+        log_audit(action="no_commit", commit=False, db_session=db.session)
+
+        # Entry should be in session but not yet committed
+        entry = AuditLog.query.filter_by(action="no_commit").first()
+        assert entry is not None
+
+        # Rollback should remove it
+        db.session.rollback()
+        entry = AuditLog.query.filter_by(action="no_commit").first()
+        assert entry is None
