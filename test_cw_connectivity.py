@@ -2,15 +2,15 @@ import base64
 import logging
 import os
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def test_connection() -> None:
-    # Load credentials from environment
+def load_credentials() -> tuple[str, str | None, str | None, str | None, str | None]:
+    """Load credentials from environment and print status."""
     base_url = os.getenv("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0")
     company = os.getenv("CW_COMPANY")
     public_key = os.getenv("CW_PUBLIC_KEY")
@@ -23,17 +23,69 @@ def test_connection() -> None:
     print(f"Private Key: {'*' * 8}" if private_key else "Private Key: Not Set")
     print(f"Client ID: {client_id if client_id else 'Not Set'}")
 
-    if not all([company, public_key, private_key]):
-        print("ERROR: Missing required credentials (CW_COMPANY, CW_PUBLIC_KEY, CW_PRIVATE_KEY)")
-        return
+    return base_url, company, public_key, private_key, client_id
 
-    # Construct Auth Header
+
+def get_auth_headers(company: str, public_key: str, private_key: str, client_id: str | None) -> dict[str, str]:
+    """Construct Auth Header and metadata headers."""
     auth_string = f"{company}+{public_key}:{private_key}"
     auth_header = f"Basic {base64.b64encode(auth_string.encode()).decode()}"
     headers = {"Authorization": auth_header, "Content-Type": "application/json", "Accept": "application/json"}
 
     if client_id:
         headers["clientId"] = client_id
+    return headers
+
+
+def handle_success_response(response: requests.Response) -> None:
+    """Handle 200 OK responses."""
+    print("Success!")
+    try:
+        data = response.json()
+        if isinstance(data, list):
+            print(f"Items returned: {len(data)}")
+            if len(data) > 0:
+                print(f"First item: {data[0].get('name', 'No Name')}")
+        else:
+            print("Response OK (JSON Object)")
+    except Exception as e:
+        print(f"Could not parse JSON: {e}")
+
+
+def print_forbidden_error() -> None:
+    """Print troubleshooting tips for 403 errors."""
+    print("FORBIDDEN (403). Possible causes:")
+    print("1. API Member does not have permission for this endpoint.")
+    print("2. IP Address is not whitelisted in ConnectWise.")
+    print("3. Application Client ID is invalid or missing.")
+
+
+def run_endpoint_test(url: str, name: str, headers: dict[str, str]) -> None:
+    """Test a single endpoint."""
+    print(f"\n--- Testing {name} ({url}) ---")
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        print(f"Status Code: {response.status_code}")
+
+        if response.status_code == 200:
+            handle_success_response(response)
+        elif response.status_code == 403:
+            print_forbidden_error()
+        else:
+            print(f"Failed. Response: {response.text[:200]}")
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+def test_connection() -> None:
+    base_url, company, public_key, private_key, client_id = load_credentials()
+
+    if not company or not public_key or not private_key:
+        print("ERROR: Missing required credentials (CW_COMPANY, CW_PUBLIC_KEY, CW_PRIVATE_KEY)")
+        return
+
+    headers = get_auth_headers(company, public_key, private_key, client_id)
 
     # Test Endpoints
     endpoints = [
@@ -43,34 +95,7 @@ def test_connection() -> None:
     ]
 
     for endpoint, name in endpoints:
-        url = f"{base_url}{endpoint}"
-        print(f"\n--- Testing {name} ({url}) ---")
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            print(f"Status Code: {response.status_code}")
-
-            if response.status_code == 200:
-                print("Success!")
-                try:
-                    data = response.json()
-                    if isinstance(data, list):
-                        print(f"Items returned: {len(data)}")
-                        if len(data) > 0:
-                            print(f"First item: {data[0].get('name', 'No Name')}")
-                    else:
-                        print("Response OK (JSON Object)")
-                except Exception as e:
-                    print(f"Could not parse JSON: {e}")
-            elif response.status_code == 403:
-                print("FORBIDDEN (403). Possible causes:")
-                print("1. API Member does not have permission for this endpoint.")
-                print("2. IP Address is not whitelisted in ConnectWise.")
-                print("3. Application Client ID is invalid or missing.")
-            else:
-                print(f"Failed. Response: {response.text[:200]}")
-
-        except Exception as e:
-            print(f"Error: {e}")
+        run_endpoint_test(f"{base_url}{endpoint}", name, headers)
 
 
 if __name__ == "__main__":
