@@ -11,6 +11,7 @@ from typing import Any, Tuple, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from .extensions import db, limiter
@@ -20,6 +21,39 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
+
+
+def _count_webhook_stats_base_query(start_time: datetime):
+    """Provides a consistent base query for webhook statistics."""
+    return WebhookLog.query.join(WebhookConfig).filter(
+        WebhookConfig.is_draft.is_(False),
+        WebhookLog.created_at >= start_time,
+    )
+
+
+def _count_webhook_stats(
+    start_time: datetime,
+    status_list: list[str] | None = None,
+    action: str | None = None,
+) -> int:
+    """Counts webhook logs based on start time, status, and action."""
+    query = _count_webhook_stats_base_query(start_time)
+    if status_list:
+        query = query.filter(WebhookLog.status.in_(status_list))
+    if action:
+        query = query.filter(WebhookLog.action == action)
+    return query.count()
+
+
+def _calculate_avg_processing_time(start_time: datetime) -> float:
+    """Calculates the average processing time for processed webhooks since start_time."""
+    avg_proc = (
+        db.session.query(func.avg(WebhookLog.processing_time))
+        .filter(WebhookLog.created_at >= start_time, WebhookLog.status == "processed")
+        .scalar()
+        or 0
+    )
+    return float(avg_proc)
 
 def _register() -> None:
     from .routes import main_bp
@@ -466,74 +500,17 @@ def _register() -> None:
     @main_bp.route("/api/stats")
     @auth_required
     def get_stats() -> Any:
-        from sqlalchemy import func
-
         today_start = datetime.combine(datetime.now(timezone.utc).date(), dtime.min)
 
-        tickets_created = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "create",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
+        tickets_created = _count_webhook_stats(today_start, ["processed"], "create")
+        tickets_updated = _count_webhook_stats(today_start, ["processed"], "update")
+        tickets_closed = _count_webhook_stats(today_start, ["processed"], "close")
+        failed_attempts = _count_webhook_stats(today_start, ["failed", "dlq"])
+        total_today = _count_webhook_stats(today_start)
+        successful_attempts = _count_webhook_stats(today_start, ["processed", "skipped"])
 
-        tickets_updated = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "update",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        tickets_closed = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "close",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        failed_attempts = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["failed", "dlq"]),
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        total_today = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(WebhookConfig.is_draft.is_(False), WebhookLog.created_at >= today_start)
-            .count()
-        )
-        successful_attempts = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["processed", "skipped"]),
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
         success_rate = (successful_attempts / total_today * 100) if total_today > 0 else 100
-        avg_proc = (
-            db.session.query(func.avg(WebhookLog.processing_time))
-            .filter(WebhookLog.created_at >= today_start, WebhookLog.status == "processed")
-            .scalar()
-            or 0
-        )
+        avg_proc = _calculate_avg_processing_time(today_start)
 
         return jsonify(
             {
@@ -542,7 +519,7 @@ def _register() -> None:
                 "closed_today": tickets_closed,
                 "failed_today": failed_attempts,
                 "success_rate": round(success_rate, 1),
-                "avg_processing_time": round(float(avg_proc), 2),
+                "avg_processing_time": round(avg_proc, 2),
             }
         )
 
