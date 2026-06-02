@@ -11,7 +11,7 @@ from werkzeug.security import check_password_hash
 
 from .extensions import db, limiter
 from .models import User
-from .utils import auth_required, log_audit
+from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 
 def _bp() -> Any:
@@ -40,7 +40,7 @@ def _register() -> None:
                 otp = request.form.get("otp")
                 user = User.query.get(pending_user_id)
 
-                if user and pyotp.TOTP(cast(str, user.otp_secret)).verify(cast(str, otp)):
+                if user and pyotp.TOTP(decrypt_string(cast(str, user.otp_secret))).verify(cast(str, otp)):
                     # Success
                     session["user_id"] = user.id
                     session["username"] = user.username
@@ -93,7 +93,7 @@ def _register() -> None:
             otp = request.form.get("otp")
             secret = session.get("pending_otp_secret")
             if secret and pyotp.TOTP(cast(str, secret)).verify(cast(str, otp)):
-                user.otp_secret = secret
+                user.otp_secret = encrypt_string(cast(str, secret))
                 user.is_2fa_enabled = True
                 db.session.commit()
                 session.pop("pending_otp_secret")

@@ -7,6 +7,7 @@ from werkzeug.security import generate_password_hash
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import User
+from hookwise.utils import encrypt_string
 
 
 @pytest.fixture
@@ -46,7 +47,7 @@ def sample_users(app):
         secret = pyotp.random_base32()
         u2 = User(username="user2", password_hash=generate_password_hash("pass2"))
         u2.is_2fa_enabled = True
-        u2.otp_secret = secret
+        u2.otp_secret = encrypt_string(secret)
 
         db.session.add_all([u1, u2])
         db.session.commit()
