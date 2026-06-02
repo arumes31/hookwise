@@ -14,7 +14,7 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import WebhookConfig, WebhookLog
-from .utils import log_to_web, resolve_jsonpath
+from .utils import log_audit, log_to_web, resolve_jsonpath
 
 logger = logging.getLogger(__name__)
 
@@ -193,12 +193,233 @@ def verify_endpoint_health() -> None:
         db.session.rollback()
 
 
+def _sync_timeout_ticket_status(config: WebhookConfig) -> None:
+    """Verify if an existing timeout ticket was closed so we can raise another."""
+    if not config.timeout_ticket_id:
+        return
+
+    try:
+        ticket_data = cw_client.get_ticket(config.timeout_ticket_id)
+        if ticket_data and ticket_data.get("closedFlag", False):
+            logger.info(
+                f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
+                "was manually closed. Clearing to allow a new alert."
+            )
+            config.timeout_ticket_id = None
+            db.session.commit()
+    except TicketNotFoundError:
+        logger.info(
+            f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
+            "was deleted or no longer exists. Clearing to allow a new alert."
+        )
+        config.timeout_ticket_id = None
+        db.session.commit()
+    except ConnectWiseError as e:
+        logger.warning(f"Transient error looking up timeout ticket: {e}")
+
+
+def _create_timeout_alert(config: WebhookConfig, now: datetime) -> bool:
+    """Create a new timeout ticket and log the activity."""
+    summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
+    description = (
+        f"The webhook endpoint '{config.name}' has not received any data for over "
+        f"{config.timeout_hours} hours.\n"
+        f"Last seen: {config.last_seen_at if config.last_seen_at else 'Never'}\n"
+        f"Endpoint ID: {config.id}"
+    )
+
+    new_ticket = cw_client.create_ticket(
+        summary=summary,
+        description=description,
+        monitor_name=config.name,
+        company_id=config.customer_id_default,
+        board=config.board,
+        status=config.status,
+        priority=config.priority,
+        ticket_type=config.ticket_type,
+        subtype=config.subtype,
+        item=config.item,
+    )
+
+    if new_ticket:
+        config.timeout_ticket_id = new_ticket["id"]
+        config.last_stale_alert_at = now
+        logger.warning(f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'")
+        log_to_web(
+            f"Timeout alert: Created ticket #{config.timeout_ticket_id} (No data for {config.timeout_hours}h)",
+            "warning",
+            config.name,
+        )
+        log_audit(
+            "timeout_alert", config.id, f"Created timeout ticket #{config.timeout_ticket_id}", commit=False
+        )
+
+        req_id = f"timeout-{int(time.time())}"
+        log_entry = WebhookLog(
+            config_id=config.id,
+            request_id=req_id,
+            payload=json.dumps({"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}),
+            status="processed",
+            action="create",
+            ticket_id=config.timeout_ticket_id,
+            source_ip="system",
+            error_message=f"Created timeout ticket #{config.timeout_ticket_id}",
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        return True
+
+    logger.warning(f"Failed to create timeout ticket for endpoint '{config.name}'.")
+    log_to_web(f"Timeout alert failure: Could not create ticket for {config.name}", "error", config.name)
+    log_audit("timeout_error", config.id, "Failed to create timeout ticket in CW API", commit=False)
+
+    req_id = f"timeout-err-{int(time.time())}"
+    log_entry = WebhookLog(
+        config_id=config.id,
+        request_id=req_id,
+        payload=json.dumps({"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}),
+        status="failed",
+        action="create",
+        source_ip="system",
+        error_message="Failed to create ticket in ConnectWise API.",
+    )
+    db.session.add(log_entry)
+    db.session.commit()
+    return False
+def _add_repeat_timeout_alert(config: WebhookConfig, now: datetime, hours_since_activity: float) -> bool:
+    """Add a repeat alert note to an existing timeout ticket."""
+    note_text = (
+        f"[REPEAT ALERT] Endpoint '{config.name}' is still stale.\n"
+        f"No data received for over {hours_since_activity:.1f} hours.\n"
+        f"Threshold: {config.timeout_hours}h"
+    )
+    req_id = f"timeout-repeat-{int(time.time())}"
+    try:
+        note_success = cw_client.add_ticket_note(config.timeout_ticket_id, note_text)
+        if note_success:
+            config.last_stale_alert_at = now
+            logger.info(f"Added repeat alert note to ticket #{config.timeout_ticket_id} for '{config.name}'")
+            log_to_web(
+                f"Timeout alert repeated: Added note to ticket #{config.timeout_ticket_id}",
+                "warning",
+                config.name,
+            )
+
+            log_entry = WebhookLog(
+                config_id=config.id,
+                request_id=req_id,
+                payload=json.dumps({
+                    "alert": "stale_endpoint_repeat",
+                    "timeout_hours": config.timeout_hours,
+                    "timeout_ticket_id": config.timeout_ticket_id,
+                    "last_stale_alert_at": (
+                        config.last_stale_alert_at.isoformat() if config.last_stale_alert_at else None
+                    ),
+                    "created_at": config.created_at.isoformat(),
+                    "hours_stale": round(hours_since_activity, 2),
+                }),
+                status="processed",
+                action="update",
+                ticket_id=config.timeout_ticket_id,
+                source_ip="system",
+                error_message=f"Added repeat alert note to ticket #{config.timeout_ticket_id}",
+            )
+            db.session.add(log_entry)
+            db.session.commit()
+            return True
+
+        logger.error(
+            f"Failed to add repeat alert note to ticket #{config.timeout_ticket_id} "
+            f"for endpoint {config.id}: ConnectWise API returned False"
+        )
+        log_entry = WebhookLog(
+            config_id=config.id,
+            request_id=req_id,
+            payload=json.dumps({
+                "alert": "stale_endpoint_repeat_failed",
+                "timeout_hours": config.timeout_hours,
+                "timeout_ticket_id": config.timeout_ticket_id,
+                "hours_stale": round(hours_since_activity, 2),
+            }),
+            status="failed",
+            action="update",
+            ticket_id=config.timeout_ticket_id,
+            source_ip="system",
+            error_message=f"ConnectWise API failed to add repeat alert note to ticket #{config.timeout_ticket_id}",
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        return False
+    except Exception as note_e:
+        logger.error(f"Failed to add repeat alert note to ticket #{config.timeout_ticket_id}: {note_e}")
+        return False
+
+
+
+
+def _process_single_config_timeout(config: WebhookConfig, now: datetime) -> int:
+    """Process timeout check for a single webhook configuration."""
+    try:
+        # Fallback to created_at if last_seen_at is None
+        last_activity = config.last_seen_at or config.created_at
+
+        if not last_activity:
+            logger.debug(f"Skipping '{config.name}': No activity date recorded yet.")
+            return 0
+
+        # SQLite might return naive datetimes, ensure timezone-aware comparison
+        if last_activity.tzinfo is None:
+            last_activity = last_activity.replace(tzinfo=timezone.utc)
+
+        diff = now - last_activity
+        hours_since_activity = diff.total_seconds() / 3600
+
+        # Defensive check: Ensure timeout_hours is an int
+        timeout_limit = getattr(config, "timeout_hours", 24) or 24
+
+        logger.debug(
+            f"Checking '{config.name}': {hours_since_activity:.2f}h since activity "
+            f"(Alert Threshold: {timeout_limit}h)"
+        )
+
+        if hours_since_activity > timeout_limit:
+            # Determine if it's time to send/repeat an alert
+            is_first_alert = config.last_stale_alert_at is None
+            is_repeat_alert = False
+            if not is_first_alert:
+                # Defensive check: ensure last_stale_alert_at is timezone-aware
+                alert_at = config.last_stale_alert_at
+                if alert_at.tzinfo is None:
+                    alert_at = alert_at.replace(tzinfo=timezone.utc)
+                time_since_alert = now - alert_at
+                if time_since_alert.total_seconds() / 3600 >= timeout_limit:
+                    is_repeat_alert = True
+                else:
+                    logger.debug(
+                        f"Stale endpoint '{config.name}' already has an open alert and "
+                        f"has not reached the repeat interval yet ({timeout_limit}h)."
+                    )
+
+            if is_first_alert or is_repeat_alert:
+                # Verify if an existing timeout ticket was closed so we can raise another
+                _sync_timeout_ticket_status(config)
+
+                if not config.timeout_ticket_id:
+                    # No ticket open yet (or was closed), create one
+                    if _create_timeout_alert(config, now):
+                        return 1
+                else:
+                    # Ticket is already open, add a repeating alert note
+                    if _add_repeat_timeout_alert(config, now, hours_since_activity):
+                        return 1
+        return 0
+    except Exception as loop_e:
+        logger.error(f"Error processing timeout for endpoint '{config.name}': {loop_e}")
+        db.session.rollback()
+        return 0
 @celery.task(name="hookwise.check_webhook_timeouts")  # type: ignore[untyped-decorator]
 def check_webhook_timeouts() -> None:
     """Check for endpoints that have not received data within the configured timeout period."""
-    from .extensions import db
-    from .models import WebhookConfig
-
     try:
         # Only check enabled, non-draft endpoints with timeout alerts enabled
         configs = WebhookConfig.query.filter_by(timeout_alerts_enabled=True, is_enabled=True, is_draft=False).all()
@@ -208,243 +429,7 @@ def check_webhook_timeouts() -> None:
         now = datetime.now(timezone.utc)
 
         for config in configs:
-            try:
-                # Fallback to created_at if last_seen_at is None
-                last_activity = config.last_seen_at or config.created_at
-
-                if not last_activity:
-                    logger.debug(f"Skipping '{config.name}': No activity date recorded yet.")
-                    continue
-
-                # SQLite might return naive datetimes, ensure timezone-aware comparison
-                if last_activity.tzinfo is None:
-                    last_activity = last_activity.replace(tzinfo=timezone.utc)
-
-                diff = now - last_activity
-                hours_since_activity = diff.total_seconds() / 3600
-
-                # Defensive check: Ensure timeout_hours is an int
-                timeout_limit = getattr(config, "timeout_hours", 24) or 24
-
-                logger.debug(
-                    f"Checking '{config.name}': {hours_since_activity:.2f}h since activity "
-                    f"(Alert Threshold: {timeout_limit}h)"
-                )
-
-                if hours_since_activity > timeout_limit:
-                    # Determine if it's time to send/repeat an alert
-                    is_first_alert = config.last_stale_alert_at is None
-                    is_repeat_alert = False
-                    if not is_first_alert:
-                        # Defensive check: ensure last_stale_alert_at is timezone-aware
-                        alert_at = config.last_stale_alert_at
-                        if alert_at.tzinfo is None:
-                            alert_at = alert_at.replace(tzinfo=timezone.utc)
-                        time_since_alert = now - alert_at
-                        if time_since_alert.total_seconds() / 3600 >= timeout_limit:
-                            is_repeat_alert = True
-                        else:
-                            logger.debug(
-                                f"Stale endpoint '{config.name}' already has an open alert and "
-                                f"has not reached the repeat interval yet ({timeout_limit}h)."
-                            )
-
-                    if is_first_alert or is_repeat_alert:
-                        # Verify if an existing timeout ticket was closed so we can raise another
-                        if config.timeout_ticket_id:
-                            try:
-                                ticket_data = cw_client.get_ticket(config.timeout_ticket_id)
-                                if ticket_data and ticket_data.get("closedFlag", False):
-                                    logger.info(
-                                        f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
-                                        "was manually closed. Clearing to allow a new alert."
-                                    )
-                                    config.timeout_ticket_id = None
-                                    db.session.commit()
-                            except TicketNotFoundError:
-                                logger.info(
-                                    f"Timeout ticket #{config.timeout_ticket_id} for '{config.name}' "
-                                    "was deleted or no longer exists. Clearing to allow a new alert."
-                                )
-                                config.timeout_ticket_id = None
-                                db.session.commit()
-                            except ConnectWiseError as e:
-                                logger.warning(f"Transient error looking up timeout ticket: {e}")
-
-                        import time
-
-                        from .models import WebhookLog
-                        from .utils import log_audit, log_to_web
-
-                        if not config.timeout_ticket_id:
-                            # No ticket open yet (or was closed), create one
-                            summary = (
-                                f"[TIMEOUT] Webhook Endpoint: {config.name} - "
-                                f"No data for {config.timeout_hours}h"
-                            )
-                            description = (
-                                f"The webhook endpoint '{config.name}' has not received any data for over "
-                                f"{config.timeout_hours} hours.\n"
-                                f"Last seen: {config.last_seen_at if config.last_seen_at else 'Never'}\n"
-                                f"Endpoint ID: {config.id}"
-                            )
-
-                            new_ticket = cw_client.create_ticket(
-                                summary=summary,
-                                description=description,
-                                monitor_name=config.name,
-                                company_id=config.customer_id_default,
-                                board=config.board,
-                                status=config.status,
-                                priority=config.priority,
-                                ticket_type=config.ticket_type,
-                                subtype=config.subtype,
-                                item=config.item,
-                            )
-
-                            if new_ticket:
-                                config.timeout_ticket_id = new_ticket["id"]
-                                config.last_stale_alert_at = now
-                                updates += 1
-                                logger.warning(
-                                    f"Created timeout ticket #{config.timeout_ticket_id} "
-                                    f"for endpoint '{config.name}'"
-                                )
-                                log_msg = (
-                                    f"Timeout alert: Created ticket #{config.timeout_ticket_id} "
-                                    f"(No data for {config.timeout_hours}h)"
-                                )
-                                log_to_web(log_msg, "warning", config.name)
-                                log_audit(
-                                    "timeout_alert",
-                                    config.id,
-                                    f"Created timeout ticket #{config.timeout_ticket_id}",
-                                    commit=False
-                                )
-
-                                req_id = f"timeout-{int(time.time())}"
-                                log_entry = WebhookLog(
-                                    config_id=config.id,
-                                    request_id=req_id,
-                                    payload=json.dumps({
-                                        "alert": "stale_endpoint",
-                                        "timeout_hours": config.timeout_hours
-                                    }),
-                                    status="processed",
-                                    action="create",
-                                    ticket_id=config.timeout_ticket_id,
-                                    source_ip="system",
-                                    error_message=f"Created timeout ticket #{config.timeout_ticket_id}"
-                                )
-                                db.session.add(log_entry)
-                                db.session.commit()
-                            else:
-                                logger.warning(f"Failed to create timeout ticket for endpoint '{config.name}'.")
-                                log_to_web(
-                                    f"Timeout alert failure: Could not create ticket for {config.name}",
-                                    "error",
-                                    config.name
-                                )
-                                log_audit(
-                                    "timeout_error",
-                                    config.id,
-                                    "Failed to create timeout ticket in CW API",
-                                    commit=False
-                                )
-
-                                req_id = f"timeout-err-{int(time.time())}"
-                                log_entry = WebhookLog(
-                                    config_id=config.id,
-                                    request_id=req_id,
-                                    payload=json.dumps({
-                                        "alert": "stale_endpoint",
-                                        "timeout_hours": config.timeout_hours
-                                    }),
-                                    status="failed",
-                                    action="create",
-                                    source_ip="system",
-                                    error_message="Failed to create ticket in ConnectWise API."
-                                )
-                                db.session.add(log_entry)
-                                db.session.commit()
-                        else:
-                            # Ticket is already open, add a repeating alert note
-                            note_text = (
-                                f"[REPEAT ALERT] Endpoint '{config.name}' is still stale.\n"
-                                f"No data received for over {hours_since_activity:.1f} hours.\n"
-                                f"Threshold: {config.timeout_hours}h"
-                            )
-                            req_id = f"timeout-repeat-{int(time.time())}"
-                            try:
-                                note_success = cw_client.add_ticket_note(config.timeout_ticket_id, note_text)
-                                if note_success:
-                                    config.last_stale_alert_at = now
-                                    updates += 1
-                                    logger.info(
-                                        f"Added repeat alert note to ticket #{config.timeout_ticket_id} "
-                                        f"for '{config.name}'"
-                                    )
-                                    log_to_web(
-                                        f"Timeout alert repeated: Added note to ticket #{config.timeout_ticket_id}",
-                                        "warning",
-                                        config.name
-                                    )
-                                    
-                                    log_entry = WebhookLog(
-                                        config_id=config.id,
-                                        request_id=req_id,
-                                        payload=json.dumps({
-                                            "alert": "stale_endpoint_repeat",
-                                            "timeout_hours": config.timeout_hours,
-                                            "timeout_ticket_id": config.timeout_ticket_id,
-                                            "last_stale_alert_at": (
-                                                config.last_stale_alert_at.isoformat()
-                                                if config.last_stale_alert_at
-                                                else None
-                                            ),
-                                            "created_at": config.created_at.isoformat(),
-                                            "hours_stale": round(hours_since_activity, 2)
-                                        }),
-                                        status="processed",
-                                        action="update",
-                                        ticket_id=config.timeout_ticket_id,
-                                        source_ip="system",
-                                        error_message=f"Added repeat alert note to ticket #{config.timeout_ticket_id}"
-                                    )
-                                    db.session.add(log_entry)
-                                    db.session.commit()
-                                else:
-                                    logger.error(
-                                        f"Failed to add repeat alert note to ticket #{config.timeout_ticket_id} "
-                                        f"for endpoint {config.id}: ConnectWise API returned False"
-                                    )
-                                    log_entry = WebhookLog(
-                                        config_id=config.id,
-                                        request_id=req_id,
-                                        payload=json.dumps({
-                                            "alert": "stale_endpoint_repeat_failed",
-                                            "timeout_hours": config.timeout_hours,
-                                            "timeout_ticket_id": config.timeout_ticket_id,
-                                            "hours_stale": round(hours_since_activity, 2)
-                                        }),
-                                        status="failed",
-                                        action="update",
-                                        ticket_id=config.timeout_ticket_id,
-                                        source_ip="system",
-                                        error_message=(
-                                            f"ConnectWise API failed to add repeat alert note to ticket "
-                                            f"#{config.timeout_ticket_id}"
-                                        )
-                                    )
-                                    db.session.add(log_entry)
-                                    db.session.commit()
-                            except Exception as note_e:
-                                logger.error(
-                                    f"Failed to add repeat alert note to ticket #{config.timeout_ticket_id}: {note_e}"
-                                )
-            except Exception as loop_e:
-                logger.error(f"Error processing timeout for endpoint '{config.name}': {loop_e}")
-                db.session.rollback()
+            updates += _process_single_config_timeout(config, now)
 
         if updates > 0:
             logger.info(f"Timeout check completed. Updated {updates} configuration(s)/ticket(s).")
@@ -454,7 +439,6 @@ def check_webhook_timeouts() -> None:
     except Exception as e:
         logger.error(f"Webhook timeout check task failed: {e}")
         db.session.rollback()
-
 
 @celery.task(bind=True, name="hookwise.process_webhook", max_retries=5)  # type: ignore[untyped-decorator]
 def process_webhook_task(
