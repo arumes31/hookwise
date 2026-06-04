@@ -1,0 +1,8 @@
+I have added a new test file 'tests/test_tenantmap.py' to provide 100% test coverage for 'hookwise/tenantmap.py'.
+The new tests cover:
+- Listing mappings
+- Adding mappings (success, missing fields, and DB error paths)
+- Editing mappings (success, missing fields, not found, and DB error paths)
+- Deleting mappings (success, not found, and DB error paths)
+
+I also updated 'tests/conftest.py' to globally mock Redis to prevent connection errors in the test environment, which was causing 'test_reorder_performance' to fail.
