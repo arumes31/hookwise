@@ -19,7 +19,7 @@ class User(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     username = db.Column(db.String(100), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    otp_secret = db.Column(db.String(32))
+    otp_secret = db.Column(db.String(256))
     is_2fa_enabled = db.Column(db.Boolean, default=False, nullable=False)
     role = db.Column(db.String(20), default="user")  # admin, user
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
