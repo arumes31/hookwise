@@ -260,6 +260,7 @@ def _register() -> None:
         )
         return render_template("audit.html", pagination=pagination, logs=pagination.items)
 
+    @main_bp.route("/api/logs/<log_id>/replay", methods=["POST"])
     @main_bp.route("/history/replay/<log_id>", methods=["POST"])
     @auth_required
     def replay_webhook(log_id: str) -> Any:
