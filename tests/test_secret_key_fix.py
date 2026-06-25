@@ -22,7 +22,7 @@ class TestSecretKeyFix(unittest.TestCase):
         self.assertEqual(str(cm.exception), "SECRET_KEY env var is required")
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_secret_key_missing_debug_uses_dev_key(self):
+    def test_secret_key_missing_debug_uses_generated_key(self):
         os.environ["DEBUG_MODE"] = "true"
         if "SECRET_KEY" in os.environ:
             del os.environ["SECRET_KEY"]
@@ -32,7 +32,12 @@ class TestSecretKeyFix(unittest.TestCase):
         os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
         app = create_app()
-        self.assertEqual(app.config.get("SECRET_KEY"), "dev-secret-key")
+        secret_key = app.config.get("SECRET_KEY")
+        # In debug mode a secure, ephemeral key is generated rather than a
+        # predictable hardcoded value.
+        self.assertTrue(secret_key)
+        self.assertNotEqual(secret_key, "dev-secret-key")
+        self.assertGreaterEqual(len(secret_key), 32)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_secret_key_provided_is_used(self):
