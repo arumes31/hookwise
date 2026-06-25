@@ -18,10 +18,14 @@ def create_app() -> Flask:
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
-        secret_key = secrets.token_hex(32)
-        _logger.critical(
-            "SECRET_KEY not set! Sessions will be invalidated on restart. Set SECRET_KEY in your environment."
-        )
+        if os.environ.get("DEBUG_MODE", "false").lower() == "true":
+            secret_key = secrets.token_hex(32)
+            _logger.warning(
+                "SECRET_KEY not set! Using a temporary key for development. Sessions will be invalidated on restart."
+            )
+        else:
+            _logger.critical("SECRET_KEY must be set in production!")
+            raise RuntimeError("SECRET_KEY env var is required")
     app.config["SECRET_KEY"] = secret_key
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"

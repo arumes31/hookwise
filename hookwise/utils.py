@@ -145,9 +145,16 @@ def get_fernet() -> Fernet:
         return _fernet_instance
     key = os.environ.get("ENCRYPTION_KEY")
     if not key:
-        # Fallback for dev, but should be set in prod
-        key = Fernet.generate_key().decode()
-        logger.critical("ENCRYPTION_KEY not set! Using a temporary key. Encrypted data will be LOST after restart.")
+        if os.environ.get("DEBUG_MODE", "false").lower() == "true":
+            # Fallback for dev, but should be set in prod
+            key = Fernet.generate_key().decode()
+            logger.warning(
+                "ENCRYPTION_KEY not set! Using a temporary key for development. "
+                "Encrypted data will be LOST after restart."
+            )
+        else:
+            logger.critical("ENCRYPTION_KEY must be set in production!")
+            raise RuntimeError("ENCRYPTION_KEY env var is required")
     _fernet_instance = Fernet(key.encode())
     return _fernet_instance
 
