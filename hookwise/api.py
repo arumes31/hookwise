@@ -25,7 +25,7 @@ def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -41,7 +41,7 @@ def _register() -> None:
             # This mimics the log_to_web calls in tasks.py
             message = log.error_message or "Processed"
             level = "info"
-            
+
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
@@ -66,7 +66,7 @@ def _register() -> None:
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
+
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
@@ -74,36 +74,32 @@ def _register() -> None:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
+            history.append(
+                {
+                    "timestamp": log.created_at.isoformat(),
+                    "message": message,
+                    "level": level,
+                    "config_name": log.config.name if log.config else "System",
+                    "payload": payload_data,
+                    "ticket_id": log.ticket_id,
+                }
+            )
         return jsonify(history)
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -920,11 +916,18 @@ def _register() -> None:
             return jsonify({"status": "error", "message": "No file"}), 400
         try:
             data = json.load(file)
+            config_ids = [c["id"] for c in data if "id" in c]
+            existing_configs = WebhookConfig.query.filter(WebhookConfig.id.in_(config_ids)).all()
+            config_map = {c.id: c for c in existing_configs}
             for c in data:
-                config = WebhookConfig.query.get(c["id"])
+                config_id = c.get("id")
+                if not config_id:
+                    continue
+                config = config_map.get(config_id)
                 if not config:
-                    config = WebhookConfig(id=c["id"])
+                    config = WebhookConfig(id=config_id)
                     db.session.add(config)
+                    config_map[config_id] = config
                 fields = [
                     "name",
                     "customer_id_default",
