@@ -42,6 +42,12 @@ def _configure_app(app: Flask) -> None:
             _logger.critical("SECRET_KEY must be set in production!")
             raise RuntimeError("SECRET_KEY env var is required")
     app.config["SECRET_KEY"] = secret_key
+    # Tie CSRF token validity to the session lifetime instead of the Flask-WTF
+    # default 1-hour cap. Long-lived pages (e.g. the endpoint editor) otherwise
+    # accumulate a stale token and POSTs fail with a 400 CSRF error. The token is
+    # still bound to the session secret, so CSRF protection is preserved.
+    _csrf_ttl = os.environ.get("WTF_CSRF_TIME_LIMIT")
+    app.config["WTF_CSRF_TIME_LIMIT"] = int(_csrf_ttl) if _csrf_ttl else None
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
     )
