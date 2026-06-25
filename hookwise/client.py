@@ -98,6 +98,46 @@ class ConnectWiseClient:
             logger.error(f"Error getting ticket {ticket_id}: {e}")
             raise TicketRequestError(str(e)) from e
 
+    def _build_ticket_payload(
+        self,
+        summary: str,
+        description: str,
+        company_id: Optional[str] = None,
+        board: Optional[str] = None,
+        status: Optional[str] = None,
+        ticket_type: Optional[str] = None,
+        subtype: Optional[str] = None,
+        item: Optional[str] = None,
+        priority: Optional[str] = None,
+        severity: Optional[str] = None,
+        impact: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "summary": summary,
+            "recordType": "ServiceTicket",
+            "board": {"name": board or self.service_board_name},
+            "status": {"name": status or self.status_new},
+            "initialDescription": description,
+        }
+        if ticket_type:
+            payload["type"] = {"name": ticket_type}
+        if subtype:
+            payload["subType"] = {"name": subtype}
+        if item:
+            payload["item"] = {"name": item}
+        if priority:
+            payload["priority"] = {"name": priority}
+        if severity:
+            payload["severity"] = severity
+        if impact:
+            payload["impact"] = impact
+
+        target_company_id = company_id or os.getenv("CW_DEFAULT_COMPANY_ID")
+        if target_company_id:
+            payload["company"] = {"identifier": target_company_id}
+
+        return payload
+
     def create_ticket(
         self,
         summary: str,
@@ -114,29 +154,19 @@ class ConnectWiseClient:
         impact: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         try:
-            payload: Dict[str, Any] = {
-                "summary": summary,
-                "recordType": "ServiceTicket",
-                "board": {"name": board or self.service_board_name},
-                "status": {"name": status or self.status_new},
-                "initialDescription": description,
-            }
-            if ticket_type:
-                payload["type"] = {"name": ticket_type}
-            if subtype:
-                payload["subType"] = {"name": subtype}
-            if item:
-                payload["item"] = {"name": item}
-            if priority:
-                payload["priority"] = {"name": priority}
-            if severity:
-                payload["severity"] = severity
-            if impact:
-                payload["impact"] = impact
-
-            target_company_id = company_id or os.getenv("CW_DEFAULT_COMPANY_ID")
-            if target_company_id:
-                payload["company"] = {"identifier": target_company_id}
+            payload = self._build_ticket_payload(
+                summary=summary,
+                description=description,
+                company_id=company_id,
+                board=board,
+                status=status,
+                ticket_type=ticket_type,
+                subtype=subtype,
+                item=item,
+                priority=priority,
+                severity=severity,
+                impact=impact,
+            )
 
             response = self.session.post(
                 f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30
