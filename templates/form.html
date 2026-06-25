@@ -1161,7 +1161,10 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         try {
             const res = await fetch('/api/debug/process', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
                 body: JSON.stringify({ payload, config })
             });
             const data = await res.json();
