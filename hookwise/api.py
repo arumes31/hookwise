@@ -7,7 +7,7 @@ import secrets
 import time
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
-from typing import Any, Tuple, cast
+from typing import Any, Dict, Tuple, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
@@ -21,11 +21,58 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
+def _format_webhook_log(log: WebhookLog) -> Dict[str, Any]:
+    """Format a WebhookLog entry for the history API."""
+    # Reconstruct the message based on status and action
+    message = log.error_message or "Processed"
+    level = "info"
+
+    if log.status == "failed":
+        message = log.error_message or "Unknown error"
+        level = "error"
+    elif log.status == "skipped":
+        err_msg = log.error_message or "No action required"
+        prefix = "Skipped: "
+        # Prevent double-prefixing if the message already starts with "Skipped:"
+        if err_msg.strip().startswith("Skipped:"):
+            message = err_msg
+        else:
+            message = f"{prefix}{err_msg}"
+        level = "info"
+    elif log.status == "processed":
+        if log.action == "create":
+            message = f"Created NEW ticket (ID: {log.ticket_id})"
+            level = "warning"
+        elif log.action == "update":
+            if not log.error_message:
+                message = f"Updated existing ticket (ID: {log.ticket_id})"
+            level = "info"
+        elif log.action == "close":
+            message = f"Closed ticket (ID: {log.ticket_id})"
+            level = "success"
+
+    payload_data = {"raw": log.payload}
+    if log.payload and log.payload.startswith(("{", "[")):
+        try:
+            payload_data = json.loads(log.payload)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {
+        "timestamp": log.created_at.isoformat(),
+        "message": message,
+        "level": level,
+        "config_name": log.config.name if log.config else "System",
+        "payload": payload_data,
+        "ticket_id": log.ticket_id,
+    }
+
+
 def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -35,75 +82,22 @@ def _register() -> None:
             .limit(50)
             .all()
         )
-        history = []
-        for log in logs:
-            # Reconstruct the message based on status and action
-            # This mimics the log_to_web calls in tasks.py
-            message = log.error_message or "Processed"
-            level = "info"
-            
-            if log.status == "failed":
-                message = log.error_message or "Unknown error"
-                level = "error"
-            elif log.status == "skipped":
-                err_msg = log.error_message or "No action required"
-                prefix = "Skipped: "
-                # Prevent double-prefixing if the message already starts with "Skipped:"
-                if err_msg.strip().startswith("Skipped:"):
-                    message = err_msg
-                else:
-                    message = f"{prefix}{err_msg}"
-                level = "info"
-            elif log.status == "processed":
-                if log.action == "create":
-                    message = f"Created NEW ticket (ID: {log.ticket_id})"
-                    level = "warning"
-                elif log.action == "update":
-                    if not log.error_message:
-                        message = f"Updated existing ticket (ID: {log.ticket_id})"
-                    level = "info"
-                elif log.action == "close":
-                    message = f"Closed ticket (ID: {log.ticket_id})"
-                    level = "success"
-                # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
-            payload_data = {"raw": log.payload}
-            if log.payload and log.payload.startswith(("{", "[")):
-                try:
-                    payload_data = json.loads(log.payload)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
-        return jsonify(history)
+        return jsonify([_format_webhook_log(log) for log in logs])
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
 
     @main_bp.route("/history")
     @auth_required
