@@ -1,7 +1,39 @@
-import pytest
-from unittest.mock import patch
 from datetime import datetime, timezone
-from hookwise.models import WebhookLog, WebhookConfig
+from unittest.mock import patch
+
+import pytest
+
+from hookwise import create_app
+from hookwise.extensions import db
+from hookwise.models import WebhookConfig, WebhookLog
+
+
+@pytest.fixture(autouse=True)
+def mock_redis():
+    # check_maintenance (before_request) reads redis; mock it so tests do
+    # not require a live Redis server.
+    with patch("hookwise.tasks.redis_client") as mock_redis_client:
+        mock_redis_client.get.return_value = None
+        yield mock_redis_client
+
+
+@pytest.fixture
+def app():
+    app = create_app()
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    return app
+
+
+@pytest.fixture
+def client(app):
+    with app.app_context():
+        db.create_all()
+        yield app.test_client()
+        db.session.remove()
+        db.drop_all()
+
 
 @pytest.fixture
 def auth_session(client):
