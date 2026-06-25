@@ -337,3 +337,23 @@ def test_log_audit_custom_session_no_commit(app):
 
         mock_session.add.assert_called_once()
         mock_session.commit.assert_not_called()
+
+
+# --- Fernet / Encryption key ---
+
+
+def test_get_fernet_missing_key():
+    """get_fernet should raise RuntimeError if ENCRYPTION_KEY is missing."""
+    with patch("hookwise.utils._fernet_instance", None):
+        with patch.dict(os.environ, {}, clear=True):
+            from hookwise.utils import get_fernet
+            with pytest.raises(RuntimeError, match="ENCRYPTION_KEY environment variable is not set"):
+                get_fernet()
+
+def test_get_fernet_invalid_key():
+    """get_fernet should raise RuntimeError if ENCRYPTION_KEY is invalid."""
+    with patch("hookwise.utils._fernet_instance", None):
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": "invalid-key-not-base64"}, clear=True):
+            from hookwise.utils import get_fernet
+            with pytest.raises(RuntimeError, match="Invalid ENCRYPTION_KEY"):
+                get_fernet()
