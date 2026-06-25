@@ -9,14 +9,18 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
+
 class ConnectWiseError(Exception):
     pass
+
 
 class TicketNotFoundError(ConnectWiseError):
     pass
 
+
 class TicketRequestError(ConnectWiseError):
     pass
+
 
 class ConnectWiseClient:
     def __init__(self) -> None:
