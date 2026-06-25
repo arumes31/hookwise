@@ -81,7 +81,12 @@ def test_timeout_fallback_to_created_at(app):
     with app.app_context():
         now = datetime.now(timezone.utc)
         c = WebhookConfig(
-            name="Fallback", timeout_alerts_enabled=True, is_enabled=True, is_draft=False, last_seen_at=None, timeout_hours=2
+            name="Fallback",
+            timeout_alerts_enabled=True,
+            is_enabled=True,
+            is_draft=False,
+            last_seen_at=None,
+            timeout_hours=2,
         )
         # Manually set created_at
         c.created_at = now - timedelta(hours=3)
@@ -224,10 +229,10 @@ def test_timeout_repeat_alert_ticket_closed(app):
 
 def test_timeout_ticket_not_found(app):
     """Test ticket deletion handling."""
+    from hookwise.client import TicketNotFoundError
     from hookwise.extensions import db
     from hookwise.models import WebhookConfig
     from hookwise.tasks import check_webhook_timeouts
-    from hookwise.client import TicketNotFoundError
 
     with app.app_context():
         now = datetime.now(timezone.utc)
@@ -257,10 +262,10 @@ def test_timeout_ticket_not_found(app):
 
 def test_timeout_connectwise_error(app):
     """Test handling of transient ConnectWise errors."""
+    from hookwise.client import ConnectWiseError
     from hookwise.extensions import db
     from hookwise.models import WebhookConfig
     from hookwise.tasks import check_webhook_timeouts
-    from hookwise.client import ConnectWiseError
 
     with app.app_context():
         now = datetime.now(timezone.utc)
