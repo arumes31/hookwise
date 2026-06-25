@@ -20,10 +20,11 @@ def mock_redis():
 @pytest.fixture
 def app():
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    return app
+    with patch("hookwise.tasks.redis_client"):
+        app = create_app()
+        app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
+        yield app
 
 
 @pytest.fixture
@@ -38,6 +39,7 @@ def client(app):
             with client.session_transaction() as sess:
                 sess["user_id"] = user.id
                 sess["username"] = user.username
+                sess["role"] = "admin"
             yield client
         db.session.remove()
         db.drop_all()
