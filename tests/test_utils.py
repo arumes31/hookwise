@@ -163,33 +163,35 @@ def test_check_auth_invalid():
 
 
 @patch.dict(os.environ, {}, clear=True)
-def test_check_auth_disabled_when_no_env():
-    """When GUI_USERNAME/GUI_PASSWORD are not set, auth is disabled."""
+def test_check_auth_fails_when_no_env():
+    """When GUI_PASSWORD is not set, auth should fail."""
     # Remove the keys if they exist
     os.environ.pop("GUI_USERNAME", None)
     os.environ.pop("GUI_PASSWORD", None)
-    assert check_auth("anything", "anything") is True
+    assert check_auth("anything", "anything") is False
 
 
 @patch.dict(os.environ, {"GUI_USERNAME": "admin"}, clear=True)
-def test_check_auth_disabled_missing_password():
-    """Auth should be disabled if GUI_PASSWORD is not set."""
-    assert check_auth("any", "any") is True
+def test_check_auth_fails_missing_password():
+    """Auth should fail if GUI_PASSWORD is not set."""
+    assert check_auth("any", "any") is False
 
 
 @patch.dict(os.environ, {"GUI_PASSWORD": "pass"}, clear=True)
-def test_check_auth_disabled_missing_username():
-    """Auth should be disabled if GUI_USERNAME is not set."""
-    assert check_auth("any", "any") is True
+def test_check_auth_defaults_to_admin_username():
+    """Auth should default to 'admin' username if GUI_USERNAME is not set."""
+    assert check_auth("admin", "pass") is True
+    assert check_auth("other", "pass") is False
 
 
 @patch.dict(os.environ, {"GUI_USERNAME": "", "GUI_PASSWORD": "pass"}, clear=True)
-def test_check_auth_disabled_empty_username():
-    """Auth should be disabled if GUI_USERNAME is empty."""
-    assert check_auth("any", "any") is True
+def test_check_auth_fails_empty_username():
+    """Auth should fail if GUI_USERNAME is explicitly empty and doesn't match."""
+    assert check_auth("admin", "pass") is False
+    assert check_auth("", "pass") is True
 
 
 @patch.dict(os.environ, {"GUI_USERNAME": "admin", "GUI_PASSWORD": ""}, clear=True)
-def test_check_auth_disabled_empty_password():
-    """Auth should be disabled if GUI_PASSWORD is empty."""
-    assert check_auth("any", "any") is True
+def test_check_auth_fails_empty_password():
+    """Auth should fail if GUI_PASSWORD is empty."""
+    assert check_auth("any", "any") is False

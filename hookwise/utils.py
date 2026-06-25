@@ -47,10 +47,10 @@ def check_auth(username: str, password: str) -> bool:
     """Check if a username/password combination is valid."""
     import hmac as _hmac
 
-    expected_username = os.environ.get("GUI_USERNAME")
+    expected_username = os.environ.get("GUI_USERNAME", "admin")
     expected_password = os.environ.get("GUI_PASSWORD")
-    if not expected_username or not expected_password:
-        return True  # Auth disabled if not set
+    if not expected_password:
+        return False  # Fail closed if password not set
     return _hmac.compare_digest(username, expected_username) and _hmac.compare_digest(password, expected_password)
 
 
