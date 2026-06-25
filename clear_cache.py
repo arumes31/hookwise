@@ -9,12 +9,6 @@ logger = logging.getLogger(__name__)
 
 def clear_cw_cache() -> None:
     with app.app_context():
-        # keys list removed as it was unused
-        # Also need to find wildcard keys for statuses, types, subtypes, items if possible
-        # Redis SCAN is better but for now let's try to list specific ones or flush all if acceptable?
-        # Flushing all might lose session data if stored in Redis? Flask-Session usually uses Redis.
-        # Let's stick to known keys and maybe use keys() pattern if needed.
-
         # Pattern match for dynamic keys
         try:
             for key in redis_client.scan_iter("hookwise_cw_*"):

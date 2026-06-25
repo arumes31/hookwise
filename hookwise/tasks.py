@@ -5,7 +5,7 @@ import random
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, List, Optional, cast
 
 from celery import Celery, Task
 from prometheus_client import Counter, Histogram
@@ -13,7 +13,7 @@ from prometheus_client import Counter, Histogram
 from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
-from .models import WebhookConfig, WebhookLog
+from .models import GlobalMapping, WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,23 @@ CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
+# Regex for token replacement
+TOKEN_RE = re.compile(r"(\$\S+|[^\s]+)")
+
 cw_client = ConnectWiseClient()
+_cached_mappings = None
+_last_cache_update = 0.0
+CACHE_REFRESH_INTERVAL = 300  # 5 minutes
+
+def get_all_global_mappings() -> list[dict[str, Any]]:
+    """Retrieve all GlobalMapping records as dicts, cached with TTL to avoid N+1 queries."""
+    global _cached_mappings, _last_cache_update
+    now = time.time()
+    if _cached_mappings is None or (now - _last_cache_update) > CACHE_REFRESH_INTERVAL:
+        mappings = GlobalMapping.query.all()
+        _cached_mappings = [m.to_dict() for m in mappings]
+        _last_cache_update = now
+    return _cached_mappings
 
 
 def make_celery(app_name: str) -> Celery:
@@ -144,9 +160,43 @@ def verify_endpoint_health() -> None:
         priorities = cw_client.get_priorities()
         priority_names = {p["name"] for p in priorities}
 
-        status_cache: Dict[int, Any] = {}
-
         configs = WebhookConfig.query.filter_by(is_enabled=True).all()
+
+        # Pre-populate status cache to avoid N+1 API calls
+        status_cache: Dict[int, Any] = {}
+        unique_bids = {board_map[c.board] for c in configs if c.board and c.board in board_map and c.status}
+
+        if unique_bids:
+            bid_list = list(unique_bids)
+            keys = [f"hookwise_cw_statuses_{bid}" for bid in bid_list]
+            try:
+                cached_data: List[Optional[bytes]] = cast(List[Optional[bytes]], redis_client.mget(keys))
+            except Exception as e:
+                logger.warning(f"Redis MGET failed in health check: {e}")
+                cached_data = [None] * len(bid_list)
+
+            for i, bid in enumerate(bid_list):
+                raw = cached_data[i]
+                if raw:
+                    try:
+                        statuses = json.loads(raw)
+                        status_cache[bid] = {s["name"] for s in statuses}
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                if bid not in status_cache:
+                    # Fallback to API if not in Redis
+                    statuses = cw_client.get_board_statuses(bid)
+                    if statuses:
+                        status_cache[bid] = {s["name"] for s in statuses}
+                        # Update global cache (aligns with API route cache)
+                        try:
+                            redis_client.set(f"hookwise_cw_statuses_{bid}", json.dumps(statuses), ex=3600)
+                        except Exception:
+                            pass
+                    else:
+                        status_cache[bid] = set()
+
         updates = 0
 
         for config in configs:
@@ -160,11 +210,8 @@ def verify_endpoint_health() -> None:
                     # 2. Check Status
                     if config.status:
                         bid = board_map[config.board]
-                        if bid not in status_cache:
-                            statuses = cw_client.get_board_statuses(bid)
-                            status_cache[bid] = {s["name"] for s in statuses}
-
-                        if config.status not in status_cache[bid]:
+                        # status_cache is already populated
+                        if config.status not in status_cache.get(bid, set()):
                             errors.append(f"Status '{config.status}' not found")
 
             # 3. Check Priority
@@ -267,7 +314,6 @@ def check_webhook_timeouts() -> None:
                                     "was deleted or no longer exists. Clearing to allow a new alert."
                                 )
                                 config.timeout_ticket_id = None
-                                db.session.commit()
                             except ConnectWiseError as e:
                                 logger.warning(f"Transient error looking up timeout ticket: {e}")
 
@@ -278,10 +324,7 @@ def check_webhook_timeouts() -> None:
 
                         if not config.timeout_ticket_id:
                             # No ticket open yet (or was closed), create one
-                            summary = (
-                                f"[TIMEOUT] Webhook Endpoint: {config.name} - "
-                                f"No data for {config.timeout_hours}h"
-                            )
+                            summary = f"[TIMEOUT] Webhook Endpoint: {config.name} - No data for {config.timeout_hours}h"
                             description = (
                                 f"The webhook endpoint '{config.name}' has not received any data for over "
                                 f"{config.timeout_hours} hours.\n"
@@ -307,8 +350,7 @@ def check_webhook_timeouts() -> None:
                                 config.last_stale_alert_at = now
                                 updates += 1
                                 logger.warning(
-                                    f"Created timeout ticket #{config.timeout_ticket_id} "
-                                    f"for endpoint '{config.name}'"
+                                    f"Created timeout ticket #{config.timeout_ticket_id} for endpoint '{config.name}'"
                                 )
                                 log_msg = (
                                     f"Timeout alert: Created ticket #{config.timeout_ticket_id} "
@@ -319,22 +361,21 @@ def check_webhook_timeouts() -> None:
                                     "timeout_alert",
                                     config.id,
                                     f"Created timeout ticket #{config.timeout_ticket_id}",
-                                    commit=False
+                                    commit=False,
                                 )
 
                                 req_id = f"timeout-{int(time.time())}"
                                 log_entry = WebhookLog(
                                     config_id=config.id,
                                     request_id=req_id,
-                                    payload=json.dumps({
-                                        "alert": "stale_endpoint",
-                                        "timeout_hours": config.timeout_hours
-                                    }),
+                                    payload=json.dumps(
+                                        {"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}
+                                    ),
                                     status="processed",
                                     action="create",
                                     ticket_id=config.timeout_ticket_id,
                                     source_ip="system",
-                                    error_message=f"Created timeout ticket #{config.timeout_ticket_id}"
+                                    error_message=f"Created timeout ticket #{config.timeout_ticket_id}",
                                 )
                                 db.session.add(log_entry)
                                 db.session.commit()
@@ -343,27 +384,26 @@ def check_webhook_timeouts() -> None:
                                 log_to_web(
                                     f"Timeout alert failure: Could not create ticket for {config.name}",
                                     "error",
-                                    config.name
+                                    config.name,
                                 )
                                 log_audit(
                                     "timeout_error",
                                     config.id,
                                     "Failed to create timeout ticket in CW API",
-                                    commit=False
+                                    commit=False,
                                 )
 
                                 req_id = f"timeout-err-{int(time.time())}"
                                 log_entry = WebhookLog(
                                     config_id=config.id,
                                     request_id=req_id,
-                                    payload=json.dumps({
-                                        "alert": "stale_endpoint",
-                                        "timeout_hours": config.timeout_hours
-                                    }),
+                                    payload=json.dumps(
+                                        {"alert": "stale_endpoint", "timeout_hours": config.timeout_hours}
+                                    ),
                                     status="failed",
                                     action="create",
                                     source_ip="system",
-                                    error_message="Failed to create ticket in ConnectWise API."
+                                    error_message="Failed to create ticket in ConnectWise API.",
                                 )
                                 db.session.add(log_entry)
                                 db.session.commit()
@@ -387,29 +427,31 @@ def check_webhook_timeouts() -> None:
                                     log_to_web(
                                         f"Timeout alert repeated: Added note to ticket #{config.timeout_ticket_id}",
                                         "warning",
-                                        config.name
+                                        config.name,
                                     )
-                                    
+
                                     log_entry = WebhookLog(
                                         config_id=config.id,
                                         request_id=req_id,
-                                        payload=json.dumps({
-                                            "alert": "stale_endpoint_repeat",
-                                            "timeout_hours": config.timeout_hours,
-                                            "timeout_ticket_id": config.timeout_ticket_id,
-                                            "last_stale_alert_at": (
-                                                config.last_stale_alert_at.isoformat()
-                                                if config.last_stale_alert_at
-                                                else None
-                                            ),
-                                            "created_at": config.created_at.isoformat(),
-                                            "hours_stale": round(hours_since_activity, 2)
-                                        }),
+                                        payload=json.dumps(
+                                            {
+                                                "alert": "stale_endpoint_repeat",
+                                                "timeout_hours": config.timeout_hours,
+                                                "timeout_ticket_id": config.timeout_ticket_id,
+                                                "last_stale_alert_at": (
+                                                    config.last_stale_alert_at.isoformat()
+                                                    if config.last_stale_alert_at
+                                                    else None
+                                                ),
+                                                "created_at": config.created_at.isoformat(),
+                                                "hours_stale": round(hours_since_activity, 2),
+                                            }
+                                        ),
                                         status="processed",
                                         action="update",
                                         ticket_id=config.timeout_ticket_id,
                                         source_ip="system",
-                                        error_message=f"Added repeat alert note to ticket #{config.timeout_ticket_id}"
+                                        error_message=f"Added repeat alert note to ticket #{config.timeout_ticket_id}",
                                     )
                                     db.session.add(log_entry)
                                     db.session.commit()
@@ -421,12 +463,14 @@ def check_webhook_timeouts() -> None:
                                     log_entry = WebhookLog(
                                         config_id=config.id,
                                         request_id=req_id,
-                                        payload=json.dumps({
-                                            "alert": "stale_endpoint_repeat_failed",
-                                            "timeout_hours": config.timeout_hours,
-                                            "timeout_ticket_id": config.timeout_ticket_id,
-                                            "hours_stale": round(hours_since_activity, 2)
-                                        }),
+                                        payload=json.dumps(
+                                            {
+                                                "alert": "stale_endpoint_repeat_failed",
+                                                "timeout_hours": config.timeout_hours,
+                                                "timeout_ticket_id": config.timeout_ticket_id,
+                                                "hours_stale": round(hours_since_activity, 2),
+                                            }
+                                        ),
                                         status="failed",
                                         action="update",
                                         ticket_id=config.timeout_ticket_id,
@@ -434,7 +478,7 @@ def check_webhook_timeouts() -> None:
                                         error_message=(
                                             f"ConnectWise API failed to add repeat alert note to ticket "
                                             f"#{config.timeout_ticket_id}"
-                                        )
+                                        ),
                                     )
                                     db.session.add(log_entry)
                                     db.session.commit()
@@ -496,53 +540,65 @@ def is_in_maintenance(config: WebhookConfig) -> bool:
     if not config.maintenance_windows:
         return False
     try:
-        from datetime import timezone
-
         windows = json.loads(config.maintenance_windows)
         now = datetime.now(timezone.utc)
-        now_time = now.time()
-        now_weekday = now.strftime("%a")  # Mon, Tue, etc.
 
         for window in windows:
-            w_type = window.get("type", "once")
-            start_str = window.get("start")
-            end_str = window.get("end")
-
-            if not start_str or not end_str:
-                continue
-
-            if w_type == "once":
-                # Simple format: {"type": "once", "start": "2024-01-01T00:00:00Z", "end": "2024-01-01T01:00:00Z"}
-                start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-                if start <= now <= end:
-                    return True
-
-            elif w_type in ["daily", "weekly"]:
-                # Format: {"type": "daily", "start": "HH:mm", "end": "HH:mm"}
-                # Check Weekday for Weekly
-                if w_type == "weekly":
-                    if now_weekday not in window.get("days", []):
-                        continue
-
-                # Parse times
-                s_h, s_m = map(int, start_str.split(":"))
-                e_h, e_m = map(int, end_str.split(":"))
-                start_time = now.replace(hour=s_h, minute=s_m, second=0, microsecond=0).time()
-                end_time = now.replace(hour=e_h, minute=e_m, second=0, microsecond=0).time()
-
-                if start_time < end_time:
-                    # Normal range within a single day
-                    if start_time <= now_time <= end_time:
-                        return True
-                else:
-                    # Overnight range (e.g., 22:00 to 02:00)
-                    if now_time >= start_time or now_time <= end_time:
-                        return True
-
+            if _is_window_active(window, now):
+                return True
     except Exception as e:
         logger.error(f"Error checking maintenance window: {e}")
     return False
+
+
+def _is_window_active(window: Dict[str, Any], now: datetime) -> bool:
+    """Check if a specific maintenance window is active."""
+    w_type = window.get("type", "once")
+    start_str = window.get("start")
+    end_str = window.get("end")
+
+    if not start_str or not end_str:
+        return False
+
+    if w_type == "once":
+        return _check_once_window(start_str, end_str, now)
+    if w_type in ["daily", "weekly"]:
+        return _check_recurring_window(window, w_type, start_str, end_str, now)
+    return False
+
+
+def _check_once_window(start_str: str, end_str: str, now: datetime) -> bool:
+    """Check if a 'once' window is active."""
+    try:
+        start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        return start <= now <= end
+    except (ValueError, TypeError):
+        return False
+
+
+def _check_recurring_window(window: Dict[str, Any], w_type: str, start_str: str, end_str: str, now: datetime) -> bool:
+    """Check if a 'daily' or 'weekly' window is active."""
+    if w_type == "weekly":
+        now_weekday = now.strftime("%a")
+        if now_weekday not in window.get("days", []):
+            return False
+
+    try:
+        # Parse times
+        s_h, s_m = map(int, start_str.split(":"))
+        e_h, e_m = map(int, end_str.split(":"))
+        now_time = now.time()
+        start_time = now.replace(hour=s_h, minute=s_m, second=0, microsecond=0).time()
+        end_time = now.replace(hour=e_h, minute=e_m, second=0, microsecond=0).time()
+
+        if start_time < end_time:
+            # Normal range within a single day
+            return start_time <= now_time <= end_time
+        # Overnight range (e.g., 22:00 to 02:00)
+        return now_time >= start_time or now_time <= end_time
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 def _resolve_timeout_alert(config: WebhookConfig) -> None:
@@ -555,21 +611,19 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
     if config.timeout_ticket_id:
         ticket_id = config.timeout_ticket_id
         resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
-        
+
         try:
             if cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status):
                 logger.info(f"Closed timeout ticket #{ticket_id} for endpoint '{config.name}'")
                 log_to_web(f"Timeout alert resolved: Closed ticket #{ticket_id}", "success", config.name)
-                
+
                 import time
 
                 from .models import WebhookLog
                 from .utils import log_audit
+
                 log_audit(
-                    "timeout_resolve",
-                    config.id,
-                    f"Automatically closed timeout ticket #{ticket_id}",
-                    commit=False
+                    "timeout_resolve", config.id, f"Automatically closed timeout ticket #{ticket_id}", commit=False
                 )
                 log_entry = WebhookLog(
                     config_id=config.id,
@@ -578,14 +632,12 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
                     status="processed",
                     action="close",
                     ticket_id=ticket_id,
-                    source_ip="system"
+                    source_ip="system",
                 )
                 db.session.add(log_entry)
                 config.timeout_ticket_id = None
             else:
-                logger.warning(
-                    f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. "
-                )
+                logger.warning(f"Failed to close timeout ticket #{ticket_id} for endpoint '{config.name}'. ")
         except TicketNotFoundError:
             logger.warning(
                 f"Timeout ticket #{ticket_id} for endpoint '{config.name}' "
@@ -704,8 +756,7 @@ def handle_webhook_logic(
                     mapping_val = json_mapping[field]
                     if isinstance(mapping_val, str) and " " in mapping_val:
                         # Tokenize: identify $-variable tokens vs literal text tokens
-                        token_re = re.compile(r"(\$\S+|[^\s]+)")
-                        tokens = token_re.findall(mapping_val)
+                        tokens = TOKEN_RE.findall(mapping_val)
                         # Resolve each token
                         resolved: list[tuple[str, bool]] = []  # (value, is_variable)
                         any_jsonpath_resolved = False
@@ -916,8 +967,6 @@ def handle_webhook_logic(
 
                 # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
                 if not company_id and config.global_routing_enabled:
-                    from .models import GlobalMapping
-
                     # Try common tenant fields
                     tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
                     tenant_val = None
@@ -931,26 +980,25 @@ def handle_webhook_logic(
                             break
 
                     if tenant_val:
-                        # 1. Try exact match
-                        mapping = GlobalMapping.query.filter_by(tenant_value=tenant_val).first()
+                        all_mappings = get_all_global_mappings()
+                        mapping = None
 
-                        # 2. Try wildcard matches if no exact match found
+                        # 1. Try exact match (in-memory)
+                        for m in all_mappings:
+                            if m.get("tenant_value") == tenant_val:
+                                mapping = m
+                                break
+
+                        # 2. Try wildcard matches if no exact match found (in-memory)
                         if not mapping:
                             import fnmatch
 
-                            from sqlalchemy import or_
-
-                            # Find all mappings that contain wildcards (* or ?)
-                            wildcard_mappings = GlobalMapping.query.filter(
-                                or_(GlobalMapping.tenant_value.like("%*%"), GlobalMapping.tenant_value.like("%?%"))
-                            ).all()
-
-                            # Check if the tenant value matches any of these wildcard patterns
-                            for w_mapping in wildcard_mappings:
-                                if w_mapping.tenant_value and fnmatch.fnmatch(tenant_val, w_mapping.tenant_value):
-                                    mapping = w_mapping
-                                    break
-
+                            for w_mapping in all_mappings:
+                                t_val = w_mapping.get("tenant_value")
+                                if isinstance(t_val, str) and ("*" in t_val or "?" in t_val):
+                                    if fnmatch.fnmatch(tenant_val, t_val):
+                                        mapping = w_mapping
+                                        break
                         # 3. Try LLM semantic match if still no match
                         if not mapping:
                             from .utils import call_llm
@@ -958,7 +1006,7 @@ def handle_webhook_logic(
                             # Get all companies from ConnectWise
                             companies = cw_client.get_companies()
                             if companies:
-                                # Create a list of identifiers (typically 'identifier' or 'name')
+                                # Create a list of identifiers (typically "identifier" or "name")
                                 available_companies = [
                                     str(c.get("identifier")) for c in companies if c.get("identifier")
                                 ]
@@ -966,10 +1014,10 @@ def handle_webhook_logic(
                                 if available_companies:
                                     companies_str = ", ".join(available_companies)
                                     llm_prompt = (
-                                        f"Match this incoming tenant string: '{tenant_val}' to the best option "
+                                        f"Match this incoming tenant string: \"{tenant_val}\" to the best option "
                                         f"from this list of company identifiers from ConnectWise: {companies_str}. "
                                         "Respond with ONLY the exact string from the list that matches best. "
-                                        "If none match reasonably well, reply with exactly 'NONE'."
+                                        "If none match reasonably well, reply with exactly \"NONE\"."
                                     )
                                     llm_resp = call_llm(llm_prompt)
                                     if (
@@ -987,7 +1035,7 @@ def handle_webhook_logic(
                                         ) + f" [LLM Global: {tenant_val} -> {company_id}]"
 
                         if mapping and not company_id:
-                            company_id = mapping.company_id
+                            company_id = mapping.get("company_id")
                             logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
                             log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
 

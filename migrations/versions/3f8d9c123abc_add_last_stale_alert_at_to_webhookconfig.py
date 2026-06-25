@@ -21,7 +21,7 @@ def upgrade():
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     columns = [c["name"] for c in inspector.get_columns("webhook_config")]
-    
+
     if "last_stale_alert_at" not in columns:
         with op.batch_alter_table("webhook_config", schema=None) as batch_op:
             batch_op.add_column(sa.Column("last_stale_alert_at", sa.DateTime(), nullable=True))
@@ -33,7 +33,7 @@ def downgrade():
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     columns = [c["name"] for c in inspector.get_columns("webhook_config")]
-    
+
     if "last_stale_alert_at" in columns:
         with op.batch_alter_table("webhook_config", schema=None) as batch_op:
             batch_op.drop_column("last_stale_alert_at")

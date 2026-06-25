@@ -47,10 +47,10 @@ def check_auth(username: str, password: str) -> bool:
     """Check if a username/password combination is valid."""
     import hmac as _hmac
 
-    expected_username = os.environ.get("GUI_USERNAME")
+    expected_username = os.environ.get("GUI_USERNAME", "admin")
     expected_password = os.environ.get("GUI_PASSWORD")
-    if not expected_username or not expected_password:
-        return True  # Auth disabled if not set
+    if not expected_password:
+        return False  # Fail closed if password not set
     return _hmac.compare_digest(username, expected_username) and _hmac.compare_digest(password, expected_password)
 
 
@@ -63,6 +63,12 @@ def authenticate() -> Response:
     )
 
 
+@lru_cache(maxsize=128)
+def parse_ip_network(network_str: str) -> Any:
+    """Cache parsed IP network objects to avoid re-parsing the same range."""
+    return ipaddress.ip_network(network_str)
+
+
 def auth_required(f: Any) -> Any:
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
@@ -73,7 +79,7 @@ def auth_required(f: Any) -> Any:
             trusted = False
             for trusted_range in [ip.strip() for ip in trusted_ips.split(",")]:
                 try:
-                    if client_ip and ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
+                    if client_ip and ipaddress.ip_address(client_ip) in parse_ip_network(trusted_range):
                         trusted = True
                         break
                 except ValueError:
@@ -145,10 +151,13 @@ def get_fernet() -> Fernet:
         return _fernet_instance
     key = os.environ.get("ENCRYPTION_KEY")
     if not key:
-        # Fallback for dev, but should be set in prod
-        key = Fernet.generate_key().decode()
-        logger.critical("ENCRYPTION_KEY not set! Using a temporary key. Encrypted data will be LOST after restart.")
-    _fernet_instance = Fernet(key.encode())
+        logger.critical("ENCRYPTION_KEY not set! This is required for security.")
+        raise RuntimeError("ENCRYPTION_KEY environment variable is not set.")
+    try:
+        _fernet_instance = Fernet(key.encode())
+    except (ValueError, TypeError) as e:
+        logger.critical(f"Invalid ENCRYPTION_KEY: {e}")
+        raise RuntimeError(f"Invalid ENCRYPTION_KEY: {e}") from e
     return _fernet_instance
 
 

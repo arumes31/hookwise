@@ -1,16 +1,20 @@
-"""Tests for utility functions: encryption, jsonpath, masking, auth."""
+"""Tests for utility functions: encryption, jsonpath, masking, auth, and LLM."""
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from hookwise import create_app
 from hookwise.extensions import db
+from hookwise.models import AuditLog
 from hookwise.utils import (
+    call_llm,
     check_auth,
     decrypt_string,
     encrypt_string,
+    log_audit,
     mask_secrets,
     resolve_jsonpath,
 )
@@ -116,6 +120,20 @@ def test_resolve_jsonpath_missing():
     assert resolve_jsonpath(data, "$.a.b.c") is None
 
 
+def test_resolve_jsonpath_edge_cases():
+    """Test resolve_jsonpath with empty path, empty data, or invalid path."""
+    # Path is empty or None
+    assert resolve_jsonpath({"a": 1}, "") is None
+    assert resolve_jsonpath({"a": 1}, None) is None
+
+    # Data is empty or None
+    assert resolve_jsonpath({}, "$.a") is None
+    assert resolve_jsonpath(None, "$.a") is None
+
+    # Path is invalid
+    assert resolve_jsonpath({"a": 1}, "!!!invalid!!!") is None
+
+
 # --- Masking ---
 
 
@@ -163,33 +181,179 @@ def test_check_auth_invalid():
 
 
 @patch.dict(os.environ, {}, clear=True)
-def test_check_auth_disabled_when_no_env():
-    """When GUI_USERNAME/GUI_PASSWORD are not set, auth is disabled."""
+def test_check_auth_fails_when_no_env():
+    """When GUI_PASSWORD is not set, auth should fail."""
     # Remove the keys if they exist
     os.environ.pop("GUI_USERNAME", None)
     os.environ.pop("GUI_PASSWORD", None)
-    assert check_auth("anything", "anything") is True
+    assert check_auth("anything", "anything") is False
 
 
 @patch.dict(os.environ, {"GUI_USERNAME": "admin"}, clear=True)
-def test_check_auth_disabled_missing_password():
-    """Auth should be disabled if GUI_PASSWORD is not set."""
-    assert check_auth("any", "any") is True
+def test_check_auth_fails_missing_password():
+    """Auth should fail if GUI_PASSWORD is not set."""
+    assert check_auth("any", "any") is False
 
 
 @patch.dict(os.environ, {"GUI_PASSWORD": "pass"}, clear=True)
-def test_check_auth_disabled_missing_username():
-    """Auth should be disabled if GUI_USERNAME is not set."""
-    assert check_auth("any", "any") is True
+def test_check_auth_defaults_to_admin_username():
+    """Auth should default to 'admin' username if GUI_USERNAME is not set."""
+    assert check_auth("admin", "pass") is True
+    assert check_auth("other", "pass") is False
 
 
 @patch.dict(os.environ, {"GUI_USERNAME": "", "GUI_PASSWORD": "pass"}, clear=True)
-def test_check_auth_disabled_empty_username():
-    """Auth should be disabled if GUI_USERNAME is empty."""
-    assert check_auth("any", "any") is True
+def test_check_auth_fails_empty_username():
+    """Auth should fail if GUI_USERNAME is explicitly empty and doesn't match."""
+    assert check_auth("admin", "pass") is False
+    assert check_auth("", "pass") is True
 
 
 @patch.dict(os.environ, {"GUI_USERNAME": "admin", "GUI_PASSWORD": ""}, clear=True)
-def test_check_auth_disabled_empty_password():
-    """Auth should be disabled if GUI_PASSWORD is empty."""
-    assert check_auth("any", "any") is True
+def test_check_auth_fails_empty_password():
+    """Auth should fail if GUI_PASSWORD is empty."""
+    assert check_auth("any", "any") is False
+
+
+# --- LLM ---
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_success(mock_post):
+    """Test successful LLM call."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"response": "Hello from LLM"}
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt")
+
+    assert result == "Hello from LLM"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert kwargs["json"]["prompt"] == "test prompt"
+    assert "You are a helpful assistant" in kwargs["json"]["system"]
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_custom_system_prompt(mock_post):
+    """Test LLM call with a custom system prompt."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"response": "Custom response"}
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt", system_prompt="Custom system prompt")
+
+    assert result == "Custom response"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert kwargs["json"]["system"] == "Custom system prompt"
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_http_error(mock_post):
+    """Test LLM call with HTTP error."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("500 Server Error")
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt")
+
+    assert result is None
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_exception(mock_post):
+    """Test LLM call with connection exception."""
+    mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+
+    result = call_llm("test prompt")
+
+    assert result is None
+
+
+@patch("hookwise.utils.requests.post")
+def test_call_llm_empty_response(mock_post):
+    """Test LLM call with empty/missing response field."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {}  # Missing "response" key
+    mock_post.return_value = mock_response
+
+    result = call_llm("test prompt")
+
+    assert result == ""  # response.json().get("response", "").strip() -> ""
+
+
+# --- Audit Logging ---
+
+
+def test_log_audit_system(app):
+    """log_audit without request context should use 'System' user."""
+    with app.app_context():
+        log_audit("test_action", details="test_details")
+        audit = AuditLog.query.filter_by(action="test_action").first()
+        assert audit is not None
+        assert audit.user == "System"
+        assert audit.details == "test_details"
+
+
+def test_log_audit_session_user(app):
+    """log_audit with session username should use that user."""
+    with app.test_request_context():
+        from flask import session
+        session["username"] = "session_user"
+        log_audit("session_action")
+
+        audit = AuditLog.query.filter_by(action="session_action").first()
+        assert audit is not None
+        assert audit.user == "session_user"
+
+
+def test_log_audit_basic_auth(app):
+    """log_audit with Basic Auth should use the provided username."""
+    with app.test_request_context():
+        from unittest.mock import MagicMock
+
+        from flask import request
+
+        mock_auth = MagicMock()
+        mock_auth.username = "auth_user"
+        with patch.object(request, "authorization", mock_auth):
+            log_audit("auth_action")
+
+            audit = AuditLog.query.filter_by(action="auth_action").first()
+            assert audit is not None
+            assert audit.user == "auth_user"
+
+
+def test_log_audit_custom_session_no_commit(app):
+    """log_audit with custom session and commit=False should not commit."""
+    with app.app_context():
+        from unittest.mock import MagicMock
+        mock_session = MagicMock()
+        log_audit("no_commit", commit=False, db_session=mock_session)
+
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_not_called()
+
+
+# --- Fernet / Encryption key ---
+
+
+def test_get_fernet_missing_key():
+    """get_fernet should raise RuntimeError if ENCRYPTION_KEY is missing."""
+    with patch("hookwise.utils._fernet_instance", None):
+        with patch.dict(os.environ, {}, clear=True):
+            from hookwise.utils import get_fernet
+            with pytest.raises(RuntimeError, match="ENCRYPTION_KEY environment variable is not set"):
+                get_fernet()
+
+def test_get_fernet_invalid_key():
+    """get_fernet should raise RuntimeError if ENCRYPTION_KEY is invalid."""
+    with patch("hookwise.utils._fernet_instance", None):
+        with patch.dict(os.environ, {"ENCRYPTION_KEY": "invalid-key-not-base64"}, clear=True):
+            from hookwise.utils import get_fernet
+            with pytest.raises(RuntimeError, match="Invalid ENCRYPTION_KEY"):
+                get_fernet()

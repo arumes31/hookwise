@@ -7,7 +7,7 @@ import secrets
 import time
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
-from typing import Any, Tuple, cast
+from typing import Any, Dict, Tuple, cast
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
@@ -21,11 +21,95 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
+
+def _parse_row_date(row_date: Any) -> date | None:
+    """Parse a date object or string from a database row."""
+    if isinstance(row_date, date):
+        return row_date
+    try:
+        return date.fromisoformat(str(row_date).split(" ")[0])
+    except ValueError:
+        try:
+            return datetime.strptime(str(row_date).split(" ")[0], "%Y-%m-%d").date()
+        except ValueError as e:
+            import logging
+            logging.error(f"Failed to parse date '{row_date}': {e}")
+            return None
+
+
+def _get_group_key(d: date, period: str) -> str:
+    """Generate a group key based on the period (daily, weekly, monthly)."""
+    if period == "weekly":
+        year, week, _ = d.isocalendar()
+        return f"{year}-W{week}"
+    elif period == "monthly":
+        return d.strftime("%Y-%m")
+    else:
+        return d.strftime("%m-%d")
+
+
+def _format_history_response(counts_by_group: dict[str, dict[str, int]], period: str) -> list[dict[str, Any]]:
+    """Format and fill gaps in the history data for the response."""
+    history_data: list[dict[str, Any]] = []
+    now: date = datetime.now(timezone.utc).date()
+
+    if period == "weekly":
+        def generate_weeks(start_date: date, count: int):
+            seen: set[tuple[int, int]] = set()
+            for j in range(60):
+                d = start_date - timedelta(days=j)
+                year, week, _ = d.isocalendar()
+                if (year, week) not in seen:
+                    seen.add((year, week))
+                    yield year, week
+                    if len(seen) == count:
+                        break
+
+        weeks_data: list[dict[str, Any]] = []
+        for year, week in generate_weeks(now, 4):
+            k = f"{year}-W{week}"
+            weeks_data.append(
+                {
+                    "date": f"W{week}",
+                    "created": counts_by_group.get(k, {}).get("created", 0),
+                    "updated": counts_by_group.get(k, {}).get("updated", 0),
+                    "closed": counts_by_group.get(k, {}).get("closed", 0),
+                }
+            )
+        history_data.extend(reversed(weeks_data))
+    elif period == "monthly":
+        for i in range(5, -1, -1):
+            total_months = now.year * 12 + now.month - 1 - i
+            y, m_0 = divmod(total_months, 12)
+            m = m_0 + 1
+            k = f"{y}-{m:02d}"
+            month_name = datetime(y, m, 1).strftime("%b")
+            history_data.append(
+                {
+                    "date": month_name,
+                    "created": counts_by_group.get(k, {}).get("created", 0),
+                    "updated": counts_by_group.get(k, {}).get("updated", 0),
+                    "closed": counts_by_group.get(k, {}).get("closed", 0),
+                }
+            )
+    else:
+        for i in range(6, -1, -1):
+            d = now - timedelta(days=i)
+            k = d.strftime("%m-%d")
+            history_data.append(
+                {
+                    "date": k,
+                    "created": counts_by_group.get(k, {}).get("created", 0),
+                    "updated": counts_by_group.get(k, {}).get("updated", 0),
+                    "closed": counts_by_group.get(k, {}).get("closed", 0),
+                }
+            )
+    return history_data
 def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -41,7 +125,7 @@ def _register() -> None:
             # This mimics the log_to_web calls in tasks.py
             message = log.error_message or "Processed"
             level = "info"
-            
+
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
@@ -66,7 +150,7 @@ def _register() -> None:
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
+
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
@@ -74,36 +158,32 @@ def _register() -> None:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
+            history.append(
+                {
+                    "timestamp": log.created_at.isoformat(),
+                    "message": message,
+                    "level": level,
+                    "config_name": log.config.name if log.config else "System",
+                    "payload": payload_data,
+                    "ticket_id": log.ticket_id,
+                }
+            )
         return jsonify(history)
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -176,6 +256,7 @@ def _register() -> None:
         )
         return render_template("audit.html", pagination=pagination, logs=pagination.items)
 
+    @main_bp.route("/api/logs/<log_id>/replay", methods=["POST"])
     @main_bp.route("/history/replay/<log_id>", methods=["POST"])
     @auth_required
     def replay_webhook(log_id: str) -> Any:
@@ -271,7 +352,6 @@ def _register() -> None:
             except Exception:
                 pass
 
-        import re as _re
 
         mapped_vals: dict[str, str] = {}
         overridable = [
@@ -289,7 +369,7 @@ def _register() -> None:
             if field in json_mapping:
                 mapping_val = json_mapping[field]
                 if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = _re.compile(r"(\$\S+|[^\s]+)")
+                    token_re = re.compile(r"(\$\S+|[^\s]+)")
                     tokens = token_re.findall(mapping_val)
                     resolved: list[tuple[str, bool]] = []
                     any_resolved = False
@@ -335,7 +415,7 @@ def _register() -> None:
             rule_regex = rule.get("regex")
             if rule_path and rule_regex:
                 val = str(resolve_jsonpath(data, rule_path))
-                if _re.search(rule_regex, val, _re.IGNORECASE):
+                if re.search(rule_regex, val, re.IGNORECASE):
                     matched_rules.append(
                         {
                             "regex": rule_regex,
@@ -550,14 +630,7 @@ def _register() -> None:
     @auth_required
     def get_stats_history() -> Response:
         period = request.args.get("period", "daily")
-
-        if period == "weekly":
-            days = 28
-        elif period == "monthly":
-            days = 180
-        else:
-            days = 7
-
+        days = {"weekly": 28, "monthly": 180}.get(period, 7)
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
 
         rows = (
@@ -571,36 +644,18 @@ def _register() -> None:
             .all()
         )
 
-        counts_by_group = {}
+        counts_by_group: dict[str, dict[str, int]] = {}
         for row in rows:
-            action = row[1]
-            count = row[2]
+            d = _parse_row_date(row[0])
+            if not d:
+                continue
 
-            if isinstance(row[0], date):
-                d = row[0]
-            else:
-                try:
-                    d = date.fromisoformat(str(row[0]).split(" ")[0])
-                except ValueError:
-                    try:
-                        d = datetime.strptime(str(row[0]).split(" ")[0], "%Y-%m-%d").date()
-                    except ValueError as e:
-                        import logging
-
-                        logging.error(f"Failed to parse date '{row[0]}': {e}")
-                        continue
-
-            if period == "weekly":
-                year, week, _ = d.isocalendar()
-                group_key = f"{year}-W{week}"
-            elif period == "monthly":
-                group_key = d.strftime("%Y-%m")
-            else:
-                group_key = d.strftime("%m-%d")
-
+            group_key = _get_group_key(d, period)
             if group_key not in counts_by_group:
                 counts_by_group[group_key] = {"created": 0, "updated": 0, "closed": 0}
 
+            action = row[1]
+            count = row[2]
             if action == "create":
                 counts_by_group[group_key]["created"] += count
             elif action == "update":
@@ -608,65 +663,7 @@ def _register() -> None:
             elif action == "close":
                 counts_by_group[group_key]["closed"] += count
 
-        history_data: list[dict[str, Any]] = []
-        now: date = datetime.now(timezone.utc).date()
-
-        if period == "weekly":
-
-            def generate_weeks(start_date: date, count: int):
-                seen: set[tuple[int, int]] = set()
-                for j in range(60):
-                    d = start_date - timedelta(days=j)
-                    year, week, _ = d.isocalendar()
-                    if (year, week) not in seen:
-                        seen.add((year, week))
-                        yield year, week
-                        if len(seen) == count:
-                            break
-
-            weeks_data: list[dict[str, Any]] = []
-            for year, week in generate_weeks(now, 4):
-                k = f"{year}-W{week}"
-                weeks_data.append(
-                    {
-                        "date": f"W{week}",
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0),
-                    }
-                )
-
-            history_data.extend(reversed(weeks_data))
-        elif period == "monthly":
-            for i in range(5, -1, -1):
-                total_months = now.year * 12 + now.month - 1 - i
-                y, m_0 = divmod(total_months, 12)
-                m = m_0 + 1
-                k = f"{y}-{m:02d}"
-                # short month name
-                month_name = datetime(y, m, 1).strftime("%b")
-                history_data.append(
-                    {
-                        "date": month_name,
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0),
-                    }
-                )
-        else:
-            for i in range(6, -1, -1):
-                d = now - timedelta(days=i)
-                k = d.strftime("%m-%d")
-                history_data.append(
-                    {
-                        "date": k,
-                        "created": counts_by_group.get(k, {}).get("created", 0),
-                        "updated": counts_by_group.get(k, {}).get("updated", 0),
-                        "closed": counts_by_group.get(k, {}).get("closed", 0),
-                    }
-                )
-
-        return jsonify(history_data)
+        return jsonify(_format_history_response(counts_by_group, period))
 
     # --- ConnectWise Proxy ---
 
@@ -920,10 +917,16 @@ def _register() -> None:
             return jsonify({"status": "error", "message": "No file"}), 400
         try:
             data = json.load(file)
+            ids = [c["id"] for c in data if "id" in c]
+            existing_configs = {cfg.id: cfg for cfg in WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()}
+
             for c in data:
-                config = WebhookConfig.query.get(c["id"])
+                config_id = c.get("id")
+                if not config_id:
+                    continue
+                config = existing_configs.get(config_id)
                 if not config:
-                    config = WebhookConfig(id=c["id"])
+                    config = WebhookConfig(id=config_id)
                     db.session.add(config)
                 fields = [
                     "name",
@@ -967,17 +970,9 @@ def _register() -> None:
         log_audit("feedback_submitted", None, f"Feedback: {message} | UA: {data.get('ua')}")
         return jsonify({"status": "success"})
 
-    @main_bp.route("/api/debug/process", methods=["POST"])
-    @auth_required
-    def debug_process() -> Any:
-        data = request.json.get("payload")
-        config_data = request.json.get("config", {})
-        if not data:
-            return jsonify({"status": "error", "message": "No sample payload provided"}), 400
-
-        steps = []
-        results = {}
-
+    def _determine_alert_type(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         trigger_field = config_data.get("trigger_field", "heartbeat.status")
         actual_val = str(resolve_jsonpath(data, trigger_field))
         steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
@@ -993,6 +988,9 @@ def _register() -> None:
             results["alert_type"] = "GENERIC"
         steps.append(f"Alert type determined as: {results['alert_type']}")
 
+    def _apply_json_mapping(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         mapping_str = config_data.get("json_mapping")
         if mapping_str:
             try:
@@ -1005,6 +1003,9 @@ def _register() -> None:
             except Exception as e:
                 steps.append(f"Error parsing JSON Mapping: {e}")
 
+    def _apply_routing_rules(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         rules_str = config_data.get("routing_rules")
         if rules_str:
             try:
@@ -1025,6 +1026,9 @@ def _register() -> None:
             except Exception as e:
                 steps.append(f"Error parsing Routing Rules: {e}")
 
+    def _resolve_summary_and_company(
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+    ) -> None:
         monitor = data.get("monitor", {})
         monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
         prefix = config_data.get("ticket_prefix", "Alert:")
@@ -1037,9 +1041,26 @@ def _register() -> None:
         )
         steps.append(f"Target Company Identifier: '{results['company']}'")
 
+    @main_bp.route("/api/debug/process", methods=["POST"])
+    @auth_required
+    def debug_process() -> Any:
+        data = request.json.get("payload")
+        config_data = request.json.get("config", {})
+        if not data:
+            return jsonify({"status": "error", "message": "No sample payload provided"}), 400
+
+        steps: list[str] = []
+        results: Dict[str, Any] = {}
+
+        _determine_alert_type(data, config_data, results, steps)
+        _apply_json_mapping(data, config_data, results, steps)
+        _apply_routing_rules(data, config_data, results, steps)
+        _resolve_summary_and_company(data, config_data, results, steps)
+
         return jsonify({"status": "success", "steps": steps, "results": results})
 
     @main_bp.route("/metrics", methods=["GET"])
+    @auth_required
     def metrics() -> Any:
         import hookwise.tasks as tasks_mod
         import hookwise.webhook as webhook_mod

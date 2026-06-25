@@ -15,13 +15,32 @@ _logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
+    """Application factory for the HookWise application."""
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
+
+    _configure_app(app)
+    _register_extensions(app)
+    _register_request_handlers(app)
+    _register_blueprints(app)
+    _init_db_data(app)
+    _register_error_handlers(app)
+    _register_commands(app)
+
+    return app
+
+
+def _configure_app(app: Flask) -> None:
+    """Configure the application with environment variables and defaults."""
     secret_key = os.environ.get("SECRET_KEY")
     if not secret_key:
-        secret_key = secrets.token_hex(32)
-        _logger.critical(
-            "SECRET_KEY not set! Sessions will be invalidated on restart. Set SECRET_KEY in your environment."
-        )
+        if os.environ.get("DEBUG_MODE", "false").lower() == "true":
+            secret_key = secrets.token_hex(32)
+            _logger.warning(
+                "SECRET_KEY not set! Using a temporary key for development. Sessions will be invalidated on restart."
+            )
+        else:
+            _logger.critical("SECRET_KEY must be set in production!")
+            raise RuntimeError("SECRET_KEY env var is required")
     app.config["SECRET_KEY"] = secret_key
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
@@ -41,12 +60,18 @@ def create_app() -> Flask:
             "pool_pre_ping": True,
         }
 
-    # Initialize extensions
+
+def _register_extensions(app: Flask) -> None:
+    """Initialize Flask extensions."""
     db.init_app(app)
     migrate.init_app(app, db)
     limiter.init_app(app)
     socketio.init_app(app)
     csrf.init_app(app)
+
+
+def _register_request_handlers(app: Flask) -> None:
+    """Register before and after request handlers and WSGI middleware."""
 
     @app.after_request
     def add_header(response: Response) -> Response:
@@ -93,8 +118,6 @@ def create_app() -> Flask:
 
     @app.before_request
     def check_maintenance() -> Any:
-        from flask import jsonify
-
         from .tasks import redis_client
 
         # Allow /admin, /health*, and static files during maintenance
@@ -111,25 +134,24 @@ def create_app() -> Flask:
                 return jsonify({"status": "error", "message": "Service under maintenance"}), 503
             return render_template("maintenance.html"), 503
 
-    # Register blueprints
-    # Sub-modules (auth, endpoints, webhook, api) are imported at the bottom
-    # of routes.py and register their routes directly on main_bp.
+
+def _register_blueprints(app: Flask) -> None:
+    """Register application blueprints."""
     from .routes import main_bp
 
     app.register_blueprint(main_bp)
 
+
+def _init_db_data(app: Flask) -> None:
+    """Initialize database with default data (e.g., admin user)."""
     from .models import User
 
     with app.app_context():
         try:
             gui_password = os.environ.get("GUI_PASSWORD")
             if not gui_password:
-                if os.environ.get("DEBUG_MODE", "false").lower() == "true":
-                    gui_password = "admin"
-                    _logger.warning("GUI_PASSWORD not set, using default 'admin' for development.")
-                else:
-                    _logger.critical("GUI_PASSWORD must be set in production!")
-                    raise RuntimeError("GUI_PASSWORD env var is required")
+                _logger.critical("GUI_PASSWORD must be set!")
+                raise RuntimeError("GUI_PASSWORD env var is required")
 
             admin = User.query.filter_by(username="admin").first()
             if not admin:
@@ -143,6 +165,10 @@ def create_app() -> Flask:
                 _logger.info("Admin password hash updated to match GUI_PASSWORD.")
         except Exception:
             db.session.rollback()
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Register error handlers for common HTTP errors."""
 
     @app.errorhandler(404)
     def page_not_found(e: Any) -> Any:
@@ -162,9 +188,9 @@ def create_app() -> Flask:
     def rate_limit_error(e: Any) -> Any:
         return render_template("429.html"), 429
 
-    # Register CLI commands
+
+def _register_commands(app: Flask) -> None:
+    """Register Flask CLI commands."""
     from .commands import clear_cw_cache_command
 
     app.cli.add_command(clear_cw_cache_command)
-
-    return app
