@@ -116,13 +116,13 @@ def index() -> Any:
             if last_activity:
                 if last_activity.tzinfo is None:
                     last_activity = last_activity.replace(tzinfo=timezone.utc)
-                
+
                 # Calculation: Next stale is either last_seen + timeout OR last_alert + timeout
                 # We show whichever is further in the future
                 timeout_delta = timedelta(hours=config.timeout_hours or 24)
-                
+
                 next_alert_from_seen = last_activity + timeout_delta
-                
+
                 if config.last_stale_alert_at:
                     last_alert = config.last_stale_alert_at
                     if last_alert.tzinfo is None:
