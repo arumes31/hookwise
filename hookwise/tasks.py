@@ -298,7 +298,6 @@ def check_webhook_timeouts() -> None:
                                     "was deleted or no longer exists. Clearing to allow a new alert."
                                 )
                                 config.timeout_ticket_id = None
-                                db.session.commit()
                             except ConnectWiseError as e:
                                 logger.warning(f"Transient error looking up timeout ticket: {e}")
 
