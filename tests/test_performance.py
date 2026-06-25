@@ -10,6 +10,13 @@ from hookwise.extensions import db
 from hookwise.models import User, WebhookConfig
 
 
+@pytest.fixture(autouse=True)
+def mock_redis():
+    with patch("hookwise.tasks.redis_client") as mock:
+        mock.get.return_value = None
+        yield mock
+
+
 @pytest.fixture
 def app():
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"

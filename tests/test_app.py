@@ -54,6 +54,10 @@ def test_health(mock_cw, mock_api_redis, mock_tasks_redis, client):
 def test_metrics(mock_cw, mock_tasks_redis, client):
     """Test the metrics endpoint."""
     mock_tasks_redis.get.return_value = None
+    with client.session_transaction() as sess:
+        sess["user_id"] = "test_user"
+        sess["username"] = "admin"
+        sess["role"] = "admin"
     response = client.get("/metrics")
     assert response.status_code == 200
     assert b"hookwise_webhooks_total" in response.data
