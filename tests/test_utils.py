@@ -116,6 +116,20 @@ def test_resolve_jsonpath_missing():
     assert resolve_jsonpath(data, "$.a.b.c") is None
 
 
+def test_resolve_jsonpath_edge_cases():
+    """Test resolve_jsonpath with empty path, empty data, or invalid path."""
+    # Path is empty or None
+    assert resolve_jsonpath({"a": 1}, "") is None
+    assert resolve_jsonpath({"a": 1}, None) is None
+
+    # Data is empty or None
+    assert resolve_jsonpath({}, "$.a") is None
+    assert resolve_jsonpath(None, "$.a") is None
+
+    # Path is invalid
+    assert resolve_jsonpath({"a": 1}, "!!!invalid!!!") is None
+
+
 # --- Masking ---
 
 
