@@ -16,7 +16,7 @@ from sqlalchemy.orm import joinedload
 from .extensions import csrf, db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
 from .tasks import celery, cw_client, process_webhook_task, redis_client
-from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
+from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath, resolve_monitor_name
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
@@ -451,7 +451,7 @@ def _register() -> None:
         # Step 5: Predicted action
         prefix = config.ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
         mapped_summary = mapped_vals.get("summary")
-        monitor_name = data.get("monitor", {}).get("name", data.get("title", "Unknown Source"))
+        monitor_name = resolve_monitor_name(data)
         ticket_summary = f"{prefix} {mapped_summary}" if mapped_summary else f"{prefix} {monitor_name}"
         predicted_action = (
             "create_ticket" if alert_type == "DOWN" else "close_ticket" if alert_type == "UP" else "add_note_or_skip"
@@ -1029,8 +1029,7 @@ def _register() -> None:
     def _resolve_summary_and_company(
         data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
     ) -> None:
-        monitor = data.get("monitor", {})
-        monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
+        monitor_name = resolve_monitor_name(data)
         prefix = config_data.get("ticket_prefix", "Alert:")
         results["summary"] = results.get("summary") or (f"{prefix} {monitor_name}" if prefix else monitor_name)
         steps.append(f"Final Ticket Summary: '{results['summary']}'")

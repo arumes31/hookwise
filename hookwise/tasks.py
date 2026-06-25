@@ -14,7 +14,7 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog
-from .utils import log_to_web, resolve_jsonpath
+from .utils import log_to_web, resolve_jsonpath, resolve_monitor_name
 
 logger = logging.getLogger(__name__)
 
@@ -848,8 +848,7 @@ def handle_webhook_logic(
                             priority = rule_overrides["priority"]
 
             actual_val = str(resolve_jsonpath(data, trigger_field))
-            monitor = data.get("monitor", {})
-            monitor_name = monitor.get("name", data.get("title", data.get("name", "Unknown Source")))
+            monitor_name = resolve_monitor_name(data)
             msg = data.get("msg", data.get("message", "No message"))
 
             open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]

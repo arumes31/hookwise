@@ -142,6 +142,23 @@ def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
         return None
 
 
+def resolve_monitor_name(data: Dict[str, Any]) -> str:
+    """Resolve a human-readable monitor/source name from a webhook payload.
+
+    The ``monitor`` field may be a dict (e.g. Uptime Kuma ``{"name": ...}``) or a
+    plain string (e.g. Fortinet/Graylog payloads). Fall back to ``title``/``name``
+    and finally a generic placeholder.
+    """
+    monitor = data.get("monitor")
+    if isinstance(monitor, dict):
+        name = monitor.get("name")
+        if name:
+            return str(name)
+    elif isinstance(monitor, str) and monitor:
+        return monitor
+    return str(data.get("title", data.get("name", "Unknown Source")))
+
+
 _fernet_instance = None
 
 
