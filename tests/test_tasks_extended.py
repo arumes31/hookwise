@@ -36,6 +36,25 @@ def app():
 
 
 @pytest.fixture(autouse=True)
+def bind_task_app(app):
+    """Force Celery tasks to run against this module's app.
+
+    ContextTask caches a module-global ``_app`` built from ``DATABASE_URL`` on
+    the first task invocation of the session. In the full test suite that
+    cached app can be bound to a different database (e.g. another module's
+    in-memory DB with no tables), causing ``no such table`` errors here. Pin
+    ``_app`` to this module's app (which has the tables) for the duration of
+    each test.
+    """
+    import hookwise.tasks as tasks_module
+
+    original = tasks_module._app
+    tasks_module._app = app
+    yield
+    tasks_module._app = original
+
+
+@pytest.fixture(autouse=True)
 def clean_db(app):
     """Clean database before each test."""
     from hookwise.extensions import db
