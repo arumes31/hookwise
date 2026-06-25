@@ -1040,6 +1040,7 @@ def _register() -> None:
         return jsonify({"status": "success", "steps": steps, "results": results})
 
     @main_bp.route("/metrics", methods=["GET"])
+    @auth_required
     def metrics() -> Any:
         import hookwise.tasks as tasks_mod
         import hookwise.webhook as webhook_mod

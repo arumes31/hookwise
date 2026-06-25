@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -7,6 +8,13 @@ from flask import json
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import User, WebhookConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_redis():
+    with patch("hookwise.tasks.redis_client") as mock:
+        mock.get.return_value = None
+        yield mock
 
 
 @pytest.fixture
