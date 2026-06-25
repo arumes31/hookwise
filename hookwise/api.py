@@ -1046,8 +1046,8 @@ def _register() -> None:
         if not data:
             return jsonify({"status": "error", "message": "No sample payload provided"}), 400
 
-        steps = []
-        results = {}
+        steps: list[str] = []
+        results: Dict[str, Any] = {}
 
         _determine_alert_type(data, config_data, results, steps)
         _apply_json_mapping(data, config_data, results, steps)
