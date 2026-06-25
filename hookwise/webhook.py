@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import logging
 from typing import Any
 
 from flask import g, jsonify, request
@@ -56,8 +57,6 @@ def _register() -> None:
                 db.session.add(log_entry)
                 db.session.commit()
             except Exception as _e:
-                import logging
-
                 logging.getLogger(__name__).error(f"Failed to log webhook rejection: {_e}")
                 db.session.rollback()
 
