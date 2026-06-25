@@ -43,6 +43,7 @@ def test_user_creation(db_session):
 def test_user_to_dict(db_session):
     user = User(
         username="testuser",
+        password_hash="hashed-password",
         role="admin"
     )
     db_session.add(user)
