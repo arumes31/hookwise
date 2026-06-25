@@ -13,7 +13,7 @@ from flask import Response, current_app, flash, jsonify, redirect, render_templa
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
 
-from .extensions import db, limiter
+from .extensions import csrf, db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
 from .tasks import celery, cw_client, process_webhook_task, redis_client
 from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
@@ -1042,6 +1042,7 @@ def _register() -> None:
         steps.append(f"Target Company Identifier: '{results['company']}'")
 
     @main_bp.route("/api/debug/process", methods=["POST"])
+    @csrf.exempt
     @auth_required
     def debug_process() -> Any:
         data = request.json.get("payload")
