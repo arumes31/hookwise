@@ -1,13 +1,14 @@
+import json
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig, WebhookLog
-from hookwise.tasks import cleanup_logs, run_llm_rca
+from hookwise.tasks import cleanup_logs, process_webhook_task, run_llm_rca
 
 
 @pytest.fixture
@@ -26,6 +27,7 @@ def app():
         yield app
         db.session.remove()
         db.drop_all()
+
 
 @patch("hookwise.tasks.redis_client")
 def test_cleanup_logs(mock_redis, app):
@@ -47,7 +49,7 @@ def test_cleanup_logs(mock_redis, app):
             request_id="old-req",
             payload="{}",
             status="processed",
-            created_at=now - timedelta(days=10)
+            created_at=now - timedelta(days=10),
         )
 
         # 2. Log newer than 7 days (should be kept)
@@ -56,7 +58,7 @@ def test_cleanup_logs(mock_redis, app):
             request_id="new-req",
             payload="{}",
             status="processed",
-            created_at=now - timedelta(days=5)
+            created_at=now - timedelta(days=5),
         )
 
         db.session.add(old_log)
@@ -77,6 +79,7 @@ def test_cleanup_logs(mock_redis, app):
         remaining_logs = WebhookLog.query.all()
         assert len(remaining_logs) == 1
         assert remaining_logs[0].request_id == "new-req"
+
 
 @patch("hookwise.tasks.redis_client")
 def test_cleanup_logs_default_retention(mock_redis, app):
@@ -99,7 +102,7 @@ def test_cleanup_logs_default_retention(mock_redis, app):
                 request_id="old-req",
                 payload="{}",
                 status="processed",
-                created_at=now - timedelta(days=20)
+                created_at=now - timedelta(days=20),
             )
 
             # Log newer than 15 days
@@ -108,7 +111,7 @@ def test_cleanup_logs_default_retention(mock_redis, app):
                 request_id="new-req",
                 payload="{}",
                 status="processed",
-                created_at=now - timedelta(days=10)
+                created_at=now - timedelta(days=10),
             )
 
             db.session.add(old_log)
@@ -154,3 +157,55 @@ def test_run_llm_rca_exception():
 
         assert result["status"] == "error"
         assert "LLM error: Exception" in result["rca"]
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_process_webhook_task_dlq(mock_handle, app):
+    """Test that task moves log to DLQ when max retries are exceeded."""
+    mock_handle.side_effect = Exception("Something went wrong")
+
+    with app.app_context():
+        config = WebhookConfig(name="Test Config", board="Test Board")
+        db.session.add(config)
+        db.session.commit()
+
+        log = WebhookLog(
+            config_id=config.id, request_id="req-123", payload=json.dumps({"test": "data"}), status="queued"
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        mock_self = MagicMock()
+        mock_self.request.retries = 5
+        mock_self.max_retries = 5
+
+        # Call the task function directly
+        process_webhook_task.run.__func__(mock_self, config.id, {"test": "data"}, "req-123")
+
+        db.session.refresh(log)
+        assert log.status == "dlq"
+        assert "Max retries exceeded" in log.error_message
+        assert log.retry_count == 5
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_process_webhook_task_retry(mock_handle, app):
+    """Test that task raises retry when max retries are not yet reached."""
+    mock_handle.side_effect = Exception("Temporary error")
+
+    with app.app_context():
+        config = WebhookConfig(name="Test Config", board="Test Board")
+        db.session.add(config)
+        db.session.commit()
+
+        mock_self = MagicMock()
+        mock_self.request.retries = 0
+        mock_self.max_retries = 5
+        mock_self.retry.side_effect = Exception("Retry raised")  # Celery's retry raises an exception
+
+        with pytest.raises(Exception, match="Retry raised"):
+            process_webhook_task.run.__func__(mock_self, config.id, {"test": "data"}, "req-123")
+
+        mock_self.retry.assert_called_once()
+        _, kwargs = mock_self.retry.call_args
+        assert "exc" in kwargs
