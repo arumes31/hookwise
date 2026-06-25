@@ -17,6 +17,7 @@ def build_redis_uri(password, host, port, db=0):
         return f"redis://:{quoted_password}@{host}:{port}/{db}"
     return f"redis://{host}:{port}/{db}"
 
+
 _redis_password = os.environ.get("REDIS_PASSWORD")
 _redis_host = os.environ.get("REDIS_HOST", "localhost")
 _redis_port = os.environ.get("REDIS_PORT", 6379)
