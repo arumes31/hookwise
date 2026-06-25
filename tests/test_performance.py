@@ -1,5 +1,6 @@
 import os
 import time
+from unittest.mock import patch
 
 import pytest
 from flask import json
@@ -12,10 +13,18 @@ from hookwise.models import User, WebhookConfig
 @pytest.fixture
 def app():
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    return app
+    with patch("hookwise.tasks.redis_client") as mock_redis1, \
+         patch("hookwise.api.redis_client") as mock_redis2, \
+         patch("hookwise.extensions.redis_client") as mock_redis3, \
+         patch("hookwise.metrics.redis_client") as mock_redis4:
+        mock_redis1.get.return_value = None
+        mock_redis2.get.return_value = None
+        mock_redis3.get.return_value = None
+        mock_redis4.get.return_value = None
+        app = create_app()
+        app.config["TESTING"] = True
+        app.config["WTF_CSRF_ENABLED"] = False
+        yield app
 
 
 @pytest.fixture
