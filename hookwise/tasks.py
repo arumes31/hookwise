@@ -29,6 +29,9 @@ CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
+# Regex for token replacement
+TOKEN_RE = re.compile(r"(\$\S+|[^\s]+)")
+
 cw_client = ConnectWiseClient()
 _cached_mappings = None
 _last_cache_update = 0.0
@@ -753,8 +756,7 @@ def handle_webhook_logic(
                     mapping_val = json_mapping[field]
                     if isinstance(mapping_val, str) and " " in mapping_val:
                         # Tokenize: identify $-variable tokens vs literal text tokens
-                        token_re = re.compile(r"(\$\S+|[^\s]+)")
-                        tokens = token_re.findall(mapping_val)
+                        tokens = TOKEN_RE.findall(mapping_val)
                         # Resolve each token
                         resolved: list[tuple[str, bool]] = []  # (value, is_variable)
                         any_jsonpath_resolved = False
