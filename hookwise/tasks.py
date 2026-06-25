@@ -13,7 +13,7 @@ from prometheus_client import Counter, Histogram
 from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
-from .models import WebhookConfig, WebhookLog
+from .models import GlobalMapping, WebhookConfig, WebhookLog
 from .utils import log_to_web, resolve_jsonpath
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,19 @@ _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
 cw_client = ConnectWiseClient()
+_cached_mappings = None
+_last_cache_update = 0.0
+CACHE_REFRESH_INTERVAL = 300  # 5 minutes
+
+def get_all_global_mappings() -> list[dict[str, Any]]:
+    """Retrieve all GlobalMapping records as dicts, cached with TTL to avoid N+1 queries."""
+    global _cached_mappings, _last_cache_update
+    now = time.time()
+    if _cached_mappings is None or (now - _last_cache_update) > CACHE_REFRESH_INTERVAL:
+        mappings = GlobalMapping.query.all()
+        _cached_mappings = [m.to_dict() for m in mappings]
+        _last_cache_update = now
+    return _cached_mappings
 
 
 def make_celery(app_name: str) -> Celery:
@@ -946,8 +959,6 @@ def handle_webhook_logic(
 
                 # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
                 if not company_id and config.global_routing_enabled:
-                    from .models import GlobalMapping
-
                     # Try common tenant fields
                     tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
                     tenant_val = None
@@ -961,26 +972,25 @@ def handle_webhook_logic(
                             break
 
                     if tenant_val:
-                        # 1. Try exact match
-                        mapping = GlobalMapping.query.filter_by(tenant_value=tenant_val).first()
+                        all_mappings = get_all_global_mappings()
+                        mapping = None
 
-                        # 2. Try wildcard matches if no exact match found
+                        # 1. Try exact match (in-memory)
+                        for m in all_mappings:
+                            if m.get("tenant_value") == tenant_val:
+                                mapping = m
+                                break
+
+                        # 2. Try wildcard matches if no exact match found (in-memory)
                         if not mapping:
                             import fnmatch
 
-                            from sqlalchemy import or_
-
-                            # Find all mappings that contain wildcards (* or ?)
-                            wildcard_mappings = GlobalMapping.query.filter(
-                                or_(GlobalMapping.tenant_value.like("%*%"), GlobalMapping.tenant_value.like("%?%"))
-                            ).all()
-
-                            # Check if the tenant value matches any of these wildcard patterns
-                            for w_mapping in wildcard_mappings:
-                                if w_mapping.tenant_value and fnmatch.fnmatch(tenant_val, w_mapping.tenant_value):
-                                    mapping = w_mapping
-                                    break
-
+                            for w_mapping in all_mappings:
+                                t_val = w_mapping.get("tenant_value")
+                                if isinstance(t_val, str) and ("*" in t_val or "?" in t_val):
+                                    if fnmatch.fnmatch(tenant_val, t_val):
+                                        mapping = w_mapping
+                                        break
                         # 3. Try LLM semantic match if still no match
                         if not mapping:
                             from .utils import call_llm
@@ -988,7 +998,7 @@ def handle_webhook_logic(
                             # Get all companies from ConnectWise
                             companies = cw_client.get_companies()
                             if companies:
-                                # Create a list of identifiers (typically 'identifier' or 'name')
+                                # Create a list of identifiers (typically "identifier" or "name")
                                 available_companies = [
                                     str(c.get("identifier")) for c in companies if c.get("identifier")
                                 ]
@@ -996,10 +1006,10 @@ def handle_webhook_logic(
                                 if available_companies:
                                     companies_str = ", ".join(available_companies)
                                     llm_prompt = (
-                                        f"Match this incoming tenant string: '{tenant_val}' to the best option "
+                                        f"Match this incoming tenant string: \"{tenant_val}\" to the best option "
                                         f"from this list of company identifiers from ConnectWise: {companies_str}. "
                                         "Respond with ONLY the exact string from the list that matches best. "
-                                        "If none match reasonably well, reply with exactly 'NONE'."
+                                        "If none match reasonably well, reply with exactly \"NONE\"."
                                     )
                                     llm_resp = call_llm(llm_prompt)
                                     if (
@@ -1017,7 +1027,7 @@ def handle_webhook_logic(
                                         ) + f" [LLM Global: {tenant_val} -> {company_id}]"
 
                         if mapping and not company_id:
-                            company_id = mapping.company_id
+                            company_id = mapping.get("company_id")
                             logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
                             log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
 
