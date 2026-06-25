@@ -112,13 +112,14 @@ def create_app() -> Flask:
             return render_template("maintenance.html"), 503
 
     # Register blueprints
-    # Sub-modules (auth, endpoints, webhook, api) are imported at the bottom
+    # Sub-modules (auth, endpoints, webhook) are imported at the bottom
     # of routes.py and register their routes directly on main_bp.
+    from . import api  # noqa: F401
+    from .models import User
     from .routes import main_bp
 
     app.register_blueprint(main_bp)
 
-    from .models import User
 
     with app.app_context():
         try:
