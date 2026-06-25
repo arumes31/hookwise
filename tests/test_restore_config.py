@@ -1,9 +1,11 @@
 import json
-import pytest
 from io import BytesIO
+
+import pytest
+
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig
-from unittest.mock import patch
+
 
 @pytest.fixture
 def app():
