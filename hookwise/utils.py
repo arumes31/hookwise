@@ -63,6 +63,12 @@ def authenticate() -> Response:
     )
 
 
+@lru_cache(maxsize=128)
+def parse_ip_network(network_str: str) -> Any:
+    """Cache parsed IP network objects to avoid re-parsing the same range."""
+    return ipaddress.ip_network(network_str)
+
+
 def auth_required(f: Any) -> Any:
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
@@ -73,7 +79,7 @@ def auth_required(f: Any) -> Any:
             trusted = False
             for trusted_range in [ip.strip() for ip in trusted_ips.split(",")]:
                 try:
-                    if client_ip and ipaddress.ip_address(client_ip) in ipaddress.ip_network(trusted_range):
+                    if client_ip and ipaddress.ip_address(client_ip) in parse_ip_network(trusted_range):
                         trusted = True
                         break
                 except ValueError:
