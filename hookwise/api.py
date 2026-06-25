@@ -21,11 +21,49 @@ from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
+def _count_webhook_stats_base_query(today_start: datetime) -> Any:
+    """Return the base query for today's non-draft webhook logs."""
+    return (
+        db.session.query(WebhookLog)
+        .join(WebhookConfig)
+        .filter(WebhookConfig.is_draft.is_(False), WebhookLog.created_at >= today_start)
+    )
+
+
+def _count_webhook_stats(today_start: datetime) -> Tuple[int, int, int, int, int, int]:
+    """Return a tuple of (created, updated, closed, failed, successful, total) counts for today."""
+    from sqlalchemy import and_
+
+    return cast(
+        Tuple[int, int, int, int, int, int],
+        _count_webhook_stats_base_query(today_start)
+        .with_entities(
+            db.func.count().filter(and_(WebhookLog.status == "processed", WebhookLog.action == "create")),
+            db.func.count().filter(and_(WebhookLog.status == "processed", WebhookLog.action == "update")),
+            db.func.count().filter(and_(WebhookLog.status == "processed", WebhookLog.action == "close")),
+            db.func.count().filter(WebhookLog.status.in_(["failed", "dlq"])),
+            db.func.count().filter(WebhookLog.status.in_(["processed", "skipped"])),
+            db.func.count(),
+        )
+        .one(),
+    )
+
+
+def _calculate_avg_processing_time(today_start: datetime) -> float:
+    """Calculate the average processing time for processed webhooks today."""
+    return (
+        db.session.query(db.func.avg(WebhookLog.processing_time))
+        .filter(WebhookLog.created_at >= today_start, WebhookLog.status == "processed")
+        .scalar()
+        or 0.0
+    )
+
+
 def _register() -> None:
     from .routes import main_bp
 
     # --- History & Logs ---
-    
+
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
@@ -41,7 +79,7 @@ def _register() -> None:
             # This mimics the log_to_web calls in tasks.py
             message = log.error_message or "Processed"
             level = "info"
-            
+
             if log.status == "failed":
                 message = log.error_message or "Unknown error"
                 level = "error"
@@ -66,7 +104,7 @@ def _register() -> None:
                     message = f"Closed ticket (ID: {log.ticket_id})"
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
-                    
+
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
@@ -74,36 +112,32 @@ def _register() -> None:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            history.append({
-                "timestamp": log.created_at.isoformat(),
-                "message": message,
-                "level": level,
-                "config_name": log.config.name if log.config else "System",
-                "payload": payload_data,
-                "ticket_id": log.ticket_id
-            })
+            history.append(
+                {
+                    "timestamp": log.created_at.isoformat(),
+                    "message": message,
+                    "level": level,
+                    "config_name": log.config.name if log.config else "System",
+                    "payload": payload_data,
+                    "ticket_id": log.ticket_id,
+                }
+            )
         return jsonify(history)
 
     @main_bp.route("/api/activity/trigger-timeout-check", methods=["POST"])
     @auth_required
     def trigger_timeout_check() -> Any:
         from .tasks import check_webhook_timeouts
+
         try:
             # Trigger the task in the background
             task = check_webhook_timeouts.delay()
-            return jsonify({
-                "status": "success",
-                "message": "Manual timeout check triggered in background.",
-                "task_id": task.id
-            })
+            return jsonify(
+                {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
+            )
         except Exception as e:
             current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({
-                "status": "error",
-                "message": "Failed to enqueue timeout check",
-                "details": str(e)
-            }), 503
-
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -466,81 +500,18 @@ def _register() -> None:
     @main_bp.route("/api/stats")
     @auth_required
     def get_stats() -> Any:
-        from sqlalchemy import func
-
         today_start = datetime.combine(datetime.now(timezone.utc).date(), dtime.min)
 
-        tickets_created = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "create",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        tickets_updated = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "update",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        tickets_closed = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status == "processed",
-                WebhookLog.action == "close",
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        failed_attempts = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["failed", "dlq"]),
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-
-        total_today = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(WebhookConfig.is_draft.is_(False), WebhookLog.created_at >= today_start)
-            .count()
-        )
-        successful_attempts = (
-            WebhookLog.query.join(WebhookConfig)
-            .filter(
-                WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["processed", "skipped"]),
-                WebhookLog.created_at >= today_start,
-            )
-            .count()
-        )
-        success_rate = (successful_attempts / total_today * 100) if total_today > 0 else 100
-        avg_proc = (
-            db.session.query(func.avg(WebhookLog.processing_time))
-            .filter(WebhookLog.created_at >= today_start, WebhookLog.status == "processed")
-            .scalar()
-            or 0
-        )
+        created, updated, closed, failed, successful, total = _count_webhook_stats(today_start)
+        success_rate = (successful / total * 100) if total > 0 else 100
+        avg_proc = _calculate_avg_processing_time(today_start)
 
         return jsonify(
             {
-                "created_today": tickets_created,
-                "updated_today": tickets_updated,
-                "closed_today": tickets_closed,
-                "failed_today": failed_attempts,
+                "created_today": created,
+                "updated_today": updated,
+                "closed_today": closed,
+                "failed_today": failed,
                 "success_rate": round(success_rate, 1),
                 "avg_processing_time": round(float(avg_proc), 2),
             }
