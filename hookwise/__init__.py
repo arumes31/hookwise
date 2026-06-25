@@ -126,7 +126,7 @@ def create_app() -> Flask:
             if not gui_password:
                 if os.environ.get("DEBUG_MODE", "false").lower() == "true":
                     gui_password = "admin"
-                    _logger.warning("GUI_PASSWORD not set, using default 'admin' for development.")
+                    _logger.warning("GUI_PASSWORD not set, using default credentials for development.")
                 else:
                     _logger.critical("GUI_PASSWORD must be set in production!")
                     raise RuntimeError("GUI_PASSWORD env var is required")
