@@ -76,6 +76,13 @@ celery.conf.beat_schedule = {
     },
 }
 
+# Execution guards: a hung ConnectWise/LLM call must not pin a worker forever.
+# The soft limit raises SoftTimeLimitExceeded (catchable for cleanup); the hard
+# limit force-kills the task. Defaults are generous enough for slow LLM RCA runs
+# and are overridable via env.
+celery.conf.task_soft_time_limit = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "120"))
+celery.conf.task_time_limit = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "300"))
+
 _app = None
 
 

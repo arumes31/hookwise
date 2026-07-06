@@ -140,9 +140,15 @@ class WebhookLog(Base):
     ticket_id = db.Column(db.Integer)
     matched_rule = db.Column(db.Text)
     processing_time = db.Column(db.Float)  # in seconds
-    source_ip = db.Column(db.String(50))
+    source_ip = db.Column(db.String(50), index=True)
     retry_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    # Composite index for the common history query: filter by endpoint + status,
+    # ordered by recency. Complements the single-column indexes above.
+    __table_args__ = (
+        db.Index("ix_webhook_log_config_status_created", "config_id", "status", "created_at"),
+    )
 
     config = db.relationship(
         "WebhookConfig", backref=db.backref("logs", lazy=True, cascade="all, delete-orphan", passive_deletes=True)

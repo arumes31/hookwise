@@ -394,6 +394,14 @@
         document.body.removeChild(link);
     }
 
+    function hasActiveHistoryFilters() {
+        return ['history-search', 'date-from', 'date-to', 'endpoint-filter', 'status-filter', 'source-ip-filter']
+            .some(id => {
+                const el = document.getElementById(id);
+                return el && el.value;
+            });
+    }
+
     function searchHistory() {
         const term = document.getElementById('history-search').value;
         const from = document.getElementById('date-from').value;
@@ -508,6 +516,10 @@
             if (socket) {
                 socket.on('new_log', (data) => {
                     if (!liveToggle.checked) return;
+                    // Live tail streams the latest events across all endpoints; when a
+                    // filter is active the streamed row may not belong to the filtered
+                    // view, so suppress it rather than polluting the results.
+                    if (hasActiveHistoryFilters()) return;
                     const tr = document.createElement('tr');
                     tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
 

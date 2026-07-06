@@ -66,3 +66,26 @@ jobs:
       run: |
         ls -R
         pytest tests/ -v
+
+    - name: Audit dependencies for known vulnerabilities
+      continue-on-error: true  # surface CVEs without blocking merges initially
+      run: |
+        pip install pip-audit
+        pip-audit -r requirements.txt
+
+    - name: Check for migration drift
+      # Non-blocking for now: the repo has pre-existing model/migration drift
+      # (user.otp_secret length, webhook_log FK ondelete=CASCADE). Once those are
+      # reconciled with a migration, drop continue-on-error to make this a gate.
+      continue-on-error: true
+      env:
+        FLASK_APP: hookwise:create_app
+        DATABASE_URL: postgresql://hookwise:hookwise_pass@localhost:5432/hookwise_test
+        SECRET_KEY: test-secret-key
+        GUI_PASSWORD: test-password
+        ENCRYPTION_KEY: vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E=
+        REDIS_HOST: localhost
+        TESTING: "true"
+      run: |
+        flask db upgrade
+        flask db check
