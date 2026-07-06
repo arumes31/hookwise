@@ -72,6 +72,22 @@
                     </div>
                 </div>
             </div>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #9f1239;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">DLQ</h6>
+                        <h3 class="fw-bold mb-0 text-white" id="stat-dlq">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card glass-card shadow-lg h-100" style="--accent: #64748b;">
+                    <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">No Action</h6>
+                        <h3 class="fw-bold mb-0 text-white" id="stat-noaction">0</h3>
+                    </div>
+                </div>
+            </div>
             <div class="col-12">
                 <div class="card glass-card shadow-lg" style="--accent: #6366f1;">
                     <div class="card-body p-3">
@@ -982,6 +998,8 @@
             const elClosed = document.getElementById('stat-closed');
             const elRate = document.getElementById('stat-rate');
             const elFailed = document.getElementById('stat-failed');
+            const elDlq = document.getElementById('stat-dlq');
+            const elNoAction = document.getElementById('stat-noaction');
             const elLatency = document.getElementById('stat-latency');
 
             if (elCreated) elCreated.textContent = data.created_today;
@@ -989,6 +1007,8 @@
             if (elClosed) elClosed.textContent = data.closed_today;
             if (elRate) elRate.textContent = data.success_rate;
             if (elFailed) elFailed.textContent = data.failed_today;
+            if (elDlq) elDlq.textContent = data.dlq_today;
+            if (elNoAction) elNoAction.textContent = data.non_action_today;
             if (elLatency) elLatency.textContent = data.avg_processing_time;
 
             if (typeof MiniChart !== 'undefined') {
