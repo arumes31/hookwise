@@ -79,9 +79,24 @@ celery.conf.beat_schedule = {
 # Execution guards: a hung ConnectWise/LLM call must not pin a worker forever.
 # The soft limit raises SoftTimeLimitExceeded (catchable for cleanup); the hard
 # limit force-kills the task. Defaults are generous enough for slow LLM RCA runs
-# and are overridable via env.
-celery.conf.task_soft_time_limit = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "120"))
-celery.conf.task_time_limit = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "300"))
+# and are overridable via env. Parsing is defensive (mirrors VIABILITY_TTL above):
+# a malformed env value falls back to the default instead of crashing worker
+# startup at import time, and the soft limit is kept strictly below the hard limit
+# (Celery requires soft < hard for the soft limit to ever fire).
+_raw_soft_limit = os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "120")
+_soft_time_limit = max(1, int(_raw_soft_limit)) if _raw_soft_limit.isdigit() else 120
+_raw_hard_limit = os.environ.get("CELERY_TASK_TIME_LIMIT", "300")
+_hard_time_limit = max(1, int(_raw_hard_limit)) if _raw_hard_limit.isdigit() else 300
+if _soft_time_limit >= _hard_time_limit:
+    logger.warning(
+        "CELERY_TASK_SOFT_TIME_LIMIT (%s) must be less than CELERY_TASK_TIME_LIMIT (%s); "
+        "clamping the soft limit below the hard limit.",
+        _soft_time_limit,
+        _hard_time_limit,
+    )
+    _soft_time_limit = _hard_time_limit - 1
+celery.conf.task_soft_time_limit = _soft_time_limit
+celery.conf.task_time_limit = _hard_time_limit
 
 _app = None
 
