@@ -35,6 +35,18 @@
             <option value="{{ cfg.id }}" {% if cfg.id==endpoint_id %}selected{% endif %}>{{ cfg.name }}</option>
             {% endfor %}
         </select>
+        <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+            style="width: 140px;" onchange="searchHistory()">
+            <option value="">All Statuses</option>
+            <option value="processed" {% if status=='processed' %}selected{% endif %}>Processed</option>
+            <option value="skipped" {% if status=='skipped' %}selected{% endif %}>Skipped</option>
+            <option value="failed" {% if status=='failed' %}selected{% endif %}>Failed</option>
+            <option value="dlq" {% if status=='dlq' %}selected{% endif %}>DLQ</option>
+            <option value="queued" {% if status=='queued' %}selected{% endif %}>Queued</option>
+        </select>
+        <input type="text" id="source-ip-filter"
+            class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 150px;"
+            placeholder="Source IP..." value="{{ source_ip or '' }}" onchange="searchHistory()">
         <div class="input-group input-group-sm" style="width: 250px;">
             <input type="text" id="history-search" class="form-control bg-dark border-secondary text-white"
                 placeholder="Search Ticket or Request ID...">
@@ -182,7 +194,7 @@
     <ul class="pagination justify-content-center">
         {% if pagination.has_prev %}
         <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
-                href="{{ url_for('main.history', page=pagination.prev_num) }}">Previous</a></li>
+                href="{{ url_for('main.history', page=pagination.prev_num, search=search, date_from=date_from, date_to=date_to, endpoint_id=endpoint_id, status=status, source_ip=source_ip) }}">Previous</a></li>
         {% else %}
         <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-secondary">Previous</span>
         </li>
@@ -191,7 +203,7 @@
                 pagination.pages }}</span></li>
         {% if pagination.has_next %}
         <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
-                href="{{ url_for('main.history', page=pagination.next_num) }}">Next</a></li>
+                href="{{ url_for('main.history', page=pagination.next_num, search=search, date_from=date_from, date_to=date_to, endpoint_id=endpoint_id, status=status, source_ip=source_ip) }}">Next</a></li>
         {% else %}
         <li class="page-item disabled"><span class="page-link bg-dark border-secondary text-secondary">Next</span></li>
         {% endif %}
@@ -382,12 +394,22 @@
         document.body.removeChild(link);
     }
 
+    function hasActiveHistoryFilters() {
+        return ['history-search', 'date-from', 'date-to', 'endpoint-filter', 'status-filter', 'source-ip-filter']
+            .some(id => {
+                const el = document.getElementById(id);
+                return el && el.value;
+            });
+    }
+
     function searchHistory() {
         const term = document.getElementById('history-search').value;
         const from = document.getElementById('date-from').value;
         const to = document.getElementById('date-to').value;
         const endpoint = document.getElementById('endpoint-filter').value;
-        window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}&endpoint_id=${encodeURIComponent(endpoint)}`;
+        const status = document.getElementById('status-filter').value;
+        const sourceIp = document.getElementById('source-ip-filter').value;
+        window.location.href = `{{ url_for('main.history') }}?search=${encodeURIComponent(term)}&date_from=${encodeURIComponent(from)}&date_to=${encodeURIComponent(to)}&endpoint_id=${encodeURIComponent(endpoint)}&status=${encodeURIComponent(status)}&source_ip=${encodeURIComponent(sourceIp)}`;
     }
 
     function viewPayload(id) {
@@ -494,6 +516,10 @@
             if (socket) {
                 socket.on('new_log', (data) => {
                     if (!liveToggle.checked) return;
+                    // Live tail streams the latest events across all endpoints; when a
+                    // filter is active the streamed row may not belong to the filtered
+                    // view, so suppress it rather than polluting the results.
+                    if (hasActiveHistoryFilters()) return;
                     const tr = document.createElement('tr');
                     tr.className = 'border-bottom border-light border-opacity-5 animate-pulse';
 

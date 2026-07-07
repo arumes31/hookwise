@@ -193,6 +193,8 @@ def _register() -> None:
         date_from = request.args.get("date_from", "")
         date_to = request.args.get("date_to", "")
         endpoint_id = request.args.get("endpoint_id", "")
+        status = request.args.get("status", "")
+        source_ip = request.args.get("source_ip", "")
         per_page = 25
 
         query = WebhookLog.query
@@ -212,6 +214,12 @@ def _register() -> None:
 
         if endpoint_id:
             query = query.filter(WebhookLog.config_id == endpoint_id)
+
+        if status:
+            query = query.filter(WebhookLog.status == status)
+
+        if source_ip:
+            query = query.filter(WebhookLog.source_ip.ilike(f"%{source_ip}%"))
 
         if date_from:
             from datetime import datetime
@@ -241,6 +249,8 @@ def _register() -> None:
             date_from=date_from,
             date_to=date_to,
             endpoint_id=endpoint_id,
+            status=status,
+            source_ip=source_ip,
             all_configs=all_configs,
             debug_mode=debug_mode,
             cw_url=cw_url,
@@ -587,8 +597,33 @@ def _register() -> None:
             WebhookLog.query.join(WebhookConfig)
             .filter(
                 WebhookConfig.is_draft.is_(False),
-                WebhookLog.status.in_(["failed", "dlq"]),
+                WebhookLog.status == "failed",
                 WebhookLog.created_at >= today_start,
+            )
+            .count()
+        )
+
+        dlq_today = (
+            WebhookLog.query.join(WebhookConfig)
+            .filter(
+                WebhookConfig.is_draft.is_(False),
+                WebhookLog.status == "dlq",
+                WebhookLog.created_at >= today_start,
+            )
+            .count()
+        )
+
+        # "No action" = webhooks that were handled but resulted in no ticket
+        # change (skipped, or processed without a create/update/close action).
+        non_action_today = (
+            WebhookLog.query.join(WebhookConfig)
+            .filter(
+                WebhookConfig.is_draft.is_(False),
+                WebhookLog.created_at >= today_start,
+                db.or_(
+                    WebhookLog.status == "skipped",
+                    db.and_(WebhookLog.status == "processed", WebhookLog.action.is_(None)),
+                ),
             )
             .count()
         )
@@ -621,6 +656,8 @@ def _register() -> None:
                 "updated_today": tickets_updated,
                 "closed_today": tickets_closed,
                 "failed_today": failed_attempts,
+                "dlq_today": dlq_today,
+                "non_action_today": non_action_today,
                 "success_rate": round(success_rate, 1),
                 "avg_processing_time": round(float(avg_proc), 2),
             }

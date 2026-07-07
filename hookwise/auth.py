@@ -47,6 +47,7 @@ def _register_login_routes(bp: Any) -> None:
                     log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
                     return redirect(url_for("main.index"))
 
+                log_audit("login_2fa_failed", None, f"Failed 2FA attempt for pending user {pending_user_id}")
                 flash("Invalid 2FA code", "danger")
                 return render_template("login.html", step="2fa")
 
@@ -71,6 +72,7 @@ def _register_login_routes(bp: Any) -> None:
                 log_audit("login", None, f"User {username} logged in")
                 return redirect(url_for("main.index"))
 
+            log_audit("login_failed", None, f"Failed login attempt for username '{username}'")
             flash("Invalid username or password", "danger")
 
         # GET request - always reset pending state to ensure clean login flow

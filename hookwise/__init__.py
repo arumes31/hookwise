@@ -48,6 +48,23 @@ def _configure_app(app: Flask) -> None:
     # still bound to the session secret, so CSRF protection is preserved.
     _csrf_ttl = os.environ.get("WTF_CSRF_TIME_LIMIT")
     app.config["WTF_CSRF_TIME_LIMIT"] = int(_csrf_ttl) if _csrf_ttl else None
+
+    # Session cookie hardening. HttpOnly + SameSite=Lax block JS access and
+    # cross-site sends; Secure keeps the session cookie off plaintext HTTP.
+    # Secure defaults on in production but off under TESTING so the http test
+    # client still round-trips the session cookie.
+    _secure_default = "false" if os.environ.get("TESTING", "").lower() == "true" else "true"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = (
+        os.environ.get("SESSION_COOKIE_SECURE", _secure_default).lower() == "true"
+    )
+
+    # Reject oversized bodies before they are buffered into memory (protects the
+    # ingestion worker from memory-exhaustion payloads). Configurable in KB.
+    _max_kb = os.environ.get("MAX_CONTENT_LENGTH_KB", "1024")
+    app.config["MAX_CONTENT_LENGTH"] = (int(_max_kb) if _max_kb.isdigit() else 1024) * 1024
+
     app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
     )
@@ -193,6 +210,12 @@ def _register_error_handlers(app: Flask) -> None:
     @app.errorhandler(429)
     def rate_limit_error(e: Any) -> Any:
         return render_template("429.html"), 429
+
+    @app.errorhandler(413)
+    def payload_too_large(e: Any) -> Any:
+        if request.path.startswith("/w/") or request.path.startswith("/api/"):
+            return jsonify({"status": "error", "message": "Payload too large"}), 413
+        return render_template("500.html"), 413
 
 
 def _register_commands(app: Flask) -> None:

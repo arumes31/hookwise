@@ -57,3 +57,6 @@ compare_reqs.py
 generate_final_reqs.py
 requirements_final.txt
 requirements_updated.txt
+graphify-out/
+
+.claudeignore
