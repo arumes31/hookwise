@@ -60,3 +60,9 @@ requirements_updated.txt
 graphify-out/
 
 .claudeignore
+
+.tmp*
+.tmp
+.pytest*
+.pytest
+.ruff_cache
