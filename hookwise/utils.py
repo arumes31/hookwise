@@ -311,7 +311,8 @@ def format_cipp_results(data: Dict[str, Any]) -> str:
     if not _has_cipp_value(results):
         return "No alert results were returned."
 
-    task_info = data.get("TaskInfo") if isinstance(data.get("TaskInfo"), dict) else {}
+    raw_task_info = data.get("TaskInfo")
+    task_info: Dict[str, Any] = raw_task_info if isinstance(raw_task_info, dict) else {}
     command = str(task_info.get("Command", ""))
     result_items = results if isinstance(results, list) else [results]
     rendered = [_format_cipp_result_item(item, index, command) for index, item in enumerate(result_items, start=1)]
