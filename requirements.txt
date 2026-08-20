@@ -41,7 +41,7 @@ mypy==1.20.0
 mypy_extensions==1.1.0
 ordered-set==4.1.0
 packaging==26.0
-pathspec==1.0.4
+pathspec==1.1.1
 pluggy==1.6.0
 ply==3.11
 prometheus_client==0.25.0
