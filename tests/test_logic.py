@@ -90,6 +90,67 @@ def test_webhook_logic_with_jsonpath(mock_cw, mock_redis, app):
 
 @patch("hookwise.tasks.redis_client")
 @patch("hookwise.tasks.cw_client")
+def test_cipp_results_are_inserted_after_jsonpath_substitution(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 43}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Template",
+            description_template="Tenant: {$.Tenant}\n{{ cipp_results }}",
+            trigger_field="status",
+            open_value="down",
+            close_value="up",
+            board="Test Board",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        data = {
+            "status": "down",
+            "Tenant": "example.com",
+            "TaskInfo": {"Command": "Get-CIPPAlertDefenderAlerts"},
+            "Results": [{"Title": "Literal {$.Tenant}"}],
+        }
+
+        handle_webhook_logic(config.id, data, "req-cipp-template")
+
+        description = mock_cw.create_ticket.call_args.kwargs["description"]
+        assert "Tenant: example.com" in description
+        assert "Title: Literal {$.Tenant}" in description
+
+
+@patch("hookwise.tasks.format_cipp_results")
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_description_without_cipp_placeholder_skips_formatter(mock_cw, mock_redis, mock_formatter, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 44}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Standard Template",
+            description_template="Tenant: {$.Tenant}",
+            trigger_field="status",
+            open_value="down",
+            close_value="up",
+            board="Test Board",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"status": "down", "Tenant": "example.com"}, "req-standard-template")
+
+        mock_formatter.assert_not_called()
+        assert mock_cw.create_ticket.call_args.kwargs["description"] == "Tenant: example.com"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
 def test_webhook_logic_with_routing_rules(mock_cw, mock_redis, app):
     """Test that routing rule overrides are applied when regex matches."""
     mock_redis.get.return_value = None

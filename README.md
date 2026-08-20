@@ -282,7 +282,20 @@ Use these in your "Ticket Description Template":
 - `{{ monitor_name }}`: The alert source name.
 - `{{ msg }}`: The alert message.
 - `{{ request_id }}`: Internal tracking ID.
+- `{{ cipp_results }}`: Readable English rendering of every item in a CIPP `Results` array.
 - `{$..field}`: Any valid JSONPath (e.g., `{$..heartbeat.status}`).
+
+Example universal CIPP template:
+```text
+CIPP Alert
+
+Tenant: {$.Tenant}
+Alert: {$.TaskInfo.Name}
+Source: {$.TaskInfo.Command}
+Hookwise Request ID: {{ request_id }}
+
+{{ cipp_results }}
+```
 
 ### Web GUI Shortcuts
 - ` / ` : Focus Search bar.

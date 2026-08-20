@@ -14,6 +14,7 @@ from hookwise.utils import (
     check_auth,
     decrypt_string,
     encrypt_string,
+    format_cipp_results,
     log_audit,
     mask_secrets,
     resolve_jsonpath,
@@ -164,6 +165,121 @@ def test_mask_secrets_list():
     masked = mask_secrets(data)
     assert masked[0]["password"] == "***"
     assert masked[1]["name"] == "n"
+
+
+# --- CIPP result formatting ---
+
+
+def test_format_cipp_defender_results():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertDefenderAlerts"},
+        "Results": [
+            {
+                "Title": '"MalUri" malware was prevented',
+                "Severity": "informational",
+                "Category": "Malware",
+                "ProductName": "Microsoft Defender for Endpoint",
+                "DetectionSource": "antivirus",
+                "Description": "First line\\nSecond line",
+                "RecommendedActions": "\\tCollect artifacts\\n\\tReview the machine timeline",
+                "CreatedAt": "2026-03-10T10:29:52Z",
+                "EmptyField": None,
+            },
+            {"Title": "Suspicious activity", "Severity": "high"},
+        ],
+    }
+
+    result = format_cipp_results(data)
+
+    assert "ALERT 1" in result
+    assert "ALERT 2" in result
+    assert 'Title: "MalUri" malware was prevented' in result
+    assert "Product: Microsoft Defender for Endpoint" in result
+    assert "First line\nSecond line" in result
+    assert "- Collect artifacts\n- Review the machine timeline" in result
+    assert "Empty Field" not in result
+    assert "None" not in result
+
+
+def test_format_cipp_secret_expiry_masks_and_renders_all_results():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppSecretExpiry"},
+        "Results": [
+            {
+                "AppName": "Firestart Cloud",
+                "AppId": "app-1",
+                "SecretName": "Firestart",
+                "SecretID": "secret-1",
+                "Expires": "2026-09-08T06:45:22.969Z",
+                "Tenant": "example.com",
+            },
+            {"AppName": "Second App", "AppId": "app-2", "Expires": "2026-10-01T00:00:00Z"},
+        ],
+    }
+
+    result = format_cipp_results(mask_secrets(data))
+
+    assert "APPLICATION 1" in result
+    assert "APPLICATION 2" in result
+    assert "Application Name: Firestart Cloud" in result
+    assert "Application Name: Second App" in result
+    assert "Secret Name: ***" in result
+    assert "Secret ID: ***" in result
+
+
+def test_format_cipp_certificate_expiry():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppCertificateExpiry"},
+        "Results": [
+            {
+                "DisplayName": "SAML Application",
+                "AppId": "app-1",
+                "Type": "SamlServicePrincipal",
+                "ServicePrincipalId": "sp-1",
+                "Expires": "2026-09-08T06:45:22.969Z",
+            }
+        ],
+    }
+
+    result = format_cipp_results(data)
+
+    assert "APPLICATION 1" in result
+    assert "Application Name: SAML Application" in result
+    assert "Application Type: SamlServicePrincipal" in result
+    assert "Service Principal ID: sp-1" in result
+
+
+def test_format_cipp_unknown_result_fields_use_generic_fallback():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertFutureAlert"},
+        "Results": [{"PolicyDisplayName": "Future Policy", "NestedData": {"state": "warning"}}],
+    }
+
+    result = format_cipp_results(data)
+
+    assert "RESULT 1" in result
+    assert "Policy Display Name: Future Policy" in result
+    assert 'Nested Data:\n{\n  "state": "warning"\n}' in result
+
+
+def test_format_cipp_empty_results():
+    assert format_cipp_results({"Results": []}) == "No alert results were returned."
+    assert format_cipp_results({}) == "No alert results were returned."
+
+
+def test_format_cipp_recursively_empty_values():
+    empty_results = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
+    assert format_cipp_results(empty_results) == "No alert results were returned."
+
+    populated_results = {
+        "Results": [{"Whitespace": "   ", "EmptyContainer": [None, {}], "Count": 0, "Enabled": False}]
+    }
+    result = format_cipp_results(populated_results)
+
+    assert "Whitespace" not in result
+    assert "Empty Container" not in result
+    assert "Count: 0" in result
+    assert "Enabled: False" in result
 
 
 # --- Auth ---
