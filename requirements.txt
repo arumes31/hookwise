@@ -56,7 +56,7 @@ python-dotenv==1.2.2
 python-engineio==4.13.1
 python-socketio==5.16.1
 redis==7.4.0
-requests==2.33.1
+requests==2.34.2
 rich==14.3.3
 ruff==0.15.19
 segno==1.6.6
