@@ -142,6 +142,181 @@ def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
         return None
 
 
+_CIPP_FIELD_LABELS = {
+    "Title": "Title",
+    "Severity": "Severity",
+    "Category": "Category",
+    "ProductName": "Product",
+    "DetectionSource": "Detection Source",
+    "ServiceSource": "Service Source",
+    "Classification": "Classification",
+    "Determination": "Determination",
+    "ThreatDisplayName": "Threat",
+    "ThreatFamilyName": "Threat Family",
+    "ActorDisplayName": "Threat Actor",
+    "MitreTechniques": "MITRE Techniques",
+    "AssignedTo": "Assigned To",
+    "FirstActivityDateTime": "First Activity",
+    "LastActivityDateTime": "Last Activity",
+    "CreatedAt": "Created",
+    "Description": "Description",
+    "RecommendedActions": "Recommended Actions",
+    "AlertId": "Alert ID",
+    "IncidentId": "Incident ID",
+    "AlertUrl": "Alert URL",
+    "IncidentUrl": "Incident URL",
+    "AppName": "Application Name",
+    "DisplayName": "Application Name",
+    "AppId": "Application ID",
+    "SecretName": "Secret Name",
+    "SecretID": "Secret ID",
+    "Expires": "Expiration Date",
+    "Type": "Application Type",
+    "ServicePrincipalId": "Service Principal ID",
+    "Tenant": "Tenant",
+}
+
+_CIPP_DEFENDER_SUMMARY_FIELDS = (
+    "Title",
+    "Severity",
+    "Category",
+    "ProductName",
+    "DetectionSource",
+    "ServiceSource",
+    "Classification",
+    "Determination",
+    "ThreatDisplayName",
+    "ThreatFamilyName",
+    "ActorDisplayName",
+    "MitreTechniques",
+    "AssignedTo",
+)
+_CIPP_DEFENDER_TIMESTAMP_FIELDS = ("FirstActivityDateTime", "LastActivityDateTime", "CreatedAt")
+_CIPP_DEFENDER_REFERENCE_FIELDS = ("AlertId", "IncidentId", "AlertUrl", "IncidentUrl")
+_CIPP_APPLICATION_FIELDS = (
+    "AppName",
+    "DisplayName",
+    "AppId",
+    "SecretName",
+    "SecretID",
+    "Type",
+    "ServicePrincipalId",
+    "Expires",
+    "Tenant",
+)
+
+
+def _has_cipp_value(value: Any) -> bool:
+    """Return whether a CIPP result value should be rendered."""
+    return value is not None and value != "" and value != [] and value != {}
+
+
+def _format_cipp_value(value: Any) -> str:
+    """Format a CIPP field without falling back to Python object repr output."""
+    if isinstance(value, str):
+        return value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t").strip()
+    if isinstance(value, list):
+        populated = [item for item in value if _has_cipp_value(item)]
+        if all(not isinstance(item, (dict, list)) for item in populated):
+            return ", ".join(str(item) for item in populated)
+        return json.dumps(populated, ensure_ascii=False, indent=2)
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    return str(value)
+
+
+def _humanize_cipp_key(key: str) -> str:
+    """Turn an unknown CIPP payload key into a readable English label."""
+    if key in _CIPP_FIELD_LABELS:
+        return _CIPP_FIELD_LABELS[key]
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", key).replace("_", " ")
+    return words.strip().title()
+
+
+def _format_cipp_labeled_value(key: str, value: Any) -> list[str]:
+    formatted = _format_cipp_value(value)
+    label = _humanize_cipp_key(key)
+    if "\n" in formatted:
+        return [f"{label}:", formatted]
+    return [f"{label}: {formatted}"]
+
+
+def _append_cipp_field_section(
+    output: list[str], title: str, item: dict[str, Any], fields: tuple[str, ...], consumed: set[str]
+) -> None:
+    lines: list[str] = []
+    for key in fields:
+        consumed.add(key)
+        value = item.get(key)
+        if _has_cipp_value(value):
+            lines.extend(_format_cipp_labeled_value(key, value))
+    if lines:
+        if output:
+            output.append("")
+        output.extend((title, "", *lines))
+
+
+def _append_cipp_body_section(
+    output: list[str], title: str, item: dict[str, Any], key: str, consumed: set[str], *, bullets: bool = False
+) -> None:
+    consumed.add(key)
+    value = item.get(key)
+    if not _has_cipp_value(value):
+        return
+    body = _format_cipp_value(value)
+    if bullets:
+        action_lines = [line.strip() for line in body.splitlines() if line.strip()]
+        body = "\n".join(
+            line if re.match(r"^(?:[-*]|\d+[.)])\s", line) else f"- {line}" for line in action_lines
+        )
+    if output:
+        output.append("")
+    output.extend((title, "", body))
+
+
+def _format_cipp_result_item(item: Any, index: int, command: str) -> str:
+    is_application = "AppSecretExpiry" in command or "AppCertificateExpiry" in command
+    is_defender = "Defender" in command
+    item_title = "APPLICATION" if is_application else "ALERT" if is_defender else "RESULT"
+    output = [f"{item_title} {index}"]
+
+    if not isinstance(item, dict):
+        if _has_cipp_value(item):
+            output.extend(("", _format_cipp_value(item)))
+        return "\n".join(output)
+
+    consumed: set[str] = set()
+    if is_defender:
+        _append_cipp_field_section(output, "ALERT DETAILS", item, _CIPP_DEFENDER_SUMMARY_FIELDS, consumed)
+        _append_cipp_field_section(output, "TIMESTAMPS", item, _CIPP_DEFENDER_TIMESTAMP_FIELDS, consumed)
+        _append_cipp_body_section(output, "DESCRIPTION", item, "Description", consumed)
+        _append_cipp_body_section(
+            output, "RECOMMENDED ACTIONS", item, "RecommendedActions", consumed, bullets=True
+        )
+        _append_cipp_field_section(output, "REFERENCES", item, _CIPP_DEFENDER_REFERENCE_FIELDS, consumed)
+    elif is_application:
+        _append_cipp_field_section(output, "APPLICATION DETAILS", item, _CIPP_APPLICATION_FIELDS, consumed)
+
+    remaining = [key for key, value in item.items() if key not in consumed and _has_cipp_value(value)]
+    if remaining:
+        _append_cipp_field_section(output, "DETAILS", item, tuple(remaining), consumed)
+
+    return "\n".join(output)
+
+
+def format_cipp_results(data: Dict[str, Any]) -> str:
+    """Render the CIPP ``Results`` collection as readable ConnectWise plain text."""
+    results = data.get("Results") if isinstance(data, dict) else None
+    if not _has_cipp_value(results):
+        return "No alert results were returned."
+
+    task_info = data.get("TaskInfo") if isinstance(data.get("TaskInfo"), dict) else {}
+    command = str(task_info.get("Command", ""))
+    result_items = results if isinstance(results, list) else [results]
+    rendered = [_format_cipp_result_item(item, index, command) for index, item in enumerate(result_items, start=1)]
+    return "\n\n".join(block for block in rendered if block)
+
+
 def resolve_monitor_name(data: Dict[str, Any]) -> str:
     """Resolve a human-readable monitor/source name from a webhook payload.
 

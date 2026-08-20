@@ -14,7 +14,7 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog
-from .utils import log_to_web, resolve_jsonpath, resolve_monitor_name
+from .utils import format_cipp_results, log_to_web, resolve_jsonpath, resolve_monitor_name
 
 logger = logging.getLogger(__name__)
 
@@ -1074,6 +1074,7 @@ def handle_webhook_logic(
                         description_template.replace("{{ monitor_name }}", monitor_name)
                         .replace("{{ msg }}", msg)
                         .replace("{{ request_id }}", request_id)
+                        .replace("{{ cipp_results }}", format_cipp_results(safe_data))
                     )
                     # Handle {$.path} in template
                     paths = re.findall(r"\{(\$.+?)\}", description)
