@@ -267,6 +267,21 @@ def test_format_cipp_empty_results():
     assert format_cipp_results({}) == "No alert results were returned."
 
 
+def test_format_cipp_recursively_empty_values():
+    empty_results = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
+    assert format_cipp_results(empty_results) == "No alert results were returned."
+
+    populated_results = {
+        "Results": [{"Whitespace": "   ", "EmptyContainer": [None, {}], "Count": 0, "Enabled": False}]
+    }
+    result = format_cipp_results(populated_results)
+
+    assert "Whitespace" not in result
+    assert "Empty Container" not in result
+    assert "Count: 0" in result
+    assert "Enabled: False" in result
+
+
 # --- Auth ---
 
 

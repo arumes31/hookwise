@@ -209,7 +209,14 @@ _CIPP_APPLICATION_FIELDS = (
 
 def _has_cipp_value(value: Any) -> bool:
     """Return whether a CIPP result value should be rendered."""
-    return value is not None and value != "" and value != [] and value != {}
+    if isinstance(value, str):
+        normalized = value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+        return bool(normalized.strip())
+    if isinstance(value, list):
+        return any(_has_cipp_value(item) for item in value)
+    if isinstance(value, dict):
+        return any(_has_cipp_value(item) for item in value.values())
+    return value is not None
 
 
 def _format_cipp_value(value: Any) -> str:

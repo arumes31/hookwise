@@ -1074,13 +1074,14 @@ def handle_webhook_logic(
                         description_template.replace("{{ monitor_name }}", monitor_name)
                         .replace("{{ msg }}", msg)
                         .replace("{{ request_id }}", request_id)
-                        .replace("{{ cipp_results }}", format_cipp_results(safe_data))
                     )
                     # Handle {$.path} in template
                     paths = re.findall(r"\{(\$.+?)\}", description)
                     for p in paths:
                         val = str(resolve_jsonpath(safe_data, p))
                         description = description.replace("{" + p + "}", val)
+                    if "{{ cipp_results }}" in description:
+                        description = description.replace("{{ cipp_results }}", format_cipp_results(safe_data))
                 else:
                     description = (
                         f"Source: {monitor_name}\n"
