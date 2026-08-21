@@ -44,7 +44,7 @@ packaging==26.0
 pathspec==1.1.1
 pluggy==1.6.0
 ply==3.11
-prometheus_client==0.25.0
+prometheus_client==0.26.0
 prompt_toolkit==3.0.52
 psycopg2-binary==2.9.12
 pycparser==3.0
