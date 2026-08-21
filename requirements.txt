@@ -1,4 +1,4 @@
-alembic==1.18.4
+alembic==1.19.1
 amqp==5.3.1
 bidict==0.23.1
 billiard==4.2.4
