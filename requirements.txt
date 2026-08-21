@@ -64,7 +64,7 @@ simple-websocket==1.1.0
 six==1.17.0
 sqlalchemy==2.0.48
 types-requests==2.33.0.20260402
-typing_extensions==4.15.0
+typing_extensions==4.16.0
 tzdata==2026.2
 tzlocal==5.3.1
 urllib3==2.7.0
