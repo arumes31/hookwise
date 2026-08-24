@@ -285,6 +285,12 @@ Use these in your "Ticket Description Template":
 - `{{ cipp_results }}`: Readable English rendering of every item in a CIPP `Results` array.
 - `{$..field}`: Any valid JSONPath (e.g., `{$..heartbeat.status}`).
 
+To suppress certificate-expiry tickets for specific enterprise applications globally, open **Settings > General
+Configuration** and enter one exact name or glob pattern per line under **CIPP Certificate Expiry Exclusions**.
+Matching is case-insensitive and supports `*` and `?` wildcards. Excluded items are removed before formatting. A
+webhook containing only excluded applications is recorded as skipped and does not create or update a ConnectWise
+ticket.
+
 Example universal CIPP template:
 ```text
 CIPP Alert

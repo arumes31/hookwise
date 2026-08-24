@@ -1,3 +1,4 @@
+import fnmatch
 import ipaddress
 import json
 import logging
@@ -205,6 +206,63 @@ _CIPP_APPLICATION_FIELDS = (
     "Expires",
     "Tenant",
 )
+
+_CIPP_APP_CERTIFICATE_EXPIRY_COMMAND = "Get-CIPPAlertAppCertificateExpiry"
+CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY = "hookwise_cipp_app_certificate_exclude_names"
+
+
+def parse_cipp_app_certificate_exclude_patterns(raw_patterns: Any) -> tuple[str, ...]:
+    """Parse the GUI setting containing one exact application name or glob per line."""
+    if not isinstance(raw_patterns, str):
+        return ()
+
+    patterns: list[str] = []
+    seen: set[str] = set()
+    for line in raw_patterns.splitlines():
+        pattern = line.strip()
+        normalized_pattern = pattern.casefold()
+        if pattern and normalized_pattern not in seen:
+            patterns.append(pattern)
+            seen.add(normalized_pattern)
+    return tuple(patterns)
+
+
+def filter_cipp_app_certificate_expiry_results(
+    data: Dict[str, Any], exclude_patterns: tuple[str, ...]
+) -> tuple[Dict[str, Any], list[str]]:
+    """Remove globally excluded applications from CIPP certificate-expiry results.
+
+    Matching is case-insensitive and supports shell-style ``*`` and ``?`` wildcards.
+    The input mapping is returned unchanged when the payload or command is not applicable.
+    """
+    raw_task_info = data.get("TaskInfo") if isinstance(data, dict) else None
+    task_info: Dict[str, Any] = raw_task_info if isinstance(raw_task_info, dict) else {}
+    if task_info.get("Command") != _CIPP_APP_CERTIFICATE_EXPIRY_COMMAND:
+        return data, []
+
+    results = data.get("Results")
+    if not exclude_patterns or not isinstance(results, list):
+        return data, []
+
+    normalized_patterns = tuple(pattern.casefold() for pattern in exclude_patterns)
+    included_results: list[Any] = []
+    excluded_names: list[str] = []
+    for item in results:
+        raw_name = None
+        if isinstance(item, dict):
+            raw_name = item.get("DisplayName") or item.get("AppName")
+        name = str(raw_name).strip() if raw_name is not None else ""
+        if name and any(fnmatch.fnmatchcase(name.casefold(), pattern) for pattern in normalized_patterns):
+            excluded_names.append(name)
+        else:
+            included_results.append(item)
+
+    if not excluded_names:
+        return data, []
+
+    filtered_data = dict(data)
+    filtered_data["Results"] = included_results
+    return filtered_data, excluded_names
 
 
 def _has_cipp_value(value: Any) -> bool:

@@ -53,6 +53,22 @@
                     </div>
 
                     <div class="mb-4">
+                        <label for="cipp_app_certificate_exclude_names"
+                            class="form-label text-secondary fw-bold text-uppercase small ls-1">CIPP Certificate
+                            Expiry Exclusions</label>
+                        <textarea class="form-control bg-dark border-secondary text-light font-monospace"
+                            id="cipp_app_certificate_exclude_names" name="cipp_app_certificate_exclude_names"
+                            rows="6"
+                            placeholder="ConnectSyncProvisioning_*&#10;Hornetsecurity 365 Permission Manager Application">{{ cipp_app_certificate_exclude_names }}</textarea>
+                        <div class="form-text text-light opacity-50">
+                            One enterprise application name or pattern per line. Matching is case-insensitive;
+                            <code>*</code> and <code>?</code> wildcards are supported. Applies globally to
+                            <code>Get-CIPPAlertAppCertificateExpiry</code>. If every result is excluded, no ticket is
+                            created or updated.
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
                         <label class="form-label text-secondary fw-bold text-uppercase small ls-1">Maintenance</label>
                         <div>
                             <button type="button" class="btn btn-outline-warning btn-sm" onclick="clearCache()">

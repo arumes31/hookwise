@@ -14,7 +14,15 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog
-from .utils import format_cipp_results, log_to_web, resolve_jsonpath, resolve_monitor_name
+from .utils import (
+    CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
+    filter_cipp_app_certificate_expiry_results,
+    format_cipp_results,
+    log_to_web,
+    parse_cipp_app_certificate_exclude_patterns,
+    resolve_jsonpath,
+    resolve_monitor_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -742,6 +750,40 @@ def handle_webhook_logic(
 
             # Heartbeat update and timeout resolution
             _resolve_timeout_alert(config)
+
+            raw_task_info = data.get("TaskInfo")
+            task_info = raw_task_info if isinstance(raw_task_info, dict) else {}
+            exclude_patterns: tuple[str, ...] = ()
+            if task_info.get("Command") == "Get-CIPPAlertAppCertificateExpiry":
+                stored_exclude_patterns = redis_client.get(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY)
+                if isinstance(stored_exclude_patterns, bytes):
+                    exclude_patterns = parse_cipp_app_certificate_exclude_patterns(
+                        stored_exclude_patterns.decode("utf-8")
+                    )
+                elif isinstance(stored_exclude_patterns, str):
+                    exclude_patterns = parse_cipp_app_certificate_exclude_patterns(stored_exclude_patterns)
+
+            data, excluded_cipp_app_names = filter_cipp_app_certificate_expiry_results(data, exclude_patterns)
+            if excluded_cipp_app_names:
+                excluded_names_text = ", ".join(excluded_cipp_app_names)
+                logger.info(
+                    "Excluded %d CIPP application certificate-expiry result(s): %s",
+                    len(excluded_cipp_app_names),
+                    excluded_names_text,
+                    extra=extra,
+                )
+                if not data.get("Results"):
+                    log_entry.status = "skipped"
+                    log_entry.error_message = "Skipped: All CIPP application results were globally excluded"
+                    log_entry.processing_time = time.time() - start_time
+                    db.session.commit()
+                    log_to_web(
+                        f"Webhook skipped (all CIPP applications excluded: {excluded_names_text})",
+                        "info",
+                        config_name,
+                        data=data,
+                    )
+                    return
 
             # Parse JSON mappings and routing rules
             json_mapping = {}

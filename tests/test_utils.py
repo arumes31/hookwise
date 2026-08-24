@@ -14,9 +14,11 @@ from hookwise.utils import (
     check_auth,
     decrypt_string,
     encrypt_string,
+    filter_cipp_app_certificate_expiry_results,
     format_cipp_results,
     log_audit,
     mask_secrets,
+    parse_cipp_app_certificate_exclude_patterns,
     resolve_jsonpath,
 )
 
@@ -247,6 +249,47 @@ def test_format_cipp_certificate_expiry():
     assert "Application Name: SAML Application" in result
     assert "Application Type: SamlServicePrincipal" in result
     assert "Service Principal ID: sp-1" in result
+
+
+def test_filter_cipp_certificate_expiry_results_by_exact_name_and_glob():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppCertificateExpiry"},
+        "Results": [
+            {"DisplayName": "ConnectSyncProvisioning_ANAP02_363a343699fd", "AppId": "app-1"},
+            {"DisplayName": "hornetsecurity 365 permission manager application", "AppId": "app-2"},
+            {"DisplayName": "Keep Me", "AppId": "app-3"},
+        ],
+    }
+
+    patterns = parse_cipp_app_certificate_exclude_patterns(
+        "ConnectSyncProvisioning_*\nHornetsecurity 365 Permission Manager Application"
+    )
+    filtered, excluded_names = filter_cipp_app_certificate_expiry_results(data, patterns)
+
+    assert excluded_names == [
+        "ConnectSyncProvisioning_ANAP02_363a343699fd",
+        "hornetsecurity 365 permission manager application",
+    ]
+    assert filtered["Results"] == [{"DisplayName": "Keep Me", "AppId": "app-3"}]
+    assert len(data["Results"]) == 3
+
+
+def test_filter_cipp_application_names_only_applies_to_certificate_expiry_command():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppSecretExpiry"},
+        "Results": [{"DisplayName": "SAML Application"}],
+    }
+
+    filtered, excluded_names = filter_cipp_app_certificate_expiry_results(data, ("SAML Application",))
+
+    assert filtered is data
+    assert excluded_names == []
+
+
+def test_parse_cipp_certificate_exclusions_normalizes_gui_lines():
+    raw_patterns = "  App One  \r\nconnectsync_*\nAPP ONE\n\n"
+
+    assert parse_cipp_app_certificate_exclude_patterns(raw_patterns) == ("App One", "connectsync_*")
 
 
 def test_format_cipp_unknown_result_fields_use_generic_fallback():

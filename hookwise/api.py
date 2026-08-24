@@ -16,7 +16,15 @@ from sqlalchemy.orm import joinedload
 from .extensions import csrf, db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
 from .tasks import celery, cw_client, process_webhook_task, redis_client
-from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath, resolve_monitor_name
+from .utils import (
+    CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
+    auth_required,
+    log_audit,
+    log_to_web,
+    parse_cipp_app_certificate_exclude_patterns,
+    resolve_jsonpath,
+    resolve_monitor_name,
+)
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
@@ -873,6 +881,12 @@ def _register() -> None:
         retention = cast(bytes, retention).decode() if retention else os.environ.get("LOG_RETENTION_DAYS", "30")
         health_webhook = redis_client.get("hookwise_health_webhook")
         health_webhook = cast(bytes, health_webhook).decode() if health_webhook else ""
+        cipp_app_certificate_exclude_names = redis_client.get(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY)
+        cipp_app_certificate_exclude_names = (
+            cast(bytes, cipp_app_certificate_exclude_names).decode()
+            if cipp_app_certificate_exclude_names
+            else ""
+        )
         api_key = redis_client.get("hookwise_master_api_key")
         api_key = cast(bytes, api_key).decode() if api_key else "Not Generated"
         user = User.query.get(session["user_id"])
@@ -881,6 +895,7 @@ def _register() -> None:
             log_retention_days=retention,
             master_api_key=api_key,
             health_webhook=health_webhook,
+            cipp_app_certificate_exclude_names=cipp_app_certificate_exclude_names,
             user_2fa_enabled=user.is_2fa_enabled,
         )
 
@@ -889,10 +904,13 @@ def _register() -> None:
     def update_settings() -> Any:
         retention = request.form.get("log_retention_days")
         health_webhook = request.form.get("health_webhook")
+        cipp_app_certificate_exclude_names = request.form.get("cipp_app_certificate_exclude_names", "")
         if retention:
             redis_client.set("hookwise_log_retention_days", retention)
         if health_webhook:
             redis_client.set("hookwise_health_webhook", health_webhook)
+        exclude_patterns = parse_cipp_app_certificate_exclude_patterns(cipp_app_certificate_exclude_names)
+        redis_client.set(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY, "\n".join(exclude_patterns))
         flash("Settings updated successfully!")
         return redirect(url_for("main.settings"))
 
