@@ -1,10 +1,24 @@
+{% macro nav_icon(name) -%}
+<svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    {% if name == 'endpoints' %}<path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z" />
+    {% elif name == 'tenantmap' %}<path d="M8 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM3 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm10 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7.5 5v2.5h-4V10h1V8.5h7V10h1V7.5h-4V5z" />
+    {% elif name == 'history' %}<path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" />
+    {% elif name == 'audit' %}<path d="M5 1h6a1 1 0 0 1 1 1h2v13H2V2h2a1 1 0 0 1 1-1zm0 2H3v11h10V3h-2v1H5V3zm1-1v1h4V2H6zm0 5h5v1H6V7zm0 3h5v1H6v-1zM4 7h1v1H4V7zm0 3h1v1H4v-1z" />
+    {% elif name == 'settings' %}<path d="M9.4 1.2 9.8 3a5.5 5.5 0 0 1 1.1.6l1.7-.5 1.2 2-1.3 1.2a5.5 5.5 0 0 1 0 1.3l1.3 1.2-1.2 2-1.7-.5a5.5 5.5 0 0 1-1.1.6l-.4 1.8H7.1l-.4-1.8a5.5 5.5 0 0 1-1.1-.6l-1.7.5-1.2-2L4 7.6a5.5 5.5 0 0 1 0-1.3L2.7 5.1l1.2-2 1.7.5A5.5 5.5 0 0 1 6.7 3l.4-1.8h2.3zM8.25 5A2.25 2.25 0 1 0 8.25 9.5 2.25 2.25 0 0 0 8.25 5z" />
+    {% elif name == 'logout' %}<path d="M6 2H2v12h4v-1H3V3h3V2zm4.3 2.3-.7.7L12 7.5H5v1h7L9.6 11l.7.7L14 8l-3.7-3.7z" />
+    {% elif name == 'docs' %}<path d="M2 2.5A2.5 2.5 0 0 1 4.5 0H8v14H4.5A2.5 2.5 0 0 0 2 16V2.5zM9 0h2.5A2.5 2.5 0 0 1 14 2.5V16a2.5 2.5 0 0 0-2.5-2H9V0z" />
+    {% elif name == 'new' %}<path d="M7.5 1h1v6.5H15v1H8.5V15h-1V8.5H1v-1h6.5V1z" />
+    {% elif name == 'bell' %}<path d="M8 16a2 2 0 0 0 1.9-1.4H6.1A2 2 0 0 0 8 16zm5-4V7a5 5 0 0 0-4-4.9V1a1 1 0 0 0-2 0v1.1A5 5 0 0 0 3 7v5l-1.5 1.5v.5h13v-.5L13 12z" />
+    {% endif %}
+</svg>
+{%- endmacro %}
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HookWise - Webhook Router</title>
+    <title>{{ page_title }} · HookWise</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/prism.css') }}" rel="stylesheet">
@@ -64,25 +78,89 @@
                     </svg>
                 </div>
             </a>
+            <span class="navbar-page-title" aria-current="page">{{ page_title }}</span>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
                 aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainNavbar">
-            <div class="navbar-nav ms-auto">
+            <div class="navbar-nav ms-auto align-items-lg-center">
                 {% if session.user_id %}
+                <div class="nav-item dropdown notification-center">
+                    <button class="nav-link notification-toggle" type="button" id="notificationMenu"
+                        data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+                        aria-label="Open notifications">
+                        {{ nav_icon('bell') }}
+                        <span class="d-lg-none">Notifications</span>
+                        <span id="notification-count"
+                            class="notification-count badge rounded-pill bg-danger{% if not navigation_notifications %} d-none{% endif %}"
+                            aria-live="polite">{{ navigation_notifications|length }}</span>
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end notification-menu" aria-labelledby="notificationMenu">
+                        <div class="notification-header">
+                            <div>
+                                <div class="fw-bold text-light">Notifications</div>
+                                <div class="small text-secondary">Endpoint health and webhook failures</div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-link text-info" id="mark-notifications-read">
+                                Mark all read
+                            </button>
+                        </div>
+                        <div class="notification-list">
+                            {% for notification in navigation_notifications %}
+                            <a class="dropdown-item notification-item" href="{{ notification.url }}"
+                                data-notification-id="{{ notification.id }}">
+                                <span class="notification-indicator bg-{{ notification.severity }}"></span>
+                                <span class="notification-copy">
+                                    <span class="notification-title">{{ notification.title }}</span>
+                                    <span class="notification-message">{{ notification.message }}</span>
+                                    <span class="notification-time">{{ notification.timestamp }}</span>
+                                </span>
+                            </a>
+                            {% else %}
+                            <div class="notification-empty">
+                                <span class="notification-empty-icon">✓</span>
+                                <span class="fw-bold text-light">All clear</span>
+                                <span class="small text-secondary">No endpoint issues in the last 24 hours.</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
                 <span class="nav-link small lightgrey me-2">Hi, {{ session.username }}</span>
-                <a class="nav-link" href="{{ url_for('main.index') }}">Endpoints</a>
-                <a class="nav-link" href="{{ url_for('main.tenantmap') }}">TenantMap</a>
-                <a class="nav-link" href="{{ url_for('main.history') }}">History</a>
-                <a class="nav-link" href="{{ url_for('main.audit_logs') }}">Audit</a>
-                <a class="nav-link" href="{{ url_for('main.settings') }}">Settings</a>
-                <a class="nav-link" href="{{ url_for('main.logout') }}">Logout</a>
+                <a class="nav-link{% if request.endpoint in ['main.index', 'main.edit_endpoint'] %} active{% endif %}"
+                    href="{{ url_for('main.index') }}"{% if request.endpoint in ['main.index', 'main.edit_endpoint'] %} aria-current="page"{% endif %}>
+                    {{ nav_icon('endpoints') }}<span>Endpoints</span>
+                </a>
+                <a class="nav-link{% if request.endpoint == 'main.tenantmap' %} active{% endif %}"
+                    href="{{ url_for('main.tenantmap') }}"{% if request.endpoint == 'main.tenantmap' %} aria-current="page"{% endif %}>
+                    {{ nav_icon('tenantmap') }}<span>TenantMap</span>
+                </a>
+                <a class="nav-link{% if request.endpoint == 'main.history' %} active{% endif %}"
+                    href="{{ url_for('main.history') }}"{% if request.endpoint == 'main.history' %} aria-current="page"{% endif %}>
+                    {{ nav_icon('history') }}<span>History</span>
+                </a>
+                <a class="nav-link{% if request.endpoint == 'main.audit_logs' %} active{% endif %}"
+                    href="{{ url_for('main.audit_logs') }}"{% if request.endpoint == 'main.audit_logs' %} aria-current="page"{% endif %}>
+                    {{ nav_icon('audit') }}<span>Audit</span>
+                </a>
+                <a class="nav-link{% if request.endpoint in ['main.settings', 'main.setup_2fa', 'main.admin_maintenance'] %} active{% endif %}"
+                    href="{{ url_for('main.settings') }}"{% if request.endpoint in ['main.settings', 'main.setup_2fa', 'main.admin_maintenance'] %} aria-current="page"{% endif %}>
+                    {{ nav_icon('settings') }}<span>Settings</span>
+                </a>
+                <a class="nav-link" href="{{ url_for('main.logout') }}">
+                    {{ nav_icon('logout') }}<span>Logout</span>
+                </a>
                 {% else %}
                 <!-- Login removed from navbar as all pages are protected -->
                 {% endif %}
-                <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">Docs</a>
-                <a class="nav-link" href="{{ url_for('main.new_endpoint') }}">New Endpoint</a>
+                <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">
+                    {{ nav_icon('docs') }}<span>Docs</span>
+                </a>
+                <a class="nav-link nav-link-action{% if request.endpoint == 'main.new_endpoint' %} active{% endif %}"
+                    href="{{ url_for('main.new_endpoint') }}"{% if request.endpoint == 'main.new_endpoint' %} aria-current="page"{% endif %}>
+                    {{ nav_icon('new') }}<span>New Endpoint</span>
+                </a>
             </div>
             </div>
         </div>
@@ -159,7 +237,7 @@
         </div>
     </div>
 
-    <div class="container pb-5">
+        <div class="container pb-5 app-content">
         {% with messages = get_flashed_messages() %}
         {% if messages %}
         {% for message in messages %}

@@ -315,9 +315,10 @@ function initServiceHealth(container = document) {
     const dbEl = container.querySelector('#health-database');
     const celeryEl = container.querySelector('#health-celery');
 
-    // Only set up the timer if we are on the primary container (document.body)
-    // or if the displays are actually present in this container.
-    if (!redisEl && !dbEl && !celeryEl && container !== document.body) return;
+    if (!redisEl && !dbEl && !celeryEl) {
+        if (container === document.body && window.healthInterval) clearInterval(window.healthInterval);
+        return;
+    }
     const updateFavicon = (status) => {
         const canvas = document.createElement('canvas');
         canvas.width = 32;
@@ -891,9 +892,88 @@ function initOnboarding() {
     }
 }
 
+const NOTIFICATION_READ_KEY = 'hookwise.notifications.read.v1';
+
+function getReadNotificationIds() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(NOTIFICATION_READ_KEY) || '[]');
+        return new Set(Array.isArray(stored) ? stored : []);
+    } catch (_error) {
+        return new Set();
+    }
+}
+
+function saveReadNotificationIds(ids) {
+    try {
+        localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify([...ids].slice(-200)));
+    } catch (_error) {
+        // Notification state is non-critical when storage is unavailable.
+    }
+}
+
+function updateNotificationCount(center, readIds) {
+    const items = [...center.querySelectorAll('.notification-item[data-notification-id]')];
+    let unread = 0;
+    items.forEach(item => {
+        const isRead = readIds.has(item.dataset.notificationId);
+        item.classList.toggle('is-read', isRead);
+        if (!isRead) unread += 1;
+    });
+
+    const count = center.querySelector('#notification-count');
+    const toggle = center.querySelector('#notificationMenu');
+    const markAll = center.querySelector('#mark-notifications-read');
+    if (count) {
+        count.textContent = String(unread);
+        count.classList.toggle('d-none', unread === 0);
+    }
+    if (toggle) {
+        toggle.setAttribute(
+            'aria-label',
+            unread === 0 ? 'Open notifications' : `Open notifications, ${unread} unread`
+        );
+    }
+    if (markAll) markAll.disabled = unread === 0;
+}
+
+function markAllNotificationsRead(center) {
+    const readIds = getReadNotificationIds();
+    center.querySelectorAll('.notification-item[data-notification-id]').forEach(item => {
+        readIds.add(item.dataset.notificationId);
+    });
+    saveReadNotificationIds(readIds);
+    updateNotificationCount(center, readIds);
+}
+
 function initNotifications() {
+    const center = document.querySelector('.notification-center');
+    if (center && center.dataset.initialized !== 'true') {
+        center.dataset.initialized = 'true';
+        updateNotificationCount(center, getReadNotificationIds());
+
+        center.querySelector('#mark-notifications-read')?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            markAllNotificationsRead(center);
+        });
+
+        center.querySelector('#notificationMenu')?.addEventListener('shown.bs.dropdown', () => {
+            markAllNotificationsRead(center);
+        });
+
+        center.querySelectorAll('.notification-item[data-notification-id]').forEach(item => {
+            item.addEventListener('click', () => {
+                const readIds = getReadNotificationIds();
+                readIds.add(item.dataset.notificationId);
+                saveReadNotificationIds(readIds);
+            });
+        });
+    }
+
     if ('Notification' in window && Notification.permission === 'default') {
+        if (document.getElementById('enable-browser-notifications')) return;
         const btn = document.createElement('button');
+        btn.id = 'enable-browser-notifications';
         btn.className = 'btn btn-sm btn-link text-info p-0 ms-2';
         btn.textContent = 'Enable Notifications';
         btn.onclick = () => {

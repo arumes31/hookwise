@@ -1,7 +1,53 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row g-4 mb-5">
+<section class="dashboard-kpis page-section" aria-labelledby="operational-overview-title">
+    <h1 id="operational-overview-title" class="visually-hidden">Operational overview</h1>
+    <div class="kpi-grid">
+        <a class="kpi-card kpi-card-primary" href="#endpoint-list">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Total endpoints</span>
+                <strong class="kpi-value" id="kpi-total-endpoints">{{ dashboard_kpis.total_endpoints }}</strong>
+                <span class="kpi-detail">Configured for routing</span>
+            </span>
+        </a>
+        <a class="kpi-card kpi-card-success" href="#endpoint-list">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 1 0 7 7 7 7 0 0 0-7-7zm3.4 5.4-4 4a.6.6 0 0 1-.8 0l-2-2 .8-.8L7 9.2l3.6-3.6.8.8z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Active endpoints</span>
+                <strong class="kpi-value" id="kpi-active-endpoints">{{ dashboard_kpis.active_endpoints }}</strong>
+                <span class="kpi-detail">Currently accepting traffic</span>
+            </span>
+        </a>
+        <a class="kpi-card kpi-card-info" href="{{ url_for('main.history') }}">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M8 1v6h5v2H8v6L1 8l7-7z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Events · 24 hours</span>
+                <strong class="kpi-value" id="kpi-events-24h">{{ dashboard_kpis.events_24h }}</strong>
+                <span class="kpi-detail">Webhook requests received</span>
+            </span>
+        </a>
+        <a class="kpi-card kpi-card-danger" href="{{ url_for('main.history', status='failed') }}">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M8 1 15 14H1L8 1zm-.7 4v5h1.4V5H7.3zm0 6.5v1.4h1.4v-1.4H7.3z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Failures · 24 hours</span>
+                <strong class="kpi-value" id="kpi-failures-24h">{{ dashboard_kpis.failed_24h }}</strong>
+                <span class="kpi-detail">Failed or dead-lettered</span>
+            </span>
+        </a>
+    </div>
+</section>
+
+<div class="row g-4 page-section">
     <div class="col-md-8">
         <div class="card glass-card shadow-lg">
             <div class="card-body p-4">
@@ -133,7 +179,7 @@
     </div>
 </div>
 
-<div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4">
+<div id="endpoint-list" class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4 scroll-target">
     <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
     {% if debug_mode %}
     <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
