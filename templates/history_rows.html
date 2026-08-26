@@ -49,7 +49,7 @@
     <td class="py-3 text-secondary font-monospace small">
         <span class="user-select-all">{{ log.request_id[:16] }}...</span>
         <button class="btn btn-sm btn-link p-0 ms-1 opacity-50" onclick="copyToClipboard('{{ log.request_id }}')"
-            data-tooltip="Copy Full ID">
+            data-tooltip="Copy Full ID" aria-label="Copy full request ID">
             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor" class="bi bi-clipboard"
                 viewBox="0 0 16 16">
                 <path

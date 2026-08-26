@@ -23,7 +23,8 @@
     {% if request.endpoint != 'main.login' %}
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}">
+            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}"
+                aria-label="HookWise dashboard">
                 <div class="hw-logo-container" id="persistent-logo" hx-preserve="true">
                     <svg class="logo-8bit-svg" viewBox="0 0 400 80" xmlns="http://www.w3.org/2000/svg">
                         <!-- Refined Spawning Word Group (Centered @ 42,16) -->
@@ -63,6 +64,11 @@
                     </svg>
                 </div>
             </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
+                aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="mainNavbar">
             <div class="navbar-nav ms-auto">
                 {% if session.user_id %}
                 <span class="nav-link small lightgrey me-2">Hi, {{ session.username }}</span>
@@ -78,6 +84,7 @@
                 <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">Docs</a>
                 <a class="nav-link" href="{{ url_for('main.new_endpoint') }}">New Endpoint</a>
             </div>
+            </div>
         </div>
     </nav>
     {% endif %}
@@ -87,7 +94,8 @@
         tabindex="-1" id="docsSidebar" style="width: 400px;">
         <div class="offcanvas-header border-bottom border-secondary border-opacity-10">
             <h5 class="offcanvas-title fw-bold text-primary">Documentation</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"
+                aria-label="Close documentation"></button>
         </div>
         <div class="offcanvas-body">
             <h6 class="fw-bold text-info mb-3">Getting Started</h6>

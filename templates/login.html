@@ -93,7 +93,7 @@
                             id="password" name="password" required placeholder="Enter your password">
                         <button
                             class="btn btn-outline-secondary bg-dark bg-opacity-50 border-secondary border-start-0 text-secondary"
-                            type="button" id="toggle-password">
+                            type="button" id="toggle-password" aria-label="Show password" aria-pressed="false">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                                 class="bi bi-eye" viewBox="0 0 16 16" id="eye-icon">
                                 <path
@@ -138,6 +138,9 @@
             toggleBtn.addEventListener('click', function () {
                 const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
                 passwordInput.setAttribute('type', type);
+                const passwordVisible = type === 'text';
+                toggleBtn.setAttribute('aria-pressed', String(passwordVisible));
+                toggleBtn.setAttribute('aria-label', passwordVisible ? 'Hide password' : 'Show password');
                 eyeIcon.classList.toggle('d-none');
                 eyeSlashIcon.classList.toggle('d-none');
             });

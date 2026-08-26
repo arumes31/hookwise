@@ -106,6 +106,65 @@ body {
     overflow-x: hidden;
 }
 
+/* Accessible contextual colors on dark Bootstrap surfaces. */
+.text-secondary {
+    color: #a8b4c5 !important;
+}
+
+.text-primary {
+    color: var(--primary) !important;
+}
+
+.text-success {
+    color: #34d399 !important;
+}
+
+.text-danger {
+    color: #fb7185 !important;
+}
+
+code {
+    color: #f472b6;
+}
+
+.input-group-text {
+    color: #a8b4c5;
+}
+
+.btn-outline-secondary {
+    --bs-btn-color: #a8b4c5;
+    --bs-btn-border-color: #7f8ea3;
+    --bs-btn-hover-color: #0a0c12;
+    --bs-btn-hover-bg: #a8b4c5;
+    --bs-btn-hover-border-color: #a8b4c5;
+}
+
+.page-item.disabled .page-link {
+    color: #a8b4c5;
+}
+
+@media (max-width: 767.98px) {
+    .endpoint-toolbar,
+    .history-toolbar {
+        width: 100%;
+    }
+
+    .endpoint-toolbar > .input-group,
+    .endpoint-toolbar > .form-select,
+    .endpoint-toolbar > .btn,
+    .history-toolbar > .input-group,
+    .history-toolbar > .form-control,
+    .history-toolbar > .form-select,
+    .history-toolbar > .btn,
+    .history-toolbar > a {
+        width: 100% !important;
+    }
+
+    #docsSidebar {
+        width: min(400px, 100vw) !important;
+    }
+}
+
 
 /* Glassmorphism Classes */
 .glass {

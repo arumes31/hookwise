@@ -109,7 +109,7 @@
                 </p>
 
                 <div class="bg-dark bg-opacity-50 p-4 rounded-3 border border-secondary border-opacity-25 mb-3">
-                    <label class="form-label text-secondary fw-bold text-uppercase small ls-1 mb-2">Master API
+                    <label for="master-api-key" class="form-label text-secondary fw-bold text-uppercase small ls-1 mb-2">Master API
                         Key</label>
                     <div class="input-group">
                         <input type="text" id="master-api-key"
@@ -162,6 +162,7 @@
                         <p class="text-secondary small mb-3">Restore settings from a previously backup file.</p>
                         <div class="input-group">
                             <input type="file" id="backup-file" class="form-control bg-dark border-secondary text-light"
+                                aria-label="Choose configuration backup file"
                                 accept=".json">
                             <button class="btn btn-primary" onclick="restoreConfig()">
                                 <i class="fas fa-upload me-2"></i>Restore
@@ -223,7 +224,7 @@
                                     class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-25">ENABLED</span>
                                 {% else %}
                                 <span
-                                    class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-25">DISABLED</span>
+                                    class="badge bg-secondary bg-opacity-20 text-white border border-secondary border-opacity-25">DISABLED</span>
                                 {% endif %}
                             </p>
                         </div>

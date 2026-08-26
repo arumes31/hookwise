@@ -14,7 +14,7 @@
 
         <div class="glass-card mb-5 anime-slide-up">
             <div class="card-header border-bottom border-secondary border-opacity-25 p-4 bg-transparent">
-                <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
                     <div class="d-flex align-items-center">
                         <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 rounded-circle me-3"
                             style="width: 48px; height: 48px;">
@@ -85,7 +85,7 @@
                             {% endif %}
 
                             <div
-                                class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2 border-secondary border-opacity-25">
+                                class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 border-bottom pb-2 border-secondary border-opacity-25">
                                 <h5 class="fw-bold mb-0 text-light">Core Settings</h5>
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-secondary" onclick="undo()"
@@ -282,7 +282,7 @@
                                 Logic</h5>
 
                             <div class="mb-4">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <label class="form-label fw-bold mb-0 text-light">Trigger Logic</label>
                                     <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="collapse"
                                         data-bs-target="#debugger-tool">
@@ -342,7 +342,7 @@
                             </div>
 
                             <div class="mb-4">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <label for="description_template"
                                         class="form-label fw-bold mb-0 text-light">Description
                                         Template</label>
@@ -378,7 +378,7 @@
 
 
                             <div class="mb-4">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <label for="json_mapping" class="form-label fw-bold mb-0 text-light">Field Mapping
                                         (JSON)</label>
                                     <div class="d-flex gap-2">
@@ -405,6 +405,7 @@
                                         <select
                                             class="form-select form-select-sm bg-dark border-secondary text-info py-0 px-2"
                                             style="font-size: 0.75rem; width: auto;"
+                                            aria-label="Apply a field mapping template"
                                             onchange="applyTemplate(this.value)">
                                             <option value="">Apply Template...</option>
                                             <option value="uptime_kuma">Uptime Kuma</option>
@@ -425,7 +426,7 @@
                             </div>
 
                             <div class="mb-4">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <label class="form-label fw-bold mb-0 text-light">Remove Strings from Summary <span
                                             class="badge bg-secondary ms-1 fw-normal"
                                             style="font-size: 0.7em;">Optional</span></label>
@@ -447,7 +448,7 @@
                             </div>
 
                             <div class="mb-4">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <label class="form-label fw-bold mb-0 text-light">Regex Routing Rules</label>
                                     <button type="button" class="btn btn-sm btn-outline-info"
                                         onclick="addRoutingRule()">
@@ -521,13 +522,14 @@
                                 <div class="input-group input-group-sm mb-0">
                                     <input type="number" class="form-control bg-dark border-secondary text-light text-center"
                                         id="timeout_hours" name="timeout_hours" min="1" max="168" step="1" required
+                                        aria-label="Stale endpoint timeout in hours"
                                         value="{{ config.timeout_hours if config else '24' }}" style="max-width: 80px;">
                                     <span class="input-group-text bg-dark border-secondary text-secondary">hours</span>
                                 </div>
                             </div>
 
                             <div class="mb-0">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <label class="form-label fw-bold mb-0 text-light">Maintenance Windows</label>
                                     <button type="button" class="btn btn-sm btn-outline-primary"
                                         onclick="addMaintenanceWindow()">Add Window</button>
@@ -543,7 +545,7 @@
 
                     <hr class="my-5 border-secondary border-opacity-10">
 
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
                         <div>
                             {% if config.id %}
                             <button type="button" class="btn btn-outline-danger px-4" id="delete-endpoint-btn"
@@ -553,7 +555,7 @@
                             </button>
                             {% endif %}
                         </div>
-                        <div class="d-flex gap-3">
+                        <div class="d-flex flex-wrap gap-3">
                             <input type="hidden" name="create_another" id="create_another" value="false">
                             <input type="hidden" name="is_draft" id="is_draft"
                                 value="{{ 'true' if config.id and config.is_draft else 'false' }}">
@@ -584,7 +586,7 @@
         <div class="modal-content glass-card border-0">
             <div class="modal-header border-bottom border-light border-opacity-10">
                 <h5 class="modal-title text-white"><i class="fas fa-rocket me-2 text-primary"></i>Smart Setup Guide</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close setup guide"></button>
             </div>
             <div class="modal-body">
                 <p class="text-secondary small mb-4">

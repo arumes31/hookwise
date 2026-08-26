@@ -93,7 +93,8 @@
                     <div class="card-body p-3">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6 class="text-secondary text-uppercase small ls-wide mb-0">Service Health</h6>
-                            <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()">
+                            <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()"
+                                aria-label="Refresh service health">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                                     class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
                                     <path fill-rule="evenodd"
@@ -132,18 +133,18 @@
     </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
     {% if debug_mode %}
     <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
     {% endif %}
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2 endpoint-toolbar">
         <select id="board-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 150px;">
+            style="width: 150px;" aria-label="Filter endpoints by board">
             <option value="">All Boards</option>
         </select>
         <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 150px;">
+            style="width: 150px;" aria-label="Filter endpoints by status">
             <option value="">All Statuses</option>
             <option value="enabled">Enabled</option>
             <option value="paused">Paused</option>
@@ -241,13 +242,13 @@
                 <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
                     ACTIVITY STREAM</div>
                 <div class="d-flex gap-3">
-                    <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now">
+                    <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now" aria-label="Run timeout monitor now">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-clock-history" viewBox="0 0 16 16">
                             <path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022l-.074.997zm2.004.45a7.003 7.003 0 0 0-.985-.299l.219-.976c.383.086.76.2 1.126.342l-.36.933zm1.37.71a7.01 7.01 0 0 0-.439-.74l.824-.568c.19.274.364.56.517.857l-.902.451zM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
                             <path d="M7 3h1v4h3v1H7V3z"/>
                         </svg>
                     </button>
-                    <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream">
+                    <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream" aria-label="Clear activity stream">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                             class="bi bi-trash-fill" viewBox="0 0 16 16">
                             <path
@@ -302,7 +303,7 @@
                 <div class="endpoint-actions">
                     <button onclick="togglePin('{{ config.id }}')"
                         class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
-                        data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}">
+                        data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
                         {% if config.is_pinned %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                             fill="currentColor" class="bi bi-pin-fill" viewBox="0 0 16 16">
                             <path
@@ -315,7 +316,7 @@
                     </button>
                     <button onclick="toggleEndpoint('{{ config.id }}')"
                         class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
-                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}">
+                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}" aria-label="{{ 'Resume' if not config.is_enabled else 'Pause' }} endpoint">
                         {% if config.is_enabled %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                             fill="currentColor" class="bi bi-pause-circle" viewBox="0 0 16 16">
                             <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
@@ -329,7 +330,7 @@
                         </svg>{% endif %}
                     </button>
                     <button onclick="testEndpoint('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook">
+                        class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook" aria-label="Test webhook">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                             class="bi bi-play-fill" viewBox="0 0 16 16">
                             <path
@@ -337,7 +338,7 @@
                         </svg>
                     </button>
                     <a href="{{ url_for('main.edit_endpoint', id=config.id) }}"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings">
+                        class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings" aria-label="Edit endpoint settings">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                             class="bi bi-gear-fill" viewBox="0 0 16 16">
                             <path
@@ -373,7 +374,7 @@
                         data-message="{{ config.config_health_message or '' }}" data-ip="{{ config.last_ip or '' }}"
                         data-rotated="{{ config.last_rotated_at or '' }}"
                         onclick="showSecurityHud(this.dataset.id, this.dataset.status, this.dataset.message, this.dataset.ip, this.dataset.rotated)"
-                        data-tooltip="Security & Health: {{ config.config_health_status }}">
+                        data-tooltip="Security & Health: {{ config.config_health_status }}" aria-label="View endpoint security and health">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                             class="bi bi-shield-check" viewBox="0 0 16 16">
                             <path
@@ -388,7 +389,7 @@
                     <div class="copyable-field">
                         <code class="user-select-all text-truncate flex-grow-1">{{ base_url }}/w/{{ config.id }}</code>
                         <button class="btn btn-sm btn-link text-primary p-0"
-                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL">
+                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL" aria-label="Copy endpoint URL">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                                 class="bi bi-clipboard" viewBox="0 0 16 16">
                                 <path
@@ -453,7 +454,7 @@
                     <button id="pretty-toggle" class="btn btn-sm btn-outline-info me-2">Minified</button>
                     <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
                 </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close payload details"></button>
             </div>
             <div class="modal-body">
                 <pre
@@ -469,7 +470,7 @@
         <div class="modal-content bg-dark border-warning">
             <div class="modal-header border-warning border-opacity-25">
                 <h5 class="modal-title text-warning">Rotate Bearer Token</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close token rotation dialog"></button>
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to rotate the token for <strong id="rotate-endpoint-name"></strong>?</p>
@@ -534,7 +535,7 @@
         <div class="modal-content bg-dark border-primary">
             <div class="modal-header border-primary border-opacity-25">
                 <h5 class="modal-title text-primary">Welcome to HookWise!</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
             </div>
             <div class="modal-body text-center py-5">
                 <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="80" class="mb-4">
@@ -586,7 +587,7 @@
             <div class="modal-header border-bottom border-light border-opacity-10">
                 <h5 class="modal-title text-white"><i class="fas fa-shield-alt me-2 text-info"></i>Security & Health
                 </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close security details"></button>
             </div>
             <div class="modal-body">
                 <div class="text-center mb-4">
@@ -888,7 +889,7 @@
                     
                     ${data.ticket_id ? `<a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
                     
-                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" data-payload='${escapeHtml(JSON.stringify(data.payload))}'>
+                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" aria-label="Expand payload" data-payload='${escapeHtml(JSON.stringify(data.payload))}'>
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-arrows-angle-expand" viewBox="0 0 16 16">
                             <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 1 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707z"/>
                         </svg>

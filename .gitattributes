@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Linux container entrypoints must retain Unix line endings on Windows checkouts.
+*.sh text eol=lf
