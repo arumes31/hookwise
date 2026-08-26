@@ -4,6 +4,8 @@ import pytest
 
 from hookwise import create_app
 from hookwise.extensions import db
+from hookwise.models import User
+from hookwise.utils import CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY
 
 
 @pytest.fixture
@@ -78,3 +80,39 @@ def test_llm_test_success(mock_call, client):
     assert response.status_code == 200
     assert response.json["status"] == "success"
     assert response.json["result"] == "This is a response from LLM"
+
+
+def test_settings_update_saves_cipp_certificate_exclusions(mock_redis, client):
+    login(client)
+    _, mock_api_redis = mock_redis
+
+    response = client.post(
+        "/settings/update",
+        data={
+            "log_retention_days": "30",
+            "cipp_app_certificate_exclude_names": " App One \r\nconnectsync_*\nAPP ONE",
+        },
+    )
+
+    assert response.status_code == 302
+    mock_api_redis.set.assert_any_call(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY, "App One\nconnectsync_*")
+
+
+def test_settings_page_displays_cipp_certificate_exclusions(mock_redis, client):
+    login(client)
+    _, mock_api_redis = mock_redis
+    mock_api_redis.get.side_effect = lambda key: (
+        b"ConnectSyncProvisioning_*\nHornetsecurity 365 Total Backup Application"
+        if key == CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY
+        else None
+    )
+    with client.application.app_context():
+        db.session.add(User(id="test_user", username="admin", password_hash="unused"))
+        db.session.commit()
+
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert b'name="cipp_app_certificate_exclude_names"' in response.data
+    assert b"ConnectSyncProvisioning_*" in response.data
+    assert b"Hornetsecurity 365 Total Backup Application" in response.data

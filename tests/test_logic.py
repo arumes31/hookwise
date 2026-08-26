@@ -6,9 +6,9 @@ import pytest
 
 from hookwise import create_app
 from hookwise.extensions import db
-from hookwise.models import WebhookConfig
+from hookwise.models import WebhookConfig, WebhookLog
 from hookwise.tasks import handle_webhook_logic
-from hookwise.utils import resolve_jsonpath
+from hookwise.utils import CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY, resolve_jsonpath
 
 
 @pytest.fixture
@@ -86,6 +86,132 @@ def test_webhook_logic_with_jsonpath(mock_cw, mock_redis, app):
         mock_cw.create_ticket.assert_called_once()
         call_kwargs = mock_cw.create_ticket.call_args.kwargs
         assert "Mapped Server Down" in call_kwargs["summary"]
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_cipp_results_are_inserted_after_jsonpath_substitution(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 43}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Template",
+            description_template="Tenant: {$.Tenant}\n{{ cipp_results }}",
+            trigger_field="status",
+            open_value="down",
+            close_value="up",
+            board="Test Board",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        data = {
+            "status": "down",
+            "Tenant": "example.com",
+            "TaskInfo": {"Command": "Get-CIPPAlertDefenderAlerts"},
+            "Results": [{"Title": "Literal {$.Tenant}"}],
+        }
+
+        handle_webhook_logic(config.id, data, "req-cipp-template")
+
+        description = mock_cw.create_ticket.call_args.kwargs["description"]
+        assert "Tenant: example.com" in description
+        assert "Title: Literal {$.Tenant}" in description
+
+
+@patch("hookwise.tasks.format_cipp_results")
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_description_without_cipp_placeholder_skips_formatter(mock_cw, mock_redis, mock_formatter, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 44}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Standard Template",
+            description_template="Tenant: {$.Tenant}",
+            trigger_field="status",
+            open_value="down",
+            close_value="up",
+            board="Test Board",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"status": "down", "Tenant": "example.com"}, "req-standard-template")
+
+        mock_formatter.assert_not_called()
+        assert mock_cw.create_ticket.call_args.kwargs["description"] == "Tenant: example.com"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_all_excluded_cipp_certificate_results_skip_ticket(mock_cw, mock_redis, app):
+    mock_redis.get.side_effect = lambda key: (
+        b"ConnectSyncProvisioning_*" if key == CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY else None
+    )
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Certificate Expiry",
+            description_template="{{ cipp_results }}",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        data = {
+            "TaskInfo": {"Command": "Get-CIPPAlertAppCertificateExpiry"},
+            "Results": [{"DisplayName": "ConnectSyncProvisioning_ANAP02_363a343699fd"}],
+        }
+
+        handle_webhook_logic(config.id, data, "req-cipp-all-excluded")
+
+        mock_cw.find_open_ticket.assert_not_called()
+        mock_cw.create_ticket.assert_not_called()
+        log_entry = WebhookLog.query.filter_by(request_id="req-cipp-all-excluded").one()
+        assert log_entry.status == "skipped"
+        assert log_entry.error_message == "Skipped: All CIPP application results were globally excluded"
+
+
+@patch("hookwise.metrics.redis_client")
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_mixed_cipp_certificate_results_only_render_included_apps(mock_cw, mock_redis, mock_metrics_redis, app):
+    mock_redis.get.side_effect = lambda key: (
+        b"Hornetsecurity 365 Permission Manager Application"
+        if key == CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY
+        else None
+    )
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 45}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Certificate Expiry",
+            description_template="{{ cipp_results }}",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        data = {
+            "TaskInfo": {"Command": "Get-CIPPAlertAppCertificateExpiry"},
+            "Results": [
+                {"DisplayName": "Hornetsecurity 365 Permission Manager Application", "AppId": "excluded"},
+                {"DisplayName": "Customer SAML Application", "AppId": "included"},
+            ],
+        }
+
+        handle_webhook_logic(config.id, data, "req-cipp-partially-excluded")
+
+        description = mock_cw.create_ticket.call_args.kwargs["description"]
+        assert "Customer SAML Application" in description
+        assert "Hornetsecurity 365 Permission Manager Application" not in description
 
 
 @patch("hookwise.tasks.redis_client")

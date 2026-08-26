@@ -1,7 +1,9 @@
+import fnmatch
 import ipaddress
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from functools import lru_cache, wraps
 from typing import Any, Dict, Optional, cast
@@ -140,6 +142,246 @@ def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
         return None
     except Exception:
         return None
+
+
+_CIPP_FIELD_LABELS = {
+    "Title": "Title",
+    "Severity": "Severity",
+    "Category": "Category",
+    "ProductName": "Product",
+    "DetectionSource": "Detection Source",
+    "ServiceSource": "Service Source",
+    "Classification": "Classification",
+    "Determination": "Determination",
+    "ThreatDisplayName": "Threat",
+    "ThreatFamilyName": "Threat Family",
+    "ActorDisplayName": "Threat Actor",
+    "MitreTechniques": "MITRE Techniques",
+    "AssignedTo": "Assigned To",
+    "FirstActivityDateTime": "First Activity",
+    "LastActivityDateTime": "Last Activity",
+    "CreatedAt": "Created",
+    "Description": "Description",
+    "RecommendedActions": "Recommended Actions",
+    "AlertId": "Alert ID",
+    "IncidentId": "Incident ID",
+    "AlertUrl": "Alert URL",
+    "IncidentUrl": "Incident URL",
+    "AppName": "Application Name",
+    "DisplayName": "Application Name",
+    "AppId": "Application ID",
+    "SecretName": "Secret Name",
+    "SecretID": "Secret ID",
+    "Expires": "Expiration Date",
+    "Type": "Application Type",
+    "ServicePrincipalId": "Service Principal ID",
+    "Tenant": "Tenant",
+}
+
+_CIPP_DEFENDER_SUMMARY_FIELDS = (
+    "Title",
+    "Severity",
+    "Category",
+    "ProductName",
+    "DetectionSource",
+    "ServiceSource",
+    "Classification",
+    "Determination",
+    "ThreatDisplayName",
+    "ThreatFamilyName",
+    "ActorDisplayName",
+    "MitreTechniques",
+    "AssignedTo",
+)
+_CIPP_DEFENDER_TIMESTAMP_FIELDS = ("FirstActivityDateTime", "LastActivityDateTime", "CreatedAt")
+_CIPP_DEFENDER_REFERENCE_FIELDS = ("AlertId", "IncidentId", "AlertUrl", "IncidentUrl")
+_CIPP_APPLICATION_FIELDS = (
+    "AppName",
+    "DisplayName",
+    "AppId",
+    "SecretName",
+    "SecretID",
+    "Type",
+    "ServicePrincipalId",
+    "Expires",
+    "Tenant",
+)
+
+_CIPP_APP_CERTIFICATE_EXPIRY_COMMAND = "Get-CIPPAlertAppCertificateExpiry"
+CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY = "hookwise_cipp_app_certificate_exclude_names"
+
+
+def parse_cipp_app_certificate_exclude_patterns(raw_patterns: Any) -> tuple[str, ...]:
+    """Parse the GUI setting containing one exact application name or glob per line."""
+    if not isinstance(raw_patterns, str):
+        return ()
+
+    patterns: list[str] = []
+    seen: set[str] = set()
+    for line in raw_patterns.splitlines():
+        pattern = line.strip()
+        normalized_pattern = pattern.casefold()
+        if pattern and normalized_pattern not in seen:
+            patterns.append(pattern)
+            seen.add(normalized_pattern)
+    return tuple(patterns)
+
+
+def filter_cipp_app_certificate_expiry_results(
+    data: Dict[str, Any], exclude_patterns: tuple[str, ...]
+) -> tuple[Dict[str, Any], list[str]]:
+    """Remove globally excluded applications from CIPP certificate-expiry results.
+
+    Matching is case-insensitive and supports shell-style ``*`` and ``?`` wildcards.
+    The input mapping is returned unchanged when the payload or command is not applicable.
+    """
+    raw_task_info = data.get("TaskInfo") if isinstance(data, dict) else None
+    task_info: Dict[str, Any] = raw_task_info if isinstance(raw_task_info, dict) else {}
+    if task_info.get("Command") != _CIPP_APP_CERTIFICATE_EXPIRY_COMMAND:
+        return data, []
+
+    results = data.get("Results")
+    if not exclude_patterns or not isinstance(results, list):
+        return data, []
+
+    normalized_patterns = tuple(pattern.casefold() for pattern in exclude_patterns)
+    included_results: list[Any] = []
+    excluded_names: list[str] = []
+    for item in results:
+        raw_name = None
+        if isinstance(item, dict):
+            raw_name = item.get("DisplayName") or item.get("AppName")
+        name = str(raw_name).strip() if raw_name is not None else ""
+        if name and any(fnmatch.fnmatchcase(name.casefold(), pattern) for pattern in normalized_patterns):
+            excluded_names.append(name)
+        else:
+            included_results.append(item)
+
+    if not excluded_names:
+        return data, []
+
+    filtered_data = dict(data)
+    filtered_data["Results"] = included_results
+    return filtered_data, excluded_names
+
+
+def _has_cipp_value(value: Any) -> bool:
+    """Return whether a CIPP result value should be rendered."""
+    if isinstance(value, str):
+        normalized = value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+        return bool(normalized.strip())
+    if isinstance(value, list):
+        return any(_has_cipp_value(item) for item in value)
+    if isinstance(value, dict):
+        return any(_has_cipp_value(item) for item in value.values())
+    return value is not None
+
+
+def _format_cipp_value(value: Any) -> str:
+    """Format a CIPP field without falling back to Python object repr output."""
+    if isinstance(value, str):
+        return value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t").strip()
+    if isinstance(value, list):
+        populated = [item for item in value if _has_cipp_value(item)]
+        if all(not isinstance(item, (dict, list)) for item in populated):
+            return ", ".join(str(item) for item in populated)
+        return json.dumps(populated, ensure_ascii=False, indent=2)
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    return str(value)
+
+
+def _humanize_cipp_key(key: str) -> str:
+    """Turn an unknown CIPP payload key into a readable English label."""
+    if key in _CIPP_FIELD_LABELS:
+        return _CIPP_FIELD_LABELS[key]
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", key).replace("_", " ")
+    return words.strip().title()
+
+
+def _format_cipp_labeled_value(key: str, value: Any) -> list[str]:
+    formatted = _format_cipp_value(value)
+    label = _humanize_cipp_key(key)
+    if "\n" in formatted:
+        return [f"{label}:", formatted]
+    return [f"{label}: {formatted}"]
+
+
+def _append_cipp_field_section(
+    output: list[str], title: str, item: dict[str, Any], fields: tuple[str, ...], consumed: set[str]
+) -> None:
+    lines: list[str] = []
+    for key in fields:
+        consumed.add(key)
+        value = item.get(key)
+        if _has_cipp_value(value):
+            lines.extend(_format_cipp_labeled_value(key, value))
+    if lines:
+        if output:
+            output.append("")
+        output.extend((title, "", *lines))
+
+
+def _append_cipp_body_section(
+    output: list[str], title: str, item: dict[str, Any], key: str, consumed: set[str], *, bullets: bool = False
+) -> None:
+    consumed.add(key)
+    value = item.get(key)
+    if not _has_cipp_value(value):
+        return
+    body = _format_cipp_value(value)
+    if bullets:
+        action_lines = [line.strip() for line in body.splitlines() if line.strip()]
+        body = "\n".join(
+            line if re.match(r"^(?:[-*]|\d+[.)])\s", line) else f"- {line}" for line in action_lines
+        )
+    if output:
+        output.append("")
+    output.extend((title, "", body))
+
+
+def _format_cipp_result_item(item: Any, index: int, command: str) -> str:
+    is_application = "AppSecretExpiry" in command or "AppCertificateExpiry" in command
+    is_defender = "Defender" in command
+    item_title = "APPLICATION" if is_application else "ALERT" if is_defender else "RESULT"
+    output = [f"{item_title} {index}"]
+
+    if not isinstance(item, dict):
+        if _has_cipp_value(item):
+            output.extend(("", _format_cipp_value(item)))
+        return "\n".join(output)
+
+    consumed: set[str] = set()
+    if is_defender:
+        _append_cipp_field_section(output, "ALERT DETAILS", item, _CIPP_DEFENDER_SUMMARY_FIELDS, consumed)
+        _append_cipp_field_section(output, "TIMESTAMPS", item, _CIPP_DEFENDER_TIMESTAMP_FIELDS, consumed)
+        _append_cipp_body_section(output, "DESCRIPTION", item, "Description", consumed)
+        _append_cipp_body_section(
+            output, "RECOMMENDED ACTIONS", item, "RecommendedActions", consumed, bullets=True
+        )
+        _append_cipp_field_section(output, "REFERENCES", item, _CIPP_DEFENDER_REFERENCE_FIELDS, consumed)
+    elif is_application:
+        _append_cipp_field_section(output, "APPLICATION DETAILS", item, _CIPP_APPLICATION_FIELDS, consumed)
+
+    remaining = [key for key, value in item.items() if key not in consumed and _has_cipp_value(value)]
+    if remaining:
+        _append_cipp_field_section(output, "DETAILS", item, tuple(remaining), consumed)
+
+    return "\n".join(output)
+
+
+def format_cipp_results(data: Dict[str, Any]) -> str:
+    """Render the CIPP ``Results`` collection as readable ConnectWise plain text."""
+    results = data.get("Results") if isinstance(data, dict) else None
+    if not _has_cipp_value(results):
+        return "No alert results were returned."
+
+    raw_task_info = data.get("TaskInfo")
+    task_info: Dict[str, Any] = raw_task_info if isinstance(raw_task_info, dict) else {}
+    command = str(task_info.get("Command", ""))
+    result_items = results if isinstance(results, list) else [results]
+    rendered = [_format_cipp_result_item(item, index, command) for index, item in enumerate(result_items, start=1)]
+    return "\n\n".join(block for block in rendered if block)
 
 
 def resolve_monitor_name(data: Dict[str, Any]) -> str:
