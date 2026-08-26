@@ -115,3 +115,5 @@ def test_replay_webhook_invalid_payload(client, app, sample_config):
     response = client.post(f"/api/logs/{log_id}/replay")
     assert response.status_code == 500
     assert response.json["status"] == "error"
+    assert response.json["message"] == "Replay failed"
+    assert b"Expecting value" not in response.data

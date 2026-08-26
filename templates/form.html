@@ -813,18 +813,19 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         const div = document.createElement('div');
         div.className = 'p-3 mb-3 rounded border border-secondary border-opacity-25 bg-dark bg-opacity-25 maintenance-entry';
 
-        const type = w.type || 'once';
-        const start = w.start || '';
-        const end = w.end || '';
-        const days = w.days || [];
+        const allowedTypes = new Set(['once', 'daily', 'weekly']);
+        const type = allowedTypes.has(w.type) ? w.type : 'once';
+        const start = String(w.start || '');
+        const end = String(w.end || '');
+        const days = Array.isArray(w.days) ? w.days : [];
 
         div.innerHTML = `
             <div class="row g-2 mb-3 align-items-center">
                 <div class="col-md-4">
                     <select class="form-select form-select-sm mw-type bg-dark border-secondary text-info fw-bold" onchange="updateMWFields(this)">
-                        <option value="once" ${type === 'once' ? 'selected' : ''}>One-time</option>
-                        <option value="daily" ${type === 'daily' ? 'selected' : ''}>Daily</option>
-                        <option value="weekly" ${type === 'weekly' ? 'selected' : ''}>Weekly</option>
+                        <option value="once">One-time</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
                     </select>
                 </div>
                 <div class="col-md-8 text-end">
@@ -836,12 +837,12 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
 
             <div class="mw-fields">
                 <!-- Days for Weekly -->
-                <div class="mw-days-container mb-3 ${type === 'weekly' ? '' : 'd-none'}">
+                <div class="mw-days-container mb-3 d-none">
                     <label class="small text-secondary fw-bold text-uppercase ls-1 d-block mb-2">Days of Week (UTC)</label>
                     <div class="d-flex flex-wrap gap-2">
                         ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `
                             <div>
-                                <input type="checkbox" class="btn-check mw-day" id="mw-${count}-${d}" value="${d}" ${days.includes(d) ? 'checked' : ''} onchange="syncMaintenance()">
+                                <input type="checkbox" class="btn-check mw-day" id="mw-${count}-${d}" value="${d}" onchange="syncMaintenance()">
                                 <label class="btn btn-sm btn-outline-secondary px-2 py-1" for="mw-${count}-${d}" style="font-size: 0.7rem;">${d}</label>
                             </div>
                         `).join('')}
@@ -851,19 +852,30 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 <div class="row g-2">
                     <div class="col-6">
                         <label class="small text-secondary fw-bold text-uppercase ls-1 d-block mb-1">Start (UTC)</label>
-                        <input type="${type === 'once' ? 'datetime-local' : 'time'}" 
+                        <input type="time"
                                class="form-control form-control-sm mw-start bg-dark border-secondary text-light" 
-                               value="${start}" onchange="syncMaintenance()">
+                               onchange="syncMaintenance()">
                     </div>
                     <div class="col-6">
                         <label class="small text-secondary fw-bold text-uppercase ls-1 d-block mb-1">End (UTC)</label>
-                        <input type="${type === 'once' ? 'datetime-local' : 'time'}" 
+                        <input type="time"
                                class="form-control form-control-sm mw-end bg-dark border-secondary text-light" 
-                               value="${end}" onchange="syncMaintenance()">
+                               onchange="syncMaintenance()">
                     </div>
                 </div>
             </div>
         `;
+        const typeSelect = div.querySelector('.mw-type');
+        const daysContainer = div.querySelector('.mw-days-container');
+        const startInput = div.querySelector('.mw-start');
+        const endInput = div.querySelector('.mw-end');
+        typeSelect.value = type;
+        daysContainer.classList.toggle('d-none', type !== 'weekly');
+        startInput.type = type === 'once' ? 'datetime-local' : 'time';
+        endInput.type = type === 'once' ? 'datetime-local' : 'time';
+        startInput.value = start;
+        endInput.value = end;
+        div.querySelectorAll('.mw-day').forEach(day => { day.checked = days.includes(day.value); });
         list.appendChild(div);
     }
 
@@ -916,17 +928,16 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         const div = document.createElement('div');
         div.className = 'd-flex gap-2 mb-2 remove-string-entry';
 
-        // Escape quotes to prevent HTML injection in the value attribute
-        const escapedValue = value.replace(/"/g, '&quot;');
 
         div.innerHTML = `
             <input type="text" class="form-control bg-dark border-secondary text-light small remove-string-input" 
-                placeholder="e.g. *All Tenants (AllTenants): " value="${escapedValue}" maxlength="500"
+                placeholder="e.g. *All Tenants (AllTenants): " maxlength="500"
                 oninput="syncRemoveStrings()">
             <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.remove-string-entry').remove(); syncRemoveStrings();">
                 <i class="fas fa-times"></i>
             </button>
         `;
+        div.querySelector('.remove-string-input').value = String(value);
         container.appendChild(div);
     }
 
@@ -946,14 +957,14 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">PATH</span>
                         <input type="text" class="form-control bg-dark border-secondary text-info font-monospace rule-path" 
-                               value="${path}" placeholder="$.field" oninput="syncRoutingRules()">
+                               placeholder="$.field" oninput="syncRoutingRules()">
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">REGEX</span>
                         <input type="text" class="form-control bg-dark border-secondary text-warning font-monospace rule-regex" 
-                               value="${regex}" placeholder=".*" oninput="validateRegex(this); syncRoutingRules()">
+                               placeholder=".*" oninput="validateRegex(this); syncRoutingRules()">
                         <span class="input-group-text bg-dark border-secondary regex-status">
                             <i class="fas fa-check-circle text-success"></i>
                         </span>
@@ -987,7 +998,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">STATUS</span>
                         <input type="text" class="form-control bg-dark border-secondary text-light rule-status" 
-                               value="${overrides.status || ''}" placeholder="New Status" oninput="syncRoutingRules()">
+                               placeholder="New Status" oninput="syncRoutingRules()">
                     </div>
                 </div>
                 <div class="col-md-2">
@@ -1018,12 +1029,16 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             <div class="row mt-2">
                 <div class="col-md-12">
                     <div class="form-check form-switch template-card d-inline-block py-1 pe-3">
-                        <input class="form-check-input rule-drop" type="checkbox" role="switch" id="drop-${count}" ${overrides.drop ? 'checked' : ''} onchange="syncRoutingRules()">
+                        <input class="form-check-input rule-drop" type="checkbox" role="switch" id="drop-${count}" onchange="syncRoutingRules()">
                         <label class="form-check-label small text-warning fw-bold" for="drop-${count}">Drop Webhook</label>
                     </div>
                 </div>
             </div>
         `;
+        div.querySelector('.rule-path').value = String(path);
+        div.querySelector('.rule-regex').value = String(regex);
+        div.querySelector('.rule-status').value = String(overrides.status || '');
+        div.querySelector('.rule-drop').checked = Boolean(overrides.drop);
 
         container.appendChild(div);
 
@@ -1173,25 +1188,41 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             const data = await res.json();
 
             if (data.status === 'success') {
-                let html = '<div class="list-group list-group-flush bg-transparent">';
+                resultDiv.replaceChildren();
+                const list = document.createElement('div');
+                list.className = 'list-group list-group-flush bg-transparent';
                 data.steps.forEach(step => {
-                    html += `<div class="list-group-item bg-transparent border-secondary border-opacity-10 text-secondary py-1 px-0">
-                        <span class="text-info me-2">→</span> ${step}
-                    </div>`;
+                    const item = document.createElement('div');
+                    item.className = 'list-group-item bg-transparent border-secondary border-opacity-10 text-secondary py-1 px-0';
+                    const arrow = document.createElement('span');
+                    arrow.className = 'text-info me-2';
+                    arrow.textContent = '→';
+                    item.append(arrow, document.createTextNode(` ${String(step)}`));
+                    list.appendChild(item);
                 });
-                html += '</div>';
 
-                html += '<div class="mt-3 p-2 rounded bg-dark border border-secondary border-opacity-25">';
-                html += '<div class="fw-bold text-success mb-1 small">FINAL RESULT:</div>';
-                html += `<pre class="mb-0 text-white font-monospace small" style="font-size: 0.7rem;">${JSON.stringify(data.results, null, 2)}</pre>`;
-                html += '</div>';
-
-                resultDiv.innerHTML = html;
+                const resultPanel = document.createElement('div');
+                resultPanel.className = 'mt-3 p-2 rounded bg-dark border border-secondary border-opacity-25';
+                const resultTitle = document.createElement('div');
+                resultTitle.className = 'fw-bold text-success mb-1 small';
+                resultTitle.textContent = 'FINAL RESULT:';
+                const resultPre = document.createElement('pre');
+                resultPre.className = 'mb-0 text-white font-monospace small';
+                resultPre.style.fontSize = '0.7rem';
+                resultPre.textContent = JSON.stringify(data.results, null, 2);
+                resultPanel.append(resultTitle, resultPre);
+                resultDiv.append(list, resultPanel);
             } else {
-                resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">${data.message}</div>`;
+                const error = document.createElement('div');
+                error.className = 'alert alert-danger py-2 small';
+                error.textContent = String(data.message || 'Request failed');
+                resultDiv.replaceChildren(error);
             }
         } catch (e) {
-            resultDiv.innerHTML = `<div class="alert alert-danger py-2 small">Error communicating with server</div>`;
+            const error = document.createElement('div');
+            error.className = 'alert alert-danger py-2 small';
+            error.textContent = 'Error communicating with server';
+            resultDiv.replaceChildren(error);
         }
     }
 

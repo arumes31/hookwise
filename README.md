@@ -250,7 +250,8 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** |
 | `GUI_TRUSTED_IPS`| CIDR list (e.g., `10.0.0.0/24, 192.168.1.5`). |
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
-| `FORCE_HTTPS` | Redirects all traffic to TLS. |
+| `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
+| `HTTPS_ORIGIN` | Trusted public HTTPS origin used for redirects (for example, `https://hookwise.example.com`). |
 | `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
 | `LLM_TIMEOUT` | Seconds to wait for the LLM to respond (Default: `180`). Increase on slow/CPU-only hosts. |
 

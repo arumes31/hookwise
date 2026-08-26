@@ -3,6 +3,7 @@ import os
 import secrets
 import uuid
 from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Flask, Response, g, jsonify, redirect, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -93,6 +94,23 @@ def _register_extensions(app: Flask) -> None:
     csrf.init_app(app)
 
 
+def _trusted_https_redirect_url() -> str | None:
+    """Build an HTTPS URL only when the request host matches a configured origin."""
+    origin = urlsplit(os.environ.get("HTTPS_ORIGIN", "").strip())
+    if origin.scheme != "https" or not origin.hostname or origin.username or origin.password:
+        return None
+    if origin.path not in ("", "/") or origin.query or origin.fragment:
+        return None
+
+    requested = urlsplit(request.full_path.replace("\\", ""))
+    if requested.scheme or requested.netloc:
+        return None
+    request_host = urlsplit(f"//{request.host}").hostname
+    if request_host != origin.hostname:
+        return None
+    return urlunsplit(("https", origin.netloc, requested.path, requested.query, ""))
+
+
 def _register_request_handlers(app: Flask) -> None:
     """Register before and after request handlers and WSGI middleware."""
 
@@ -124,7 +142,10 @@ def _register_request_handlers(app: Flask) -> None:
     def force_https() -> Any:
         if os.environ.get("FORCE_HTTPS") == "true":
             if not request.is_secure and request.headers.get("X-Forwarded-Proto", "http") != "https":
-                url = request.url.replace("http://", "https://", 1)
+                url = _trusted_https_redirect_url()
+                if url is None:
+                    app.logger.warning("Rejected HTTPS redirect for an untrusted or unconfigured host")
+                    return jsonify({"status": "error", "message": "HTTPS redirect is not configured"}), 400
                 return redirect(url, code=301)
 
     # ProxyFix

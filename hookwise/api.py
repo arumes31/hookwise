@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Dict, Tuple, cast
 
+import regex as safe_regex
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
@@ -25,6 +26,24 @@ from .utils import (
     resolve_jsonpath,
     resolve_monitor_name,
 )
+
+ROUTING_REGEX_MAX_PATTERN_LENGTH = 512
+ROUTING_REGEX_TIMEOUT_SECONDS = 0.05
+ROUTING_REGEX_MAX_VALUE_LENGTH = 100_000
+
+
+def _routing_regex_matches(pattern: str, value: str) -> bool:
+    """Evaluate an administrator-defined routing regex with strict resource bounds."""
+    if len(pattern) > ROUTING_REGEX_MAX_PATTERN_LENGTH or len(value) > ROUTING_REGEX_MAX_VALUE_LENGTH:
+        return False
+    try:
+        match = safe_regex.search(
+            pattern, value, safe_regex.IGNORECASE, timeout=ROUTING_REGEX_TIMEOUT_SECONDS
+        )
+        return match is not None
+    except (safe_regex.error, TimeoutError):
+        current_app.logger.warning("Routing regex was invalid or exceeded the execution timeout")
+        return False
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
@@ -189,9 +208,9 @@ def _register() -> None:
             return jsonify(
                 {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
             )
-        except Exception as e:
-            current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
+        except Exception:
+            current_app.logger.exception("Failed to enqueue timeout check")
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check"}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -287,8 +306,9 @@ def _register() -> None:
                 f"REPLAY started (Original: {log_entry.request_id[:8]})", "info", log_entry.config.name, data=data
             )
             return jsonify({"status": "success", "message": "Replay queued", "request_id": request_id})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to replay webhook")
+            return jsonify({"status": "error", "message": "Replay failed"}), 500
 
     @main_bp.route("/history/delete/<id>", methods=["POST"])
     @auth_required
@@ -433,7 +453,7 @@ def _register() -> None:
             rule_regex = rule.get("regex")
             if rule_path and rule_regex:
                 val = str(resolve_jsonpath(data, rule_path))
-                if re.search(rule_regex, val, re.IGNORECASE):
+                if _routing_regex_matches(str(rule_regex), val):
                     matched_rules.append(
                         {
                             "regex": rule_regex,
@@ -808,8 +828,9 @@ def _register() -> None:
         try:
             redis_client.ping()
             return jsonify({"status": "ready"}), 200
-        except Exception as e:
-            return jsonify({"status": "not ready", "reason": str(e)}), 503
+        except Exception:
+            current_app.logger.exception("Redis readiness check failed")
+            return jsonify({"status": "not ready", "reason": "Redis error"}), 503
 
     @main_bp.route("/health", methods=["GET"])
     def health() -> Tuple[Response, int]:
@@ -924,8 +945,9 @@ def _register() -> None:
                 count += 1
             log_audit("clear_cache", None, f"Cleared {count} ConnectWise API cache keys")
             return jsonify({"status": "success", "count": count})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to clear ConnectWise cache")
+            return jsonify({"status": "error", "message": "Failed to clear cache"}), 500
 
     @main_bp.route("/admin/generate-api-key", methods=["POST"])
     @auth_required
@@ -1014,8 +1036,9 @@ def _register() -> None:
                         setattr(config, f, c[f])
             db.session.commit()
             return jsonify({"status": "success"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to import configuration")
+            return jsonify({"status": "error", "message": "Configuration import failed"}), 500
 
     @main_bp.route("/api/feedback", methods=["POST"])
     @auth_required
@@ -1055,8 +1078,9 @@ def _register() -> None:
                     if val is not None:
                         results[field] = str(val)
                         steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
-            except Exception as e:
-                steps.append(f"Error parsing JSON Mapping: {e}")
+            except Exception:
+                current_app.logger.exception("Failed to parse debug JSON mapping")
+                steps.append("Error parsing JSON Mapping")
 
     def _apply_routing_rules(
         data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
@@ -1070,7 +1094,7 @@ def _register() -> None:
                     regex = rule.get("regex")
                     if path and regex:
                         val = str(resolve_jsonpath(data, path))
-                        if re.search(regex, val, re.IGNORECASE):
+                        if _routing_regex_matches(str(regex), val):
                             steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
                             overrides = rule.get("overrides", {})
                             for k, v in overrides.items():
@@ -1078,8 +1102,9 @@ def _register() -> None:
                                 steps.append(f"Override applied: {k} -> {v}")
                         else:
                             steps.append(f"Rule {i + 1} did NOT match: '{regex}' on '{path}'")
-            except Exception as e:
-                steps.append(f"Error parsing Routing Rules: {e}")
+            except Exception:
+                current_app.logger.exception("Failed to parse debug routing rules")
+                steps.append("Error parsing Routing Rules")
 
     def _resolve_summary_and_company(
         data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
