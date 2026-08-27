@@ -880,16 +880,22 @@
         updateDashboardPayloadDisplay();
     });
 
-    document.addEventListener('DOMContentLoaded', function () {
+    function initLiveActivityStream() {
         const socket = getSocket();
         if (socket) {
-            socket.off('connect');
-            socket.off('new_log');
+            const previous = window.dashboardLiveSocketHandlers;
+            if (previous) {
+                socket.off('connect', previous.connect);
+                socket.off('disconnect', previous.disconnect);
+                socket.off('new_log', previous.newLog);
+                socket.io?.off('reconnect_attempt', previous.reconnect);
+            }
         }
 
         const logContainer = document.getElementById('log-container');
         if (!logContainer || logContainer.dataset.initialized) return;
         logContainer.dataset.initialized = 'true';
+        window.activityStream?.init?.();
 
         const pauseBtn = document.getElementById('pause-button');
         const timeBtn = document.getElementById('time-toggle');
@@ -988,23 +994,13 @@
             });
         }
 
-        if (socket) {
-            socket.on('connect', () => {
-                const statusBadge = document.getElementById('socket-status');
-                if (statusBadge) {
-                    statusBadge.textContent = 'Live';
-                    statusBadge.className = 'badge bg-success';
-                }
-            });
-            socket.on('disconnect', () => {
-                const statusBadge = document.getElementById('socket-status');
-                if (statusBadge) { statusBadge.textContent = 'Disconnected'; statusBadge.className = 'badge bg-danger'; }
-            });
-            socket.on('reconnect_attempt', attempt => {
-                const statusBadge = document.getElementById('socket-status');
-                if (statusBadge) { statusBadge.textContent = `Reconnecting ${attempt}`; statusBadge.className = 'badge bg-warning text-dark'; }
-            });
-        }
+        const setSocketStatus = (text, className) => {
+            const statusBadge = document.getElementById('socket-status');
+            if (statusBadge) {
+                statusBadge.textContent = text;
+                statusBadge.className = className;
+            }
+        };
 
         function addLogToStream(data, isInitialHistory = false) {
             if (!isInitialHistory && window.dashboardState.isPaused) return;
@@ -1113,9 +1109,19 @@
         }
 
         if (socket) {
-            socket.on('new_log', (data) => {
-                addLogToStream(data);
-            });
+            const handlers = {
+                connect: () => setSocketStatus('Live', 'badge bg-success'),
+                disconnect: () => setSocketStatus('Disconnected', 'badge bg-danger'),
+                reconnect: attempt => setSocketStatus(`Reconnecting ${attempt}`, 'badge bg-warning text-dark'),
+                newLog: data => addLogToStream(data),
+            };
+            window.dashboardLiveSocketHandlers = handlers;
+            socket.on('connect', handlers.connect);
+            socket.on('disconnect', handlers.disconnect);
+            socket.io?.on('reconnect_attempt', handlers.reconnect);
+            socket.on('new_log', handlers.newLog);
+            if (socket.connected) handlers.connect();
+            else handlers.disconnect();
         }
 
         // Load history initially
@@ -1140,7 +1146,13 @@
                 if (window.showPayloadModal) window.showPayloadModal(payload);
             }
         });
-    });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initLiveActivityStream, { once: true });
+    } else {
+        initLiveActivityStream();
+    }
 
     function copyModalPayload() {
         const text = document.getElementById('payload-display').textContent;

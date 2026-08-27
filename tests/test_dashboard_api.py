@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -145,6 +146,24 @@ def test_dashboard_page_contains_live_controls_and_accessible_analytics_table(cl
     assert 'id="dashboard-kpi-toggles"' in html
     assert 'id="dashboard-chart-table"' in html
     assert "static/js/dashboard.js" in html
+
+
+def test_dashboard_scripts_support_htmx_navigation(client):
+    _login(client)
+
+    html = client.get("/").get_data(as_text=True)
+    root = Path(__file__).resolve().parents[1]
+    dashboard = (root / "static/js/dashboard.js").read_text(encoding="utf-8")
+    activity = (root / "static/js/activity.js").read_text(encoding="utf-8")
+
+    assert 'content=\'{"historyCacheSize": 0}\'' in html
+    assert "document.readyState === 'loading'" in html
+    assert "initLiveActivityStream();" in html
+    assert "new AbortController()" in dashboard
+    assert "htmx:beforeCleanupElement" in dashboard
+    assert "if (!isActive(root)) return;" in dashboard
+    assert "state.seen.clear();" in activity
+    assert "socket.connected" in activity
 
 
 @pytest.mark.parametrize(

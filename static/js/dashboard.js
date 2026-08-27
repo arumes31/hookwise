@@ -5,6 +5,8 @@
     const DEFAULT_REFRESH_INTERVAL = 30;
     const state = { range: '24h', hidden: [], order: [], compact: false, interval: DEFAULT_REFRESH_INTERVAL, timer: null, points: [], zoom: 0, pan: 0 };
     let saveTimer = null;
+    let activeRoot = null;
+    let refreshController = null;
     const number = new Intl.NumberFormat();
 
     const byId = id => document.getElementById(id);
@@ -18,15 +20,15 @@
     function query() {
         const params = new URLSearchParams({ range: state.range, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
         if (state.range === 'custom') {
-            const from = byId('dashboard-from').value;
-            const to = byId('dashboard-to').value;
+            const from = byId('dashboard-from')?.value;
+            const to = byId('dashboard-to')?.value;
             if (from && to) { params.set('from', new Date(from).toISOString()); params.set('to', new Date(to).toISOString()); }
         }
         return params.toString();
     }
 
-    async function getJson(path) {
-        const response = await fetch(`${path}?${query()}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+    async function getJson(path, signal) {
+        const response = await fetch(`${path}?${query()}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin', signal });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(body.error || 'Dashboard data could not be loaded.');
         return body;
@@ -35,13 +37,16 @@
     function showError(message, outage) {
         const error = byId('dashboard-error');
         const banner = byId('dashboard-outage');
-        error.textContent = message;
-        error.classList.toggle('d-none', outage);
-        banner.classList.toggle('d-none', !outage);
-        if (outage) byId('dashboard-outage-message').textContent = message;
+        if (error) {
+            error.textContent = message;
+            error.classList.toggle('d-none', outage);
+        }
+        banner?.classList.toggle('d-none', !outage);
+        const outageMessage = byId('dashboard-outage-message');
+        if (outage && outageMessage) outageMessage.textContent = message;
     }
 
-    function clearError() { byId('dashboard-error').classList.add('d-none'); byId('dashboard-outage').classList.add('d-none'); }
+    function clearError() { byId('dashboard-error')?.classList.add('d-none'); byId('dashboard-outage')?.classList.add('d-none'); }
 
     function renderKpis(data) {
         const kpis = data.kpis || {};
@@ -188,20 +193,57 @@
         });
     }
 
-    function schedule() { if (state.timer) clearInterval(state.timer); if (state.interval) state.timer = setInterval(refresh, state.interval * 1000); }
+    function isActive(root) {
+        return Boolean(root?.isConnected && root === activeRoot && root === byId('operations-dashboard'));
+    }
+    function cleanup(root = activeRoot) {
+        if (root !== activeRoot) return;
+        if (state.timer) clearInterval(state.timer);
+        state.timer = null;
+        refreshController?.abort();
+        refreshController = null;
+        activeRoot = null;
+        document.body.classList.remove('dashboard-compact');
+    }
+    function schedule() {
+        if (state.timer) clearInterval(state.timer);
+        state.timer = state.interval && activeRoot ? setInterval(refresh, state.interval * 1000) : null;
+    }
     async function refresh() {
+        const root = activeRoot;
+        if (!isActive(root)) return;
+        refreshController?.abort();
+        const controller = new AbortController();
+        refreshController = controller;
         const button = byId('dashboard-refresh'); if (button) button.disabled = true;
         document.querySelectorAll('.dashboard-kpi').forEach(card => card.classList.add('is-loading'));
-        try { const [overview, analytics] = await Promise.all([getJson('/api/dashboard/overview'), getJson('/api/dashboard/analytics')]); renderKpis(overview); renderAnalytics(analytics); clearError(); }
-        catch (error) { showError(error.message || 'Dashboard data could not be loaded.', true); }
-        finally { if (button) button.disabled = false; document.querySelectorAll('.dashboard-kpi').forEach(card => card.classList.remove('is-loading')); }
+        try {
+            const [overview, analytics] = await Promise.all([
+                getJson('/api/dashboard/overview', controller.signal),
+                getJson('/api/dashboard/analytics', controller.signal)
+            ]);
+            if (!isActive(root) || controller.signal.aborted) return;
+            renderKpis(overview); renderAnalytics(analytics); clearError();
+        } catch (error) {
+            if (error?.name !== 'AbortError' && isActive(root)) showError(error?.message || 'Dashboard data could not be loaded.', true);
+        } finally {
+            if (refreshController === controller) refreshController = null;
+            if (isActive(root)) {
+                if (button) button.disabled = false;
+                document.querySelectorAll('.dashboard-kpi').forEach(card => card.classList.remove('is-loading'));
+            }
+        }
     }
 
     async function init() {
-        if (!byId('operations-dashboard') || byId('operations-dashboard').dataset.dashboardReady) return;
-        byId('operations-dashboard').dataset.dashboardReady = 'true';
+        const root = byId('operations-dashboard');
+        if (!root || root.dataset.dashboardReady) return;
+        cleanup();
+        activeRoot = root;
+        root.dataset.dashboardReady = 'true';
         Object.assign(state, local.get());
         await loadPreferences();
+        if (!isActive(root)) return;
         byId('dashboard-range').value = state.range;
         byId('dashboard-refresh-interval').value = String(state.interval);
         document.body.classList.toggle('dashboard-compact', Boolean(state.compact));
@@ -234,6 +276,9 @@
         byId('dashboard-pan-forward').addEventListener('click', () => { state.pan = Math.min(Math.max(0, state.points.length - 3), state.pan + 1); renderSvg(visiblePoints()); });
         schedule(); refresh();
     }
+    document.addEventListener('htmx:beforeCleanupElement', event => {
+        if (activeRoot && (event.target === activeRoot || event.target.contains?.(activeRoot))) cleanup(activeRoot);
+    });
     document.addEventListener('DOMContentLoaded', init);
     document.addEventListener('htmx:load', init);
 })();

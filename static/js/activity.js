@@ -3,7 +3,7 @@
     'use strict';
     const STORAGE_KEY = 'hookwise.activity-preferences.v1';
     const NOTES_KEY = 'hookwise.activity-notes.v1';
-    const state = { paused: false, seen: new Set(), rendered: new Map(), duplicates: 0, counters: { all: 0, failure: 0, success: 0 } };
+    const state = { paused: false, seen: new Set(), rendered: new Map(), duplicates: 0, counters: { all: 0, failure: 0, success: 0 }, connection: null, keyboardBound: false };
     const load = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (_) { return {}; } };
     const save = values => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(values)); } catch (_) { /* non-critical */ } };
     const eventKey = data => data.id || `${data.request_id || ''}:${data.config_name || ''}:${data.timestamp || ''}:${data.message || ''}`;
@@ -79,6 +79,10 @@
     }
     function init() {
         const panel = document.getElementById('activity-controls'); if (!panel || panel.dataset.init) return; panel.dataset.init = 'true';
+        state.seen.clear();
+        state.rendered.clear();
+        state.duplicates = 0;
+        state.counters = { all: 0, failure: 0, success: 0 };
         const preferences = load();
         Object.entries(preferences).forEach(([id, value]) => { const control = document.getElementById(id); if (control) control.value = value; });
         const endpoint = document.getElementById('activity-endpoint');
@@ -99,16 +103,34 @@
         });
         document.getElementById('activity-pause')?.addEventListener('click', () => { state.paused = !state.paused; const button = document.getElementById('activity-pause'); button?.classList.toggle('active', state.paused); button?.setAttribute('aria-pressed', String(state.paused)); });
         document.getElementById('activity-clear')?.addEventListener('click', () => { const container = document.getElementById('log-container'); if (container) container.replaceChildren(); state.seen.clear(); state.rendered.clear(); state.duplicates = 0; state.counters = { all: 0, failure: 0, success: 0 }; updateUi(); });
-        document.addEventListener('keydown', event => { if (event.altKey && event.key.toLowerCase() === 'p' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { event.preventDefault(); document.getElementById('activity-pause')?.click(); } });
+        if (!state.keyboardBound) {
+            document.addEventListener('keydown', event => { if (event.altKey && event.key.toLowerCase() === 'p' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) { event.preventDefault(); document.getElementById('activity-pause')?.click(); } });
+            state.keyboardBound = true;
+        }
         updateUi();
         const socket = window.getSocket?.();
-        const banner = document.getElementById('activity-disconnected');
         const setConnection = (message, disconnected) => {
+            const banner = document.getElementById('activity-disconnected');
             if (banner) { banner.hidden = !disconnected; banner.textContent = message; }
         };
-        socket?.on('connect', () => setConnection('', false));
-        socket?.on('disconnect', () => setConnection('Live activity disconnected. Reconnection is automatic.', true));
-        socket?.io?.on('reconnect_attempt', attempt => setConnection(`Reconnecting live activity (attempt ${attempt})…`, true));
+        if (state.connection) {
+            state.connection.socket.off('connect', state.connection.connect);
+            state.connection.socket.off('disconnect', state.connection.disconnect);
+            state.connection.socket.io?.off('reconnect_attempt', state.connection.reconnect);
+        }
+        if (socket) {
+            const connection = {
+                socket,
+                connect: () => setConnection('', false),
+                disconnect: () => setConnection('Live activity disconnected. Reconnection is automatic.', true),
+                reconnect: attempt => setConnection(`Reconnecting live activity (attempt ${attempt})…`, true),
+            };
+            state.connection = connection;
+            socket.on('connect', connection.connect);
+            socket.on('disconnect', connection.disconnect);
+            socket.io?.on('reconnect_attempt', connection.reconnect);
+            setConnection(socket.connected ? '' : 'Live activity disconnected. Reconnection is automatic.', !socket.connected);
+        }
     }
     const maxEntries = () => {
         const value = Number.parseInt(document.getElementById('activity-buffer')?.value || '200', 10);
