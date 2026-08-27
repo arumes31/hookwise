@@ -162,3 +162,23 @@ def test_all_workflow_actions_use_immutable_shas():
 
     assert refs
     assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in refs)
+
+
+def test_ci_uses_latest_python_and_recommended_pr_guards():
+    root = Path(__file__).parents[1]
+    ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    ghcr = (root / ".github/workflows/ghcr.yml").read_text(encoding="utf-8")
+    dependency_review = (root / ".github/workflows/dependency-review.yml").read_text(encoding="utf-8")
+    dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
+    project = (root / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "python-version: '3.14.6'" in ci
+    assert "python:3.14.6-slim" in dockerfile
+    assert 'requires-python = ">=3.14,<3.15"' in project
+    assert 'target-version = "py314"' in project
+    assert 'python_version = "3.14"' in project
+    assert "cancel-in-progress: true" in ci
+    assert "cancel-in-progress: true" in ghcr
+    assert "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294" in dependency_review
+    assert "fail-on-severity: high" in dependency_review
+    assert "fail-on-scopes: runtime" in dependency_review

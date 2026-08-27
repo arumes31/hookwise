@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.13-slim AS builder
+FROM python:3.14.6-slim AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ RUN pip install --upgrade pip
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.13-slim AS runtime
+FROM python:3.14.6-slim AS runtime
 
 WORKDIR /app
 
