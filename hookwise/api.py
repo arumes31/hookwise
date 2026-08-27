@@ -22,6 +22,7 @@ from .utils import (
     auth_required,
     log_audit,
     log_to_web,
+    mask_secrets,
     parse_cipp_app_certificate_exclude_patterns,
     resolve_jsonpath,
     resolve_monitor_name,
@@ -37,16 +38,14 @@ def _routing_regex_matches(pattern: str, value: str) -> bool:
     if len(pattern) > ROUTING_REGEX_MAX_PATTERN_LENGTH or len(value) > ROUTING_REGEX_MAX_VALUE_LENGTH:
         return False
     try:
-        match = safe_regex.search(
-            pattern, value, safe_regex.IGNORECASE, timeout=ROUTING_REGEX_TIMEOUT_SECONDS
-        )
+        match = safe_regex.search(pattern, value, safe_regex.IGNORECASE, timeout=ROUTING_REGEX_TIMEOUT_SECONDS)
         return match is not None
     except (safe_regex.error, TimeoutError):
         current_app.logger.warning("Routing regex was invalid or exceeded the execution timeout")
         return False
 
-QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
+QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
 def _parse_row_date(row_date: Any) -> date | None:
@@ -60,6 +59,7 @@ def _parse_row_date(row_date: Any) -> date | None:
             return datetime.strptime(str(row_date).split(" ")[0], "%Y-%m-%d").date()
         except ValueError as e:
             import logging
+
             logging.error(f"Failed to parse date '{row_date}': {e}")
             return None
 
@@ -81,6 +81,7 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
     now: date = datetime.now(timezone.utc).date()
 
     if period == "weekly":
+
         def generate_weeks(start_date: date, count: int):
             seen: set[tuple[int, int]] = set()
             for j in range(60):
@@ -132,6 +133,8 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
                 }
             )
     return history_data
+
+
 def _register() -> None:
     from .routes import main_bp
 
@@ -224,38 +227,16 @@ def _register() -> None:
         source_ip = request.args.get("source_ip", "")
         per_page = 25
 
-        query = WebhookLog.query
-        if search:
-            if search.startswith("#"):
-                search_id = search[1:]
-                if search_id.isdigit():
-                    query = query.filter(WebhookLog.ticket_id == int(search_id))
-            elif search.isdigit():
-                query = query.filter(WebhookLog.ticket_id == int(search))
-            else:
-                query = query.filter(
-                    (WebhookLog.request_id.ilike(f"%{search}%"))
-                    | (WebhookLog.payload.ilike(f"%{search}%"))
-                    | (WebhookLog.error_message.ilike(f"%{search}%"))
-                )
+        from .history_ops import _filter_logs
 
-        if endpoint_id:
-            query = query.filter(WebhookLog.config_id == endpoint_id)
-
-        if status:
-            query = query.filter(WebhookLog.status == status)
+        try:
+            query = _filter_logs(request.args)
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            query = WebhookLog.query.filter(db.false())
 
         if source_ip:
             query = query.filter(WebhookLog.source_ip.ilike(f"%{source_ip}%"))
-
-        if date_from:
-            from datetime import datetime
-
-            query = query.filter(WebhookLog.created_at >= datetime.fromisoformat(date_from))
-        if date_to:
-            from datetime import datetime, timedelta
-
-            query = query.filter(WebhookLog.created_at <= datetime.fromisoformat(date_to) + timedelta(days=1))
 
         pagination = query.order_by(WebhookLog.created_at.desc()).paginate(
             page=page, per_page=per_page, error_out=False
@@ -297,11 +278,26 @@ def _register() -> None:
     @main_bp.route("/history/replay/<log_id>", methods=["POST"])
     @auth_required
     def replay_webhook(log_id: str) -> Any:
+        if session.get("role") not in {"admin", "operator"}:
+            return jsonify({"error": "An operator role is required for this action."}), 403
         log_entry = WebhookLog.query.get_or_404(log_id)
         try:
             data = json.loads(log_entry.payload)
             request_id = f"replay_{int(time.time())}_{log_entry.request_id[:8]}"
-            process_webhook_task.delay(log_entry.config_id, data, request_id)
+            now = datetime.now(timezone.utc)
+            replay_log = WebhookLog(
+                config_id=log_entry.config_id,
+                request_id=request_id,
+                correlation_id=log_entry.correlation_id or log_entry.request_id[:100],
+                payload=json.dumps(mask_secrets(data)),
+                status="queued",
+                received_at=now,
+                queued_at=now,
+                replay_of_log_id=log_entry.id,
+            )
+            db.session.add(replay_log)
+            db.session.commit()
+            process_webhook_task.delay(log_entry.config_id, data, request_id, log_id=replay_log.id)
             log_to_web(
                 f"REPLAY started (Original: {log_entry.request_id[:8]})", "info", log_entry.config.name, data=data
             )
@@ -350,7 +346,20 @@ def _register() -> None:
             "title": "Manual Test Trigger",
             "message": "This is a simulated webhook payload.",
         }
-        process_webhook_task.delay(id, data, request_id)
+        now = datetime.now(timezone.utc)
+        log_entry = WebhookLog(
+            config_id=id,
+            request_id=request_id,
+            correlation_id=request_id[:100],
+            payload=json.dumps(data),
+            status="queued",
+            source_ip="system",
+            received_at=now,
+            queued_at=now,
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        process_webhook_task.delay(id, data, request_id, log_id=log_entry.id)
         log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
         return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
 
@@ -389,7 +398,6 @@ def _register() -> None:
                 json_mapping = json.loads(config.json_mapping)
             except Exception:
                 pass
-
 
         mapped_vals: dict[str, str] = {}
         overridable = [
@@ -904,9 +912,7 @@ def _register() -> None:
         health_webhook = cast(bytes, health_webhook).decode() if health_webhook else ""
         cipp_app_certificate_exclude_names = redis_client.get(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY)
         cipp_app_certificate_exclude_names = (
-            cast(bytes, cipp_app_certificate_exclude_names).decode()
-            if cipp_app_certificate_exclude_names
-            else ""
+            cast(bytes, cipp_app_certificate_exclude_names).decode() if cipp_app_certificate_exclude_names else ""
         )
         api_key = redis_client.get("hookwise_master_api_key")
         api_key = cast(bytes, api_key).decode() if api_key else "Not Generated"

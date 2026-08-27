@@ -75,7 +75,7 @@ def test_dynamic_webhook_queues_task(mock_delay, mock_tasks_redis, client, sampl
 
     assert response.status_code == 202
     assert response.json["status"] == "queued"
-    mock_delay.assert_called_once_with(sample_config, payload, ANY, source_ip=ANY, headers=ANY)
+    mock_delay.assert_called_once_with(sample_config, payload, ANY, source_ip=ANY, headers=ANY, log_id=ANY)
 
 
 @patch("hookwise.tasks.redis_client")

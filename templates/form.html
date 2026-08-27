@@ -27,8 +27,8 @@
                             </svg>
                         </div>
                         <div>
-                            <h2 class="mb-0 h4 fw-bold text-light">{{ 'Edit' if config else 'New' }} Webhook Endpoint
-                            </h2>
+                            <h1 class="mb-0 h4 fw-bold text-light">{{ 'Edit' if config else 'New' }} Webhook Endpoint
+                            </h1>
                             <p class="mb-0 small text-secondary">{{ 'Update your existing webhook routing
                                 configuration.' if config else 'Configure how incoming alerts are routed to
                                 ConnectWise.' }}
@@ -86,7 +86,7 @@
 
                             <div
                                 class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 border-bottom pb-2 border-secondary border-opacity-25">
-                                <h5 class="fw-bold mb-0 text-light">Core Settings</h5>
+                                <h2 class="h5 fw-bold mb-0 text-light">Core Settings</h2>
                                 <div class="btn-group btn-group-sm">
                                     <button type="button" class="btn btn-outline-secondary" onclick="undo()"
                                         id="undo-btn" disabled><i class="fas fa-undo me-1"></i>Undo</button>
@@ -98,10 +98,20 @@
                             <div class="mb-4">
                                 <label for="name" class="form-label fw-bold text-light">Endpoint Name <span
                                         class="text-danger">*</span></label>
+                                {% if form_error %}<div class="alert alert-danger" role="alert">{{ form_error }}</div>{% endif %}
                                 <input type="text" class="form-control bg-dark border-secondary text-light" id="name"
                                     name="name" placeholder="e.g. Uptime Kuma Production" required
                                     value="{{ config.name if config else '' }}"
                                     data-tooltip="A descriptive name for this webhook source.">
+                            </div>
+
+                            <div class="mb-4">
+                                <label for="tags" class="form-label fw-bold text-light">Tags</label>
+                                <input type="text" class="form-control bg-dark border-secondary text-light" id="tags"
+                                    name="tags" maxlength="395" placeholder="production, customer-a, critical"
+                                    value="{{ config.tags|map(attribute='name')|join(', ') if config else '' }}"
+                                    aria-describedby="tags-help">
+                                <div id="tags-help" class="form-text">Up to 12 comma-separated tags, 32 characters each.</div>
                             </div>
 
                             <div class="row">
@@ -277,9 +287,9 @@
 
                         <!-- Right Column: Advanced & Automation -->
                         <div class="col-lg-6">
-                            <h5 class="fw-bold mb-4 border-bottom pb-2 border-secondary border-opacity-25 text-light">
+                            <h2 class="h5 fw-bold mb-4 border-bottom pb-2 border-secondary border-opacity-25 text-light">
                                 Automation &
-                                Logic</h5>
+                                Logic</h2>
 
                             <div class="mb-4">
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
@@ -525,6 +535,47 @@
                                         aria-label="Stale endpoint timeout in hours"
                                         value="{{ config.timeout_hours if config else '24' }}" style="max-width: 80px;">
                                     <span class="input-group-text bg-dark border-secondary text-secondary">hours</span>
+                                </div>
+                            </div>
+
+                            <div class="mb-4 p-3 rounded-2 border border-info border-opacity-25"
+                                style="background: rgba(13, 202, 240, 0.03);">
+                                <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+                                    <div>
+                                        <div class="fw-bold text-info"><i class="fas fa-shield-alt me-2"></i>DELIVERY CONTROLS</div>
+                                        <div class="small text-secondary">Bounded retries and per-endpoint ingress protection.</div>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="retry_enabled"
+                                            name="retry_enabled" value="true" {{ 'checked' if not config or config.retry_enabled else '' }}>
+                                        <label class="form-check-label fw-bold text-light" for="retry_enabled">Retry delivery</label>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-sm-6">
+                                        <label class="form-label small text-secondary" for="rate_limit_per_minute">Ingress limit / minute</label>
+                                        <input class="form-control form-control-sm bg-dark border-secondary text-light" type="number"
+                                            id="rate_limit_per_minute" name="rate_limit_per_minute" min="1" max="10000" step="1"
+                                            value="{{ config.rate_limit_per_minute if config else 60 }}">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small text-secondary" for="retry_max_attempts">Maximum attempts</label>
+                                        <input class="form-control form-control-sm bg-dark border-secondary text-light" type="number"
+                                            id="retry_max_attempts" name="retry_max_attempts" min="0" max="20" step="1"
+                                            value="{{ config.retry_max_attempts if config else 5 }}">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small text-secondary" for="retry_base_delay_seconds">Initial retry delay (seconds)</label>
+                                        <input class="form-control form-control-sm bg-dark border-secondary text-light" type="number"
+                                            id="retry_base_delay_seconds" name="retry_base_delay_seconds" min="1" max="3600" step="1"
+                                            value="{{ config.retry_base_delay_seconds if config else 1 }}">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label small text-secondary" for="retry_max_delay_seconds">Maximum retry delay (seconds)</label>
+                                        <input class="form-control form-control-sm bg-dark border-secondary text-light" type="number"
+                                            id="retry_max_delay_seconds" name="retry_max_delay_seconds" min="1" max="86400" step="1"
+                                            value="{{ config.retry_max_delay_seconds if config else 300 }}">
+                                    </div>
                                 </div>
                             </div>
 

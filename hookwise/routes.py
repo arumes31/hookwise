@@ -240,4 +240,14 @@ def index() -> Any:
     )
 
 
-from . import api, auth, endpoints, tenantmap, webhook  # noqa: E402, F401
+from . import (  # noqa: E402, F401
+    activity_api,
+    api,
+    auth,
+    dashboard_api,
+    endpoint_summary,
+    endpoints,
+    history_ops,
+    tenantmap,
+    webhook,
+)

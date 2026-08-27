@@ -24,18 +24,39 @@
     <link href="{{ url_for('static', filename='css/prism.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script>
+        (() => {
+            const nativeFetch = window.fetch.bind(window);
+            window.fetch = (input, init = {}) => {
+                const request = input instanceof Request ? input : null;
+                const method = String(init.method || request?.method || 'GET').toUpperCase();
+                const target = new URL(request?.url || String(input), window.location.href);
+                if (target.origin === window.location.origin && !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+                    const headers = new Headers(init.headers || request?.headers || {});
+                    if (!headers.has('X-CSRFToken')) {
+                        headers.set('X-CSRFToken', document.querySelector('meta[name="csrf-token"]')?.content || '');
+                    }
+                    init = { ...init, headers };
+                }
+                return nativeFetch(input, init);
+            };
+        })();
+    </script>
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/prism.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/mini-charts.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/ux.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/activity.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/history-operations.js') }}" defer></script>
 </head>
 
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
     <div id="loading-bar" style="width: 0%;"></div>
     {% if request.endpoint != 'main.login' %}
-    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top" aria-label="Primary navigation">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}"
                 aria-label="HookWise dashboard">
@@ -237,7 +258,7 @@
         </div>
     </div>
 
-        <div class="container pb-5 app-content">
+    <main class="container pb-5 app-content" id="main-content">
         {% with messages = get_flashed_messages() %}
         {% if messages %}
         {% for message in messages %}
@@ -250,7 +271,7 @@
         {% endwith %}
 
         {% block content %}{% endblock %}
-    </div>
+    </main>
 
     <!-- Feedback Removed -->
 

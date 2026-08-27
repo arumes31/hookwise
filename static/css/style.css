@@ -778,6 +778,70 @@ h4,
     line-height: 1.2;
 }
 
+/* Endpoint dashboard controls and low-density operational telemetry. */
+#endpoint-dashboard .endpoint-filter-status {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    min-height: 1.5rem;
+}
+
+.filter-chips, .endpoint-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.filter-chip, .endpoint-tag {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(59, 130, 246, .10);
+    color: var(--text-secondary);
+    font-size: .72rem;
+    line-height: 1.2;
+    padding: .25rem .55rem;
+}
+
+.filter-chip { cursor: pointer; }
+.filter-chip:hover, .filter-chip:focus-visible { border-color: var(--primary); color: var(--text-primary); }
+.endpoint-tag { background: rgba(148, 163, 184, .10); }
+.endpoint-filter-empty { border: 1px dashed var(--border); border-radius: 12px; color: var(--text-secondary); padding: 1rem; text-align: center; }
+.endpoint-details { border-top: 1px solid var(--border); color: var(--text-secondary); font-size: .76rem; padding-top: .75rem; }
+.endpoint-details summary { color: var(--text-primary); cursor: pointer; font-weight: 700; }
+.endpoint-summary-grid { display: grid; gap: .45rem .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.endpoint-summary-grid span { display: flex; justify-content: space-between; gap: .5rem; }
+.endpoint-summary-grid strong { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#endpoint-dashboard.is-loading .endpoint-details [data-summary] { color: transparent; border-radius: 3px; background: linear-gradient(90deg, var(--border), rgba(255,255,255,.15), var(--border)); background-size: 200% 100%; animation: hw-shimmer 1.2s infinite; }
+
+/* Keep live activity controls usable without consuming the console itself. */
+.activity-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; background: rgba(15, 23, 42, .35); }
+.activity-controls .form-select { background-color: var(--bg-card); border-color: var(--border); color: var(--text-primary); font-size: .72rem; max-width: 140px; min-height: 30px; }
+.activity-controls .btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.log-entry.activity-pinned { border-left: 3px solid var(--warning, #f59e0b); background: rgba(245, 158, 11, .08); }
+.log-entry {
+    content-visibility: auto;
+    contain-intrinsic-block-size: 42px;
+}
+.activity-entry-controls { white-space: nowrap; }
+
+/* History troubleshooting and operations controls. */
+.history-operations { border: 1px solid var(--border); }
+.history-operations .form-select { max-width: 220px; }
+.history-filter-grid { display: grid; gap: .6rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.history-operation-summary { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
+.diagnostic-list { color: var(--text-secondary); font-size: .85rem; padding-left: 1.25rem; }
+.diagnostic-code { background: rgba(0,0,0,.28); border: 1px solid var(--border); border-radius: .5rem; color: var(--text-secondary); max-height: 14rem; overflow: auto; padding: .75rem; white-space: pre-wrap; }
+
+@keyframes hw-shimmer { to { background-position: -200% 0; } }
+
+@media (max-width: 767.98px) {
+    #endpoint-dashboard .endpoint-filter-status { align-items: flex-start; flex-direction: column; gap: .4rem; }
+    .endpoint-summary-grid { grid-template-columns: 1fr; }
+    .activity-controls .form-select { flex: 1 1 42%; max-width: none; }
+    .activity-controls #activity-counter { margin-left: 0 !important; width: 100%; }
+    .history-filter-grid { grid-template-columns: 1fr; }
+}
+
 .btn-sm {
     min-height: var(--control-height-sm);
     padding: 0.35rem 0.7rem;
@@ -971,4 +1035,49 @@ h4,
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+/* Operations dashboard: live KPI controls and accessible SVG analytics. */
+.operations-dashboard { scroll-margin-top: 6rem; }
+.dashboard-heading, .dashboard-analytics-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }
+.dashboard-controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.dashboard-controls .form-select { width: auto; min-width: 8.5rem; }
+.dashboard-custom-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); margin-bottom: var(--space-4); }
+.dashboard-custom-form label { color: var(--text-secondary); font-size: .8rem; }
+.dashboard-layout-menu { position: relative; }
+.dashboard-layout-menu summary { list-style: none; cursor: pointer; }
+.dashboard-layout-menu summary::-webkit-details-marker { display: none; }
+.dashboard-layout-panel { position: absolute; z-index: 20; right: 0; top: calc(100% + .25rem); min-width: 14rem; padding: var(--space-3); border: 1px solid var(--border); border-radius: .5rem; background: var(--bg-dark); box-shadow: var(--shadow-premium); }
+.dashboard-layout-panel label { display: block; color: var(--text-secondary); font-size: .8rem; margin: .35rem 0; }
+.dashboard-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); }
+.dashboard-kpi { display: grid; text-align: left; min-height: 9.2rem; padding: var(--space-4); border: 1px solid var(--border); border-radius: .75rem; color: var(--text-primary); background: var(--glass-bg); transition: border-color .15s ease, transform .15s ease, opacity .15s ease; }
+.dashboard-kpi:hover, .dashboard-kpi:focus-visible { border-color: var(--border-hover); transform: translateY(-2px); outline: 0; }
+.dashboard-kpi-label { color: var(--text-secondary); font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.dashboard-kpi-value { font-size: 1.6rem; line-height: 1.25; }
+.dashboard-kpi-delta, .dashboard-kpi-detail { color: var(--text-secondary); font-size: .76rem; }
+.dashboard-kpi-delta.is-positive { color: var(--success); }
+.dashboard-kpi-delta.is-negative { color: var(--danger); }
+.dashboard-kpi.is-loading { opacity: .6; pointer-events: none; }
+.dashboard-kpi.is-loading .dashboard-kpi-value, .dashboard-kpi.is-loading .dashboard-kpi-delta { color: transparent; border-radius: .25rem; background: linear-gradient(90deg, rgba(148,163,184,.13), rgba(148,163,184,.3), rgba(148,163,184,.13)); background-size: 200% 100%; animation: dashboard-skeleton 1.2s ease-in-out infinite; }
+@keyframes dashboard-skeleton { to { background-position: -200% 0; } }
+.dashboard-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); border: 0; padding: 0; margin: 0 0 var(--space-3); }
+.dashboard-legend label { color: var(--text-secondary); font-size: .82rem; cursor: pointer; }
+.dashboard-chart { min-height: 260px; border: 1px solid var(--border); border-radius: .5rem; background: rgba(2, 6, 23, .3); overflow: hidden; }
+.dashboard-chart svg { display: block; width: 100%; height: 260px; }
+.dashboard-chart-empty { padding: var(--space-6); border: 1px dashed var(--border); border-radius: .5rem; text-align: center; color: var(--text-secondary); }
+.dashboard-endpoint-activity { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.dashboard-endpoint-summary { position: relative; isolation: isolate; overflow: hidden; padding: .2rem .5rem; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary); font-size: .75rem; }
+.dashboard-endpoint-summary::before { content: ''; position: absolute; z-index: -1; inset: 0 auto 0 0; width: var(--activity-width, 0%); background: rgba(56, 189, 248, .16); }
+.dashboard-compact .dashboard-kpi { min-height: 6.75rem; padding: var(--space-3); }
+.dashboard-compact .dashboard-kpi-detail { display: none; }
+.dashboard-compact .dashboard-kpi-grid { gap: var(--space-2); }
+.legacy-dashboard { display: none !important; }
+
+@media (max-width: 767px) {
+    .dashboard-heading, .dashboard-analytics-heading { flex-direction: column; }
+    .dashboard-controls { justify-content: flex-start; }
+    .dashboard-controls .form-select { min-width: 0; flex: 1 1 9rem; }
+    .dashboard-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dashboard-kpi { min-height: 8rem; padding: var(--space-3); }
+    .dashboard-kpi-value { font-size: 1.35rem; }
 }

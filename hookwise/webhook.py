@@ -2,18 +2,43 @@
 
 import ipaddress
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import g, jsonify, request
 from prometheus_client import Counter
 
-from .extensions import csrf, db, limiter
+from .extensions import csrf, db, limiter, redis_client
 from .metrics import log_webhook_received
 from .models import WebhookConfig, WebhookLog
 from .tasks import process_webhook_task
 from .utils import decrypt_string, log_to_web, mask_secrets
 
 WEBHOOK_COUNT = Counter("hookwise_webhooks_received_total", "Total webhooks received", ["status", "config_name"])
+
+
+def _endpoint_rate_limit() -> str:
+    """Return a bounded per-endpoint ingress limit for Flask-Limiter."""
+    config_id = request.view_args.get("config_id") if request.view_args else None
+    config = WebhookConfig.query.get(config_id) if config_id else None
+    configured_limit = config.rate_limit_per_minute if config else 60
+    try:
+        return f"{max(1, min(int(configured_limit), 10000))} per minute"
+    except (TypeError, ValueError):
+        return "60 per minute"
+
+
+def _record_rate_limit_usage(config: WebhookConfig) -> None:
+    """Track a current-minute ingress count without making delivery depend on Redis."""
+    bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    key = f"hookwise:rate-limit:{config.id}:{bucket}"
+    try:
+        current = redis_client.incr(key)
+        if current == 1:
+            redis_client.expire(key, 120)
+    except Exception:
+        # Rate-limit telemetry is advisory; the limiter remains authoritative.
+        return
 
 
 def _log_webhook_rejection(config_id: str, request_id: str, error_msg: str) -> None:
@@ -41,6 +66,11 @@ def _log_webhook_rejection(config_id: str, request_id: str, error_msg: str) -> N
             status="failed",
             error_message=error_msg,
             processing_time=0.0,
+            correlation_id=request.headers.get("X-Correlation-ID", request_id)[:100],
+            received_at=datetime.now(timezone.utc),
+            queued_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            error_type="request_rejected",
         )
         db.session.add(log_entry)
         db.session.commit()
@@ -102,7 +132,7 @@ def _register() -> None:
 
     @main_bp.route("/w/<config_id>", methods=["POST"])
     @csrf.exempt
-    @limiter.limit("60 per minute")
+    @limiter.limit(_endpoint_rate_limit)
     def dynamic_webhook(config_id: str) -> Any:
         request_id = g.request_id
         config = WebhookConfig.query.get(config_id)
@@ -113,6 +143,8 @@ def _register() -> None:
             log_webhook_received(status="disabled", config_name=config.name)
             _log_webhook_rejection(config_id, request_id, "Endpoint is disabled")
             return jsonify({"status": "error", "message": "Endpoint is disabled"}), 403
+
+        _record_rate_limit_usage(config)
 
         # Auth Validation (Bearer + HMAC)
         is_valid, error_msg, status_code = _validate_request_auth(config)
@@ -139,7 +171,28 @@ def _register() -> None:
         headers.pop("Authorization", None)
         headers.pop("Cookie", None)
 
-        process_webhook_task.delay(config_id, data, request_id, source_ip=request.remote_addr, headers=headers)
+        now = datetime.now(timezone.utc)
+        log_entry = WebhookLog(
+            config_id=config_id,
+            request_id=request_id,
+            correlation_id=request.headers.get("X-Correlation-ID", request_id)[:100],
+            payload=json.dumps(mask_secrets(data)),
+            headers=json.dumps(mask_secrets(headers)),
+            source_ip=request.remote_addr,
+            status="queued",
+            received_at=now,
+            queued_at=now,
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+        process_webhook_task.delay(
+            config_id,
+            data,
+            request_id,
+            source_ip=request.remote_addr,
+            headers=headers,
+            log_id=log_entry.id,
+        )
         log_webhook_received(status="queued", config_name=config.name)
         log_to_web(f"Webhook received and queued (ID: {request_id})", "info", config.name, data=data)
         return jsonify({"status": "queued", "message": "Webhook received", "request_id": request_id}), 202

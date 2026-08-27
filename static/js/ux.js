@@ -366,7 +366,7 @@ function initServiceHealth(container = document) {
             });
             updateFavicon(overall);
         } catch (e) {
-            console.error('Health check failed', e);
+            console.debug('Health check did not complete before navigation', e);
             updateFavicon('down');
             // Update all visible dots to a disconnected/error state
             ['redis', 'database', 'celery'].forEach(service => {

@@ -65,7 +65,7 @@ def test_replay_webhook_success(mock_log_to_web, mock_delay, authenticated_clien
     assert response.json["status"] == "success"
     assert "Replay queued" in response.json["message"]
 
-    mock_delay.assert_called_once_with(ANY, {"key": "value"}, ANY)
+    mock_delay.assert_called_once_with(ANY, {"key": "value"}, ANY, log_id=ANY)
     mock_log_to_web.assert_called_once()
 
 
