@@ -12,7 +12,7 @@ from .extensions import db
 from .models import EndpointTag, WebhookConfig, WebhookLog
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
-_TAG_NAME = re.compile(r"^[\\w .:/-]{1,32}$")
+_TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
 
 
 def _operator_denied() -> Any:

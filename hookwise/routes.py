@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Blueprint, render_template, request, session, url_for
+from flask import Blueprint, current_app, render_template, request, session, url_for
 from sqlalchemy import func
 
 from .extensions import db
@@ -182,8 +182,12 @@ def inject_navigation_context() -> Dict[str, Any]:
         "page_title": _PAGE_TITLES.get(request.endpoint or "", "HookWise"),
         "navigation_notifications": [],
     }
-    if session.get("user_id"):
-        context["navigation_notifications"] = _get_navigation_notifications()
+    partial = request.headers.get("HX-Request", "").lower() == "true" or request.args.get("partial") == "true"
+    if session.get("user_id") and not partial:
+        try:
+            context["navigation_notifications"] = _get_navigation_notifications()
+        except Exception:
+            current_app.logger.exception("Unable to load navigation notifications")
     return context
 
 

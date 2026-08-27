@@ -108,7 +108,7 @@
                             <div class="mb-4">
                                 <label for="tags" class="form-label fw-bold text-light">Tags</label>
                                 <input type="text" class="form-control bg-dark border-secondary text-light" id="tags"
-                                    name="tags" maxlength="395" placeholder="production, customer-a, critical"
+                                    name="tags" maxlength="406" placeholder="production, customer-a, critical"
                                     value="{{ config.tags|map(attribute='name')|join(', ') if config else '' }}"
                                     aria-describedby="tags-help">
                                 <div id="tags-help" class="form-text">Up to 12 comma-separated tags, 32 characters each.</div>

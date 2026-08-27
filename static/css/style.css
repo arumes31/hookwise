@@ -294,7 +294,7 @@ h4,
     width: 15px;
     height: 15px;
     flex: 0 0 auto;
-    fill: currentColor;
+    fill: currentcolor;
 }
 
 .notification-toggle {
@@ -415,6 +415,7 @@ h4,
 
 .kpi-card {
     --kpi-color: var(--primary);
+
     display: flex;
     align-items: center;
     min-width: 0;
@@ -453,7 +454,7 @@ h4,
 .kpi-icon svg {
     width: 21px;
     height: 21px;
-    fill: currentColor;
+    fill: currentcolor;
 }
 
 .kpi-copy {

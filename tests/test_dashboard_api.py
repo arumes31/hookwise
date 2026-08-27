@@ -9,9 +9,7 @@ from hookwise.models import WebhookConfig, WebhookLog
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:")
-    return app
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
@@ -154,6 +152,7 @@ def test_dashboard_page_contains_live_controls_and_accessible_analytics_table(cl
     [
         "/api/dashboard/overview?range=nope",
         "/api/dashboard/analytics?range=24h&timezone=Not/AZone",
+        "/api/dashboard/analytics?range=24h&timezone=../etc/passwd",
         "/api/dashboard/overview?range=custom&from=2026-01-02T00:00:00Z&to=2026-01-01T00:00:00Z",
     ],
 )

@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 {% macro nav_icon(name) -%}
 <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
     {% if name == 'endpoints' %}<path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z" />
@@ -12,7 +13,6 @@
     {% endif %}
 </svg>
 {%- endmacro %}
-<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -99,7 +99,7 @@
                     </svg>
                 </div>
             </a>
-            <span class="navbar-page-title" aria-current="page">{{ page_title }}</span>
+            <span class="navbar-page-title">{{ page_title }}</span>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
                 aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>

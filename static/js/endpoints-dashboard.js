@@ -35,11 +35,12 @@
         el.title = title;
     }
     function hydrateCard(card, summary) {
+        const summaryTags = Array.isArray(summary.tags) ? summary.tags : [];
         Object.entries({
             board: summary.board, company: summary.company, status: summary.status,
             health: summary.health, stale: String(summary.is_stale), unhealthy: String(summary.is_unhealthy),
             pinned: String(summary.is_pinned), draft: String(summary.is_draft), inactive: String(summary.activity_count === 0),
-            highLatency: String((summary.average_latency || 0) >= 2), tags: summary.tags.join('|'),
+            highLatency: String((summary.average_latency || 0) >= 2), tags: summaryTags.join('|'),
             lastFailure: summary.last_failure_at || '',
         }).forEach(([key, value]) => { card.dataset[key] = String(value || ''); });
         setMetric(card, 'token-age', humanAge(summary.token_age_days));
@@ -52,8 +53,8 @@
         const tags = card.querySelector('[data-summary="tags"]');
         if (tags) {
             tags.replaceChildren();
-            summary.tags.forEach(tag => { const item = document.createElement('span'); item.className = 'endpoint-tag'; item.textContent = tag; tags.append(item); });
-            if (!summary.tags.length) tags.textContent = 'No tags';
+            summaryTags.forEach(tag => { const item = document.createElement('span'); item.className = 'endpoint-tag'; item.textContent = tag; tags.append(item); });
+            if (!summaryTags.length) tags.textContent = 'No tags';
         }
     }
     function updateChips(state, count) {

@@ -103,7 +103,9 @@ def _register() -> None:
         body = request.get_json(silent=True) or {}
         text = str(body.get("text", "")).strip()
         pinned = body.get("is_pinned", False)
-        if len(text) > 280 or not isinstance(pinned, bool):
+        if not isinstance(pinned, bool):
+            return jsonify({"error": "is_pinned must be a boolean."}), 400
+        if len(text) > 280:
             return jsonify({"error": "Annotation text must be at most 280 characters."}), 400
         if not text and not pinned:
             if annotation is not None:

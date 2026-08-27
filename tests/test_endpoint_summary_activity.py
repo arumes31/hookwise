@@ -10,9 +10,7 @@ from hookwise.utils import encrypt_string
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:")
-    return app
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
@@ -60,6 +58,13 @@ def test_endpoint_summary_is_safe_and_reports_card_telemetry(app, client):
                     retry_count=2,
                 ),
                 WebhookLog(config_id=config.id, request_id="request-c", payload="{}", status="queued"),
+                WebhookLog(
+                    config_id=config.id,
+                    request_id="outside-summary-window",
+                    payload="{}",
+                    status="failed",
+                    created_at=now - timedelta(days=31),
+                ),
             ]
         )
         db.session.commit()
@@ -76,6 +81,7 @@ def test_endpoint_summary_is_safe_and_reports_card_telemetry(app, client):
     assert endpoint["is_unhealthy"] is True
     assert endpoint["uptime"] == 50.0
     assert endpoint["last_error"] == "delivery denied"
+    assert endpoint["activity_count"] == 3
 
 
 def test_activity_stream_filters_and_omits_payloads(app, client):
@@ -107,3 +113,21 @@ def test_activity_stream_filters_and_omits_payloads(app, client):
     assert events[0]["request_id"] == "failure-request"
     assert events[0]["level"] == "danger"
     assert "payload" not in events[0]
+
+
+def test_annotation_reports_invalid_pinned_type(app, client):
+    _login(client)
+    with app.app_context():
+        config = WebhookConfig(id="annotation-endpoint", name="Annotations")
+        log = WebhookLog(config_id=config.id, request_id="annotation-request", payload="{}", status="processed")
+        db.session.add_all([config, log])
+        db.session.commit()
+        log_id = log.id
+
+    response = client.put(
+        f"/api/activity/events/{log_id}/annotation",
+        json={"text": "valid", "is_pinned": "yes"},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "is_pinned must be a boolean."}

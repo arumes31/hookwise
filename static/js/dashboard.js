@@ -2,7 +2,8 @@
     'use strict';
 
     const storageKey = 'hookwise.dashboard.layout.v1';
-    const state = { range: '24h', hidden: [], order: [], compact: false, interval: 60, timer: null, points: [], zoom: 0, pan: 0 };
+    const DEFAULT_REFRESH_INTERVAL = 30;
+    const state = { range: '24h', hidden: [], order: [], compact: false, interval: DEFAULT_REFRESH_INTERVAL, timer: null, points: [], zoom: 0, pan: 0 };
     let saveTimer = null;
     const number = new Intl.NumberFormat();
 
@@ -118,7 +119,18 @@
         const table = byId('dashboard-chart-table'); table.replaceChildren();
         points.forEach(point => {
             const row = document.createElement('tr');
-            row.innerHTML = `<th scope="row">${point.label}${point.anomaly ? ' ⚠' : ''}</th><td>${fmt(point.volume)}</td><td>${fmt(point.successful)}</td><td>${fmt(point.failed)}</td><td>${point.failure_rate}%</td><td>${duration(point.p50)}</td><td>${duration(point.p95)}</td><td>${duration(point.p99)}</td>`;
+            const heading = document.createElement('th');
+            heading.scope = 'row';
+            heading.textContent = `${point.label}${point.anomaly ? ' ⚠' : ''}`;
+            const cells = [
+                fmt(point.volume), fmt(point.successful), fmt(point.failed), `${point.failure_rate}%`,
+                duration(point.p50), duration(point.p95), duration(point.p99)
+            ].map(value => {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                return cell;
+            });
+            row.append(heading, ...cells);
             table.append(row);
         });
         const activity = byId('dashboard-endpoint-activity'); activity.replaceChildren();
@@ -164,7 +176,7 @@
             const response = await fetch('/api/dashboard/preferences', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
             if (!response.ok) return;
             const saved = await response.json();
-            Object.assign(state, { hidden: saved.hidden || [], order: saved.layout || [], compact: Boolean(saved.compact), interval: Number(saved.interval ?? 30) });
+            Object.assign(state, { hidden: saved.hidden || [], order: saved.layout || [], compact: Boolean(saved.compact), interval: Number(saved.interval ?? DEFAULT_REFRESH_INTERVAL) });
             local.set({ hidden: state.hidden, order: state.order, compact: state.compact, interval: state.interval });
         } catch (_) {}
     }
@@ -210,10 +222,10 @@
         byId('dashboard-refresh-interval').addEventListener('change', event => { state.interval = Number(event.target.value); persist(); schedule(); });
         byId('dashboard-compact').addEventListener('click', () => { state.compact = !state.compact; document.body.classList.toggle('dashboard-compact', state.compact); byId('dashboard-compact').setAttribute('aria-pressed', String(state.compact)); persist(); });
         byId('dashboard-reset-layout').addEventListener('click', () => {
-            state.hidden = []; state.order = []; state.compact = false; state.interval = 30;
+            state.hidden = []; state.order = []; state.compact = false; state.interval = DEFAULT_REFRESH_INTERVAL;
             local.set({}); fetch('/api/dashboard/preferences', { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
             document.body.classList.remove('dashboard-compact'); document.querySelectorAll('.dashboard-kpi').forEach(card => card.hidden = false);
-            byId('dashboard-refresh-interval').value = '30'; applyKpiOrder(); renderToggleMenu(); schedule();
+            byId('dashboard-refresh-interval').value = String(DEFAULT_REFRESH_INTERVAL); applyKpiOrder(); renderToggleMenu(); schedule();
         });
         document.querySelectorAll('#dashboard-legend input').forEach(input => input.addEventListener('change', () => renderSvg(visiblePoints())));
         byId('dashboard-zoom-in').addEventListener('click', () => { state.zoom = Math.min(4, state.zoom + 1); state.pan = 0; renderSvg(visiblePoints()); });

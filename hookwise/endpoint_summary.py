@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, TypedDict
 
 from flask import jsonify, request
 from sqlalchemy import case, func
@@ -17,6 +17,16 @@ from .utils import auth_required
 
 _TOKEN_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{4}$")
 _ACTIVE = ("queued", "processing", "retrying")
+_SUMMARY_WINDOW = timedelta(days=30)
+
+
+class _EndpointStats(TypedDict):
+    activity: int
+    good: int
+    failed: int
+    queue: int
+    retries: int
+    latency: float | None
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -41,7 +51,9 @@ def _token_suffix_matches(config: WebhookConfig, suffix: str) -> bool:
     return len(hint) == 4 and hmac.compare_digest(hint, suffix)
 
 
-def _latest_rows(config_ids: list[str], statuses: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+def _latest_rows(
+    config_ids: list[str], statuses: tuple[str, ...], cutoff: datetime
+) -> dict[str, dict[str, Any]]:
     ranked = (
         db.session.query(
             WebhookLog.config_id.label("config_id"),
@@ -52,7 +64,11 @@ def _latest_rows(config_ids: list[str], statuses: tuple[str, ...]) -> dict[str, 
             .over(partition_by=WebhookLog.config_id, order_by=WebhookLog.created_at.desc())
             .label("rank"),
         )
-        .filter(WebhookLog.config_id.in_(config_ids), WebhookLog.status.in_(statuses))
+        .filter(
+            WebhookLog.config_id.in_(config_ids),
+            WebhookLog.status.in_(statuses),
+            WebhookLog.created_at >= cutoff,
+        )
         .subquery()
     )
     return {
@@ -69,6 +85,8 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
     config_ids = [config.id for config in configs]
     if not config_ids:
         return []
+    now = datetime.now(timezone.utc)
+    cutoff = now - _SUMMARY_WINDOW
     rows = (
         db.session.query(
             WebhookLog.config_id,
@@ -79,25 +97,23 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
             func.max(case((WebhookLog.status.in_(_ACTIVE), WebhookLog.retry_count), else_=0)),
             func.avg(WebhookLog.processing_time),
         )
-        .filter(WebhookLog.config_id.in_(config_ids))
+        .filter(WebhookLog.config_id.in_(config_ids), WebhookLog.created_at >= cutoff)
         .group_by(WebhookLog.config_id)
         .all()
     )
-    stats = {
-        row[0]: {
+    stats: dict[str, _EndpointStats] = {}
+    for row in rows:
+        stats[row[0]] = {
             "activity": int(row[1] or 0), "good": int(row[2] or 0),
             "failed": int(row[3] or 0), "queue": int(row[4] or 0),
             "retries": int(row[5] or 0),
             "latency": round(float(row[6]), 3) if row[6] is not None else None,
         }
-        for row in rows
-    }
-    successes = _latest_rows(config_ids, ("processed",))
-    failures = _latest_rows(config_ids, ("failed", "dlq"))
-    now = datetime.now(timezone.utc)
+    successes = _latest_rows(config_ids, ("processed",), cutoff)
+    failures = _latest_rows(config_ids, ("failed", "dlq"), cutoff)
     summaries: list[dict[str, Any]] = []
     for config in configs:
-        values = stats.get(
+        values: _EndpointStats = stats.get(
             config.id,
             {"activity": 0, "good": 0, "failed": 0, "queue": 0, "retries": 0, "latency": None},
         )

@@ -22,9 +22,7 @@ from hookwise.tasks import process_webhook_task
 
 @pytest.fixture
 def app():
-    application = create_app()
-    application.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:")
-    return application
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
@@ -93,3 +91,24 @@ def test_final_retry_moves_stable_log_to_dlq_and_records_sanitized_attempt(mock_
     assert "should-not-be-stored" not in (log.error_message or "")
     assert attempt.status == "dlq"
     assert attempt.error_message == "token=***"
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_deleted_endpoint_marks_log_and_attempt_skipped(mock_handle, session):
+    log = WebhookLog(config_id="deleted-endpoint", request_id="req-deleted", payload="{}", status="queued")
+    session.add(log)
+    session.commit()
+    task = MagicMock()
+    task.request = SimpleNamespace(retries=0)
+    task.max_retries = 5
+
+    process_webhook_task.run.__func__(task, "deleted-endpoint", {}, "req-deleted", log_id=log.id)
+
+    session.refresh(log)
+    attempt = WebhookRetryAttempt.query.filter_by(log_id=log.id).one()
+    assert log.status == "skipped"
+    assert log.error_type == "endpoint_deleted"
+    assert log.completed_at is not None
+    assert attempt.status == "skipped"
+    assert attempt.completed_at is not None
+    mock_handle.assert_not_called()

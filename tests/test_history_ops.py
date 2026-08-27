@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -10,9 +11,7 @@ from hookwise.models import WebhookConfig, WebhookLog
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:")
-    return app
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
@@ -61,6 +60,12 @@ def test_advanced_filters_saved_searches_and_operations(app, client):
     assert rendered.status_code == 200
     assert "correlated-request" in rendered.get_data(as_text=True)
 
+    partial = client.get("/history?partial=true&status=dlq")
+    partial_html = partial.get_data(as_text=True)
+    assert 'data-history-status="dlq"' in partial_html
+    assert "history-diagnostics" in partial_html
+    assert "history-retry" in partial_html
+
     created = client.post(
         "/api/history/saved-searches",
         json={"name": "Dead letters", "filters": {"dlq_only": True, "min_retry": 2}},
@@ -95,5 +100,33 @@ def test_retry_and_dlq_replay_are_operator_gated(mock_delay, app, client):
     assert retry.status_code == 202
     assert mock_delay.called
 
-    replay = client.post("/api/history/dlq/replay", json={"ids": ["history-ops-log"]})
+    replay = client.post("/api/history/dlq/replay", json={"ids": ["history-ops-log", "missing-log"]})
     assert replay.status_code == 202
+    assert replay.get_json()["errors"] == ["missing-log"]
+
+
+@patch("hookwise.history_ops.process_webhook_task.delay")
+def test_retry_preserves_payload_in_storage_and_masks_history_output(mock_delay, app, client):
+    _login(client)
+    with app.app_context():
+        config = WebhookConfig(id="secret-endpoint", name="Secret endpoint")
+        original = WebhookLog(
+            id="secret-log",
+            config_id=config.id,
+            request_id="secret-request",
+            payload='{"password": "original-value", "event": "down"}',
+            status="dlq",
+        )
+        db.session.add_all([config, original])
+        db.session.commit()
+
+    response = client.post("/api/history/secret-log/retry")
+
+    assert response.status_code == 202
+    with app.app_context():
+        replay = WebhookLog.query.filter_by(replay_of_log_id="secret-log").one()
+        assert json.loads(replay.payload)["password"] == "original-value"
+        assert json.loads(replay.masked_payload)["password"] == "***"
+    mock_delay.assert_called_once()
+    rendered = client.get("/history")
+    assert "original-value" not in rendered.get_data(as_text=True)

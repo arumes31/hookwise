@@ -72,7 +72,7 @@ def test_get_activity_history_processed(client, auth_session, app):
             assert len(data) == 1
             assert data[0]['message'] == "Created NEW ticket (ID: 123)"
             assert data[0]['level'] == "warning"
-            assert data[0]['payload'] == {"key": "value"}
+            assert data[0]['payload'] == {"key": "***"}
             assert data[0]['config_name'] == "Test Config"
 
 def test_get_activity_history_failed(client, auth_session, app):

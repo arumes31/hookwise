@@ -1,7 +1,10 @@
+import json
 import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
+
+from sqlalchemy.orm import Mapped
 
 from .extensions import db
 
@@ -13,6 +16,13 @@ if TYPE_CHECKING:
         def __init__(self, **kwargs: Any) -> None: ...
 else:
     Base = db.Model
+
+
+endpoint_tag_association = db.Table(
+    "endpoint_tag_association",
+    db.Column("config_id", db.String(64), db.ForeignKey("webhook_config.id", ondelete="CASCADE"), primary_key=True),
+    db.Column("tag_id", db.String(36), db.ForeignKey("endpoint_tag.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class User(Base):
@@ -85,6 +95,9 @@ class WebhookConfig(Base):
     retry_max_delay_seconds = db.Column(db.Integer, default=300, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = db.Column(db.DateTime)
+    tags: Mapped[list["EndpointTag"]] = db.relationship(
+        "EndpointTag", secondary=endpoint_tag_association, back_populates="configs", lazy="select"
+    )  # type: ignore[assignment]
 
     # Timeout Monitoring
     timeout_alerts_enabled = db.Column(db.Boolean, default=False, nullable=False)
@@ -189,13 +202,32 @@ class WebhookLog(Base):
         "WebhookConfig", backref=db.backref("logs", lazy=True, cascade="all, delete-orphan", passive_deletes=True)
     )
 
+    @staticmethod
+    def _masked_json(value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            from .utils import mask_secrets
+
+            return json.dumps(mask_secrets(json.loads(value)))
+        except (TypeError, json.JSONDecodeError):
+            return value
+
+    @property
+    def masked_payload(self) -> str:
+        return self._masked_json(self.payload) or "{}"
+
+    @property
+    def masked_headers(self) -> str | None:
+        return self._masked_json(self.headers)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "config_id": self.config_id,
             "request_id": self.request_id,
-            "payload": self.payload,
-            "headers": self.headers,
+            "payload": self.masked_payload,
+            "headers": self.masked_headers,
             "status": self.status,
             "action": self.action,
             "error_message": self.error_message,
@@ -258,19 +290,14 @@ class WebhookRetryAttempt(Base):
         }
 
 
-endpoint_tag_association = db.Table(
-    "endpoint_tag_association",
-    db.Column("config_id", db.String(64), db.ForeignKey("webhook_config.id", ondelete="CASCADE"), primary_key=True),
-    db.Column("tag_id", db.String(36), db.ForeignKey("endpoint_tag.id", ondelete="CASCADE"), primary_key=True),
-)
-
-
 class EndpointTag(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(64), nullable=False, unique=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
-    configs = db.relationship("WebhookConfig", secondary=endpoint_tag_association, backref="tags", lazy="select")
+    configs: Mapped[list[WebhookConfig]] = db.relationship(
+        "WebhookConfig", secondary=endpoint_tag_association, back_populates="tags", lazy="select"
+    )  # type: ignore[assignment]
 
 
 class UserPreference(Base):

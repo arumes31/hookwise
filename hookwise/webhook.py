@@ -28,6 +28,12 @@ def _endpoint_rate_limit() -> str:
         return "60 per minute"
 
 
+def _endpoint_rate_limit_key() -> str:
+    """Scope ingress limits to the endpoint rather than the client address."""
+    config_id = request.view_args.get("config_id") if request.view_args else None
+    return str(config_id or "unknown-endpoint")
+
+
 def _record_rate_limit_usage(config: WebhookConfig) -> None:
     """Track a current-minute ingress count without making delivery depend on Redis."""
     bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
@@ -132,7 +138,7 @@ def _register() -> None:
 
     @main_bp.route("/w/<config_id>", methods=["POST"])
     @csrf.exempt
-    @limiter.limit(_endpoint_rate_limit)
+    @limiter.limit(_endpoint_rate_limit, key_func=_endpoint_rate_limit_key)
     def dynamic_webhook(config_id: str) -> Any:
         request_id = g.request_id
         config = WebhookConfig.query.get(config_id)
@@ -176,7 +182,7 @@ def _register() -> None:
             config_id=config_id,
             request_id=request_id,
             correlation_id=request.headers.get("X-Correlation-ID", request_id)[:100],
-            payload=json.dumps(mask_secrets(data)),
+            payload=json.dumps(data),
             headers=json.dumps(mask_secrets(headers)),
             source_ip=request.remote_addr,
             status="queued",

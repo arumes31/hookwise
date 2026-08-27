@@ -52,7 +52,7 @@ def _timezone() -> ZoneInfo:
     name = request.args.get("timezone", "UTC")
     try:
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError as exc:
+    except (ZoneInfoNotFoundError, ValueError, TypeError) as exc:
         raise ValueError("timezone must be a valid IANA timezone") from exc
 
 
@@ -121,62 +121,27 @@ def _stale_config_ids(now: datetime) -> list[str]:
 def _overview() -> Any:
     try:
         start, end, range_name = _parse_window()
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid dashboard range."}), 400
     current = _metric_values(start, end)
     duration = end - start
     previous = _metric_values(start - duration, start)
     config_rows = WebhookConfig.query.filter(WebhookConfig.is_draft.is_(False)).all()
     all_ids = [config.id for config in config_rows]
     active_ids = [config.id for config in config_rows if config.is_enabled]
-    logs = _base_logs(start, end)
-    activity_ids = [row[0] for row in logs.with_entities(WebhookLog.config_id).distinct().all()]
-    processed_ids = [
-        row[0]
-        for row in logs.filter(WebhookLog.status == "processed")
-        .with_entities(WebhookLog.config_id)
-        .distinct()
+    log_rows = (
+        _base_logs(start, end)
+        .with_entities(WebhookLog.config_id, WebhookLog.status, WebhookLog.processing_time)
+        .group_by(WebhookLog.config_id, WebhookLog.status, WebhookLog.processing_time)
         .all()
-    ]
-    failed_ids = [
-        row[0]
-        for row in (
-            logs.filter(WebhookLog.status.in_(["failed", "dlq"]))
-            .with_entities(WebhookLog.config_id)
-            .distinct()
-            .all()
-        )
-    ]
-    successful_ids = [
-        row[0]
-        for row in (
-            logs.filter(WebhookLog.status.in_(["processed", "skipped"]))
-            .with_entities(WebhookLog.config_id)
-            .distinct()
-            .all()
-        )
-    ]
-    skipped_ids = [
-        row[0]
-        for row in logs.filter(WebhookLog.status == "skipped")
-        .with_entities(WebhookLog.config_id)
-        .distinct()
-        .all()
-    ]
-    dlq_ids = [
-        row[0]
-        for row in logs.filter(WebhookLog.status == "dlq")
-        .with_entities(WebhookLog.config_id)
-        .distinct()
-        .all()
-    ]
-    latency_ids = [
-        row[0]
-        for row in logs.filter(WebhookLog.processing_time.is_not(None))
-        .with_entities(WebhookLog.config_id)
-        .distinct()
-        .all()
-    ]
+    )
+    activity_ids = sorted({row[0] for row in log_rows})
+    processed_ids = sorted({row[0] for row in log_rows if row[1] == "processed"})
+    failed_ids = sorted({row[0] for row in log_rows if row[1] in {"failed", "dlq"}})
+    successful_ids = sorted({row[0] for row in log_rows if row[1] in {"processed", "skipped"}})
+    skipped_ids = sorted({row[0] for row in log_rows if row[1] == "skipped"})
+    dlq_ids = sorted({row[0] for row in log_rows if row[1] == "dlq"})
+    latency_ids = sorted({row[0] for row in log_rows if row[2] is not None})
     stale_ids = _stale_config_ids(end)
     current.update(
         {
@@ -227,8 +192,8 @@ def _analytics() -> Any:
     try:
         start, end, range_name = _parse_window()
         tz = _timezone()
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid dashboard analytics parameters."}), 400
     logs = _base_logs(start, end).order_by(WebhookLog.created_at.asc()).limit(_MAX_ANALYTICS_ROWS + 1).all()
     if len(logs) > _MAX_ANALYTICS_ROWS:
         return jsonify({"error": "This range contains too many events; choose a shorter range."}), 413
@@ -344,7 +309,7 @@ def _preferences() -> Any:
         return jsonify({"error": "Invalid refresh interval or activity buffer size."}), 400
     try:
         ZoneInfo(timezone_name)
-    except (ZoneInfoNotFoundError, TypeError):
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
         return jsonify({"error": "Invalid timezone."}), 400
     if not User.query.filter_by(id=user_id).first():
         return jsonify({"error": "Preferences require a database-backed user."}), 409

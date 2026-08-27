@@ -11,11 +11,7 @@ from hookwise.models import WebhookConfig
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    return app
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 @pytest.fixture
 def client(app):
@@ -102,3 +98,36 @@ def test_restore_config_no_n_plus_one(client, app):
 
         # Verify that all configs were created
         assert WebhookConfig.query.count() == num_configs
+
+
+def test_restore_config_applies_bounded_delivery_controls(client, app):
+    with app.app_context():
+        config = WebhookConfig(id="delivery-controls", name="Endpoint")
+        db.session.add(config)
+        db.session.commit()
+
+        restored = [{
+            "id": config.id,
+            "name": config.name,
+            "retry_enabled": False,
+            "retry_max_attempts": 999,
+            "retry_base_delay_seconds": 120,
+            "retry_max_delay_seconds": 2,
+            "rate_limit_per_minute": 0,
+        }]
+        with client.session_transaction() as sess:
+            sess.update(user_id="admin-id", username="admin", role="admin")
+
+        response = client.post(
+            "/admin/restore",
+            data={"backup_file": (io.BytesIO(json.dumps(restored).encode()), "backup.json")},
+            content_type="multipart/form-data",
+        )
+
+        assert response.status_code == 200
+        db.session.refresh(config)
+        assert config.retry_enabled is False
+        assert config.retry_max_attempts == 20
+        assert config.retry_base_delay_seconds == 120
+        assert config.retry_max_delay_seconds == 120
+        assert config.rate_limit_per_minute == 1

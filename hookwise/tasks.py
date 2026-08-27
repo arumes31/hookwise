@@ -612,6 +612,20 @@ def process_webhook_task(
         db.session.add(attempt)
         db.session.commit()
 
+    if config is None:
+        now = datetime.now(timezone.utc)
+        if log_entry is not None:
+            log_entry.status = "skipped"
+            log_entry.error_type = "endpoint_deleted"
+            log_entry.error_message = "Endpoint was deleted before the queued delivery was processed."
+            log_entry.completed_at = now
+        if attempt is not None:
+            attempt.status = "skipped"
+            attempt.error_message = "Endpoint was deleted before processing."
+            attempt.completed_at = now
+        db.session.commit()
+        return
+
     try:
         handle_webhook_logic(
             config_id,
@@ -814,7 +828,7 @@ def handle_webhook_logic(
             log_entry = WebhookLog(
                 config_id=config_id,
                 request_id=request_id,
-                payload=json.dumps(mask_secrets(data)),
+                payload=json.dumps(data),
                 headers=json.dumps(mask_secrets(headers)) if headers else None,
                 source_ip=source_ip,
                 status="processing",
@@ -1377,12 +1391,12 @@ def handle_webhook_logic(
                     log_entry.completed_at = now
                 if log_entry.connectwise_started_at and log_entry.connectwise_responded_at is None:
                     log_entry.connectwise_responded_at = now
-                    if log_entry.connectwise_started_at:
-                        started = log_entry.connectwise_started_at
-                        responded = log_entry.connectwise_responded_at
-                        if started.tzinfo is None:
-                            started = started.replace(tzinfo=timezone.utc)
-                        if responded.tzinfo is None:
-                            responded = responded.replace(tzinfo=timezone.utc)
-                        log_entry.connectwise_duration_ms = int((responded - started).total_seconds() * 1000)
+                if log_entry.connectwise_started_at and log_entry.connectwise_responded_at:
+                    started = log_entry.connectwise_started_at
+                    responded = log_entry.connectwise_responded_at
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    if responded.tzinfo is None:
+                        responded = responded.replace(tzinfo=timezone.utc)
+                    log_entry.connectwise_duration_ms = int((responded - started).total_seconds() * 1000)
                 db.session.commit()

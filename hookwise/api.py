@@ -31,6 +31,25 @@ from .utils import (
 ROUTING_REGEX_MAX_PATTERN_LENGTH = 512
 ROUTING_REGEX_TIMEOUT_SECONDS = 0.05
 ROUTING_REGEX_MAX_VALUE_LENGTH = 100_000
+_DELIVERY_CONTROL_BOUNDS = {
+    "rate_limit_per_minute": (60, 1, 10_000),
+    "retry_max_attempts": (5, 0, 20),
+    "retry_base_delay_seconds": (1, 1, 3_600),
+    "retry_max_delay_seconds": (300, 1, 86_400),
+}
+_DELIVERY_CONTROL_FIELDS = frozenset({*_DELIVERY_CONTROL_BOUNDS, "retry_enabled"})
+
+
+def _restore_delivery_control(field: str, value: Any) -> bool | int:
+    """Normalize restored delivery controls with the endpoint form bounds."""
+    if field == "retry_enabled":
+        return value if isinstance(value, bool) else True
+    default, minimum, maximum = _DELIVERY_CONTROL_BOUNDS[field]
+    try:
+        parsed = int(value) if not isinstance(value, bool) else default
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
 
 
 def _routing_regex_matches(pattern: str, value: str) -> bool:
@@ -184,7 +203,7 @@ def _register() -> None:
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
-                    payload_data = json.loads(log.payload)
+                    payload_data = mask_secrets(json.loads(log.payload))
                 except (json.JSONDecodeError, TypeError):
                     pass
 
@@ -289,7 +308,7 @@ def _register() -> None:
                 config_id=log_entry.config_id,
                 request_id=request_id,
                 correlation_id=log_entry.correlation_id or log_entry.request_id[:100],
-                payload=json.dumps(mask_secrets(data)),
+                payload=json.dumps(data),
                 status="queued",
                 received_at=now,
                 queued_at=now,
@@ -1036,10 +1055,21 @@ def _register() -> None:
                     "bearer_token",
                     "description_template",
                     "hmac_secret",
+                    "rate_limit_per_minute",
+                    "retry_enabled",
+                    "retry_max_attempts",
+                    "retry_base_delay_seconds",
+                    "retry_max_delay_seconds",
                 ]
                 for f in fields:
                     if f in c:
-                        setattr(config, f, c[f])
+                        value = _restore_delivery_control(f, c[f]) if f in _DELIVERY_CONTROL_FIELDS else c[f]
+                        setattr(config, f, value)
+                if _DELIVERY_CONTROL_FIELDS.intersection(c):
+                    base_delay = int(config.retry_base_delay_seconds or 1)
+                    max_delay = int(config.retry_max_delay_seconds or 300)
+                    if max_delay < base_delay:
+                        config.retry_max_delay_seconds = base_delay
             db.session.commit()
             return jsonify({"status": "success"})
         except Exception:

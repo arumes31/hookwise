@@ -410,7 +410,6 @@
         </div>
     </div>
 </div>
-</div>
 
 <div class="mb-3 d-flex justify-content-between align-items-center">
     <div class="form-check">
@@ -598,7 +597,7 @@
                         <span>Retries <strong data-summary="retries">—</strong></span>
                     </div>
                     <div class="endpoint-tags mt-2" data-summary="tags">Loading tags…</div>
-                    <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('main.history') }}?endpoint={{ config.id }}">View logs</a>
+                    <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('main.history') }}?endpoint_id={{ config.id }}">View logs</a>
                 </details>
             </div>
         </div>

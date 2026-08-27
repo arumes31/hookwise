@@ -71,7 +71,7 @@ def test_get_activity_history(mock_tasks_redis, mock_api_redis, client, app):
     assert log1_data["message"] == "Created NEW ticket (ID: 123)"
     assert log1_data["level"] == "warning"
     assert log1_data["config_name"] == "Test Config"
-    assert log1_data["payload"] == {"key": "val"}
+    assert log1_data["payload"] == {"key": "***"}
 
     # Find log2 in data
     log2_data = next((d for d in data if d["message"] == "Boom"), None)

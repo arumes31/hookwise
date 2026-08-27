@@ -133,7 +133,7 @@ def _queue_replay(log: WebhookLog, payload: Any, suffix: str) -> dict[str, str]:
         config_id=log.config_id,
         request_id=request_id,
         correlation_id=(log.correlation_id or log.request_id)[:100],
-        payload=json.dumps(mask_secrets(payload)),
+        payload=json.dumps(payload),
         status="queued",
         received_at=now,
         queued_at=now,
@@ -160,8 +160,8 @@ def _register() -> None:
                 .order_by(WebhookLog.created_at.desc())
                 .paginate(page=page, per_page=per_page, error_out=False)
             )
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+        except ValueError:
+            return jsonify({"error": "Invalid history filters."}), 400
         return jsonify(
             {
                 "items": [log.to_dict() for log in pagination.items],
@@ -235,8 +235,8 @@ def _register() -> None:
             return jsonify({"error": "Stored payload is not valid JSON."}), 409
         try:
             return jsonify({"status": "queued", **_queue_replay(log, payload, "retry")}), 202
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+        except ValueError:
+            return jsonify({"error": "Replay payload exceeds 256 KiB."}), 400
         except Exception:
             current_app.logger.exception("retry-now failed")
             db.session.rollback()
@@ -254,8 +254,8 @@ def _register() -> None:
             return jsonify({"error": "payload must be a JSON object or array."}), 400
         try:
             return jsonify({"status": "queued", **_queue_replay(log, payload, "edited")}), 202
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+        except ValueError:
+            return jsonify({"error": "Replay payload exceeds 256 KiB."}), 400
         except Exception:
             current_app.logger.exception("edited replay failed")
             db.session.rollback()
@@ -271,6 +271,7 @@ def _register() -> None:
             return jsonify({"error": "Provide between 1 and 50 dead-letter IDs."}), 400
         logs = WebhookLog.query.filter(WebhookLog.id.in_(ids), WebhookLog.status == "dlq").all()
         queued, errors = [], []
+        errors.extend(sorted(set(ids) - {log.id for log in logs}))
         for log in logs:
             try:
                 queued.append(_queue_replay(log, json.loads(log.payload), "dlq"))

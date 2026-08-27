@@ -10,11 +10,7 @@ from hookwise.models import WebhookConfig, WebhookLog
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    return app
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
@@ -73,7 +69,11 @@ def test_replay_webhook_success(client, app, sample_config):
         assert response.json["status"] == "success"
         assert "replay_" in response.json["request_id"]
 
-        mock_delay.assert_called_once_with(sample_config, {"test": "data"}, ANY, log_id=ANY)
+        with app.app_context():
+            replay_log = WebhookLog.query.filter_by(replay_of_log_id=log_id).one()
+            replay_log_id = replay_log.id
+
+        mock_delay.assert_called_once_with(sample_config, {"test": "data"}, ANY, log_id=replay_log_id)
         mock_log_to_web.assert_called_once()
 
 

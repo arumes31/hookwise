@@ -15,11 +15,16 @@ from .extensions import socketio as socketio
 _logger = logging.getLogger(__name__)
 
 
-def create_app() -> Flask:
+def create_app(config: dict[str, Any] | None = None) -> Flask:
     """Application factory for the HookWise application."""
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
     _configure_app(app)
+    if config:
+        app.config.update(config)
+        if config.get("TESTING") and "SESSION_COOKIE_SECURE" not in config:
+            app.config["SESSION_COOKIE_SECURE"] = False
+        _configure_database_engine(app)
     _register_extensions(app)
     _register_request_handlers(app)
     _register_blueprints(app)
@@ -70,6 +75,11 @@ def _configure_app(app: Flask) -> None:
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    _configure_database_engine(app)
+
+
+def _configure_database_engine(app: Flask) -> None:
+    """Set engine options for the final database URI before extension setup."""
     db_url = app.config["SQLALCHEMY_DATABASE_URI"]
     if not db_url.startswith("sqlite"):
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {

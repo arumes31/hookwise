@@ -35,14 +35,9 @@
         Object.entries(fields).forEach(([id, key]) => { const el = document.getElementById(id); if (el) el.value = values[key] || ''; });
         const dlq = document.getElementById('history-dlq-only'); if (dlq) dlq.checked = values.dlq_only === 'true' || values.dlq_only === true;
     }
-    async function applyFilters() {
+    function applyFilters() {
         const values = collect(); const params = new URLSearchParams(values);
-        try {
-            const result = await api(`/api/history/advanced?${params}`);
-            document.getElementById('history-advanced-count').textContent = `${result.total} matching request${result.total === 1 ? '' : 's'} · page ${result.page} of ${result.pages || 1}`;
-            history.replaceState(null, '', `${location.pathname}?${params}`);
-            window.location.assign(`${location.pathname}?${params}`);
-        } catch (error) { notice(error.message, 'danger'); }
+        window.location.search = params.toString();
     }
     async function loadSaved() {
         const select = document.getElementById('history-saved-searches'); if (!select) return;
