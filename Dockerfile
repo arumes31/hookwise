@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.14.6-slim AS builder
+FROM python:3.14.7-slim AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN pip install --upgrade pip \
     && pip check
 
 # Stage 2: Runtime
-FROM python:3.14.6-slim AS runtime
+FROM python:3.14.7-slim AS runtime
 
 WORKDIR /app
 
