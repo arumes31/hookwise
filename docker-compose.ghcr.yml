@@ -19,8 +19,8 @@ services:
       - "REDIS_HOST=redis"
       - "REDIS_PORT=6379"
       - "REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
-      - "CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD}@redis:6379/0"
-      - "DATABASE_URL=postgresql://hookwise:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/hookwise"
+      - "CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0"
+      - "DATABASE_URL=postgresql://${POSTGRES_USER:-hookwise}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-hookwise}"
       - "POSTGRES_USER=hookwise"
       - "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
       - "POSTGRES_DB=hookwise"
@@ -36,10 +36,19 @@ services:
       - "GUI_TRUSTED_IPS="
       - "LOG_RETENTION_DAYS=30"
       - "OLLAMA_HOST=http://hookwise-llm:11434"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - redis
-      - postgres
-      - hookwise-llm
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-llm:
+        condition: service_healthy
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
@@ -49,10 +58,19 @@ services:
     restart: unless-stopped
     command: celery -A worker.celery worker --loglevel=info -P gevent -c 100
     environment: *env
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A worker.celery inspect ping --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - redis
-      - postgres
-      - hookwise-llm
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-llm:
+        condition: service_healthy
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
@@ -62,10 +80,19 @@ services:
     restart: unless-stopped
     command: celery -A worker.celery beat --loglevel=info
     environment: *env
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     depends_on:
-      - redis
-      - postgres
-      - hookwise-llm
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-llm:
+        condition: service_healthy
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
@@ -75,9 +102,15 @@ services:
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   redis:
-    image: redis:alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    image: redis:8.10.1-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
     container_name: hookwise-redis
     restart: unless-stopped
     command: >
@@ -87,9 +120,14 @@ services:
     security_opt: [no-new-privileges:true]
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     container_name: hookwise-db
     restart: unless-stopped
     environment:
@@ -99,6 +137,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   redis_data:

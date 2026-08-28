@@ -15,6 +15,7 @@ def app():
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     return app
 
+
 @pytest.fixture
 def db_session(app):
     with app.app_context():
@@ -23,12 +24,9 @@ def db_session(app):
         db.session.remove()
         db.drop_all()
 
+
 def test_user_creation(db_session):
-    user = User(
-        username="testuser",
-        password_hash="hashed_password",
-        role="user"
-    )
+    user = User(username="testuser", password_hash="hashed_password", role="user")
     db_session.add(user)
     db_session.commit()
 
@@ -40,12 +38,9 @@ def test_user_creation(db_session):
     assert user.is_2fa_enabled is False
     assert isinstance(user.created_at, datetime)
 
+
 def test_user_to_dict(db_session):
-    user = User(
-        username="testuser",
-        password_hash="hashed-password",
-        role="admin"
-    )
+    user = User(username="testuser", password_hash="hashed-password", role="admin")
     db_session.add(user)
     db_session.commit()
 
@@ -55,11 +50,9 @@ def test_user_to_dict(db_session):
     assert d["role"] == "admin"
     assert "created_at" in d
 
+
 def test_webhook_config_creation(db_session):
-    config = WebhookConfig(
-        name="Test Config",
-        customer_id_default="CUST1"
-    )
+    config = WebhookConfig(name="Test Config", customer_id_default="CUST1")
     db_session.add(config)
     db_session.commit()
 
@@ -72,6 +65,7 @@ def test_webhook_config_creation(db_session):
     assert config.is_pinned is False
     assert config.ai_rca_enabled is False
     assert isinstance(config.created_at, datetime)
+
 
 def test_webhook_config_to_dict(db_session):
     config = WebhookConfig(name="Test Config")
@@ -86,6 +80,7 @@ def test_webhook_config_to_dict(db_session):
     d_with_token = config.to_dict(include_token=True)
     assert d_with_token["bearer_token"] == config.bearer_token
 
+
 def test_webhook_log_creation(db_session):
     config = WebhookConfig(name="Test Config")
     db_session.add(config)
@@ -97,7 +92,7 @@ def test_webhook_log_creation(db_session):
         payload='{"test": "data"}',
         status="processed",
         action="create",
-        ticket_id=12345
+        ticket_id=12345,
     )
     db_session.add(log)
     db_session.commit()
@@ -110,17 +105,13 @@ def test_webhook_log_creation(db_session):
     assert log.ticket_id == 12345
     assert log.config.name == "Test Config"
 
+
 def test_webhook_log_to_dict(db_session):
     config = WebhookConfig(name="Test Config")
     db_session.add(config)
     db_session.commit()
 
-    log = WebhookLog(
-        config_id=config.id,
-        request_id="req-123",
-        payload='{"test": "data"}',
-        status="processed"
-    )
+    log = WebhookLog(config_id=config.id, request_id="req-123", payload='{"test": "data"}', status="processed")
     db_session.add(log)
     db_session.commit()
 
@@ -130,12 +121,9 @@ def test_webhook_log_to_dict(db_session):
     assert d["config_name"] == "Test Config"
     assert d["payload"] == '{"test": "data"}'
 
+
 def test_audit_log_creation(db_session):
-    log = AuditLog(
-        action="update",
-        user="admin",
-        details="Updated config"
-    )
+    log = AuditLog(action="update", user="admin", details="Updated config")
     db_session.add(log)
     db_session.commit()
 
@@ -144,6 +132,7 @@ def test_audit_log_creation(db_session):
     assert log.user == "admin"
     assert log.details == "Updated config"
     assert isinstance(log.created_at, datetime)
+
 
 def test_audit_log_to_dict(db_session):
     log = AuditLog(action="delete", user="admin")
@@ -155,12 +144,9 @@ def test_audit_log_to_dict(db_session):
     assert d["action"] == "delete"
     assert d["user"] == "admin"
 
+
 def test_global_mapping_creation(db_session):
-    mapping = GlobalMapping(
-        tenant_value="tenant1",
-        company_id="COMP1",
-        description="Test Mapping"
-    )
+    mapping = GlobalMapping(tenant_value="tenant1", company_id="COMP1", description="Test Mapping")
     db_session.add(mapping)
     db_session.commit()
 
@@ -170,6 +156,7 @@ def test_global_mapping_creation(db_session):
     assert mapping.description == "Test Mapping"
     assert isinstance(mapping.created_at, datetime)
     assert isinstance(mapping.updated_at, datetime)
+
 
 def test_global_mapping_to_dict(db_session):
     mapping = GlobalMapping(tenant_value="tenant2", company_id="COMP2")

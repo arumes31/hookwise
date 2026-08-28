@@ -17,7 +17,7 @@
                                 d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3h9.05zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8h2.05zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1h9.05z" />
                         </svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">General Configuration</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">General Configuration</h2>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -101,7 +101,7 @@
                             <path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0z" />
                         </svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">API Management</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">API Management</h2>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -109,7 +109,7 @@
                 </p>
 
                 <div class="bg-dark bg-opacity-50 p-4 rounded-3 border border-secondary border-opacity-25 mb-3">
-                    <label class="form-label text-secondary fw-bold text-uppercase small ls-1 mb-2">Master API
+                    <label for="master-api-key" class="form-label text-secondary fw-bold text-uppercase small ls-1 mb-2">Master API
                         Key</label>
                     <div class="input-group">
                         <input type="text" id="master-api-key"
@@ -144,13 +144,13 @@
                                 d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H8.5v3a1.5 1.5 0 0 1 1.5 1.5h5.5a.5.5 0 0 1 0 1H10A1.5 1.5 0 0 1 8.5 14h-1A1.5 1.5 0 0 1 6 12.5H.5a.5.5 0 0 1 0-1H6A1.5 1.5 0 0 1 7.5 10V7H2a2 2 0 0 1-2-2V4zm1 0v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1zm6 7.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5z" />
                         </svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">Backup & Restore</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">Backup & Restore</h2>
                 </div>
             </div>
             <div class="card-body p-4">
                 <div class="row g-4">
                     <div class="col-md-6 border-end border-secondary border-opacity-25">
-                        <h6 class="text-light fw-bold mb-3">Export Configuration</h6>
+                        <h3 class="h6 text-light fw-bold mb-3">Export Configuration</h3>
                         <p class="text-secondary small mb-3">Download your full system configuration as a specific JSON
                             file.</p>
                         <a href="{{ url_for('main.backup_config') }}" class="btn btn-outline-info w-100">
@@ -158,10 +158,11 @@
                         </a>
                     </div>
                     <div class="col-md-6 ps-md-4">
-                        <h6 class="text-light fw-bold mb-3">Restore Configuration</h6>
+                        <h3 class="h6 text-light fw-bold mb-3">Restore Configuration</h3>
                         <p class="text-secondary small mb-3">Restore settings from a previously backup file.</p>
                         <div class="input-group">
                             <input type="file" id="backup-file" class="form-control bg-dark border-secondary text-light"
+                                aria-label="Choose configuration backup file"
                                 accept=".json">
                             <button class="btn btn-primary" onclick="restoreConfig()">
                                 <i class="fas fa-upload me-2"></i>Restore
@@ -180,7 +181,7 @@
                         style="width: 48px; height: 48px; background-color: rgba(111, 66, 193, 0.1);">
                         <i class="fas fa-brain text-purple" style="color: #6f42c1;"></i>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">LLM Diagnostic</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">LLM Diagnostic</h2>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -215,7 +216,7 @@
                                 <div class="bg-success bg-opacity-10 rounded p-2 me-3">
                                     <i class="fas fa-shield-alt text-success fa-lg"></i>
                                 </div>
-                                <h5 class="fw-bold text-light mb-0">Two-Factor Auth</h5>
+                                <h3 class="h5 fw-bold text-light mb-0">Two-Factor Auth</h3>
                             </div>
                             <p class="text-secondary small">Status:
                                 {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
@@ -223,7 +224,7 @@
                                     class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-25">ENABLED</span>
                                 {% else %}
                                 <span
-                                    class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-25">DISABLED</span>
+                                    class="badge bg-secondary bg-opacity-20 text-white border border-secondary border-opacity-25">DISABLED</span>
                                 {% endif %}
                             </p>
                         </div>
@@ -249,7 +250,7 @@
                                 <div class="bg-primary bg-opacity-10 rounded p-2 me-3">
                                     <i class="fas fa-user-shield text-primary fa-lg"></i>
                                 </div>
-                                <h5 class="fw-bold text-light mb-0">Active Session</h5>
+                                <h3 class="h5 fw-bold text-light mb-0">Active Session</h3>
                             </div>
                             <div
                                 class="d-flex align-items-center justify-content-between bg-dark bg-opacity-50 p-2 rounded">
@@ -272,7 +273,7 @@
         <div class="glass-card border-danger border-opacity-25 anime-slide-up" style="animation-delay: 0.6s;">
             <div class="card-body p-4 d-flex align-items-center justify-content-between">
                 <div>
-                    <h5 class="fw-bold text-danger mb-1">Danger Zone</h5>
+                    <h3 class="h5 fw-bold text-danger mb-1">Danger Zone</h3>
                     <p class="text-secondary small mb-0">Irreversible actions. Tread lightly.</p>
                 </div>
                 <button class="btn btn-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"

@@ -177,35 +177,44 @@ function initTooltips(container = document) {
 
 
 function initToasts() {
-    console.log('Toasts initialized');
 }
 
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
+    const allowedTypes = new Set(['info', 'success', 'warning', 'danger', 'error']);
+    const normalizedType = allowedTypes.has(type) ? type : 'info';
+    const visualType = normalizedType === 'error' ? 'danger' : normalizedType;
     const toast = document.createElement('div');
-    toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show shadow-lg border-0 mb-2`;
+    toast.className = `alert alert-${visualType} alert-dismissible fade show shadow-lg border-0 mb-2`;
     toast.style.minWidth = '300px';
     toast.style.backdropFilter = 'blur(10px)';
     toast.style.background = 'rgba(15, 23, 42, 0.9)';
     toast.style.color = 'white';
 
     let iconSvg = '';
-    if (type === 'success') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle-fill" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>';
-    else if (type === 'danger' || type === 'error') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>';
+    if (normalizedType === 'success') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle-fill" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>';
+    else if (visualType === 'danger') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>';
     else iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle-fill" viewBox="0 0 16 16"><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>';
 
-    toast.innerHTML = `
-        <div class="d-flex align-items-center">
-            <div class="me-3 text-${type === 'error' ? 'danger' : type}">
-                ${iconSvg}
-            </div>
-            <div>${message}</div>
-            <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="alert"></button>
-        </div>
-    `;
+    const content = document.createElement('div');
+    content.className = 'd-flex align-items-center';
 
+    const icon = document.createElement('div');
+    icon.className = `me-3 text-${visualType}`;
+    icon.innerHTML = iconSvg;
+
+    const messageNode = document.createElement('div');
+    messageNode.textContent = String(message);
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn-close btn-close-white ms-auto';
+    closeButton.dataset.bsDismiss = 'alert';
+
+    content.append(icon, messageNode, closeButton);
+    toast.appendChild(content);
     container.appendChild(toast);
     setTimeout(() => {
         const bsToast = new bootstrap.Alert(toast);
@@ -305,9 +314,10 @@ function initServiceHealth(container = document) {
     const dbEl = container.querySelector('#health-database');
     const celeryEl = container.querySelector('#health-celery');
 
-    // Only set up the timer if we are on the primary container (document.body)
-    // or if the displays are actually present in this container.
-    if (!redisEl && !dbEl && !celeryEl && container !== document.body) return;
+    if (!redisEl && !dbEl && !celeryEl) {
+        if (container === document.body && window.healthInterval) clearInterval(window.healthInterval);
+        return;
+    }
     const updateFavicon = (status) => {
         const canvas = document.createElement('canvas');
         canvas.width = 32;
@@ -355,7 +365,7 @@ function initServiceHealth(container = document) {
             });
             updateFavicon(overall);
         } catch (e) {
-            console.error('Health check failed', e);
+            console.debug('Health check did not complete before navigation', e);
             updateFavicon('down');
             // Update all visible dots to a disconnected/error state
             ['redis', 'database', 'celery'].forEach(service => {
@@ -881,9 +891,88 @@ function initOnboarding() {
     }
 }
 
+const NOTIFICATION_READ_KEY = 'hookwise.notifications.read.v1';
+
+function getReadNotificationIds() {
+    try {
+        const stored = JSON.parse(localStorage.getItem(NOTIFICATION_READ_KEY) || '[]');
+        return new Set(Array.isArray(stored) ? stored : []);
+    } catch (_error) {
+        return new Set();
+    }
+}
+
+function saveReadNotificationIds(ids) {
+    try {
+        localStorage.setItem(NOTIFICATION_READ_KEY, JSON.stringify([...ids].slice(-200)));
+    } catch (_error) {
+        // Notification state is non-critical when storage is unavailable.
+    }
+}
+
+function updateNotificationCount(center, readIds) {
+    const items = [...center.querySelectorAll('.notification-item[data-notification-id]')];
+    let unread = 0;
+    items.forEach(item => {
+        const isRead = readIds.has(item.dataset.notificationId);
+        item.classList.toggle('is-read', isRead);
+        if (!isRead) unread += 1;
+    });
+
+    const count = center.querySelector('#notification-count');
+    const toggle = center.querySelector('#notificationMenu');
+    const markAll = center.querySelector('#mark-notifications-read');
+    if (count) {
+        count.textContent = String(unread);
+        count.classList.toggle('d-none', unread === 0);
+    }
+    if (toggle) {
+        toggle.setAttribute(
+            'aria-label',
+            unread === 0 ? 'Open notifications' : `Open notifications, ${unread} unread`
+        );
+    }
+    if (markAll) markAll.disabled = unread === 0;
+}
+
+function markAllNotificationsRead(center) {
+    const readIds = getReadNotificationIds();
+    center.querySelectorAll('.notification-item[data-notification-id]').forEach(item => {
+        readIds.add(item.dataset.notificationId);
+    });
+    saveReadNotificationIds(readIds);
+    updateNotificationCount(center, readIds);
+}
+
 function initNotifications() {
+    const center = document.querySelector('.notification-center');
+    if (center && center.dataset.initialized !== 'true') {
+        center.dataset.initialized = 'true';
+        updateNotificationCount(center, getReadNotificationIds());
+
+        center.querySelector('#mark-notifications-read')?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            markAllNotificationsRead(center);
+        });
+
+        center.querySelector('#notificationMenu')?.addEventListener('shown.bs.dropdown', () => {
+            markAllNotificationsRead(center);
+        });
+
+        center.querySelectorAll('.notification-item[data-notification-id]').forEach(item => {
+            item.addEventListener('click', () => {
+                const readIds = getReadNotificationIds();
+                readIds.add(item.dataset.notificationId);
+                saveReadNotificationIds(readIds);
+            });
+        });
+    }
+
     if ('Notification' in window && Notification.permission === 'default') {
+        if (document.getElementById('enable-browser-notifications')) return;
         const btn = document.createElement('button');
+        btn.id = 'enable-browser-notifications';
         btn.className = 'btn btn-sm btn-link text-info p-0 ms-2';
         btn.textContent = 'Enable Notifications';
         btn.onclick = () => {

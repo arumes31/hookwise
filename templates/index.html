@@ -1,7 +1,117 @@
 {% extends 'base.html' %}
 
+{% block main_content_class %}container-fluid dashboard-content{% endblock %}
+
 {% block content %}
-<div class="row g-4 mb-5">
+<section id="operations-dashboard" class="operations-dashboard page-section" aria-labelledby="operations-dashboard-title">
+    <div class="dashboard-heading">
+        <div>
+            <h1 id="operations-dashboard-title" class="h3 accent-gradient fw-bold mb-1">Operations dashboard</h1>
+            <p class="text-secondary small mb-0">Last updated <time id="dashboard-updated" aria-live="polite">Loading…</time></p>
+        </div>
+        <div class="dashboard-controls" aria-label="Dashboard controls">
+            <label class="visually-hidden" for="dashboard-range">Date range</label>
+            <select id="dashboard-range" class="form-select form-select-sm" aria-label="Dashboard date range">
+                <option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="custom">Custom range</option>
+            </select>
+            <button id="dashboard-custom-range" class="btn btn-sm btn-outline-secondary" type="button" hidden>Custom dates</button>
+            <label class="visually-hidden" for="dashboard-refresh-interval">Refresh interval</label>
+            <select id="dashboard-refresh-interval" class="form-select form-select-sm" aria-label="Automatic refresh interval">
+                <option value="0">Manual refresh</option><option value="30">30 seconds</option><option value="60" selected>1 minute</option><option value="300">5 minutes</option>
+            </select>
+            <button id="dashboard-refresh" class="btn btn-sm btn-primary" type="button">Refresh all</button>
+            <button id="dashboard-compact" class="btn btn-sm btn-outline-secondary" type="button" aria-pressed="false">Compact</button>
+            <details class="dashboard-layout-menu"><summary class="btn btn-sm btn-outline-secondary">Layout</summary>
+                <div class="dashboard-layout-panel"><p class="small text-secondary mb-2">Show KPIs</p><div id="dashboard-kpi-toggles"></div><button id="dashboard-reset-layout" type="button" class="btn btn-sm btn-link text-info p-0 mt-2">Reset layout</button></div>
+            </details>
+        </div>
+    </div>
+    <form id="dashboard-custom-form" class="dashboard-custom-form" hidden>
+        <label>From <input id="dashboard-from" type="datetime-local" class="form-control form-control-sm" required></label>
+        <label>To <input id="dashboard-to" type="datetime-local" class="form-control form-control-sm" required></label>
+        <button class="btn btn-sm btn-primary" type="submit">Apply range</button>
+    </form>
+    <div id="dashboard-outage" class="alert alert-danger d-none mb-3" role="alert"><strong>Operational data is unavailable.</strong> <span id="dashboard-outage-message">Trying again on the next refresh.</span></div>
+    <div id="dashboard-error" class="alert alert-warning d-none" role="alert"></div>
+    <div id="dashboard-kpis" class="dashboard-kpi-grid" aria-live="polite">
+        {% for key, label, detail in [
+            ('total_endpoints', 'Total endpoints', 'Configured for routing'), ('active_endpoints', 'Active endpoints', 'Currently accepting traffic'),
+            ('total_events', 'Total events', 'Received in selected period'), ('processed_events', 'Processed events', 'Completed in selected period'),
+            ('success_rate', 'Success rate', 'Processed or skipped successfully'),
+            ('average_latency', 'Average latency', 'Processing time'), ('dead_letter_queue', 'Dead-letter queue', 'Awaiting intervention'),
+            ('skipped_no_action', 'Skipped / no action', 'Handled without ticket action'), ('failed_events', 'Failed events', 'Failed or dead-lettered'),
+            ('failing_endpoints', 'Failing endpoints', 'Endpoints with failures'), ('stale_endpoints', 'Stale endpoints', 'Past their configured timeout')
+        ] %}
+        <button class="dashboard-kpi is-loading" type="button" data-kpi="{{ key }}" aria-label="Filter endpoints by {{ label }}">
+            <span class="dashboard-kpi-label">{{ label }}</span><strong class="dashboard-kpi-value">—</strong><span class="dashboard-kpi-delta">Loading…</span><span class="dashboard-kpi-detail">{{ detail }}</span>
+        </button>
+        {% endfor %}
+    </div>
+</section>
+
+<section id="dashboard-analytics" class="card glass-card shadow-lg page-section" aria-labelledby="dashboard-analytics-title">
+    <div class="card-body p-4">
+        <div class="dashboard-analytics-heading">
+            <div><h2 id="dashboard-analytics-title" class="h5 mb-1">Event analytics</h2><p class="small text-secondary mb-0">Labels are shown in <span id="dashboard-timezone">your local timezone</span>.</p></div>
+            <div class="d-flex gap-2"><button id="dashboard-pan-back" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Pan chart backward">←</button><button id="dashboard-zoom-out" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Zoom chart out">−</button><button id="dashboard-zoom-in" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Zoom chart in">+</button><button id="dashboard-pan-forward" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Pan chart forward">→</button></div>
+        </div>
+        <fieldset id="dashboard-legend" class="dashboard-legend"><legend class="visually-hidden">Chart series</legend>
+            <label><input type="checkbox" value="volume" checked> Volume</label><label><input type="checkbox" value="successful" checked> Success</label><label><input type="checkbox" value="failed" checked> Failure</label><label><input type="checkbox" value="failure_rate" checked> Failure rate</label><label><input type="checkbox" value="p95"> P95 latency</label>
+        </fieldset>
+        <div id="dashboard-chart-empty" class="dashboard-chart-empty d-none">No events were recorded in this period. Try a broader date range or confirm webhooks are flowing.</div>
+        <div id="dashboard-chart" class="dashboard-chart" role="img" aria-label="Event volume, success, failure, failure rate, and latency chart"></div>
+        <div class="table-responsive" tabindex="0" role="region" aria-label="Event analytics data"><table class="table table-sm table-dark table-striped mb-0"><caption class="visually-hidden">Accessible event analytics data</caption><thead><tr><th>Date</th><th>Volume</th><th>Success</th><th>Failed</th><th>Failure rate</th><th>P50</th><th>P95</th><th>P99</th></tr></thead><tbody id="dashboard-chart-table"></tbody></table></div>
+        <div id="dashboard-endpoint-activity" class="dashboard-endpoint-activity" role="region" aria-label="Endpoint activity comparison"></div>
+    </div>
+</section>
+
+<section class="dashboard-kpis page-section legacy-dashboard" aria-labelledby="operational-overview-title">
+    <h1 id="operational-overview-title" class="visually-hidden">Operational overview</h1>
+    <div class="kpi-grid">
+        <a class="kpi-card kpi-card-primary" href="#endpoint-list">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Total endpoints</span>
+                <strong class="kpi-value" id="kpi-total-endpoints">{{ dashboard_kpis.total_endpoints }}</strong>
+                <span class="kpi-detail">Configured for routing</span>
+            </span>
+        </a>
+        <a class="kpi-card kpi-card-success" href="#endpoint-list">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 1 0 7 7 7 7 0 0 0-7-7zm3.4 5.4-4 4a.6.6 0 0 1-.8 0l-2-2 .8-.8L7 9.2l3.6-3.6.8.8z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Active endpoints</span>
+                <strong class="kpi-value" id="kpi-active-endpoints">{{ dashboard_kpis.active_endpoints }}</strong>
+                <span class="kpi-detail">Currently accepting traffic</span>
+            </span>
+        </a>
+        <a class="kpi-card kpi-card-info" href="{{ url_for('main.history') }}">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M8 1v6h5v2H8v6L1 8l7-7z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Events · 24 hours</span>
+                <strong class="kpi-value" id="kpi-events-24h">{{ dashboard_kpis.events_24h }}</strong>
+                <span class="kpi-detail">Webhook requests received</span>
+            </span>
+        </a>
+        <a class="kpi-card kpi-card-danger" href="{{ url_for('main.history', status='failed') }}">
+            <span class="kpi-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16"><path d="M8 1 15 14H1L8 1zm-.7 4v5h1.4V5H7.3zm0 6.5v1.4h1.4v-1.4H7.3z" /></svg>
+            </span>
+            <span class="kpi-copy">
+                <span class="kpi-label">Failures · 24 hours</span>
+                <strong class="kpi-value" id="kpi-failures-24h">{{ dashboard_kpis.failed_24h }}</strong>
+                <span class="kpi-detail">Failed or dead-lettered</span>
+            </span>
+        </a>
+    </div>
+</section>
+
+<div class="row g-4 page-section legacy-dashboard">
     <div class="col-md-8">
         <div class="card glass-card shadow-lg">
             <div class="card-body p-4">
@@ -93,7 +203,8 @@
                     <div class="card-body p-3">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6 class="text-secondary text-uppercase small ls-wide mb-0">Service Health</h6>
-                            <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()">
+                            <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()"
+                                aria-label="Refresh service health">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                                     class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
                                     <path fill-rule="evenodd"
@@ -132,21 +243,33 @@
     </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div id="endpoint-dashboard">
+<div id="endpoint-list" class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4 scroll-target">
     <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
     {% if debug_mode %}
     <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
     {% endif %}
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2 endpoint-toolbar">
         <select id="board-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 150px;">
+            style="width: 150px;" aria-label="Filter endpoints by board">
             <option value="">All Boards</option>
         </select>
         <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 150px;">
+            style="width: 150px;" aria-label="Filter endpoints by status">
             <option value="">All Statuses</option>
             <option value="enabled">Enabled</option>
             <option value="paused">Paused</option>
+        </select>
+        <select id="endpoint-quick-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+            style="width: 170px;" aria-label="Quick endpoint filters">
+            <option value="">All endpoint health</option>
+            <option value="recent_failures">Recent failures</option>
+            <option value="stale">Stale endpoints</option>
+            <option value="unhealthy">Unhealthy services</option>
+            <option value="high_latency">High latency</option>
+            <option value="drafts">Draft endpoints</option>
+            <option value="pinned">Pinned endpoints</option>
+            <option value="inactive">No activity</option>
         </select>
         <div class="input-group input-group-sm" style="width: 250px;">
             <span class="input-group-text bg-dark border-secondary text-secondary">
@@ -157,8 +280,10 @@
                 </svg>
             </span>
             <input type="text" id="endpoint-search" class="form-control bg-dark border-secondary text-white"
-                placeholder="Search endpoints...">
+                placeholder="Search URL, board, company, or token:abcdef">
         </div>
+        <button id="clear-endpoint-filters" type="button" class="btn btn-outline-secondary" aria-label="Clear all endpoint filters">Clear</button>
+        <button id="refresh-endpoints" type="button" class="btn btn-outline-info" aria-label="Refresh endpoint telemetry">Refresh</button>
         <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                 class="bi bi-plus-lg me-2" viewBox="0 0 16 16">
@@ -168,6 +293,15 @@
             Create New
         </a>
     </div>
+</div>
+
+<div class="endpoint-filter-status mb-3" aria-live="polite">
+    <span id="endpoint-result-count" class="text-secondary small">Loading endpoints…</span>
+    <div id="endpoint-filter-chips" class="filter-chips" role="region" aria-label="Active endpoint filters"></div>
+</div>
+<div id="endpoint-summary-error" class="alert alert-warning py-2" hidden role="status"></div>
+<div id="endpoint-filter-empty" class="endpoint-filter-empty" hidden>
+    <strong>No endpoints match these filters.</strong> Adjust or clear a filter to see your configured endpoints.
 </div>
 
 <div id="bulk-controls"
@@ -184,7 +318,7 @@
 {% if not configs %}
 <div class="row justify-content-center py-5">
     <div class="col-md-8 text-center">
-        <h3 class="text-secondary">Ready to start routing?</h3>
+        <h2 class="h3 text-secondary">Ready to start routing?</h2>
         <p class="lightgrey mb-5">Create your first webhook endpoint to bridge monitoring alerts to ConnectWise Manage.
         </p>
 
@@ -239,15 +373,15 @@
                     <div class="terminal-dot bg-success"></div>
                 </div>
                 <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
-                    ACTIVITY STREAM</div>
+                    ACTIVITY STREAM <span id="socket-status" class="badge bg-secondary ms-1">Connecting</span></div>
                 <div class="d-flex gap-3">
-                    <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now">
+                    <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now" aria-label="Run timeout monitor now">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-clock-history" viewBox="0 0 16 16">
                             <path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022l-.074.997zm2.004.45a7.003 7.003 0 0 0-.985-.299l.219-.976c.383.086.76.2 1.126.342l-.36.933zm1.37.71a7.01 7.01 0 0 0-.439-.74l.824-.568c.19.274.364.56.517.857l-.902.451zM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
                             <path d="M7 3h1v4h3v1H7V3z"/>
                         </svg>
                     </button>
-                    <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream">
+                    <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream" aria-label="Clear activity stream">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                             class="bi bi-trash-fill" viewBox="0 0 16 16">
                             <path
@@ -256,6 +390,19 @@
                     </button>
                 </div>
             </div>
+            <div id="activity-controls" class="activity-controls border-bottom border-light border-opacity-10 p-2" aria-label="Live activity controls">
+                <select id="activity-severity" class="form-select form-select-sm"><option value="">All severity</option><option value="failure">Failures</option><option value="success">Success</option><option value="info">Info</option></select>
+                <select id="activity-action" class="form-select form-select-sm"><option value="">All actions</option><option value="create">Create</option><option value="update">Update</option><option value="close">Close</option></select>
+                <select id="activity-status" class="form-select form-select-sm"><option value="">All status</option><option value="processed">Processed</option><option value="failed">Failed</option><option value="dlq">Dead-lettered</option><option value="skipped">Skipped</option></select>
+                <select id="activity-endpoint" class="form-select form-select-sm"><option value="">All endpoints</option></select>
+                <select id="activity-board" class="form-select form-select-sm"><option value="">All boards</option></select>
+                <select id="activity-buffer" class="form-select form-select-sm" aria-label="Activity buffer size"><option value="100">100 events</option><option value="200" selected>200 events</option><option value="500">500 events</option></select>
+                <button id="activity-pause" type="button" class="btn btn-sm btn-outline-secondary" aria-pressed="false" title="Pause stream (Alt+P)">Pause</button>
+                <button id="activity-clear" type="button" class="btn btn-sm btn-outline-secondary">Clear</button>
+                <span id="activity-counter" class="small text-secondary ms-auto">0 events · 0 failures</span>
+                <span id="activity-duplicates" class="small text-warning" hidden></span>
+            </div>
+            <div id="activity-disconnected" class="alert alert-danger rounded-0 mb-0 py-2" role="status" hidden>Live activity disconnected.</div>
             <div class="card-body p-0">
                 <div id="log-container" class="bg-transparent text-white font-monospace p-3"
                     style="height: 250px; overflow-y: auto; font-size: 0.8rem; scrollbar-width: thin; scrollbar-color: var(--border) transparent;">
@@ -264,7 +411,6 @@
             </div>
         </div>
     </div>
-</div>
 </div>
 
 <div class="mb-3 d-flex justify-content-between align-items-center">
@@ -292,9 +438,10 @@
 
 <div class="row" id="endpoint-grid">
     {% for config in configs %}
-    <div class="col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
+    <div class="col-xxl-4 col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
         <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
             data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
+            data-company="{{ config.customer_id_default or '' }}" data-tags="" data-health="{{ config.config_health_status or 'OK' }}"
             data-status="{{ 'enabled' if config.is_enabled else 'paused' }}">
             <div class="paused-badge">PAUSED</div>
             <div class="card-body p-4">
@@ -302,7 +449,7 @@
                 <div class="endpoint-actions">
                     <button onclick="togglePin('{{ config.id }}')"
                         class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
-                        data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}">
+                        data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
                         {% if config.is_pinned %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                             fill="currentColor" class="bi bi-pin-fill" viewBox="0 0 16 16">
                             <path
@@ -315,7 +462,7 @@
                     </button>
                     <button onclick="toggleEndpoint('{{ config.id }}')"
                         class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
-                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}">
+                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}" aria-label="{{ 'Resume' if not config.is_enabled else 'Pause' }} endpoint">
                         {% if config.is_enabled %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                             fill="currentColor" class="bi bi-pause-circle" viewBox="0 0 16 16">
                             <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
@@ -329,15 +476,19 @@
                         </svg>{% endif %}
                     </button>
                     <button onclick="testEndpoint('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook">
+                        class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook" aria-label="Test webhook">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                             class="bi bi-play-fill" viewBox="0 0 16 16">
                             <path
                                 d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
                         </svg>
                     </button>
-                    <a href="{{ url_for('main.edit_endpoint', id=config.id) }}"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings">
+                    <button onclick="confirmRotate('{{ config.id }}', {{ config.name | tojson }})"
+                        class="btn btn-sm btn-link p-0 text-secondary hover-warning" data-tooltip="Rotate Token" aria-label="Rotate endpoint token">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" /></svg>
+                    </button>
+                    <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}"
+                        class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings" aria-label="Edit endpoint settings">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                             class="bi bi-gear-fill" viewBox="0 0 16 16">
                             <path
@@ -373,7 +524,7 @@
                         data-message="{{ config.config_health_message or '' }}" data-ip="{{ config.last_ip or '' }}"
                         data-rotated="{{ config.last_rotated_at or '' }}"
                         onclick="showSecurityHud(this.dataset.id, this.dataset.status, this.dataset.message, this.dataset.ip, this.dataset.rotated)"
-                        data-tooltip="Security & Health: {{ config.config_health_status }}">
+                        data-tooltip="Security & Health: {{ config.config_health_status }}" aria-label="View endpoint security and health">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                             class="bi bi-shield-check" viewBox="0 0 16 16">
                             <path
@@ -388,7 +539,7 @@
                     <div class="copyable-field">
                         <code class="user-select-all text-truncate flex-grow-1">{{ base_url }}/w/{{ config.id }}</code>
                         <button class="btn btn-sm btn-link text-primary p-0"
-                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL">
+                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL" aria-label="Copy endpoint URL">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
                                 class="bi bi-clipboard" viewBox="0 0 16 16">
                                 <path
@@ -436,12 +587,27 @@
                         {% endif %}
                     </div>
                 </div>
+                <details class="endpoint-details mt-3">
+                    <summary>Delivery telemetry</summary>
+                    <div class="endpoint-summary-grid mt-2">
+                        <span>Token age <strong data-summary="token-age">Loading…</strong></span>
+                        <span>Uptime <strong data-summary="uptime">—</strong></span>
+                        <span>Last success <strong data-summary="last-success">Loading…</strong></span>
+                        <span>Last failure <strong data-summary="last-failure">Loading…</strong></span>
+                        <span>Response time <strong data-summary="latency">—</strong></span>
+                        <span>Queue depth <strong data-summary="queue">—</strong></span>
+                        <span>Retries <strong data-summary="retries">—</strong></span>
+                    </div>
+                    <div class="endpoint-tags mt-2" data-summary="tags">Loading tags…</div>
+                    <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('main.history') }}?endpoint_id={{ config.id }}">View logs</a>
+                </details>
             </div>
         </div>
     </div>
     {% endfor %}
 </div>
 {% endif %}
+</div>
 
 <!-- Payload Modal -->
 <div class="modal fade" id="payloadModal" tabindex="-1">
@@ -453,7 +619,7 @@
                     <button id="pretty-toggle" class="btn btn-sm btn-outline-info me-2">Minified</button>
                     <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
                 </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close payload details"></button>
             </div>
             <div class="modal-body">
                 <pre
@@ -469,7 +635,7 @@
         <div class="modal-content bg-dark border-warning">
             <div class="modal-header border-warning border-opacity-25">
                 <h5 class="modal-title text-warning">Rotate Bearer Token</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close token rotation dialog"></button>
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to rotate the token for <strong id="rotate-endpoint-name"></strong>?</p>
@@ -479,6 +645,7 @@
             <div class="modal-footer border-warning border-opacity-25">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <form id="rotate-form" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-sm btn-warning text-dark fw-bold">Rotate Token</button>
                 </form>
             </div>
@@ -529,12 +696,12 @@
 </div>
 
 <!-- Onboarding Modal -->
-<div class="modal fade" id="onboardingModal" tabindex="-1">
+<div class="modal fade" id="onboardingModal" tabindex="-1" aria-labelledby="onboarding-title">
     <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark border-primary">
             <div class="modal-header border-primary border-opacity-25">
-                <h5 class="modal-title text-primary">Welcome to HookWise!</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <h2 id="onboarding-title" class="h5 modal-title text-primary">Welcome to HookWise!</h2>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
             </div>
             <div class="modal-body text-center py-5">
                 <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="80" class="mb-4">
@@ -586,7 +753,7 @@
             <div class="modal-header border-bottom border-light border-opacity-10">
                 <h5 class="modal-title text-white"><i class="fas fa-shield-alt me-2 text-info"></i>Security & Health
                 </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close security details"></button>
             </div>
             <div class="modal-body">
                 <div class="text-center mb-4">
@@ -626,534 +793,7 @@
     </div>
 </div>
 
-<script>
-    async function quickUpdate(id, field, value) {
-        const select = event.target;
-        if (value === 'LOAD') {
-            select.innerHTML = '<option value="">Loading...</option>';
-            try {
-                let endpoint = '';
-                if (field === 'board') endpoint = '/api/cw/boards';
-                else if (field === 'priority') endpoint = '/api/cw/priorities';
-                else if (field === 'status') {
-                    const card = select.closest('.endpoint-card');
-                    const boardName = card.dataset.board;
-                    const boardsRes = await fetch('/api/cw/boards');
-                    const boards = await boardsRes.json();
-                    const board = boards.find(b => b.name === boardName);
-                    if (board) endpoint = `/api/cw/statuses/${board.id}`;
-                }
-
-                if (!endpoint) throw new Error('Could not determine endpoint');
-
-                const res = await fetch(endpoint);
-                const items = await res.json();
-                select.innerHTML = '<option value="">-- Default --</option>';
-                items.forEach(item => {
-                    const opt = document.createElement('option');
-                    opt.value = item.name;
-                    opt.textContent = item.name;
-                    select.appendChild(opt);
-                });
-            } catch (e) {
-                showToast('Error loading ' + field + 's', 'danger');
-            }
-            return;
-        }
-
-        try {
-            const res = await fetch(`/endpoint/quick-update/${id}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field, value })
-            });
-            const data = await res.json();
-            if (data.status === 'success') {
-                showToast(field.charAt(0).toUpperCase() + field.slice(1) + ' updated', 'success');
-                if (field === 'board') {
-                    select.closest('.endpoint-card').dataset.board = value;
-                }
-            } else {
-                showToast('Error: ' + data.message, 'danger');
-            }
-        } catch (e) {
-            showToast('Connection error', 'danger');
-        }
-    }
-
-    function confirmRotate(id, name) {
-        document.getElementById('rotate-endpoint-name').textContent = name;
-        document.getElementById('rotate-form').action = `/endpoint/rotate-token/${id}`;
-        new bootstrap.Modal(document.getElementById('rotateModal')).show();
-    }
-
-    // Live Dashboard Logic (Refined)
-    window.dashboardState = window.dashboardState || {
-        isPaused: false,
-        absoluteTime: false,
-        currentDashboardPayload: null,
-        isDashboardPretty: true,
-        chartPeriod: 'daily'
-    };
-
-    function updateDashboardPayloadDisplay() {
-        const display = document.getElementById('payload-display');
-        const toggleBtn = document.getElementById('pretty-toggle');
-        if (window.dashboardState.isDashboardPretty) {
-            display.textContent = JSON.stringify(window.dashboardState.currentDashboardPayload, null, 2);
-            toggleBtn.textContent = 'Minified';
-        } else {
-            display.textContent = JSON.stringify(window.dashboardState.currentDashboardPayload);
-            toggleBtn.textContent = 'Pretty';
-        }
-        Prism.highlightElement(display);
-    }
-
-    document.getElementById('pretty-toggle').addEventListener('click', () => {
-        window.dashboardState.isDashboardPretty = !window.dashboardState.isDashboardPretty;
-        updateDashboardPayloadDisplay();
-    });
-
-    document.addEventListener('DOMContentLoaded', function () {
-        const socket = getSocket();
-        if (socket) {
-            socket.off('connect');
-            socket.off('new_log');
-        }
-
-        const logContainer = document.getElementById('log-container');
-        if (!logContainer || logContainer.dataset.initialized) return;
-        logContainer.dataset.initialized = 'true';
-
-        const pauseBtn = document.getElementById('pause-button');
-        const timeBtn = document.getElementById('time-toggle');
-        const clearBtn = document.getElementById('clear-logs');
-        const fullscreenBtn = document.getElementById('fullscreen-button');
-        const logFilter = document.getElementById('log-filter');
-
-        if (fullscreenBtn) {
-            fullscreenBtn.addEventListener('click', () => {
-                const logCard = logContainer.closest('.card');
-                if (!document.fullscreenElement) {
-                    logCard.requestFullscreen().catch(err => {
-                        showToast(`Error attempting to enable full-screen mode: ${err.message}`, 'danger');
-                    });
-                } else {
-                    document.exitFullscreen();
-                }
-            });
-        }
-
-        if (clearBtn) {
-            clearBtn.addEventListener('click', () => {
-                clearLog();
-            });
-        }
-
-        const btnTrigger = document.getElementById('btn-trigger-timeout');
-        const btnClear = document.getElementById('btn-clear-stream');
-        if (btnTrigger) btnTrigger.addEventListener('click', triggerTimeoutCheck);
-        if (btnClear) btnClear.addEventListener('click', clearLog);
-
-        function clearLog() {
-            logContainer.innerHTML = '<div class="text-secondary opacity-50 italic">Log cleared. Waiting for new activity...</div>';
-        }
-
-        async function triggerTimeoutCheck() {
-            const btn = document.getElementById('btn-trigger-timeout');
-            if (!btn) return;
-            
-            // Backup original SVG content
-            const originalHtml = btn.innerHTML;
-            
-            try {
-                btn.disabled = true;
-                // Swap to spinning refresh icon
-                btn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-arrow-clockwise spin" viewBox="0 0 16 16">
-                        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-                    </svg>
-                `;
-                
-                const res = await fetch('/api/activity/trigger-timeout-check', { method: 'POST' });
-                const result = await res.json();
-                
-                if (result.status === 'success') {
-                    showToast('Timeout check triggered.', 'success');
-                } else {
-                    showToast(result.message || 'Failed to trigger check.', 'danger');
-                }
-            } catch (err) {
-                console.error('Trigger failed', err);
-                showToast('API Communication error.', 'danger');
-            } finally {
-                setTimeout(() => {
-                    btn.disabled = false;
-                    btn.innerHTML = originalHtml;
-                }, 2000);
-            }
-        }
-
-        if (pauseBtn) {
-            pauseBtn.addEventListener('click', () => {
-                window.dashboardState.isPaused = !window.dashboardState.isPaused;
-                pauseBtn.classList.toggle('btn-primary', window.dashboardState.isPaused);
-                pauseBtn.classList.toggle('btn-outline-secondary', !window.dashboardState.isPaused);
-            });
-        }
-
-        if (timeBtn) {
-            timeBtn.addEventListener('click', () => {
-                window.dashboardState.absoluteTime = !window.dashboardState.absoluteTime;
-                timeBtn.classList.toggle('btn-primary', window.dashboardState.absoluteTime);
-                timeBtn.classList.toggle('btn-outline-secondary', !window.dashboardState.absoluteTime);
-                // Refresh visible logs to update time format
-                logContainer.querySelectorAll('.log-entry').forEach(entry => {
-                    const ts = entry.dataset.timestamp;
-                    if (ts) {
-                        const timeSpan = entry.querySelector('.text-secondary');
-                        if (timeSpan) {
-                            const date = new Date(ts);
-                            timeSpan.textContent = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
-                        }
-                    }
-                });
-            });
-        }
-
-        if (socket) {
-            socket.on('connect', () => {
-                const statusBadge = document.getElementById('socket-status');
-                if (statusBadge) {
-                    statusBadge.textContent = 'Live';
-                    statusBadge.className = 'badge bg-success';
-                }
-            });
-        }
-
-        function addLogToStream(data, isInitialHistory = false) {
-            if (!isInitialHistory && window.dashboardState.isPaused) return;
-
-            // Purge the "Initializing" placeholder if it exists
-            const placeholder = logContainer.querySelector('.italic');
-            if (placeholder) {
-                logContainer.innerHTML = '';
-            }
-
-            const logEntry = document.createElement('div');
-            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light animate-fade-in`;
-            logEntry.dataset.timestamp = data.timestamp;
-
-            const isError = data.level === 'warning' || data.level === 'error';
-            const statusColor = isError ? 'danger' : 'success';
-
-            const date = new Date(data.timestamp);
-            const timeStr = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
-
-            let flowHtml = `
-                <div class="d-flex align-items-center gap-2 small">
-                    <span class="text-secondary font-monospace" style="font-size: 0.7rem;">${timeStr}</span>
-                    <span class="fw-bold text-light">${escapeHtml(data.config_name)}</span>
-                    
-                    <!-- Flow Icons (SVG Bootstrap Icons) -->
-                    <div class="d-flex align-items-center bg-dark bg-opacity-50 rounded px-2 py-1 ms-2 border border-secondary border-opacity-10" style="gap: 6px;">
-                        <!-- Step 1: Payload Received (Transmit) -->
-                        <span class="text-success opacity-75 d-flex" title="Payload Received">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm6 10.792l-4.25-4.25a.5.5 0 0 1 .708-.708L8 9.378l3.542-3.544a.5.5 0 0 1 .708.708L8 10.792z"/>
-                            </svg>
-                        </span>
-                        <span class="text-secondary opacity-25" style="font-size: 0.6rem;">&rarr;</span>
-                        
-                        <!-- Step 2: Processing (Gear) -->
-                        <span class="text-${statusColor} d-flex ${isError ? 'spin text-danger' : 'opacity-75'}" title="${escapeHtml(data.message)}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.31a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.31-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.17-.31a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.31.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
-                            </svg>
-                        </span>
-                        <span class="text-secondary opacity-25" style="font-size: 0.6rem;">&rarr;</span>
-                        
-                        <!-- Step 3: Action (Ticket) -->
-                        <span class="text-${data.ticket_id ? 'primary' : 'secondary opacity-50'} d-flex" title="${data.ticket_id ? 'Ticket Created' : 'No Action'}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M0 4.5A1.5 1.5 0 0 1 1.5 3h13A1.5 1.5 0 0 1 16 4.5V6a.5.5 0 0 1-.5.5 1.5 1.5 0 0 0 0 3 .5.5 0 0 1 .5.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 11.5V10a.5.5 0 0 1 .5-.5 1.5 1.5 0 1 0 0-3 .5.5 0 0 1-.5-.5V4.5Zm4 1h8v1H4v-1Zm0 3h8v1H4v-1Zm0 3h8v1H4v-1Z"/>
-                            </svg>
-                        </span>
-                    </div>
-
-                     <span class="text-${statusColor} ms-2 text-truncate" style="max-width: 300px;">
-                        ${escapeHtml(data.message)}
-                    </span>
-                    
-                    ${data.ticket_id ? `<a href="{{ cw_url }}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
-                    
-                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" data-payload='${escapeHtml(JSON.stringify(data.payload))}'>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-arrows-angle-expand" viewBox="0 0 16 16">
-                            <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 1 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707z"/>
-                        </svg>
-                    </button>
-                </div>
-            `;
-            logEntry.innerHTML = flowHtml;
-
-            if (isInitialHistory) {
-                logContainer.appendChild(logEntry);
-            } else {
-                logContainer.insertBefore(logEntry, logContainer.firstChild);
-            }
-
-            if (!isInitialHistory) {
-                // Future: Add scroll-lock logic here if needed
-            }
-
-            if (!isInitialHistory && window.notifyFailure && isError) {
-                const notifyData = {...data, level: data.level === 'error' ? 'danger' : data.level};
-                window.notifyFailure(notifyData);
-            }
-
-            while (logContainer.childNodes.length > 200) {
-                if (isInitialHistory) {
-                    logContainer.removeChild(logContainer.firstChild);
-                } else {
-                    logContainer.removeChild(logContainer.lastChild);
-                }
-            }
-        }
-
-        async function loadActivityHistory() {
-            try {
-                const res = await fetch('/api/activity/history');
-                const history = await res.json();
-                if (history && history.length > 0) {
-                    history.forEach(log => addLogToStream(log, true));
-                }
-            } catch (err) {
-                console.error('Failed to load activity history', err);
-            }
-        }
-
-        if (socket) {
-            socket.on('new_log', (data) => {
-                addLogToStream(data);
-            });
-        }
-
-        // Load history initially
-        loadActivityHistory();
-
-
-        // Log Filter Logic
-        if (logFilter) {
-            logFilter.addEventListener('input', (e) => {
-                const term = e.target.value.toLowerCase();
-                logContainer.querySelectorAll('.log-entry').forEach(entry => {
-                    entry.style.display = entry.innerText.toLowerCase().includes(term) ? 'block' : 'none';
-                });
-            });
-        }
-
-        // Delegated listener for payload modal to avoid inline onclick escapes
-        logContainer.addEventListener('click', (e) => {
-            const btn = e.target.closest('.log-expand-payload');
-            if (btn) {
-                const payload = btn.getAttribute('data-payload');
-                if (window.showPayloadModal) window.showPayloadModal(payload);
-            }
-        });
-    });
-
-    function copyModalPayload() {
-        const text = document.getElementById('payload-display').textContent;
-        navigator.clipboard.writeText(text);
-        showToast('Payload copied to clipboard!', 'success');
-    }
-
-    function testEndpoint(id) {
-        fetch(`/endpoint/test/${id}`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showToast('Test webhook queued!', 'success');
-                } else {
-                    showToast('Error: ' + data.message, 'danger');
-                }
-            })
-            .catch(error => {
-                showToast('Connection error', 'danger');
-            });
-    }
-
-    function refreshStats() {
-        if (!document.getElementById('stat-created')) return;
-        if (window.dashboardState.isRefreshing) return;
-        window.dashboardState.isRefreshing = true;
-
-        Promise.all([
-            fetch('/api/stats').then(res => res.json()),
-            fetch(`/api/stats/history?period=${window.dashboardState.chartPeriod || 'daily'}`).then(res => res.json())
-        ]).then(([data, historyData]) => {
-            const elCreated = document.getElementById('stat-created');
-            const elUpdated = document.getElementById('stat-updated');
-            const elClosed = document.getElementById('stat-closed');
-            const elRate = document.getElementById('stat-rate');
-            const elFailed = document.getElementById('stat-failed');
-            const elDlq = document.getElementById('stat-dlq');
-            const elNoAction = document.getElementById('stat-noaction');
-            const elLatency = document.getElementById('stat-latency');
-
-            if (elCreated) elCreated.textContent = data.created_today;
-            if (elUpdated) elUpdated.textContent = data.updated_today;
-            if (elClosed) elClosed.textContent = data.closed_today;
-            if (elRate) elRate.textContent = data.success_rate;
-            if (elFailed) elFailed.textContent = data.failed_today;
-            if (elDlq) elDlq.textContent = data.dlq_today;
-            if (elNoAction) elNoAction.textContent = data.non_action_today;
-            if (elLatency) elLatency.textContent = data.avg_processing_time;
-
-            if (typeof MiniChart !== 'undefined') {
-                const labels = historyData.map(d => d.date);
-                if (MiniChart.renderMultiBar && historyData.length > 0 && historyData[0].created !== undefined) {
-                    const datasets = [
-                        { name: 'Created', data: historyData.map(d => d.created), color: '#3b82f6' },
-                        { name: 'Updated', data: historyData.map(d => d.updated), color: '#f59e0b' },
-                        { name: 'Closed', data: historyData.map(d => d.closed), color: '#10b981' }
-                    ];
-                    MiniChart.renderMultiBar('historyChart', labels, datasets);
-                } else {
-                    const counts = historyData.map(d => d.count || d.created || 0);
-                    MiniChart.renderBar('historyChart', labels, counts);
-                }
-            }
-        })
-            .catch(err => console.error('Error fetching stats:', err))
-            .finally(() => {
-                window.dashboardState.isRefreshing = false;
-            });
-    }
-
-    async function toggleMaintenance() {
-        try {
-            const res = await fetch('/admin/maintenance', { method: 'POST' });
-            const data = await res.json();
-            showToast('Maintenance mode ' + (data.maintenance_mode ? 'ENABLED' : 'DISABLED'), data.maintenance_mode ? 'warning' : 'success');
-        } catch (e) {
-            showToast('Error toggling maintenance mode', 'danger');
-        }
-    }
-
-    function showPayloadModal(payloadStr) {
-        try {
-            // Handle potential double-encoding or already object
-            let payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
-            window.dashboardState.currentDashboardPayload = payload;
-            window.dashboardState.isDashboardPretty = true;
-            updateDashboardPayloadDisplay();
-            new bootstrap.Modal(document.getElementById('payloadModal')).show();
-        } catch (e) {
-            console.error("Payload parse error", e);
-            showToast('Error displaying payload', 'danger');
-        }
-    }
-
-    function showSecurityHud(id, status, message, lastIp, rotatedAt) {
-        const modal = new bootstrap.Modal(document.getElementById('securityHudModal'));
-        const icon = document.getElementById('hud-status-icon');
-        const text = document.getElementById('hud-status-text');
-        const msg = document.getElementById('hud-message');
-        const ip = document.getElementById('hud-last-ip');
-        const age = document.getElementById('hud-token-age');
-
-        // Status Logic
-        if (status === 'OK') {
-            icon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
-            text.className = 'fw-bold text-success';
-            text.textContent = 'System Healthy';
-        } else if (status === 'ERROR') {
-            icon.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i>';
-            text.className = 'fw-bold text-danger';
-            text.textContent = 'Security Alert';
-        } else {
-            icon.innerHTML = '<i class="fas fa-info-circle text-warning"></i>';
-            text.className = 'fw-bold text-warning';
-            text.textContent = 'Warning';
-        }
-
-        msg.textContent = message || 'No active security notifications.';
-        ip.textContent = lastIp || 'Unknown';
-
-        if (rotatedAt && rotatedAt !== 'None') {
-            const rotatedDate = new Date(rotatedAt);
-            const days = Math.floor((new Date() - rotatedDate) / (1000 * 60 * 60 * 24));
-            age.textContent = `${days} days ago`;
-        } else {
-            age.textContent = 'Never rotated';
-        }
-
-        modal.show();
-
-        // Fetch LLM health asynchronously when HUD opens
-        const llmStatus = document.getElementById('hud-llm-status');
-        const llmModelRow = document.getElementById('hud-llm-model-row');
-        const llmModel = document.getElementById('hud-llm-model');
-        if (llmStatus) {
-            llmStatus.textContent = '…';
-            fetch('/api/health/llm').then(r => r.json()).then(d => {
-                if (d.status === 'ok') {
-                    llmStatus.textContent = `✅ OK (${d.response_ms}ms)`;
-                    llmStatus.className = 'font-monospace small text-success';
-                    if (d.model) {
-                        llmModel.textContent = d.model;
-                        llmModelRow.style.display = '';
-                    }
-                } else {
-                    llmStatus.textContent = '❌ Offline';
-                    llmStatus.className = 'font-monospace small text-danger';
-                    llmModelRow.style.display = 'none';
-                }
-            }).catch(() => {
-                llmStatus.textContent = '⚠ Unreachable';
-                llmStatus.className = 'font-monospace small text-warning';
-            });
-        }
-    }
-
-    // Unified initialization for first-load and HTMX swaps
-    function initSparklinesAndStats() {
-        // Only run if on dashboard or elements exist
-        if (!document.getElementById('stat-created') && !document.querySelector('canvas[data-sparkline]')) {
-            return;
-        }
-
-        if (window.dashboardState.isInitialized) return;
-        window.dashboardState.isInitialized = true;
-
-        if (window.statsInterval) clearInterval(window.statsInterval);
-
-        refreshStats();
-        window.statsInterval = setInterval(refreshStats, 30000); // Every 30 seconds
-
-        // Initialize Sparklines
-        document.querySelectorAll('canvas[data-sparkline]').forEach(canvas => {
-            const dataStr = canvas.getAttribute('data-sparkline');
-            if (!dataStr) return;
-            const data = JSON.parse(dataStr);
-            if (typeof MiniChart !== 'undefined') {
-                MiniChart.renderLine(canvas.id, data);
-            }
-        });
-
-        // Set maintenance toggle state
-        fetch('/admin/maintenance').then(r => r.json()).then(d => {
-            const toggle = document.getElementById('maintenance-toggle');
-            if (toggle) toggle.checked = d.maintenance_mode;
-        }).catch(() => { });
-
-        // Reset the lock after a small delay to handle intentional re-initialization (e.g. HTMX navigation)
-        setTimeout(() => { window.dashboardState.isInitialized = false; }, 500);
-    }
-
-    document.addEventListener('DOMContentLoaded', initSparklinesAndStats);
-    document.addEventListener('htmx:load', initSparklinesAndStats);
-</script>
+<meta name="hookwise-cw-url" content="{{ cw_url }}">
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-page.js') }}"></script>
 {% endblock %}

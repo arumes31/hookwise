@@ -44,10 +44,10 @@ def add_mapping() -> Any:
     return redirect(url_for("main.tenantmap"))
 
 
-@main_bp.route("/tenantmap/edit/<id>", methods=["POST"])
+@main_bp.route("/tenantmap/edit/<mapping_id>", methods=["POST"])
 @auth_required
-def edit_mapping(id: str) -> Any:
-    mapping = GlobalMapping.query.get(id)
+def edit_mapping(mapping_id: str) -> Any:
+    mapping = GlobalMapping.query.get(mapping_id)
     if not mapping:
         flash("Global mapping not found.")
         return redirect(url_for("main.tenantmap"))
@@ -69,7 +69,7 @@ def edit_mapping(id: str) -> Any:
         db.session.commit()
         log_audit(
             "update_mapping",
-            config_id=id,
+            config_id=mapping_id,
             details=f"Updated global mapping: {old_val} to {tenant_value} -> {company_id}",
         )
         flash(f"Mapping for {tenant_value} updated successfully.")
@@ -80,10 +80,10 @@ def edit_mapping(id: str) -> Any:
     return redirect(url_for("main.tenantmap"))
 
 
-@main_bp.route("/tenantmap/delete/<id>", methods=["POST"])
+@main_bp.route("/tenantmap/delete/<mapping_id>", methods=["POST"])
 @auth_required
-def delete_mapping(id: str) -> Any:
-    mapping = GlobalMapping.query.get(id)
+def delete_mapping(mapping_id: str) -> Any:
+    mapping = GlobalMapping.query.get(mapping_id)
     if not mapping:
         flash("Global mapping not found.")
         return redirect(url_for("main.tenantmap"))
@@ -92,7 +92,7 @@ def delete_mapping(id: str) -> Any:
     try:
         db.session.delete(mapping)
         db.session.commit()
-        log_audit("delete_mapping", config_id=id, details=f"Deleted global mapping for: {tenant}")
+        log_audit("delete_mapping", config_id=mapping_id, details=f"Deleted global mapping for: {tenant}")
         flash(f"Mapping for {tenant} deleted.")
     except Exception as e:
         db.session.rollback()

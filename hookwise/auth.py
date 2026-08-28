@@ -27,7 +27,7 @@ def _bp() -> Any:
 
 def _register_login_routes(bp: Any) -> None:
     @bp.route("/login", methods=["GET", "POST"])
-    @limiter.limit("5 per minute")
+    @limiter.limit("5 per minute", methods=["POST"])
     def login() -> Any:
         # If we are already in the 2FA step (from previous credential check)
         pending_user_id = session.get("pending_user_id")

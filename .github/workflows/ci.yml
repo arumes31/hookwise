@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
     
     services:
       postgres:
-        image: postgres:15@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957
+        image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
         env:
           POSTGRES_DB: hookwise_test
           POSTGRES_USER: hookwise
@@ -34,7 +34,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis:7@sha256:71da9275c5f3fcb97d0fa0c8c5b36cc995327265420f17a04bfd544f458059f7
+        image: redis:8.10.1-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
         ports:
           - 6379:6379
         options: >-
@@ -44,21 +44,34 @@ jobs:
           --health-retries 5
 
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Python 3.13
+    - name: Set up Python 3.14.6
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
-        python-version: '3.13'
+        python-version: '3.14.6'
         cache: 'pip'
 
     - name: Install dependencies
       run: |
-        python -m pip install --requirement requirements-dev.txt
-        python -m pip install --no-deps --editable .
+        python -m pip install --upgrade pip
+        python -m pip install --require-hashes -r requirements-dev.txt
+        python -m pip install --no-deps -e .
+
+    - name: Restore lint and type-check caches
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: |
+          .ruff_cache
+          .mypy_cache
+        key: quality-${{ runner.os }}-py3.14-${{ hashFiles('requirements-dev.txt', 'pyproject.toml', 'mypy.ini') }}
+        restore-keys: quality-${{ runner.os }}-py3.14-
 
     - name: Lint with ruff
       run: ruff check .
+
+    - name: Check formatting with ruff
+      run: ruff format --check .
 
     - name: Type check with mypy
       run: mypy .
@@ -69,20 +82,12 @@ jobs:
         REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: test-secret-key
         TESTING: "true"
-      run: |
-        ls -R
-        pytest tests/ -v
+      run: pytest tests/ -v
 
     - name: Audit dependencies for known vulnerabilities
-      run: |
-        python -m pip install pip-audit==2.10.1
-        pip-audit --requirement requirements.txt --progress-spinner off
+      run: python -m pip_audit -r requirements.txt
 
     - name: Check for migration drift
-      # Non-blocking for now: the repo has pre-existing model/migration drift
-      # (user.otp_secret length, webhook_log FK ondelete=CASCADE). Once those are
-      # reconciled with a migration, drop continue-on-error to make this a gate.
-      continue-on-error: true
       env:
         FLASK_APP: hookwise:create_app
         DATABASE_URL: postgresql://hookwise:hookwise_pass@localhost:5432/hookwise_test
