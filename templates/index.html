@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block main_content_class %}container-fluid dashboard-content{% endblock %}
+
 {% block content %}
 <section id="operations-dashboard" class="operations-dashboard page-section" aria-labelledby="operations-dashboard-title">
     <div class="dashboard-heading">
@@ -436,7 +438,7 @@
 
 <div class="row" id="endpoint-grid">
     {% for config in configs %}
-    <div class="col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
+    <div class="col-xxl-4 col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
         <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
             data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
             data-company="{{ config.customer_id_default or '' }}" data-tags="" data-health="{{ config.config_health_status or 'OK' }}"

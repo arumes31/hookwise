@@ -259,7 +259,7 @@
         </div>
     </div>
 
-    <main class="container pb-5 app-content" id="main-content">
+    <main class="{% block main_content_class %}container{% endblock %} pb-5 app-content" id="main-content">
         {% with messages = get_flashed_messages() %}
         {% if messages %}
         {% for message in messages %}

@@ -120,6 +120,10 @@ body {
     padding-top: var(--space-6);
 }
 
+.dashboard-content {
+    --bs-gutter-x: clamp(2rem, 4vw, 4rem);
+}
+
 .page-section {
     margin-bottom: var(--space-7);
 }
