@@ -33,7 +33,6 @@ _PAGE_TITLES = {
 # ---- Dashboard (index) ----
 
 
-
 def _get_aggregated_counts(since: Optional[datetime] = None) -> Dict[str, Dict[str, int]]:
     query = db.session.query(WebhookLog.config_id, WebhookLog.status, func.count(WebhookLog.id))
     if since:
@@ -143,7 +142,7 @@ def _get_navigation_notifications() -> List[Dict[str, Any]]:
                 "title": f"{config.name} needs attention",
                 "message": config.config_health_message or f"Endpoint health is {config.config_health_status.lower()}.",
                 "timestamp": "Endpoint health",
-                "url": url_for("main.edit_endpoint", id=config.id),
+                "url": url_for("main.edit_endpoint", config_id=config.id),
             }
         )
 

@@ -55,7 +55,7 @@ def _append_error_chain(log_entry: WebhookLog, error: BaseException | str, retry
         chain = json.loads(log_entry.error_chain or "[]")
         if not isinstance(chain, list):
             chain = []
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         chain = []
     chain.append(
         {
@@ -77,7 +77,7 @@ def _bounded_retry_policy(config: Optional[WebhookConfig], default_max_retries: 
         max_attempts = max(0, min(int(config.retry_max_attempts), 20))
         base_delay = max(1, min(int(config.retry_base_delay_seconds), 3600))
         max_delay = max(base_delay, min(int(config.retry_max_delay_seconds), 86400))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return bool(config.retry_enabled), default_max_retries, 1, 300
     return bool(config.retry_enabled), max_attempts, base_delay, max_delay
 
@@ -254,7 +254,7 @@ def verify_endpoint_health() -> None:
                     try:
                         statuses = json.loads(raw)
                         status_cache[bid] = {s["name"] for s in statuses}
-                    except (json.JSONDecodeError, TypeError):
+                    except json.JSONDecodeError, TypeError:
                         pass
 
                 if bid not in status_cache:
@@ -716,7 +716,7 @@ def _check_once_window(start_str: str, end_str: str, now: datetime) -> bool:
         start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
         end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         return start <= now <= end
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
 
 
@@ -740,7 +740,7 @@ def _check_recurring_window(window: Dict[str, Any], w_type: str, start_str: str,
             return start_time <= now_time <= end_time
         # Overnight range (e.g., 22:00 to 02:00)
         return now_time >= start_time or now_time <= end_time
-    except (ValueError, AttributeError, TypeError):
+    except ValueError, AttributeError, TypeError:
         return False
 
 

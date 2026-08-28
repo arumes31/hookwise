@@ -21,8 +21,16 @@ _RANGES = {"24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta
 _MAX_CUSTOM_DAYS = 366
 _MAX_ANALYTICS_ROWS = 50_000
 _KPI_KEYS = {
-    "total_endpoints", "active_endpoints", "total_events", "processed_events", "success_rate",
-    "average_latency", "dead_letter_queue", "skipped_no_action", "failed_events", "failing_endpoints",
+    "total_endpoints",
+    "active_endpoints",
+    "total_events",
+    "processed_events",
+    "success_rate",
+    "average_latency",
+    "dead_letter_queue",
+    "skipped_no_action",
+    "failed_events",
+    "failing_endpoints",
     "stale_endpoints",
 }
 _REFRESH_INTERVALS = {0, 15, 30, 60, 300}
@@ -57,13 +65,10 @@ def _timezone() -> ZoneInfo:
 
 
 def _base_logs(start: datetime, end: datetime) -> Any:
-    return (
-        WebhookLog.query.join(WebhookConfig)
-        .filter(
-            WebhookConfig.is_draft.is_(False),
-            WebhookLog.created_at >= start,
-            WebhookLog.created_at < end,
-        )
+    return WebhookLog.query.join(WebhookConfig).filter(
+        WebhookConfig.is_draft.is_(False),
+        WebhookLog.created_at >= start,
+        WebhookLog.created_at < end,
     )
 
 
@@ -231,7 +236,6 @@ def _analytics() -> Any:
         else float("inf")
     )
 
-
     failure_threshold = (
         mean(failure_rates)
         + 2 * (sum((x - mean(failure_rates)) ** 2 for x in failure_rates) / len(failure_rates)) ** 0.5
@@ -272,9 +276,14 @@ def _preferences() -> Any:
     user_id = str(session["user_id"])
     row = UserPreference.query.filter_by(user_id=user_id).first()
     defaults = {
-        "layout": [], "hidden": [], "compact": False, "interval": 30,
-        "timezone": "UTC", "activity_buffer_size": 200,
-        "browser_notifications_enabled": False, "sound_notifications_enabled": False,
+        "layout": [],
+        "hidden": [],
+        "compact": False,
+        "interval": 30,
+        "timezone": "UTC",
+        "activity_buffer_size": 200,
+        "browser_notifications_enabled": False,
+        "sound_notifications_enabled": False,
     }
     if request.method == "GET":
         if not row:
@@ -284,13 +293,18 @@ def _preferences() -> Any:
             hidden = json.loads(row.hidden_kpis or "[]")
         except json.JSONDecodeError:
             layout, hidden = [], []
-        return jsonify({
-            "layout": layout, "hidden": hidden, "compact": row.dashboard_compact_mode,
-            "interval": row.dashboard_refresh_interval, "timezone": row.timezone or "UTC",
-            "activity_buffer_size": row.activity_buffer_size,
-            "browser_notifications_enabled": row.browser_notifications_enabled,
-            "sound_notifications_enabled": row.sound_notifications_enabled,
-        })
+        return jsonify(
+            {
+                "layout": layout,
+                "hidden": hidden,
+                "compact": row.dashboard_compact_mode,
+                "interval": row.dashboard_refresh_interval,
+                "timezone": row.timezone or "UTC",
+                "activity_buffer_size": row.activity_buffer_size,
+                "browser_notifications_enabled": row.browser_notifications_enabled,
+                "sound_notifications_enabled": row.sound_notifications_enabled,
+            }
+        )
     if request.method == "DELETE":
         if row:
             db.session.delete(row)
@@ -309,7 +323,7 @@ def _preferences() -> Any:
         return jsonify({"error": "Invalid refresh interval or activity buffer size."}), 400
     try:
         ZoneInfo(timezone_name)
-    except (ZoneInfoNotFoundError, ValueError, TypeError):
+    except ZoneInfoNotFoundError, ValueError, TypeError:
         return jsonify({"error": "Invalid timezone."}), 400
     if not User.query.filter_by(id=user_id).first():
         return jsonify({"error": "Preferences require a database-backed user."}), 409
@@ -333,7 +347,9 @@ def _register() -> None:
     main_bp.add_url_rule("/api/dashboard/overview", "dashboard_overview", auth_required(_overview))
     main_bp.add_url_rule("/api/dashboard/analytics", "dashboard_analytics", auth_required(_analytics))
     main_bp.add_url_rule(
-        "/api/dashboard/preferences", "dashboard_preferences", auth_required(_preferences),
+        "/api/dashboard/preferences",
+        "dashboard_preferences",
+        auth_required(_preferences),
         methods=["GET", "PATCH", "DELETE"],
     )
 

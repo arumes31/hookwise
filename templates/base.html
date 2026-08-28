@@ -25,24 +25,7 @@
     <link href="{{ url_for('static', filename='css/prism.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <script>
-        (() => {
-            const nativeFetch = window.fetch.bind(window);
-            window.fetch = (input, init = {}) => {
-                const request = input instanceof Request ? input : null;
-                const method = String(init.method || request?.method || 'GET').toUpperCase();
-                const target = new URL(request?.url || String(input), window.location.href);
-                if (target.origin === window.location.origin && !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
-                    const headers = new Headers(init.headers || request?.headers || {});
-                    if (!headers.has('X-CSRFToken')) {
-                        headers.set('X-CSRFToken', document.querySelector('meta[name="csrf-token"]')?.content || '');
-                    }
-                    init = { ...init, headers };
-                }
-                return nativeFetch(input, init);
-            };
-        })();
-    </script>
+    <script src="{{ url_for('static', filename='js/http.js') }}"></script>
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/socket.io.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/prism.js') }}" defer></script>

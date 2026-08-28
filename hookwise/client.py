@@ -83,7 +83,7 @@ class ConnectWiseClient:
                 continue
             try:
                 parsed = float(value)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
             if isfinite(parsed):
                 return str(int(parsed)) if parsed.is_integer() else str(parsed)

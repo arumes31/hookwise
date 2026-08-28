@@ -230,7 +230,10 @@
 
 
 <nav class="mt-4">
-    <ul class="pagination justify-content-center">
+    <p class="small text-secondary text-center" aria-live="polite">
+        Showing {{ logs|length }} of {{ pagination.total }} webhook events · page {{ pagination.page }} of {{ pagination.pages }}
+    </p>
+    <ul class="pagination justify-content-center" aria-label="Webhook history pages">
         {% if pagination.has_prev %}
         <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
                 href="{{ url_for('main.history', page=pagination.prev_num, search=search, date_from=date_from, date_to=date_to, endpoint_id=endpoint_id, status=status, source_ip=source_ip) }}">Previous</a></li>

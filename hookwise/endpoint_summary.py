@@ -51,9 +51,7 @@ def _token_suffix_matches(config: WebhookConfig, suffix: str) -> bool:
     return len(hint) == 4 and hmac.compare_digest(hint, suffix)
 
 
-def _latest_rows(
-    config_ids: list[str], statuses: tuple[str, ...], cutoff: datetime
-) -> dict[str, dict[str, Any]]:
+def _latest_rows(config_ids: list[str], statuses: tuple[str, ...], cutoff: datetime) -> dict[str, dict[str, Any]]:
     ranked = (
         db.session.query(
             WebhookLog.config_id.label("config_id"),
@@ -104,8 +102,10 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
     stats: dict[str, _EndpointStats] = {}
     for row in rows:
         stats[row[0]] = {
-            "activity": int(row[1] or 0), "good": int(row[2] or 0),
-            "failed": int(row[3] or 0), "queue": int(row[4] or 0),
+            "activity": int(row[1] or 0),
+            "good": int(row[2] or 0),
+            "failed": int(row[3] or 0),
+            "queue": int(row[4] or 0),
             "retries": int(row[5] or 0),
             "latency": round(float(row[6]), 3) if row[6] is not None else None,
         }
@@ -124,23 +124,35 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
         stale = bool(config.is_enabled and last_activity and now - last_activity > timedelta(hours=timeout_hours))
         token_reference = _as_utc(config.last_rotated_at) or _as_utc(config.created_at)
         outcomes = values["good"] + values["failed"]
-        summaries.append({
-            "id": config.id, "name": config.name, "url": f"/w/{config.id}",
-            "board": config.board or "Default", "company": config.customer_id_default or "",
-            "status": "enabled" if config.is_enabled else "paused", "is_draft": bool(config.is_draft),
-            "is_pinned": bool(config.is_pinned), "tags": _tags(config),
-            "health": config.config_health_status or "OK",
-            "is_unhealthy": (config.config_health_status or "OK") in {"WARNING", "ERROR"},
-            "is_stale": stale, "last_success_at": _iso(success["created_at"]) if success else None,
-            "last_failure_at": _iso(failure["created_at"]) if failure else None,
-            "last_error": str(failure["error_message"] or "")[:240] if failure else "",
-            "last_response_time": success["processing_time"] if success else None,
-            "average_latency": values["latency"], "queue_depth": values["queue"],
-            "retry_count": values["retries"],
-            "uptime": round(values["good"] / outcomes * 100, 1) if outcomes else None,
-            "token_age_days": round((now - token_reference).total_seconds() / 86400, 1) if token_reference else None,
-            "last_seen_at": _iso(config.last_seen_at), "activity_count": values["activity"],
-        })
+        summaries.append(
+            {
+                "id": config.id,
+                "name": config.name,
+                "url": f"/w/{config.id}",
+                "board": config.board or "Default",
+                "company": config.customer_id_default or "",
+                "status": "enabled" if config.is_enabled else "paused",
+                "is_draft": bool(config.is_draft),
+                "is_pinned": bool(config.is_pinned),
+                "tags": _tags(config),
+                "health": config.config_health_status or "OK",
+                "is_unhealthy": (config.config_health_status or "OK") in {"WARNING", "ERROR"},
+                "is_stale": stale,
+                "last_success_at": _iso(success["created_at"]) if success else None,
+                "last_failure_at": _iso(failure["created_at"]) if failure else None,
+                "last_error": str(failure["error_message"] or "")[:240] if failure else "",
+                "last_response_time": success["processing_time"] if success else None,
+                "average_latency": values["latency"],
+                "queue_depth": values["queue"],
+                "retry_count": values["retries"],
+                "uptime": round(values["good"] / outcomes * 100, 1) if outcomes else None,
+                "token_age_days": round((now - token_reference).total_seconds() / 86400, 1)
+                if token_reference
+                else None,
+                "last_seen_at": _iso(config.last_seen_at),
+                "activity_count": values["activity"],
+            }
+        )
     return summaries
 
 
@@ -157,10 +169,14 @@ def _register() -> None:
         )
         suffix = request.args.get("token_suffix", "").strip()
         matches = [config.id for config in configs if _token_suffix_matches(config, suffix)] if suffix else []
-        return jsonify({
-            "generated_at": datetime.now(timezone.utc).isoformat(), "endpoints": _build_summaries(configs),
-            "token_matches": matches, "token_search_hint": "Use token: followed by the final four token characters.",
-        })
+        return jsonify(
+            {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "endpoints": _build_summaries(configs),
+                "token_matches": matches,
+                "token_search_hint": "Use token: followed by the final four token characters.",
+            }
+        )
 
 
 _register()

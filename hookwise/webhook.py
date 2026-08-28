@@ -24,7 +24,7 @@ def _endpoint_rate_limit() -> str:
     configured_limit = config.rate_limit_per_minute if config else 60
     try:
         return f"{max(1, min(int(configured_limit), 10000))} per minute"
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return "60 per minute"
 
 

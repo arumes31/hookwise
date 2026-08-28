@@ -140,14 +140,17 @@ def test_debugger_does_not_disclose_parser_exceptions(client):
 def test_untrusted_ui_values_are_not_interpolated_as_html():
     root = Path(__file__).parents[1]
     ux = (root / "static/js/ux.js").read_text(encoding="utf-8")
-    form = (root / "templates/form.html").read_text(encoding="utf-8")
+    form_scripts = "\n".join(
+        (root / "static/js" / filename).read_text(encoding="utf-8")
+        for filename in ("endpoint-form-fields.js", "endpoint-form-actions.js", "endpoint-form.js")
+    )
 
     assert "messageNode.textContent = String(message)" in ux
     assert "<div>${message}</div>" not in ux
-    assert 'value="${path}"' not in form
-    assert 'value="${regex}"' not in form
-    assert "resultPre.textContent = JSON.stringify" in form
-    assert "error.textContent = String(data.message" in form
+    assert 'value="${path}"' not in form_scripts
+    assert 'value="${regex}"' not in form_scripts
+    assert "resultPre.textContent = JSON.stringify" in form_scripts
+    assert "error.textContent = String(data.message" in form_scripts
 
 
 def test_all_workflow_actions_use_immutable_shas():

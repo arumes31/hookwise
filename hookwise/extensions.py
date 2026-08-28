@@ -41,7 +41,11 @@ def header_whitelist():
     return "user_id" in session
 
 
-_socketio_message_queue = build_redis_uri(_redis_password, _redis_host, _redis_port, db=0)
+_socketio_message_queue = (
+    None
+    if os.environ.get("TESTING", "").lower() == "true"
+    else build_redis_uri(_redis_password, _redis_host, _redis_port, db=0)
+)
 
 # SocketIO Security: Read allowed origins from env with a safe default for development
 _allowed_origins_raw = os.environ.get("SOCKETIO_ALLOWED_ORIGINS")

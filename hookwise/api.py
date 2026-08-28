@@ -1,4 +1,4 @@
-"""API, stats, health, admin, history, settings, debug, and metrics routes."""
+"""History, statistics, endpoint diagnostics, and metrics handlers."""
 
 import json
 import os
@@ -47,7 +47,7 @@ def _restore_delivery_control(field: str, value: Any) -> bool | int:
     default, minimum, maximum = _DELIVERY_CONTROL_BOUNDS[field]
     try:
         parsed = int(value) if not isinstance(value, bool) else default
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         parsed = default
     return max(minimum, min(maximum, parsed))
 
@@ -59,7 +59,7 @@ def _routing_regex_matches(pattern: str, value: str) -> bool:
     try:
         match = safe_regex.search(pattern, value, safe_regex.IGNORECASE, timeout=ROUTING_REGEX_TIMEOUT_SECONDS)
         return match is not None
-    except (safe_regex.error, TimeoutError):
+    except safe_regex.error, TimeoutError:
         current_app.logger.warning("Routing regex was invalid or exceeded the execution timeout")
         return False
 
@@ -204,7 +204,7 @@ def _register() -> None:
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
                     payload_data = mask_secrets(json.loads(log.payload))
-                except (json.JSONDecodeError, TypeError):
+                except json.JSONDecodeError, TypeError:
                     pass
 
             history.append(
@@ -325,10 +325,10 @@ def _register() -> None:
             current_app.logger.exception("Failed to replay webhook")
             return jsonify({"status": "error", "message": "Replay failed"}), 500
 
-    @main_bp.route("/history/delete/<id>", methods=["POST"])
+    @main_bp.route("/history/delete/<log_id>", methods=["POST"])
     @auth_required
-    def delete_log(id: str) -> Any:
-        log_entry = WebhookLog.query.get_or_404(id)
+    def delete_log(log_id: str) -> Any:
+        log_entry = WebhookLog.query.get_or_404(log_id)
         db.session.delete(log_entry)
         db.session.commit()
         return jsonify({"status": "success"})
@@ -352,10 +352,10 @@ def _register() -> None:
 
     # --- Endpoint Testing ---
 
-    @main_bp.route("/endpoint/test/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/test/<config_id>", methods=["POST"])
     @auth_required
-    def test_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def test_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         request_id = f"test_{int(time.time())}"
         data = {
             "monitor": {"name": f"Test Monitor for {config.name}"},
@@ -367,7 +367,7 @@ def _register() -> None:
         }
         now = datetime.now(timezone.utc)
         log_entry = WebhookLog(
-            config_id=id,
+            config_id=config_id,
             request_id=request_id,
             correlation_id=request_id[:100],
             payload=json.dumps(data),
@@ -378,15 +378,15 @@ def _register() -> None:
         )
         db.session.add(log_entry)
         db.session.commit()
-        process_webhook_task.delay(id, data, request_id, log_id=log_entry.id)
+        process_webhook_task.delay(config_id, data, request_id, log_id=log_entry.id)
         log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
         return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
 
-    @main_bp.route("/endpoint/dry-run/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/dry-run/<config_id>", methods=["POST"])
     @auth_required
-    def dry_run_endpoint(id: str) -> Any:
+    def dry_run_endpoint(config_id: str) -> Any:
         """Simulate webhook processing without calling ConnectWise or Redis."""
-        config = WebhookConfig.query.get_or_404(id)
+        config = WebhookConfig.query.get_or_404(config_id)
         try:
             data = request.get_json(force=True, silent=True) or {}
         except Exception:
@@ -565,26 +565,24 @@ def _register() -> None:
                 "response_ms": round((_time.monotonic() - t0) * 1000),
             }
 
-    @main_bp.route("/health/llm")
     @auth_required
     def health_llm() -> Any:
         return jsonify(_get_llm_health())
 
-    @main_bp.route("/api/health/llm")
     @auth_required
     def api_health_llm() -> Any:
         return jsonify(_get_llm_health())
 
-    @main_bp.route("/endpoint/dry-run-llm/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/dry-run-llm/<config_id>", methods=["POST"])
     @auth_required
-    def dry_run_llm(id: str) -> Any:
+    def dry_run_llm(config_id: str) -> Any:
         """Enqueue an LLM RCA task and return the task_id immediately — avoids proxy timeouts."""
         try:
-            config = WebhookConfig.query.get_or_404(id)
+            config = WebhookConfig.query.get_or_404(config_id)
             data = request.get_json(force=True, silent=True) or {}
             from .tasks import run_llm_rca
 
-            task = run_llm_rca.delay(id, data, config.ai_prompt_template)
+            task = run_llm_rca.delay(config_id, data, config.ai_prompt_template)
             return jsonify({"task_id": task.id})
         except Exception as e:
             import logging as _logging
@@ -759,7 +757,6 @@ def _register() -> None:
 
     # --- ConnectWise Proxy ---
 
-    @main_bp.route("/api/cw/boards")
     @auth_required
     def get_cw_boards() -> Any:
         cache_key = "hookwise_cw_boards"
@@ -771,7 +768,6 @@ def _register() -> None:
             redis_client.set(cache_key, json.dumps(boards), ex=3600)
         return jsonify(boards)
 
-    @main_bp.route("/api/cw/priorities")
     @auth_required
     def get_cw_priorities() -> Any:
         cache_key = "hookwise_cw_priorities"
@@ -783,7 +779,6 @@ def _register() -> None:
             redis_client.set(cache_key, json.dumps(priorities), ex=86400)
         return jsonify(priorities)
 
-    @main_bp.route("/api/cw/statuses/<board_id>")
     @auth_required
     def get_cw_statuses(board_id: str) -> Any:
         cache_key = f"hookwise_cw_statuses_{board_id}"
@@ -794,7 +789,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(statuses), ex=3600)
         return jsonify(statuses)
 
-    @main_bp.route("/api/cw/types/<board_id>")
     @auth_required
     def get_cw_types(board_id: str) -> Any:
         cache_key = f"hookwise_cw_types_{board_id}"
@@ -805,7 +799,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(types), ex=3600)
         return jsonify(types)
 
-    @main_bp.route("/api/cw/subtypes/<board_id>")
     @auth_required
     def get_cw_subtypes(board_id: str) -> Any:
         cache_key = f"hookwise_cw_subtypes_{board_id}"
@@ -816,7 +809,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(subtypes), ex=3600)
         return jsonify(subtypes)
 
-    @main_bp.route("/api/cw/items/<board_id>")
     @auth_required
     def get_cw_items(board_id: str) -> Any:
         cache_key = f"hookwise_cw_items_{board_id}"
@@ -827,7 +819,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(items), ex=3600)
         return jsonify(items)
 
-    @main_bp.route("/api/cw/companies")
     @auth_required
     def get_cw_companies() -> Any:
         search = request.args.get("search")
@@ -843,7 +834,6 @@ def _register() -> None:
 
     # --- Health & Infrastructure ---
 
-    @main_bp.route("/readyz", methods=["GET"])
     def readyz() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
@@ -859,7 +849,6 @@ def _register() -> None:
             current_app.logger.exception("Redis readiness check failed")
             return jsonify({"status": "not ready", "reason": "Redis error"}), 503
 
-    @main_bp.route("/health", methods=["GET"])
     def health() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
@@ -874,7 +863,6 @@ def _register() -> None:
         except Exception:
             return jsonify({"status": "error", "message": "Service unreachable"}), 503
 
-    @main_bp.route("/health/services", methods=["GET"])
     @limiter.exempt
     def health_services() -> Tuple[Response, int]:
         health_data = {"redis": "down", "database": "down", "celery": "down", "timestamp": time.time()}
@@ -910,7 +898,6 @@ def _register() -> None:
 
     # --- Admin ---
 
-    @main_bp.route("/admin/maintenance", methods=["GET", "POST"])
     @auth_required
     def maintenance_mode() -> Response:
         if request.method == "POST":
@@ -922,7 +909,6 @@ def _register() -> None:
         mode = redis_client.get("hookwise_maintenance_mode")
         return jsonify({"maintenance_mode": mode and cast(bytes, mode).decode() == "true"})
 
-    @main_bp.route("/settings")
     @auth_required
     def settings() -> Any:
         retention = redis_client.get("hookwise_log_retention_days")
@@ -945,7 +931,6 @@ def _register() -> None:
             user_2fa_enabled=user.is_2fa_enabled,
         )
 
-    @main_bp.route("/settings/update", methods=["POST"])
     @auth_required
     def update_settings() -> Any:
         retention = request.form.get("log_retention_days")
@@ -960,7 +945,6 @@ def _register() -> None:
         flash("Settings updated successfully!")
         return redirect(url_for("main.settings"))
 
-    @main_bp.route("/admin/clear-cache", methods=["POST"])
     @auth_required
     def clear_cache() -> Any:
         count = 0
@@ -974,7 +958,6 @@ def _register() -> None:
             current_app.logger.exception("Failed to clear ConnectWise cache")
             return jsonify({"status": "error", "message": "Failed to clear cache"}), 500
 
-    @main_bp.route("/admin/generate-api-key", methods=["POST"])
     @auth_required
     def generate_api_key() -> Any:
         new_key = secrets.token_urlsafe(64)
@@ -982,7 +965,6 @@ def _register() -> None:
         log_audit("generate_master_api_key", None, "New master API key generated")
         return jsonify({"status": "success", "api_key": new_key})
 
-    @main_bp.route("/admin/llm-test", methods=["POST"])
     @auth_required
     def llm_test() -> Any:
         from .utils import call_llm
@@ -1000,7 +982,6 @@ def _register() -> None:
             return jsonify({"status": "success", "result": result})
         return jsonify({"status": "error", "message": "LLM call failed or returned empty result"}), 500
 
-    @main_bp.route("/admin/backup", methods=["GET"])
     @auth_required
     def backup_config() -> Any:
         configs = WebhookConfig.query.all()
@@ -1011,7 +992,6 @@ def _register() -> None:
             headers={"Content-Disposition": "attachment;filename=hookwise_backup.json"},
         )
 
-    @main_bp.route("/admin/restore", methods=["POST"])
     @auth_required
     def restore_config() -> Any:
         file = request.files.get("backup_file")
@@ -1076,7 +1056,6 @@ def _register() -> None:
             current_app.logger.exception("Failed to import configuration")
             return jsonify({"status": "error", "message": "Configuration import failed"}), 500
 
-    @main_bp.route("/api/feedback", methods=["POST"])
     @auth_required
     def submit_feedback() -> Any:
         data = request.json
@@ -1200,6 +1179,17 @@ def _register() -> None:
         except Exception:
             pass
         return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
+    from .admin_api import register_admin_routes
+    from .backup_api import register_backup_routes
+    from .connectwise_api import register_connectwise_routes
+    from .health_api import register_health_routes
+
+    handlers = locals()
+    register_health_routes(main_bp, handlers)
+    register_connectwise_routes(main_bp, handlers)
+    register_admin_routes(main_bp, handlers)
+    register_backup_routes(main_bp, handlers)
 
 
 _register()

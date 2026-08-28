@@ -106,7 +106,7 @@ def _safe_json(value: str | None) -> Any:
         return {}
     try:
         return mask_secrets(json.loads(value))
-    except (TypeError, json.JSONDecodeError):
+    except TypeError, json.JSONDecodeError:
         return {}
 
 
@@ -155,19 +155,28 @@ def _register() -> None:
         try:
             page = max(1, min(request.args.get("page", 1, type=int), 10_000))
             per_page = max(1, min(request.args.get("per_page", 25, type=int), 100))
-            pagination = (
-                _filter_logs(request.args)
-                .order_by(WebhookLog.created_at.desc())
-                .paginate(page=page, per_page=per_page, error_out=False)
-            )
+            query = _filter_logs(request.args)
+            include_total = request.args.get("include_total", "true").lower() != "false"
+            total = query.order_by(None).count() if include_total else None
+            rows = query.order_by(WebhookLog.created_at.desc()).offset((page - 1) * per_page).limit(per_page + 1).all()
         except ValueError:
             return jsonify({"error": "Invalid history filters."}), 400
+        pages = ((total + per_page - 1) // per_page) if total is not None else None
+        metadata = {
+            "page": page,
+            "per_page": per_page,
+            "has_previous": page > 1,
+            "has_next": len(rows) > per_page,
+            "total": total,
+            "pages": pages,
+        }
         return jsonify(
             {
-                "items": [log.to_dict() for log in pagination.items],
-                "total": pagination.total,
+                "items": [log.to_dict() for log in rows[:per_page]],
+                "total": total,
                 "page": page,
-                "pages": pagination.pages,
+                "pages": pages,
+                "pagination": metadata,
             }
         )
 
@@ -275,7 +284,7 @@ def _register() -> None:
         for log in logs:
             try:
                 queued.append(_queue_replay(log, json.loads(log.payload), "dlq"))
-            except (ValueError, json.JSONDecodeError):
+            except ValueError, json.JSONDecodeError:
                 errors.append(log.id)
                 db.session.rollback()
         return jsonify({"queued": queued, "errors": errors}), 202 if queued else 409
@@ -298,10 +307,15 @@ def _register() -> None:
             except Exception:
                 current = 0
             limit = int(config.rate_limit_per_minute or 60)
-            endpoint_limits.append({
-                "id": config.id, "name": config.name, "rate_limit_per_minute": limit,
-                "current_minute": current, "utilization_percent": round(current / limit * 100, 1),
-            })
+            endpoint_limits.append(
+                {
+                    "id": config.id,
+                    "name": config.name,
+                    "rate_limit_per_minute": limit,
+                    "current_minute": current,
+                    "utilization_percent": round(current / limit * 100, 1),
+                }
+            )
         quota = None
         try:
             values = redis_client.mget([f"hookwise:cw:quota:{name}" for name in ("limit", "remaining", "reset")])

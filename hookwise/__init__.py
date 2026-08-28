@@ -6,6 +6,7 @@ from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
 from flask import Flask, Response, g, jsonify, redirect, render_template, request
+from flask_wtf.csrf import CSRFError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -62,9 +63,7 @@ def _configure_app(app: Flask) -> None:
     _secure_default = "false" if os.environ.get("TESTING", "").lower() == "true" else "true"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.config["SESSION_COOKIE_SECURE"] = (
-        os.environ.get("SESSION_COOKIE_SECURE", _secure_default).lower() == "true"
-    )
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", _secure_default).lower() == "true"
 
     # Reject oversized bodies before they are buffered into memory (protects the
     # ingestion worker from memory-exhaustion payloads). Configurable in KB.
@@ -247,6 +246,12 @@ def _register_error_handlers(app: Flask) -> None:
         if request.path.startswith("/w/") or request.path.startswith("/api/"):
             return jsonify({"status": "error", "message": "Payload too large"}), 413
         return render_template("500.html"), 413
+
+    @app.errorhandler(CSRFError)
+    def csrf_error(error: CSRFError) -> Any:
+        if request.path.startswith("/api/") or request.headers.get("Sec-Fetch-Dest") == "empty":
+            return jsonify({"status": "error", "message": f"CSRF validation failed: {error.description}"}), 400
+        return render_template("400.html", message="The page security token expired. Please try again."), 400
 
 
 def _register_commands(app: Flask) -> None:

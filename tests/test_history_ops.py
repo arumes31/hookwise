@@ -77,10 +77,15 @@ def test_advanced_filters_saved_searches_and_operations(app, client):
     assert operations.status_code == 200
     data = operations.get_json()
     assert data["dead_letter_queue"] == 1
-    assert data["endpoint_rate_limits"] == [{
-        "id": "history-ops-endpoint", "name": "NOC", "rate_limit_per_minute": 90,
-        "current_minute": 0, "utilization_percent": 0.0,
-    }]
+    assert data["endpoint_rate_limits"] == [
+        {
+            "id": "history-ops-endpoint",
+            "name": "NOC",
+            "rate_limit_per_minute": 90,
+            "current_minute": 0,
+            "utilization_percent": 0.0,
+        }
+    ]
 
     diagnostics = client.get("/api/history/history-ops-log/diagnostics")
     assert diagnostics.status_code == 200

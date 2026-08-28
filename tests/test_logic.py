@@ -183,9 +183,7 @@ def test_all_excluded_cipp_certificate_results_skip_ticket(mock_cw, mock_redis, 
 @patch("hookwise.tasks.cw_client")
 def test_mixed_cipp_certificate_results_only_render_included_apps(mock_cw, mock_redis, mock_metrics_redis, app):
     mock_redis.get.side_effect = lambda key: (
-        b"Hornetsecurity 365 Permission Manager Application"
-        if key == CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY
-        else None
+        b"Hornetsecurity 365 Permission Manager Application" if key == CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY else None
     )
     mock_cw.find_open_ticket.return_value = None
     mock_cw.create_ticket.return_value = {"id": 45}

@@ -13,6 +13,7 @@ from hookwise.models import WebhookConfig
 def app():
     return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
+
 @pytest.fixture
 def client(app):
     with app.app_context():
@@ -21,12 +22,14 @@ def client(app):
         db.session.remove()
         db.drop_all()
 
+
 @pytest.fixture(autouse=True)
 def mock_redis():
     """Mock Redis to avoid connection errors in before_request check_maintenance."""
     with patch("hookwise.tasks.redis_client") as mock:
         mock.get.return_value = None
         yield mock
+
 
 def test_restore_config_functionality(client, app):
     """Test that restore_config correctly updates and creates configurations."""
@@ -39,7 +42,7 @@ def test_restore_config_functionality(client, app):
         # 2. Prepare restore data (one update, one new)
         restore_data = [
             {"id": "existing-1", "name": "Updated Name", "board": "New Board"},
-            {"id": "new-2", "name": "Brand New", "board": "Brand New Board"}
+            {"id": "new-2", "name": "Brand New", "board": "Brand New Board"},
         ]
 
         data = io.BytesIO(json.dumps(restore_data).encode("utf-8"))
@@ -52,9 +55,7 @@ def test_restore_config_functionality(client, app):
 
         # 4. Call restore endpoint
         response = client.post(
-            "/admin/restore",
-            data={"backup_file": (data, "backup.json")},
-            content_type="multipart/form-data"
+            "/admin/restore", data={"backup_file": (data, "backup.json")}, content_type="multipart/form-data"
         )
 
         assert response.status_code == 200
@@ -69,6 +70,7 @@ def test_restore_config_functionality(client, app):
         assert new_cfg is not None
         assert new_cfg.name == "Brand New"
         assert new_cfg.board == "Brand New Board"
+
 
 def test_restore_config_no_n_plus_one(client, app):
     """
@@ -87,9 +89,7 @@ def test_restore_config_no_n_plus_one(client, app):
         # We patch WebhookConfig.query.get to see if it is called
         with patch.object(WebhookConfig.query, "get") as mock_get:
             response = client.post(
-                "/admin/restore",
-                data={"backup_file": (data, "backup.json")},
-                content_type="multipart/form-data"
+                "/admin/restore", data={"backup_file": (data, "backup.json")}, content_type="multipart/form-data"
             )
 
             assert response.status_code == 200
@@ -106,15 +106,17 @@ def test_restore_config_applies_bounded_delivery_controls(client, app):
         db.session.add(config)
         db.session.commit()
 
-        restored = [{
-            "id": config.id,
-            "name": config.name,
-            "retry_enabled": False,
-            "retry_max_attempts": 999,
-            "retry_base_delay_seconds": 120,
-            "retry_max_delay_seconds": 2,
-            "rate_limit_per_minute": 0,
-        }]
+        restored = [
+            {
+                "id": config.id,
+                "name": config.name,
+                "retry_enabled": False,
+                "retry_max_attempts": 999,
+                "retry_base_delay_seconds": 120,
+                "retry_max_delay_seconds": 2,
+                "rate_limit_per_minute": 0,
+            }
+        ]
         with client.session_transaction() as sess:
             sess.update(user_id="admin-id", username="admin", role="admin")
 

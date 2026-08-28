@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   hookwise-proxy:
     image: ghcr.io/arumes31/hookwise:latest
@@ -11,7 +9,7 @@ services:
       - "CW_URL=https://api-na.myconnectwise.net/v4_6_release/apis/3.0"
       - "CW_COMPANY=your_company_id"
       - "CW_PUBLIC_KEY=your_public_key"
-      - "CW_PRIVATE_KEY=your_private_key"
+      - "CW_PRIVATE_KEY=${CW_PRIVATE_KEY:?Set CW_PRIVATE_KEY in .env}"
       - "CW_CLIENT_ID=your_client_id"
       - "CW_TICKET_PREFIX=Alert:"
       - "CW_SERVICE_BOARD=Service Board"
@@ -20,39 +18,57 @@ services:
       - "CW_DEFAULT_COMPANY_ID=ConnectWise_Company_ID_For_Tickets"
       - "REDIS_HOST=redis"
       - "REDIS_PORT=6379"
-      - "REDIS_PASSWORD=your_secure_redis_password"
-      - "CELERY_BROKER_URL=redis://:your_secure_redis_password@redis:6379/0"
-      - "DATABASE_URL=postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
+      - "REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
+      - "CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0"
+      - "DATABASE_URL=postgresql://${POSTGRES_USER:-hookwise}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-hookwise}"
       - "POSTGRES_USER=hookwise"
-      - "POSTGRES_PASSWORD=hookwise_pass"
+      - "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       - "POSTGRES_DB=hookwise"
-      - "SECRET_KEY=your_very_secret_key"
+      - "SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}"
       - "PORT=5000"
       - "DEBUG_MODE=false"
       - "FORCE_HTTPS=false"
       - "USE_PROXY=false"
       - "PROXY_FIX_COUNT=1"
-      - "ENCRYPTION_KEY=your_32_byte_base64_encryption_key"
+      - "ENCRYPTION_KEY=${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}"
       - "GUI_USERNAME=admin"
-      - "GUI_PASSWORD=admin"
+      - "GUI_PASSWORD=${GUI_PASSWORD:?Set GUI_PASSWORD in .env}"
       - "GUI_TRUSTED_IPS="
       - "LOG_RETENTION_DAYS=30"
       - "OLLAMA_HOST=http://hookwise-llm:11434"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - redis
-      - postgres
-      - hookwise-llm
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-llm:
+        condition: service_healthy
 
   hookwise-worker:
     image: ghcr.io/arumes31/hookwise:latest
     container_name: hookwise-worker
     restart: unless-stopped
-    command: celery -A worker.celery worker --loglevel=info -P eventlet -c 100
+    command: celery -A worker.celery worker --loglevel=info -P gevent -c 100
     environment: *env
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A worker.celery inspect ping --timeout 5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - redis
-      - postgres
-      - hookwise-llm
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-llm:
+        condition: service_healthy
 
   hookwise-beat:
     image: ghcr.io/arumes31/hookwise:latest
@@ -60,20 +76,35 @@ services:
     restart: unless-stopped
     command: celery -A worker.celery beat --loglevel=info
     environment: *env
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     depends_on:
-      - redis
-      - postgres
-      - hookwise-llm
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-llm:
+        condition: service_healthy
 
   hookwise-llm:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.33.1
     container_name: hookwise-llm
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   redis:
-    image: redis:alpine
+    image: redis:8.10.1-alpine
     container_name: hookwise-redis
     restart: unless-stopped
     command: >
@@ -82,17 +113,27 @@ services:
       - "REDIS_PASSWORD=your_secure_redis_password"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.14-alpine
     container_name: hookwise-db
     restart: unless-stopped
     environment:
       - "POSTGRES_USER=hookwise"
-      - "POSTGRES_PASSWORD=hookwise_pass"
+      - "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       - "POSTGRES_DB=hookwise"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   redis_data:

@@ -37,19 +37,19 @@ def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: 
     try:
         parsed = int(val)
         return max(min_val, min(max_val, parsed))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return default
 
 
 def _register_crud_routes(main_bp: Any) -> None:
-    @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/toggle-pin/<config_id>", methods=["POST"])
     @auth_required
-    def toggle_pin(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def toggle_pin(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         config.is_pinned = not config.is_pinned
         db.session.commit()
         action = "pin" if config.is_pinned else "unpin"
-        log_audit(action, id, f"Endpoint {config.name} {action}ned")
+        log_audit(action, config_id, f"Endpoint {config.name} {action}ned")
         return jsonify({"status": "success", "is_pinned": config.is_pinned})
 
     @main_bp.route("/endpoint/reorder", methods=["POST"])
@@ -133,10 +133,10 @@ def _register_crud_routes(main_bp: Any) -> None:
             return redirect(url_for("main.index", confetti="true"))
         return render_template("form.html", base_url=request.url_root.rstrip("/"))
 
-    @main_bp.route("/endpoint/edit/<id>", methods=["GET", "POST"])
+    @main_bp.route("/endpoint/edit/<config_id>", methods=["GET", "POST"])
     @auth_required
-    def edit_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def edit_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         if request.method == "POST":
             config.name = request.form.get("name")
             config.customer_id_default = request.form.get("customer_id_default")
@@ -189,28 +189,28 @@ def _register_crud_routes(main_bp: Any) -> None:
             return redirect(url_for("main.index"))
         return render_template("form.html", config=config, base_url=request.url_root.rstrip("/"))
 
-    @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/toggle/<config_id>", methods=["POST"])
     @auth_required
-    def toggle_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def toggle_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         config.is_enabled = not config.is_enabled
         db.session.commit()
         action = "enable" if config.is_enabled else "disable"
-        log_audit(action, id, f"Endpoint {config.name} {action}d")
+        log_audit(action, config_id, f"Endpoint {config.name} {action}d")
         return jsonify({"status": "success", "is_enabled": config.is_enabled})
 
-    @main_bp.route("/endpoint/rotate-token/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/rotate-token/<config_id>", methods=["POST"])
     @auth_required
-    def rotate_token(id: str) -> Any:
+    def rotate_token(config_id: str) -> Any:
         if denied := _operator_denied():
             return denied
-        config = WebhookConfig.query.get_or_404(id)
+        config = WebhookConfig.query.get_or_404(config_id)
         new_token = secrets.token_urlsafe(32)
         config.bearer_token = encrypt_string(new_token)
         config.bearer_token_last4 = new_token[-4:]
         config.last_rotated_at = datetime.now(timezone.utc)
         db.session.commit()
-        log_audit("rotate_token", id, f"Token for {config.name} rotated")
+        log_audit("rotate_token", config_id, f"Token for {config.name} rotated")
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
             response = jsonify({"status": "success", "token": new_token})
@@ -220,24 +220,24 @@ def _register_crud_routes(main_bp: Any) -> None:
         flash(f'Token for "{config.name}" rotated successfully!')
         return redirect(url_for("main.index"))
 
-    @main_bp.route("/endpoint/quick-update/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/quick-update/<config_id>", methods=["POST"])
     @auth_required
-    def quick_update_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def quick_update_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         field = request.json.get("field")
         value = request.json.get("value")
 
         if field in ["board", "priority", "close_status", "status"]:
             setattr(config, field, value)
             db.session.commit()
-            log_audit("quick_update", id, f"Endpoint {config.name} {field} updated to {value}")
+            log_audit("quick_update", config_id, f"Endpoint {config.name} {field} updated to {value}")
             return jsonify({"status": "success"})
         return jsonify({"status": "error", "message": "Invalid field"}), 400
 
-    @main_bp.route("/endpoint/clone/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/clone/<config_id>", methods=["POST"])
     @auth_required
-    def clone_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def clone_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         new_config = WebhookConfig(
             name=f"{config.name} (Copy)",
             customer_id_default=config.customer_id_default,
@@ -281,12 +281,12 @@ def _register_crud_routes(main_bp: Any) -> None:
         flash(f'Endpoint "{config.name}" cloned successfully!')
         return redirect(url_for("main.index"))
 
-    @main_bp.route("/endpoint/token/<id>")
+    @main_bp.route("/endpoint/token/<config_id>")
     @auth_required
-    def get_endpoint_token(id: str) -> Any:
+    def get_endpoint_token(config_id: str) -> Any:
         if denied := _operator_denied():
             return denied
-        config = WebhookConfig.query.get_or_404(id)
+        config = WebhookConfig.query.get_or_404(config_id)
         token = decrypt_string(config.bearer_token)
         if not config.bearer_token_last4:
             config.bearer_token_last4 = token[-4:]
@@ -295,15 +295,15 @@ def _register_crud_routes(main_bp: Any) -> None:
         response.headers["Cache-Control"] = "no-store"
         return response
 
-    @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/delete/<config_id>", methods=["POST"])
     @auth_required
-    def delete_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def delete_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         name = config.name
-        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
+        WebhookLog.query.filter_by(config_id=config_id).delete(synchronize_session=False)
         db.session.delete(config)
         db.session.commit()
-        log_audit("delete", id, f"Endpoint {name} deleted")
+        log_audit("delete", config_id, f"Endpoint {name} deleted")
         flash(f'Endpoint "{name}" deleted.')
         return redirect(url_for("main.index"))
 

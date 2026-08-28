@@ -16,6 +16,7 @@ def app():
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
     return app
 
+
 @pytest.fixture
 def client(app):
     with app.app_context():
@@ -24,12 +25,14 @@ def client(app):
         db.session.remove()
         db.drop_all()
 
+
 @pytest.fixture(autouse=True)
 def mock_redis():
-    with patch("hookwise.tasks.redis_client") as mock_tasks,          patch("hookwise.api.redis_client") as mock_api:
+    with patch("hookwise.tasks.redis_client") as mock_tasks, patch("hookwise.api.redis_client") as mock_api:
         mock_tasks.get.return_value = None
         mock_api.get.return_value = None
         yield mock_tasks, mock_api
+
 
 def login(client):
     with client.session_transaction() as sess:
@@ -44,6 +47,7 @@ def test_llm_test_no_auth(client):
     assert response.status_code == 302
     assert "/login" in response.headers["Location"]
 
+
 def test_llm_test_invalid_json(client):
     """Test /admin/llm-test with invalid JSON body (not a dict)."""
     login(client)
@@ -53,6 +57,7 @@ def test_llm_test_invalid_json(client):
     assert response.json["status"] == "error"
     assert "JSON body as dictionary is required" in response.json["message"]
 
+
 def test_llm_test_missing_prompt(client):
     """Test /admin/llm-test with missing prompt."""
     login(client)
@@ -60,6 +65,7 @@ def test_llm_test_missing_prompt(client):
     assert response.status_code == 400
     assert response.json["status"] == "error"
     assert "Prompt is required" in response.json["message"]
+
 
 @patch("hookwise.utils.call_llm")
 def test_llm_test_call_failed(mock_call, client):
@@ -70,6 +76,7 @@ def test_llm_test_call_failed(mock_call, client):
     assert response.status_code == 500
     assert response.json["status"] == "error"
     assert "LLM call failed" in response.json["message"]
+
 
 @patch("hookwise.utils.call_llm")
 def test_llm_test_success(mock_call, client):

@@ -210,7 +210,7 @@ class WebhookLog(Base):
             from .utils import mask_secrets
 
             return json.dumps(mask_secrets(json.loads(value)))
-        except (TypeError, json.JSONDecodeError):
+        except TypeError, json.JSONDecodeError:
             return value
 
     @property

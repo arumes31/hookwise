@@ -68,11 +68,11 @@ def _seed(app):
             ("processed", "create", "10.0.0.1"),
             ("processed", "update", "10.0.0.1"),
             ("processed", "close", "10.0.0.2"),
-            ("processed", None, "10.0.0.2"),      # processed, no ticket action
-            ("skipped", None, "10.0.0.3"),        # skipped -> no action
+            ("processed", None, "10.0.0.2"),  # processed, no ticket action
+            ("skipped", None, "10.0.0.3"),  # skipped -> no action
             ("failed", "create", "192.168.1.9"),  # transient failure
-            ("dlq", None, "192.168.1.9"),         # dead-lettered
-            ("dlq", "create", "192.168.1.9"),     # dead-lettered
+            ("dlq", None, "192.168.1.9"),  # dead-lettered
+            ("dlq", "create", "192.168.1.9"),  # dead-lettered
         ]
         for i, (status, action, ip) in enumerate(rows):
             db.session.add(

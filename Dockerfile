@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir --require-hashes --prefix=/install -r requirements.txt \
+    && pip check
 
 # Stage 2: Runtime
 FROM python:3.14.6-slim AS runtime
@@ -27,9 +28,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 COPY --from=builder /install /usr/local
 COPY --chown=appuser:appuser . .
-
-# Remove unnecessary files from production image
-RUN rm -rf tests .venv .git .pytest_cache .qodo
 
 # Copy and set entrypoint (as root)
 COPY docker-entrypoint.sh /usr/local/bin/

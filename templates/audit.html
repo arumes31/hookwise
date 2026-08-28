@@ -42,7 +42,10 @@
 </div>
 
 <nav class="mt-4">
-    <ul class="pagination justify-content-center">
+    <p class="small text-secondary text-center" aria-live="polite">
+        Showing {{ logs|length }} of {{ pagination.total }} audit entries · page {{ pagination.page }} of {{ pagination.pages }}
+    </p>
+    <ul class="pagination justify-content-center" aria-label="Audit log pages">
         {% if pagination.has_prev %}
         <li class="page-item">
             <a class="page-link bg-dark border-secondary text-white"

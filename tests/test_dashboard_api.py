@@ -157,11 +157,13 @@ def test_dashboard_scripts_support_htmx_navigation(client):
     html = client.get("/").get_data(as_text=True)
     root = Path(__file__).resolve().parents[1]
     dashboard = (root / "static/js/dashboard.js").read_text(encoding="utf-8")
+    dashboard_page = (root / "static/js/dashboard-page.js").read_text(encoding="utf-8")
     activity = (root / "static/js/activity.js").read_text(encoding="utf-8")
 
-    assert 'content=\'{"historyCacheSize": 0}\'' in html
-    assert "document.readyState === 'loading'" in html
-    assert "initLiveActivityStream();" in html
+    assert "content='{\"historyCacheSize\": 0}'" in html
+    assert "static/js/dashboard-page.js" in html
+    assert "document.readyState === 'loading'" in dashboard_page
+    assert "initLiveActivityStream();" in dashboard_page
     assert "new AbortController()" in dashboard
     assert "htmx:beforeCleanupElement" in dashboard
     assert "if (!isActive(root)) return;" in dashboard

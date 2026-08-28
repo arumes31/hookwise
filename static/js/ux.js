@@ -177,7 +177,6 @@ function initTooltips(container = document) {
 
 
 function initToasts() {
-    console.log('Toasts initialized');
 }
 
 function showToast(message, type = 'info') {
