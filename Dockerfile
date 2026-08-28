@@ -3,7 +3,9 @@ FROM python:3.14.6-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     libpq-dev \
@@ -19,7 +21,9 @@ FROM python:3.14.6-slim AS runtime
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     libpq5 \
     postgresql-client \
     netcat-openbsd \
