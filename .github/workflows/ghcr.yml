@@ -64,8 +64,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=hookwise-${{ runner.arch }}
           cache-to: type=gha,mode=max,scope=hookwise-${{ runner.arch }}
-          provenance: mode=max
-          sbom: true
+          # Docker's local image exporter cannot load the manifest list that
+          # attestations create. Publish attestations only for pushed images;
+          # PR builds remain loadable for the vulnerability scan below.
+          provenance: ${{ github.event_name == 'push' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name == 'push' }}
 
       - name: Scan image for high-severity vulnerabilities
         if: github.event_name == 'pull_request'
