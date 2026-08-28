@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from functools import lru_cache, wraps
 from typing import Any, Dict, Optional, cast
@@ -18,6 +19,14 @@ from .extensions import socketio
 logger = logging.getLogger(__name__)
 
 
+def _bounded_timeout(name: str, default: float, maximum: float) -> float:
+    try:
+        configured = float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return min(max(configured, 0.1), maximum)
+
+
 def call_llm(
     prompt: str,
     system_prompt: str = (
@@ -26,23 +35,42 @@ def call_llm(
     ),
 ) -> Optional[str]:
     ollama_host = os.environ.get("OLLAMA_HOST", "http://hookwise-llm:11434")
-    try:
-        response = requests.post(
-            f"{ollama_host}/api/generate",
-            json={
-                "model": "phi3",
-                "prompt": prompt,
-                "system": system_prompt,
-                "stream": False,
-                "options": {"num_predict": int(os.environ.get("LLM_MAX_TOKENS", "512")), "temperature": 0.1},
-            },
-            timeout=int(os.environ.get("LLM_TIMEOUT", "360")),
-        )
-        response.raise_for_status()
-        return cast(str, response.json().get("response", "").strip())
-    except Exception as e:
-        logger.error(f"Error calling LLM: {e}")
+    timeout = (
+        _bounded_timeout("LLM_CONNECT_TIMEOUT", 5.0, 30.0),
+        _bounded_timeout("LLM_TIMEOUT", 180.0, 600.0),
+    )
+    payload = {
+        "model": "phi3",
+        "prompt": prompt,
+        "system": system_prompt,
+        "stream": False,
+        "options": {"num_predict": int(os.environ.get("LLM_MAX_TOKENS", "512")), "temperature": 0.1},
+    }
+
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                f"{ollama_host}/api/generate",
+                json=payload,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            return cast(str, response.json().get("response", "").strip())
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            if attempt == 0:
+                time.sleep(0.25)
+                continue
+            logger.error("Error calling LLM after bounded retry: %s", exc)
+        except requests.exceptions.HTTPError as exc:
+            if attempt == 0 and exc.response is not None and exc.response.status_code in {429, 502, 503, 504}:
+                time.sleep(0.25)
+                continue
+            logger.error("LLM returned an HTTP error: %s", exc)
+        except (TypeError, ValueError, requests.exceptions.RequestException) as exc:
+            logger.error("Error calling LLM: %s", exc)
         return None
+
+    return None
 
 
 def check_auth(username: str, password: str) -> bool:

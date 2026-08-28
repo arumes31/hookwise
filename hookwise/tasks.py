@@ -131,7 +131,7 @@ celery.Task = ContextTask
 
 
 @celery.task(name="hookwise.run_llm_rca")  # type: ignore[untyped-decorator]
-def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]) -> dict:
+def run_llm_rca(config_id: str, payload: dict[str, Any], ai_prompt_template: Optional[str]) -> dict[str, Any]:
     """Run LLM root cause analysis in background so the HTTP request returns immediately."""
     from .utils import call_llm
 
@@ -633,8 +633,6 @@ def _check_recurring_window(window: Dict[str, Any], w_type: str, start_str: str,
 
 def _resolve_timeout_alert(config: WebhookConfig) -> None:
     """Update heartbeat timestamp and close any open timeout tickets."""
-    from .models import db
-
     config.last_seen_at = datetime.now(timezone.utc)
     config.last_stale_alert_at = None
 

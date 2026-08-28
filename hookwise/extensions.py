@@ -10,7 +10,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 
 
-def build_redis_uri(password, host, port, db=0):
+def build_redis_uri(password: str | None, host: str, port: str | int, db: int = 0) -> str:
     """Securely build a Redis URI with URL-encoded password."""
     quoted_password = urllib.parse.quote(password, safe="") if password else None
     if quoted_password:
@@ -35,7 +35,7 @@ limiter = Limiter(
 
 
 @limiter.request_filter
-def header_whitelist():
+def header_whitelist() -> bool:
     from flask import session
 
     return "user_id" in session

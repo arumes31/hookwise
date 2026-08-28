@@ -30,6 +30,32 @@ HookWise is a highly performant, general-purpose webhook router designed to brid
 
 ---
 
+## Secure deployment
+
+1. Copy `.env.example` to `.env`. The example intentionally contains no
+   credentials and Compose refuses to start while required values are empty.
+2. Generate independent secrets instead of reusing passwords:
+
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(48))"
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+   Use the first command for `SECRET_KEY` and password fields. Use the second
+   command only for `ENCRYPTION_KEY`, and back that key up securely: losing it
+   makes stored encrypted values unreadable.
+3. Fill in the ConnectWise values and keep `.env` outside backups, tickets,
+   logs, and version control.
+4. For `docker-compose.ghcr.yml`, set `HOOKWISE_IMAGE` to a reviewed immutable
+   digest such as `ghcr.io/arumes31/hookwise@sha256:<digest>`. Tags alone are
+   intentionally rejected.
+
+The local Compose definition builds the checked-out source. Both definitions
+drop Linux capabilities from application containers and prevent privilege
+escalation. Put HookWise behind a TLS reverse proxy for production deployments.
+
+---
+
 ## 🏗️ Architecture & Flow
 
 ### System Overview
@@ -252,6 +278,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
 | `FORCE_HTTPS` | Redirects all traffic to TLS. |
 | `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
+| `LLM_CONNECT_TIMEOUT` | Seconds allowed to establish an LLM connection (Default: `5`, maximum: `30`). |
 | `LLM_TIMEOUT` | Seconds to wait for the LLM to respond (Default: `180`). Increase on slow/CPU-only hosts. |
 
 ---

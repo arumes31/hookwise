@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import time
+from collections.abc import Iterator
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Dict, Tuple, cast
@@ -13,9 +14,9 @@ from flask import Response, current_app, flash, jsonify, redirect, render_templa
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
 
-from .extensions import csrf, db, limiter
+from .extensions import csrf, db, limiter, redis_client
 from .models import AuditLog, User, WebhookConfig, WebhookLog
-from .tasks import celery, cw_client, process_webhook_task, redis_client
+from .tasks import celery, cw_client, process_webhook_task
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
     auth_required,
@@ -62,7 +63,7 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
     now: date = datetime.now(timezone.utc).date()
 
     if period == "weekly":
-        def generate_weeks(start_date: date, count: int):
+        def generate_weeks(start_date: date, count: int) -> Iterator[tuple[int, int]]:
             seen: set[tuple[int, int]] = set()
             for j in range(60):
                 d = start_date - timedelta(days=j)
@@ -1026,7 +1027,7 @@ def _register() -> None:
         return jsonify({"status": "success"})
 
     def _determine_alert_type(
-        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list[str]
     ) -> None:
         trigger_field = config_data.get("trigger_field", "heartbeat.status")
         actual_val = str(resolve_jsonpath(data, trigger_field))
@@ -1044,7 +1045,7 @@ def _register() -> None:
         steps.append(f"Alert type determined as: {results['alert_type']}")
 
     def _apply_json_mapping(
-        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list[str]
     ) -> None:
         mapping_str = config_data.get("json_mapping")
         if mapping_str:
@@ -1059,7 +1060,7 @@ def _register() -> None:
                 steps.append(f"Error parsing JSON Mapping: {e}")
 
     def _apply_routing_rules(
-        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list[str]
     ) -> None:
         rules_str = config_data.get("routing_rules")
         if rules_str:
@@ -1082,7 +1083,7 @@ def _register() -> None:
                 steps.append(f"Error parsing Routing Rules: {e}")
 
     def _resolve_summary_and_company(
-        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
+        data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list[str]
     ) -> None:
         monitor_name = resolve_monitor_name(data)
         prefix = config_data.get("ticket_prefix", "Alert:")

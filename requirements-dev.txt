@@ -1,0 +1,10 @@
+-r requirements.txt
+
+mypy==2.1.0
+mypy_extensions==1.1.0
+pathspec==1.1.1
+iniconfig==2.3.0
+pluggy==1.6.0
+pytest==9.1.1
+ruff==0.15.19
+types-requests==2.33.0.20260402

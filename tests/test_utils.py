@@ -392,6 +392,18 @@ def test_call_llm_success(mock_post):
     args, kwargs = mock_post.call_args
     assert kwargs["json"]["prompt"] == "test prompt"
     assert "You are a helpful assistant" in kwargs["json"]["system"]
+    assert kwargs["timeout"] == (5.0, 180.0)
+
+
+@patch.dict(os.environ, {"LLM_CONNECT_TIMEOUT": "0", "LLM_TIMEOUT": "9999"})
+@patch("hookwise.utils.requests.post")
+def test_call_llm_bounds_configured_timeouts(mock_post):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": "bounded"}
+    mock_post.return_value = mock_response
+
+    assert call_llm("test prompt") == "bounded"
+    assert mock_post.call_args.kwargs["timeout"] == (0.1, 600.0)
 
 
 @patch("hookwise.utils.requests.post")
@@ -422,14 +434,17 @@ def test_call_llm_http_error(mock_post):
     assert result is None
 
 
+@patch("hookwise.utils.time.sleep")
 @patch("hookwise.utils.requests.post")
-def test_call_llm_exception(mock_post):
+def test_call_llm_exception(mock_post, mock_sleep):
     """Test LLM call with connection exception."""
     mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
     result = call_llm("test prompt")
 
     assert result is None
+    assert mock_post.call_count == 2
+    mock_sleep.assert_called_once_with(0.25)
 
 
 @patch("hookwise.utils.requests.post")

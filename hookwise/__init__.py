@@ -141,7 +141,7 @@ def _register_request_handlers(app: Flask) -> None:
 
     @app.before_request
     def check_maintenance() -> Any:
-        from .tasks import redis_client
+        from .extensions import redis_client
 
         # Allow /admin, /health*, and static files during maintenance
         if (

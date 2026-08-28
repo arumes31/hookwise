@@ -18,9 +18,10 @@ permissions:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Delete old package versions
-        uses: dataaxiom/ghcr-cleanup-action@v1
+        uses: dataaxiom/ghcr-cleanup-action@f092b48ba3b604b2a83690dc4b2bbb3392e1045f # v1.3.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           package-name: ${{ github.event.repository.name }}
