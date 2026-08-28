@@ -31,9 +31,6 @@ RUN apt-get update \
 
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 COPY --from=builder /install /usr/local
-# The base image's packaging tools and MessagePack are not needed at runtime.
-# Removing them keeps the final image free of their fixed high-severity CVEs.
-RUN python -m pip uninstall --yes msgpack setuptools
 COPY --chown=appuser:appuser . .
 
 # Copy and set entrypoint (as root)
