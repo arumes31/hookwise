@@ -31,6 +31,15 @@ RUN apt-get update \
 
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 COPY --from=builder /install /usr/local
+# These base-image packaging modules are not runtime dependencies. Remove their
+# known vulnerable releases and the setuptools startup shim before copying app code.
+RUN rm -rf \
+    /usr/local/lib/python3.14/site-packages/_distutils_hack \
+    /usr/local/lib/python3.14/site-packages/distutils-precedence.pth \
+    /usr/local/lib/python3.14/site-packages/msgpack \
+    /usr/local/lib/python3.14/site-packages/msgpack-*.dist-info \
+    /usr/local/lib/python3.14/site-packages/setuptools \
+    /usr/local/lib/python3.14/site-packages/setuptools-*.dist-info
 COPY --chown=appuser:appuser . .
 
 # Copy and set entrypoint (as root)
