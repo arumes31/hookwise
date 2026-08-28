@@ -77,6 +77,7 @@ jobs:
         with:
           image-ref: ${{ github.event_name == 'pull_request' && steps.build.outputs.imageid || format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.meta.outputs.version) }}
           version: v0.74.0
+          trivyignores: .trivyignore.yaml
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'

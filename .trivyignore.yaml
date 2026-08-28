@@ -1,0 +1,12 @@
+# Trivy retains removed base-image packages in its image metadata. The runtime
+# image guard in .github/workflows/ghcr.yml verifies these exact packages are
+# absent from every PR image before Trivy runs.
+vulnerabilities:
+  - id: GHSA-6v7p-g79w-8964
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    statement: msgpack 1.1.2 is removed from the final runtime image.
+  - id: CVE-2025-47273
+    purls:
+      - pkg:pypi/setuptools@70.3.0
+    statement: setuptools 70.3.0 is removed from the final runtime image.
