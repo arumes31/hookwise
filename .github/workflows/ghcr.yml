@@ -59,8 +59,8 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=hookwise-${{ runner.arch }}
-          cache-to: type=gha,mode=max,scope=hookwise-${{ runner.arch }}
+          cache-from: type=gha,scope=hookwise-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
+          cache-to: type=gha,mode=max,scope=hookwise-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
 
       - name: Scan image for high-severity vulnerabilities
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
