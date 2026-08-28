@@ -1,21 +1,21 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Webhook History</h1>
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2 history-toolbar">
         <div class="form-check form-switch d-flex align-items-center me-3">
             <input class="form-check-input me-2" type="checkbox" role="switch" id="live-tail-toggle">
             <label class="form-check-label small text-secondary fw-bold" for="live-tail-toggle">LIVE TAIL</label>
         </div>
-        <button class="btn btn-outline-danger btn-sm" onclick="deleteAllLogs()" data-tooltip="Delete All History">
+        <button class="btn btn-outline-danger btn-sm" onclick="deleteAllLogs()" data-tooltip="Delete All History" aria-label="Delete all history">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash-fill"
                 viewBox="0 0 16 16">
                 <path
                     d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
             </svg>
         </button>
-        <button class="btn btn-outline-success btn-sm" onclick="exportCSV()" data-tooltip="Export CSV">
+        <button class="btn btn-outline-success btn-sm" onclick="exportCSV()" data-tooltip="Export CSV" aria-label="Export history as CSV">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-download"
                 viewBox="0 0 16 16">
                 <path
@@ -25,18 +25,18 @@
             </svg>
         </button>
         <input type="date" id="date-from" class="form-control form-control-sm bg-dark border-secondary text-white"
-            style="width: 130px;" onchange="searchHistory()">
+            style="width: 130px;" onchange="searchHistory()" aria-label="History start date">
         <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white"
-            style="width: 130px;" onchange="searchHistory()">
+            style="width: 130px;" onchange="searchHistory()" aria-label="History end date">
         <select id="endpoint-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 200px;" onchange="searchHistory()">
+            style="width: 200px;" onchange="searchHistory()" aria-label="Filter history by endpoint">
             <option value="">All Endpoints</option>
             {% for cfg in all_configs %}
             <option value="{{ cfg.id }}" {% if cfg.id==endpoint_id %}selected{% endif %}>{{ cfg.name }}</option>
             {% endfor %}
         </select>
         <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 140px;" onchange="searchHistory()">
+            style="width: 140px;" onchange="searchHistory()" aria-label="Filter history by status">
             <option value="">All Statuses</option>
             <option value="processed" {% if status=='processed' %}selected{% endif %}>Processed</option>
             <option value="skipped" {% if status=='skipped' %}selected{% endif %}>Skipped</option>
@@ -57,6 +57,39 @@
     </div>
 </div>
 
+<section id="history-operations" class="history-operations card glass-card mb-4" aria-labelledby="history-operations-title">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <h2 id="history-operations-title" class="h6 mb-0 me-auto">Troubleshooting &amp; operations</h2>
+            <button id="history-save-search" class="btn btn-sm btn-outline-primary" type="button">Save search</button>
+            <select id="history-saved-searches" class="form-select form-select-sm" aria-label="Saved history searches"><option value="">Saved searches</option></select>
+            <button id="history-delete-search" class="btn btn-sm btn-outline-danger" type="button" disabled>Delete saved search</button>
+            <button id="history-clear-advanced" class="btn btn-sm btn-outline-secondary" type="button">Clear filters</button>
+        </div>
+        <details class="mt-3">
+            <summary>Advanced filters</summary>
+            <div id="history-advanced-filters" class="history-filter-grid mt-2">
+                <input id="history-ticket" class="form-control form-control-sm" inputmode="numeric" placeholder="Ticket number">
+                <input id="history-request-id" class="form-control form-control-sm" placeholder="Request ID">
+                <input id="history-error-type" class="form-control form-control-sm" placeholder="Error type">
+                <input id="history-http-status" class="form-control form-control-sm" inputmode="numeric" placeholder="HTTP status">
+                <input id="history-min-processing" class="form-control form-control-sm" inputmode="decimal" placeholder="Min processing seconds">
+                <input id="history-max-processing" class="form-control form-control-sm" inputmode="decimal" placeholder="Max processing seconds">
+                <input id="history-min-retry" class="form-control form-control-sm" inputmode="numeric" placeholder="Min retries">
+                <input id="history-max-retry" class="form-control form-control-sm" inputmode="numeric" placeholder="Max retries">
+                <label class="form-check small text-secondary"><input id="history-dlq-only" class="form-check-input" type="checkbox"> Dead-lettered only</label>
+                <button id="history-apply-advanced" class="btn btn-sm btn-primary" type="button">Apply advanced filters</button>
+            </div>
+        </details>
+        <div class="history-operation-summary mt-3" aria-live="polite">
+            <span id="history-advanced-count" class="text-secondary small">Loading operations…</span>
+            <span id="history-retry-alert" class="badge bg-warning text-dark" hidden></span>
+            <button id="history-replay-dlq" class="btn btn-sm btn-outline-warning" type="button" hidden>Replay selected DLQ</button>
+        </div>
+        <div id="history-rate-limits" class="small text-secondary mt-2"></div>
+    </div>
+</section>
+
 <div id="bulk-history-controls"
     class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
     <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
@@ -68,11 +101,11 @@
 
 <div class="card bg-dark text-white shadow-lg overflow-hidden border-0">
     <div class="card-body p-0">
-        <div class="table-responsive">
+        <div class="table-responsive" tabindex="0" role="region" aria-label="Webhook history">
             <table class="table table-dark table-hover mb-0 align-middle small">
                 <thead class="bg-black bg-opacity-50 text-secondary">
                     <tr>
-                        <th class="ps-4 py-3"><input type="checkbox" id="check-all-logs" onchange="toggleAllLogs()">
+                        <th class="ps-4 py-3"><input type="checkbox" id="check-all-logs" onchange="toggleAllLogs()" aria-label="Select all history entries">
                         </th>
                         <th class="py-3">TIMESTAMP</th>
                         <th class="py-3">ENDPOINT</th>
@@ -87,8 +120,8 @@
                 </thead>
                 <tbody>
                     {% for log in logs %}
-                    <tr class="border-bottom border-light border-opacity-5">
-                        <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}"
+                    <tr class="border-bottom border-light border-opacity-5" data-history-status="{{ log.status }}">
+                        <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}" aria-label="Select history entry"
                                 onchange="updateBulkHistory()"></td>
                         <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S')
                             }}</td>
@@ -142,7 +175,7 @@
                         <td class="py-3 text-secondary font-monospace small" data-request-id="{{ log.request_id }}">
                             <span class="user-select-all">{{ log.request_id[:16] }}...</span>
                             <button class="btn btn-sm btn-link p-0 ms-1 opacity-50"
-                                onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID">
+                                onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID" aria-label="Copy full request ID">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor"
                                     class="bi bi-clipboard" viewBox="0 0 16 16">
                                     <path
@@ -163,11 +196,17 @@
                         <td class="pe-4 py-3 text-end">
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
-                                    data-payload='{{ log.payload | tojson | safe }}'
-                                    data-headers='{{ log.headers | tojson | safe }}'
+                                    data-payload='{{ log.masked_payload | tojson | safe }}'
+                                    data-headers='{{ log.masked_headers | tojson | safe }}'
                                     data-rule="{{ log.matched_rule or '' }}">View</button>
                                 <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}', event)"
-                                    data-payload='{{ log.payload | tojson | safe }}'>Compare</button>
+                                    data-payload='{{ log.masked_payload | tojson | safe }}'>Compare</button>
+                                <button class="btn btn-outline-secondary history-diagnostics" type="button"
+                                    data-log-id="{{ log.id }}">Diagnose</button>
+                                {% if log.status in ['failed', 'dlq', 'retrying'] %}
+                                <button class="btn btn-outline-warning history-retry" type="button"
+                                    data-log-id="{{ log.id }}">Retry now</button>
+                                {% endif %}
                                 <button class="btn btn-outline-primary"
                                     onclick="replayWebhook('{{ log.id }}')">Replay</button>
                                 <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
@@ -191,7 +230,10 @@
 
 
 <nav class="mt-4">
-    <ul class="pagination justify-content-center">
+    <p class="small text-secondary text-center" aria-live="polite">
+        Showing {{ logs|length }} of {{ pagination.total }} webhook events · page {{ pagination.page }} of {{ pagination.pages }}
+    </p>
+    <ul class="pagination justify-content-center" aria-label="Webhook history pages">
         {% if pagination.has_prev %}
         <li class="page-item"><a class="page-link bg-dark border-secondary text-white"
                 href="{{ url_for('main.history', page=pagination.prev_num, search=search, date_from=date_from, date_to=date_to, endpoint_id=endpoint_id, status=status, source_ip=source_ip) }}">Previous</a></li>
@@ -221,7 +263,7 @@
                     <button id="headers-toggle" class="btn btn-sm btn-outline-secondary me-2">Show Headers</button>
                     <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
                 </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close payload details"></button>
             </div>
             <div class="modal-body">
                 <div id="matched-rule-info"
@@ -240,7 +282,7 @@
         <div class="modal-content bg-dark border-warning">
             <div class="modal-header border-warning border-opacity-25">
                 <h5 class="modal-title text-warning">Compare Payloads</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close payload comparison"></button>
             </div>
             <div class="modal-body">
                 <div class="row">
@@ -253,6 +295,26 @@
                         <pre class="bg-black p-2 rounded small" id="compare-right"></pre>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="diagnosticsModal" tabindex="-1" aria-labelledby="diagnostics-title" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content bg-dark border-secondary">
+            <div class="modal-header border-secondary">
+                <h2 id="diagnostics-title" class="modal-title h5">Request diagnostics</h2>
+                <button id="diagnostics-download" class="btn btn-sm btn-outline-primary me-2" type="button">Download diagnostics</button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close diagnostics"></button>
+            </div>
+            <div class="modal-body">
+                <p id="diagnostics-summary" class="small text-secondary"></p>
+                <h3 class="h6">Request timeline</h3><ol id="diagnostics-timeline" class="diagnostic-list"></ol>
+                <h3 class="h6">Retry intervals</h3><ul id="diagnostics-retries" class="diagnostic-list"></ul>
+                <h3 class="h6">Complete error chain</h3><pre id="diagnostics-errors" class="diagnostic-code"></pre>
+                <p class="small text-secondary mb-0">Payloads and authentication headers are excluded from diagnostics downloads.</p>
+                <div class="d-flex gap-2 mt-3"><button id="diagnostics-retry" class="btn btn-warning btn-sm" type="button">Retry now</button><button id="diagnostics-replay-edit" class="btn btn-outline-primary btn-sm" type="button">Replay with edits</button></div>
             </div>
         </div>
     </div>

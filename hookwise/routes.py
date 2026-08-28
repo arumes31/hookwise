@@ -8,7 +8,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, current_app, render_template, request, session, url_for
 from sqlalchemy import func
 
 from .extensions import db
@@ -17,8 +17,20 @@ from .utils import auth_required
 
 main_bp = Blueprint("main", __name__)
 
-# ---- Dashboard (index) ----
+_PAGE_TITLES = {
+    "main.index": "Endpoints",
+    "main.tenantmap": "TenantMap",
+    "main.history": "History",
+    "main.audit_logs": "Audit Log",
+    "main.settings": "Settings",
+    "main.new_endpoint": "New Endpoint",
+    "main.edit_endpoint": "Edit Endpoint",
+    "main.setup_2fa": "Two-Factor Authentication",
+    "main.admin_maintenance": "Maintenance",
+    "main.login": "Sign In",
+}
 
+# ---- Dashboard (index) ----
 
 
 def _get_aggregated_counts(since: Optional[datetime] = None) -> Dict[str, Dict[str, int]]:
@@ -107,6 +119,77 @@ def _get_next_stale_times(configs: List[WebhookConfig]) -> Dict[str, datetime]:
                     next_stale_times[config.id] = next_alert_from_seen
     return next_stale_times
 
+
+def _get_navigation_notifications() -> List[Dict[str, Any]]:
+    """Build the actionable notifications shown in the global navbar."""
+    notifications: List[Dict[str, Any]] = []
+
+    unhealthy_configs = (
+        WebhookConfig.query.filter(
+            WebhookConfig.is_draft.is_(False),
+            WebhookConfig.config_health_status.in_(["WARNING", "ERROR"]),
+        )
+        .order_by(WebhookConfig.config_health_status.asc(), WebhookConfig.name.asc())
+        .limit(4)
+        .all()
+    )
+    for config in unhealthy_configs:
+        severity = "danger" if config.config_health_status == "ERROR" else "warning"
+        notifications.append(
+            {
+                "id": f"endpoint-health:{config.id}:{config.config_health_status}:{config.config_health_message or ''}",
+                "severity": severity,
+                "title": f"{config.name} needs attention",
+                "message": config.config_health_message or f"Endpoint health is {config.config_health_status.lower()}.",
+                "timestamp": "Endpoint health",
+                "url": url_for("main.edit_endpoint", config_id=config.id),
+            }
+        )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    recent_failures = (
+        WebhookLog.query.join(WebhookConfig)
+        .filter(
+            WebhookConfig.is_draft.is_(False),
+            WebhookLog.status.in_(["failed", "dlq"]),
+            WebhookLog.created_at >= cutoff,
+        )
+        .order_by(WebhookLog.created_at.desc())
+        .limit(6)
+        .all()
+    )
+    for log in recent_failures:
+        is_dlq = log.status == "dlq"
+        notifications.append(
+            {
+                "id": f"webhook-failure:{log.id}:{log.status}",
+                "severity": "danger" if is_dlq else "warning",
+                "title": f"{'Dead-lettered' if is_dlq else 'Failed'} webhook: {log.config.name}",
+                "message": log.error_message or f"Request {log.request_id} requires review.",
+                "timestamp": log.created_at.strftime("%Y-%m-%d %H:%M UTC"),
+                "url": url_for("main.history", status=log.status, search=log.request_id),
+            }
+        )
+
+    return notifications[:8]
+
+
+@main_bp.app_context_processor
+def inject_navigation_context() -> Dict[str, Any]:
+    """Provide a consistent page title and notifications to shared chrome."""
+    context: Dict[str, Any] = {
+        "page_title": _PAGE_TITLES.get(request.endpoint or "", "HookWise"),
+        "navigation_notifications": [],
+    }
+    partial = request.headers.get("HX-Request", "").lower() == "true" or request.args.get("partial") == "true"
+    if session.get("user_id") and not partial:
+        try:
+            context["navigation_notifications"] = _get_navigation_notifications()
+        except Exception:
+            current_app.logger.exception("Unable to load navigation notifications")
+    return context
+
+
 @main_bp.route("/")
 @auth_required
 def index() -> Any:
@@ -129,6 +212,17 @@ def index() -> Any:
         last_statuses.setdefault(cid, "none")
         last_errors.setdefault(cid, None)
 
+    live_configs = [config for config in configs if not config.is_draft]
+    live_config_ids = {config.id for config in live_configs}
+    events_24h = sum(sum(counts.get(config_id, {}).values()) for config_id in live_config_ids)
+    failed_24h = sum(counts.get(config_id, {}).get("failed", 0) for config_id in live_config_ids)
+    dashboard_kpis = {
+        "total_endpoints": len(live_configs),
+        "active_endpoints": sum(1 for config in live_configs if config.is_enabled),
+        "events_24h": events_24h,
+        "failed_24h": failed_24h,
+    }
+
     base_url = request.url_root.rstrip("/")
     debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
     cw_url = os.environ.get("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0").rstrip("/")
@@ -142,10 +236,21 @@ def index() -> Any:
         last_errors=last_errors,
         sparklines=sparklines,
         next_stale_times=next_stale_times,
+        dashboard_kpis=dashboard_kpis,
         base_url=base_url,
         debug_mode=debug_mode,
         cw_url=cw_url,
     )
 
 
-from . import api, auth, endpoints, tenantmap, webhook  # noqa: E402, F401
+from . import (  # noqa: E402, F401
+    activity_api,
+    api,
+    auth,
+    dashboard_api,
+    endpoint_summary,
+    endpoints,
+    history_ops,
+    tenantmap,
+    webhook,
+)

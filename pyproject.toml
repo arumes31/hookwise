@@ -4,9 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hookwise"
-version = "0.1.0"
-description = "A webhook management system"
-authors = [{name = "Your Name", email = "your.email@example.com"}]
+version = "2.3.2"
+description = "Enterprise webhook router and ConnectWise Manage bridge"
+authors = [{name = "HookWise Team"}]
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+]
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "flask",
     "celery",
@@ -16,11 +22,26 @@ dependencies = [
     "flask-migrate",
     "flask-limiter",
     "flask-socketio",
+    "flask-wtf",
     "prometheus-client",
     "cryptography",
+    "gevent",
+    "jsonpath-ng",
+    "psycopg2-binary",
+    "pyotp",
     "python-dotenv",
+    "regex",
     "gunicorn",
     "segno"
+]
+
+[dependency-groups]
+dev = [
+    "mypy==2.1.0",
+    "pip-audit",
+    "pytest==9.1.1",
+    "ruff==0.15.19",
+    "types-requests==2.33.0.20260712",
 ]
 
 [tool.setuptools.packages.find]
@@ -29,14 +50,14 @@ include = ["hookwise*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "I"]
 ignore = []
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 ignore_missing_imports = true
 exclude = ["tests/", "migrations/"]

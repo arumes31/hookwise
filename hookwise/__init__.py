@@ -3,8 +3,10 @@ import os
 import secrets
 import uuid
 from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from flask import Flask, Response, g, jsonify, redirect, render_template, request
+from flask_wtf.csrf import CSRFError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -14,11 +16,16 @@ from .extensions import socketio as socketio
 _logger = logging.getLogger(__name__)
 
 
-def create_app() -> Flask:
+def create_app(config: dict[str, Any] | None = None) -> Flask:
     """Application factory for the HookWise application."""
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
     _configure_app(app)
+    if config:
+        app.config.update(config)
+        if config.get("TESTING") and "SESSION_COOKIE_SECURE" not in config:
+            app.config["SESSION_COOKIE_SECURE"] = False
+        _configure_database_engine(app)
     _register_extensions(app)
     _register_request_handlers(app)
     _register_blueprints(app)
@@ -56,9 +63,7 @@ def _configure_app(app: Flask) -> None:
     _secure_default = "false" if os.environ.get("TESTING", "").lower() == "true" else "true"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.config["SESSION_COOKIE_SECURE"] = (
-        os.environ.get("SESSION_COOKIE_SECURE", _secure_default).lower() == "true"
-    )
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", _secure_default).lower() == "true"
 
     # Reject oversized bodies before they are buffered into memory (protects the
     # ingestion worker from memory-exhaustion payloads). Configurable in KB.
@@ -69,6 +74,11 @@ def _configure_app(app: Flask) -> None:
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    _configure_database_engine(app)
+
+
+def _configure_database_engine(app: Flask) -> None:
+    """Set engine options for the final database URI before extension setup."""
     db_url = app.config["SQLALCHEMY_DATABASE_URI"]
     if not db_url.startswith("sqlite"):
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
@@ -91,6 +101,23 @@ def _register_extensions(app: Flask) -> None:
     limiter.init_app(app)
     socketio.init_app(app)
     csrf.init_app(app)
+
+
+def _trusted_https_redirect_url() -> str | None:
+    """Build an HTTPS URL only when the request host matches a configured origin."""
+    origin = urlsplit(os.environ.get("HTTPS_ORIGIN", "").strip())
+    if origin.scheme != "https" or not origin.hostname or origin.username or origin.password:
+        return None
+    if origin.path not in ("", "/") or origin.query or origin.fragment:
+        return None
+
+    requested = urlsplit(request.full_path.replace("\\", ""))
+    if requested.scheme or requested.netloc:
+        return None
+    request_host = urlsplit(f"//{request.host}").hostname
+    if request_host != origin.hostname:
+        return None
+    return urlunsplit(("https", origin.netloc, requested.path, requested.query, ""))
 
 
 def _register_request_handlers(app: Flask) -> None:
@@ -124,7 +151,10 @@ def _register_request_handlers(app: Flask) -> None:
     def force_https() -> Any:
         if os.environ.get("FORCE_HTTPS") == "true":
             if not request.is_secure and request.headers.get("X-Forwarded-Proto", "http") != "https":
-                url = request.url.replace("http://", "https://", 1)
+                url = _trusted_https_redirect_url()
+                if url is None:
+                    app.logger.warning("Rejected HTTPS redirect for an untrusted or unconfigured host")
+                    return jsonify({"status": "error", "message": "HTTPS redirect is not configured"}), 400
                 return redirect(url, code=301)
 
     # ProxyFix
@@ -216,6 +246,12 @@ def _register_error_handlers(app: Flask) -> None:
         if request.path.startswith("/w/") or request.path.startswith("/api/"):
             return jsonify({"status": "error", "message": "Payload too large"}), 413
         return render_template("500.html"), 413
+
+    @app.errorhandler(CSRFError)
+    def csrf_error(error: CSRFError) -> Any:
+        if request.path.startswith("/api/") or request.headers.get("Sec-Fetch-Dest") == "empty":
+            return jsonify({"status": "error", "message": f"CSRF validation failed: {error.description}"}), 400
+        return render_template("400.html", message="The page security token expired. Please try again."), 400
 
 
 def _register_commands(app: Flask) -> None:

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="text-center py-5" aria-labelledby="bad-request-title">
+    <h1 id="bad-request-title" class="display-5">Request expired</h1>
+    <p class="text-secondary">{{ message }}</p>
+    <a class="btn btn-primary" href="{{ request.referrer or url_for('main.index') }}">Return and retry</a>
+</section>
+{% endblock %}

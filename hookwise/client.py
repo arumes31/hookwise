@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+from math import isfinite
 from typing import Any, Dict, List, Optional, cast
 
 import requests
@@ -8,6 +9,12 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+_QUOTA_HEADER_ALIASES = {
+    "limit": ("x-ratelimit-limit", "ratelimit-limit", "x-rate-limit-limit", "x-quota-limit"),
+    "remaining": ("x-ratelimit-remaining", "ratelimit-remaining", "x-rate-limit-remaining", "x-quota-remaining"),
+    "reset": ("x-ratelimit-reset", "ratelimit-reset", "x-rate-limit-reset", "x-quota-reset"),
+}
 
 
 class ConnectWiseError(Exception):
@@ -63,7 +70,38 @@ class ConnectWiseClient:
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
+        session.hooks["response"].append(self._capture_quota_headers)
         return session
+
+    @staticmethod
+    def _numeric_header(headers: Any, aliases: tuple[str, ...]) -> Optional[str]:
+        """Return a finite numeric quota header, never a raw provider value."""
+        lowered = {str(key).lower(): value for key, value in headers.items()}
+        for header in aliases:
+            value = lowered.get(header)
+            if value is None:
+                continue
+            try:
+                parsed = float(value)
+            except TypeError, ValueError:
+                continue
+            if isfinite(parsed):
+                return str(int(parsed)) if parsed.is_integer() else str(parsed)
+        return None
+
+    def _capture_quota_headers(self, response: requests.Response, *args: Any, **kwargs: Any) -> requests.Response:
+        """Cache only numeric API quota/rate-limit telemetry for operational views."""
+        try:
+            from .extensions import redis_client
+
+            for metric, aliases in _QUOTA_HEADER_ALIASES.items():
+                value = self._numeric_header(response.headers, aliases)
+                if value is not None:
+                    redis_client.setex(f"hookwise:cw:quota:{metric}", 3600, value)
+        except Exception:
+            # Provider telemetry must never affect a ConnectWise request result.
+            pass
+        return response
 
     def find_open_ticket(self, summary_contains: str, close_status: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:

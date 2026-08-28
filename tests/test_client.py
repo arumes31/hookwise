@@ -10,22 +10,27 @@ from hookwise.client import ConnectWiseClient, TicketNotFoundError, TicketReques
 
 @pytest.fixture
 def mock_env():
-    with patch.dict(os.environ, {
-        "CW_URL": "https://api-test.com",
-        "CW_COMPANY": "test-company",
-        "CW_PUBLIC_KEY": "public-key",
-        "CW_PRIVATE_KEY": "private-key",
-        "CW_CLIENT_ID": "client-id",
-        "CW_SERVICE_BOARD": "Test Board",
-        "CW_STATUS_NEW": "New Status",
-        "CW_STATUS_CLOSED": "Closed Status",
-        "CW_DEFAULT_COMPANY_ID": "DEFAULT-CO"
-    }):
+    with patch.dict(
+        os.environ,
+        {
+            "CW_URL": "https://api-test.com",
+            "CW_COMPANY": "test-company",
+            "CW_PUBLIC_KEY": "public-key",
+            "CW_PRIVATE_KEY": "private-key",
+            "CW_CLIENT_ID": "client-id",
+            "CW_SERVICE_BOARD": "Test Board",
+            "CW_STATUS_NEW": "New Status",
+            "CW_STATUS_CLOSED": "Closed Status",
+            "CW_DEFAULT_COMPANY_ID": "DEFAULT-CO",
+        },
+    ):
         yield
+
 
 @pytest.fixture
 def client(mock_env):
     return ConnectWiseClient()
+
 
 def test_init(mock_env):
     client = ConnectWiseClient()
@@ -37,6 +42,7 @@ def test_init(mock_env):
     assert client.service_board_name == "Test Board"
     assert client.status_new == "New Status"
     assert client.status_closed == "Closed Status"
+
 
 def test_get_headers(mock_env):
     client = ConnectWiseClient()
@@ -50,11 +56,13 @@ def test_get_headers(mock_env):
     assert headers["Accept"] == "application/json"
     assert headers["clientId"] == "client-id"
 
+
 def test_get_headers_missing_creds():
     with patch.dict(os.environ, {}, clear=True):
         client = ConnectWiseClient()
         client.company = None
         assert client._get_headers() == {}
+
 
 @patch("requests.Session.get")
 def test_find_open_ticket_success(mock_get, client):
@@ -71,6 +79,7 @@ def test_find_open_ticket_success(mock_get, client):
     assert "conditions" in kwargs["params"]
     assert "summary contains 'Test'" in kwargs["params"]["conditions"]
 
+
 @patch("requests.Session.get")
 def test_find_open_ticket_none_found(mock_get, client):
     mock_response = MagicMock()
@@ -81,11 +90,13 @@ def test_find_open_ticket_none_found(mock_get, client):
     result = client.find_open_ticket("Test")
     assert result is None
 
+
 @patch("requests.Session.get")
 def test_find_open_ticket_error(mock_get, client):
     mock_get.side_effect = requests.exceptions.RequestException("API Error")
     result = client.find_open_ticket("Test")
     assert result is None
+
 
 @patch("requests.Session.get")
 def test_get_ticket_success(mock_get, client):
@@ -96,6 +107,7 @@ def test_get_ticket_success(mock_get, client):
 
     result = client.get_ticket(123)
     assert result == {"id": 123}
+
 
 @patch("requests.Session.get")
 def test_get_ticket_not_found(mock_get, client):
@@ -111,11 +123,13 @@ def test_get_ticket_not_found(mock_get, client):
     with pytest.raises(TicketNotFoundError):
         client.get_ticket(123)
 
+
 @patch("requests.Session.get")
 def test_get_ticket_request_error(mock_get, client):
     mock_get.side_effect = requests.exceptions.RequestException("Error")
     with pytest.raises(TicketRequestError):
         client.get_ticket(123)
+
 
 @patch("requests.Session.post")
 def test_create_ticket_success(mock_post, client):
@@ -132,11 +146,13 @@ def test_create_ticket_success(mock_post, client):
     assert payload["summary"] == "Summary"
     assert payload["company"]["identifier"] == "DEFAULT-CO"
 
+
 @patch("requests.Session.post")
 def test_create_ticket_error(mock_post, client):
     mock_post.side_effect = requests.exceptions.RequestException("Error")
     result = client.create_ticket("Summary", "Desc", "Monitor")
     assert result is None
+
 
 @patch("requests.Session.patch")
 @patch("requests.Session.post")
@@ -151,13 +167,15 @@ def test_close_ticket_success(mock_post, mock_patch, client):
     patch_payload = mock_patch.call_args.kwargs["json"]
     assert patch_payload[0]["value"] == "Closed Status"
 
-    mock_post.assert_called_once() # For adding the note
+    mock_post.assert_called_once()  # For adding the note
+
 
 @patch("requests.Session.patch")
 def test_close_ticket_not_found(mock_patch, client):
     mock_patch.return_value.status_code = 404
     with pytest.raises(TicketNotFoundError):
         client.close_ticket(123, "Resolved")
+
 
 @patch("requests.Session.post")
 def test_add_ticket_note_success(mock_post, client):
@@ -169,10 +187,12 @@ def test_add_ticket_note_success(mock_post, client):
     assert result is True
     mock_post.assert_called_once()
 
+
 @patch("requests.Session.get")
 def test_get_boards(mock_get, client):
     mock_get.return_value.json.return_value = [{"id": 1}]
     assert client.get_boards() == [{"id": 1}]
+
 
 @patch("requests.Session.get")
 def test_get_companies(mock_get, client):
@@ -188,20 +208,24 @@ def test_get_priorities(mock_get, client):
     mock_get.return_value.json.return_value = [{"id": 1, "name": "P1"}]
     assert client.get_priorities() == [{"id": 1, "name": "P1"}]
 
+
 @patch("requests.Session.get")
 def test_get_board_statuses(mock_get, client):
     mock_get.return_value.json.return_value = [{"id": 1, "name": "New"}]
     assert client.get_board_statuses(1) == [{"id": 1, "name": "New"}]
+
 
 @patch("requests.Session.get")
 def test_get_board_types(mock_get, client):
     mock_get.return_value.json.return_value = [{"id": 1, "name": "Type"}]
     assert client.get_board_types(1) == [{"id": 1, "name": "Type"}]
 
+
 @patch("requests.Session.get")
 def test_get_board_subtypes(mock_get, client):
     mock_get.return_value.json.return_value = [{"id": 1, "name": "Subtype"}]
     assert client.get_board_subtypes(1) == [{"id": 1, "name": "Subtype"}]
+
 
 @patch("requests.Session.get")
 def test_get_board_items(mock_get, client):

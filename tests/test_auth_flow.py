@@ -69,6 +69,17 @@ def test_login_normal(client, sample_users):
     assert b"Logout" in resp.data
 
 
+def test_login_page_views_do_not_consume_credential_attempt_limit(client, sample_users):
+    """Only submitted credentials should count toward brute-force protection."""
+    for _ in range(6):
+        assert client.get("/login").status_code == 200
+
+    response = client.post("/login", data={"username": "user1", "password": "pass1"})
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
+
+
 def test_login_2fa_flow(client, sample_users):
     """Test 2FA login flow merged into /login."""
     # user_2fa = sample_users['2fa']  <- Removed unused variable

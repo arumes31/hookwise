@@ -314,9 +314,7 @@ def test_format_cipp_recursively_empty_values():
     empty_results = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
     assert format_cipp_results(empty_results) == "No alert results were returned."
 
-    populated_results = {
-        "Results": [{"Whitespace": "   ", "EmptyContainer": [None, {}], "Count": 0, "Enabled": False}]
-    }
+    populated_results = {"Results": [{"Whitespace": "   ", "EmptyContainer": [None, {}], "Count": 0, "Enabled": False}]}
     result = format_cipp_results(populated_results)
 
     assert "Whitespace" not in result
@@ -462,6 +460,7 @@ def test_log_audit_session_user(app):
     """log_audit with session username should use that user."""
     with app.test_request_context():
         from flask import session
+
         session["username"] = "session_user"
         log_audit("session_action")
 
@@ -491,6 +490,7 @@ def test_log_audit_custom_session_no_commit(app):
     """log_audit with custom session and commit=False should not commit."""
     with app.app_context():
         from unittest.mock import MagicMock
+
         mock_session = MagicMock()
         log_audit("no_commit", commit=False, db_session=mock_session)
 
@@ -506,13 +506,16 @@ def test_get_fernet_missing_key():
     with patch("hookwise.utils._fernet_instance", None):
         with patch.dict(os.environ, {}, clear=True):
             from hookwise.utils import get_fernet
+
             with pytest.raises(RuntimeError, match="ENCRYPTION_KEY environment variable is not set"):
                 get_fernet()
+
 
 def test_get_fernet_invalid_key():
     """get_fernet should raise RuntimeError if ENCRYPTION_KEY is invalid."""
     with patch("hookwise.utils._fernet_instance", None):
         with patch.dict(os.environ, {"ENCRYPTION_KEY": "invalid-key-not-base64"}, clear=True):
             from hookwise.utils import get_fernet
+
             with pytest.raises(RuntimeError, match="Invalid ENCRYPTION_KEY"):
                 get_fernet()

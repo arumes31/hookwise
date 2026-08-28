@@ -15,7 +15,7 @@
 </div>
 
 <div class="glass-card p-4 animate-slide-up">
-    <div class="table-responsive">
+    <div class="table-responsive" tabindex="0" role="region" aria-label="Tenant mappings">
         <table class="table table-dark table-hover align-middle mb-0">
             <thead class="text-secondary small text-uppercase ls-1">
                 <tr>
@@ -43,7 +43,7 @@
                     </td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-link text-info p-0 text-decoration-none me-3"
-                            data-tooltip="Edit Mapping" data-m-id="{{ m.id }}" data-m-tenant="{{ m.tenant_value }}"
+                            data-tooltip="Edit Mapping" aria-label="Edit mapping" data-m-id="{{ m.id }}" data-m-tenant="{{ m.tenant_value }}"
                             data-m-company="{{ m.company_id }}" data-m-desc="{{ m.description or '' }}"
                             onclick="openEditModal(this)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
@@ -54,11 +54,11 @@
                                     d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z" />
                             </svg>
                         </button>
-                        <form action="{{ url_for('main.delete_mapping', id=m.id) }}" method="POST" class="d-inline"
+                        <form action="{{ url_for('main.delete_mapping', mapping_id=m.id) }}" method="POST" class="d-inline"
                             onsubmit="return confirm('Delete mapping for {{ m.tenant_value }}?')">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none"
-                                data-tooltip="Delete Mapping">
+                                data-tooltip="Delete Mapping" aria-label="Delete mapping">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
                                     class="bi bi-trash-fill" viewBox="0 0 16 16">
                                     <path
@@ -89,7 +89,7 @@
             <div class="modal-content bg-transparent border-0 p-4">
                 <div class="modal-header border-0 p-0 mb-4">
                     <h5 class="modal-title fw-bold text-light">Add Global Mapping</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close add mapping dialog"></button>
                 </div>
                 <form action="{{ url_for('main.add_mapping') }}" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -129,7 +129,7 @@
             <div class="modal-content bg-transparent border-0 p-4">
                 <div class="modal-header border-0 p-0 mb-4">
                     <h5 class="modal-title fw-bold text-light">Edit Global Mapping</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close edit mapping dialog"></button>
                 </div>
                 <form id="editMappingForm" method="POST" action="/tenantmap/edit/0" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

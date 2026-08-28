@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, cast
 
 import requests
 from cryptography.fernet import Fernet
-from flask import Response, redirect, request, session, url_for
+from flask import Response, jsonify, redirect, request, session, url_for
 from jsonpath_ng import parse as _jsonpath_parse
 
 from .extensions import socketio
@@ -118,7 +118,11 @@ def auth_required(f: Any) -> Any:
                 # Client sent invalid Basic Auth credentials
                 return authenticate()
 
-        # 4. No valid auth found -> Redirect to Login
+        # 4. No valid auth found. Programmatic requests receive a stable 401;
+        # browser page navigations retain the friendly login redirect.
+        accepts_json = request.accept_mimetypes.best == "application/json"
+        if request.path.startswith("/api/") or request.headers.get("Sec-Fetch-Dest") == "empty" or accepts_json:
+            return jsonify({"status": "error", "message": "Authentication required"}), 401
         return redirect(url_for("main.login"))
 
     return decorated
@@ -332,9 +336,7 @@ def _append_cipp_body_section(
     body = _format_cipp_value(value)
     if bullets:
         action_lines = [line.strip() for line in body.splitlines() if line.strip()]
-        body = "\n".join(
-            line if re.match(r"^(?:[-*]|\d+[.)])\s", line) else f"- {line}" for line in action_lines
-        )
+        body = "\n".join(line if re.match(r"^(?:[-*]|\d+[.)])\s", line) else f"- {line}" for line in action_lines)
     if output:
         output.append("")
     output.extend((title, "", body))
@@ -356,9 +358,7 @@ def _format_cipp_result_item(item: Any, index: int, command: str) -> str:
         _append_cipp_field_section(output, "ALERT DETAILS", item, _CIPP_DEFENDER_SUMMARY_FIELDS, consumed)
         _append_cipp_field_section(output, "TIMESTAMPS", item, _CIPP_DEFENDER_TIMESTAMP_FIELDS, consumed)
         _append_cipp_body_section(output, "DESCRIPTION", item, "Description", consumed)
-        _append_cipp_body_section(
-            output, "RECOMMENDED ACTIONS", item, "RecommendedActions", consumed, bullets=True
-        )
+        _append_cipp_body_section(output, "RECOMMENDED ACTIONS", item, "RecommendedActions", consumed, bullets=True)
         _append_cipp_field_section(output, "REFERENCES", item, _CIPP_DEFENDER_REFERENCE_FIELDS, consumed)
     elif is_application:
         _append_cipp_field_section(output, "APPLICATION DETAILS", item, _CIPP_APPLICATION_FIELDS, consumed)

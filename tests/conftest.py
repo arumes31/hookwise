@@ -19,14 +19,18 @@ def setup_test_env():
 
 
 @pytest.fixture(autouse=True)
-def mock_redis():
+def isolate_external_redis():
     """Mock Redis globally for all tests."""
     with (
         patch("hookwise.tasks.redis_client") as mock_tasks,
         patch("hookwise.api.redis_client") as mock_api,
         patch("hookwise.extensions.redis_client") as mock_ext,
+        patch("hookwise.metrics.redis_client") as mock_metrics,
+        patch("hookwise.webhook.redis_client") as mock_webhook,
     ):
         mock_tasks.get.return_value = None
         mock_api.get.return_value = None
         mock_ext.get.return_value = None
-        yield (mock_tasks, mock_api, mock_ext)
+        mock_metrics.get.return_value = None
+        mock_webhook.get.return_value = None
+        yield (mock_tasks, mock_api, mock_ext, mock_metrics, mock_webhook)

@@ -10,6 +10,7 @@ from hookwise.models import WebhookConfig
 @pytest.fixture
 def app():
     from hookwise import create_app
+
     app = create_app()
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
@@ -18,6 +19,7 @@ def app():
     app.config["SECRET_KEY"] = "test-secret"
     return app
 
+
 @pytest.fixture
 def client(app):
     with app.app_context():
@@ -25,6 +27,7 @@ def client(app):
         yield app.test_client()
         db.session.remove()
         db.drop_all()
+
 
 def test_restore_config_functionality(client, app):
     with app.app_context():
@@ -42,7 +45,7 @@ def test_restore_config_functionality(client, app):
         restore_data = [
             {"id": id1, "name": "Config 1 Updated", "board": "Board 1 New"},
             {"id": id2, "name": "Config 2", "board": "Board 2"},
-            {"id": id3, "name": "New Config 3", "board": "Board 3"}
+            {"id": id3, "name": "New Config 3", "board": "Board 3"},
         ]
 
         data = BytesIO(json.dumps(restore_data).encode("utf-8"))
@@ -52,9 +55,7 @@ def test_restore_config_functionality(client, app):
             sess["user_id"] = "admin"
 
         response = client.post(
-            "/admin/restore",
-            data={"backup_file": (data, "backup.json")},
-            content_type="multipart/form-data"
+            "/admin/restore", data={"backup_file": (data, "backup.json")}, content_type="multipart/form-data"
         )
 
         assert response.status_code == 200

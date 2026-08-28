@@ -1,15 +1,32 @@
 """Endpoint CRUD routes: create, edit, toggle, clone, bulk operations."""
 
 import json
+import re
 import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .extensions import db
-from .models import WebhookConfig, WebhookLog
+from .models import EndpointTag, WebhookConfig, WebhookLog
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
+
+_TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
+
+
+def _operator_denied() -> Any:
+    if session.get("role") not in {"admin", "operator"}:
+        return jsonify({"error": "An operator role is required for this action."}), 403
+    return None
+
+
+def _set_tags(config: WebhookConfig, raw: str | None) -> None:
+    names = list(dict.fromkeys(part.strip() for part in (raw or "").split(",") if part.strip()))
+    if len(names) > 12 or any(not _TAG_NAME.fullmatch(name) for name in names):
+        raise ValueError("Use at most 12 tags; each tag may contain 1-32 letters, numbers, spaces, . : / or -.")
+    existing = {tag.name: tag for tag in EndpointTag.query.filter(EndpointTag.name.in_(names)).all()} if names else {}
+    config.tags = [existing.get(name) or EndpointTag(name=name) for name in names]
 
 
 def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: int = 168) -> int:
@@ -20,19 +37,19 @@ def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: 
     try:
         parsed = int(val)
         return max(min_val, min(max_val, parsed))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return default
 
 
 def _register_crud_routes(main_bp: Any) -> None:
-    @main_bp.route("/endpoint/toggle-pin/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/toggle-pin/<config_id>", methods=["POST"])
     @auth_required
-    def toggle_pin(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def toggle_pin(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         config.is_pinned = not config.is_pinned
         db.session.commit()
         action = "pin" if config.is_pinned else "unpin"
-        log_audit(action, id, f"Endpoint {config.name} {action}ned")
+        log_audit(action, config_id, f"Endpoint {config.name} {action}ned")
         return jsonify({"status": "success", "is_pinned": config.is_pinned})
 
     @main_bp.route("/endpoint/reorder", methods=["POST"])
@@ -65,8 +82,11 @@ def _register_crud_routes(main_bp: Any) -> None:
     @auth_required
     def new_endpoint() -> Any:
         if request.method == "POST":
+            bearer_token = secrets.token_urlsafe(32)
             config = WebhookConfig(
                 name=request.form.get("name"),
+                bearer_token=encrypt_string(bearer_token),
+                bearer_token_last4=bearer_token[-4:],
                 customer_id_default=request.form.get("customer_id_default"),
                 board=request.form.get("board"),
                 status=request.form.get("status"),
@@ -92,8 +112,18 @@ def _register_crud_routes(main_bp: Any) -> None:
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
                 timeout_hours=_get_int_form_value("timeout_hours", 24),
+                rate_limit_per_minute=_get_int_form_value("rate_limit_per_minute", 60, 1, 10000),
+                retry_enabled=request.form.get("retry_enabled", "true") == "true",
+                retry_max_attempts=_get_int_form_value("retry_max_attempts", 5, 0, 20),
+                retry_base_delay_seconds=_get_int_form_value("retry_base_delay_seconds", 1, 1, 3600),
+                retry_max_delay_seconds=_get_int_form_value("retry_max_delay_seconds", 300, 1, 86400),
             )
             db.session.add(config)
+            try:
+                _set_tags(config, request.form.get("tags"))
+            except ValueError as exc:
+                db.session.rollback()
+                return render_template("form.html", base_url=request.url_root.rstrip("/"), form_error=str(exc)), 400
             db.session.commit()
             log_audit("create", config.id, f"Endpoint {config.name} created")
             flash(f'Endpoint "{config.name}" {"saved as draft" if config.is_draft else "created successfully"}!')
@@ -103,10 +133,10 @@ def _register_crud_routes(main_bp: Any) -> None:
             return redirect(url_for("main.index", confetti="true"))
         return render_template("form.html", base_url=request.url_root.rstrip("/"))
 
-    @main_bp.route("/endpoint/edit/<id>", methods=["GET", "POST"])
+    @main_bp.route("/endpoint/edit/<config_id>", methods=["GET", "POST"])
     @auth_required
-    def edit_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def edit_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         if request.method == "POST":
             config.name = request.form.get("name")
             config.customer_id_default = request.form.get("customer_id_default")
@@ -134,6 +164,24 @@ def _register_crud_routes(main_bp: Any) -> None:
             config.ai_prompt_template = request.form.get("ai_prompt_template")
             config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
             config.timeout_hours = _get_int_form_value("timeout_hours", 24)
+            config.rate_limit_per_minute = _get_int_form_value("rate_limit_per_minute", 60, 1, 10000)
+            config.retry_enabled = request.form.get("retry_enabled", "true") == "true"
+            config.retry_max_attempts = _get_int_form_value("retry_max_attempts", 5, 0, 20)
+            config.retry_base_delay_seconds = _get_int_form_value("retry_base_delay_seconds", 1, 1, 3600)
+            config.retry_max_delay_seconds = _get_int_form_value("retry_max_delay_seconds", 300, 1, 86400)
+            if config.retry_max_delay_seconds < config.retry_base_delay_seconds:
+                config.retry_max_delay_seconds = config.retry_base_delay_seconds
+
+            try:
+                _set_tags(config, request.form.get("tags"))
+            except ValueError as exc:
+                db.session.rollback()
+                return (
+                    render_template(
+                        "form.html", config=config, base_url=request.url_root.rstrip("/"), form_error=str(exc)
+                    ),
+                    400,
+                )
 
             db.session.commit()
             log_audit("update", config.id, f"Endpoint {config.name} updated")
@@ -141,50 +189,55 @@ def _register_crud_routes(main_bp: Any) -> None:
             return redirect(url_for("main.index"))
         return render_template("form.html", config=config, base_url=request.url_root.rstrip("/"))
 
-    @main_bp.route("/endpoint/toggle/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/toggle/<config_id>", methods=["POST"])
     @auth_required
-    def toggle_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def toggle_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         config.is_enabled = not config.is_enabled
         db.session.commit()
         action = "enable" if config.is_enabled else "disable"
-        log_audit(action, id, f"Endpoint {config.name} {action}d")
+        log_audit(action, config_id, f"Endpoint {config.name} {action}d")
         return jsonify({"status": "success", "is_enabled": config.is_enabled})
 
-    @main_bp.route("/endpoint/rotate-token/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/rotate-token/<config_id>", methods=["POST"])
     @auth_required
-    def rotate_token(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def rotate_token(config_id: str) -> Any:
+        if denied := _operator_denied():
+            return denied
+        config = WebhookConfig.query.get_or_404(config_id)
         new_token = secrets.token_urlsafe(32)
         config.bearer_token = encrypt_string(new_token)
+        config.bearer_token_last4 = new_token[-4:]
         config.last_rotated_at = datetime.now(timezone.utc)
         db.session.commit()
-        log_audit("rotate_token", id, f"Token for {config.name} rotated")
+        log_audit("rotate_token", config_id, f"Token for {config.name} rotated")
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
-            return jsonify({"status": "success", "token": new_token})
+            response = jsonify({"status": "success", "token": new_token})
+            response.headers["Cache-Control"] = "no-store"
+            return response
 
         flash(f'Token for "{config.name}" rotated successfully!')
         return redirect(url_for("main.index"))
 
-    @main_bp.route("/endpoint/quick-update/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/quick-update/<config_id>", methods=["POST"])
     @auth_required
-    def quick_update_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def quick_update_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         field = request.json.get("field")
         value = request.json.get("value")
 
         if field in ["board", "priority", "close_status", "status"]:
             setattr(config, field, value)
             db.session.commit()
-            log_audit("quick_update", id, f"Endpoint {config.name} {field} updated to {value}")
+            log_audit("quick_update", config_id, f"Endpoint {config.name} {field} updated to {value}")
             return jsonify({"status": "success"})
         return jsonify({"status": "error", "message": "Invalid field"}), 400
 
-    @main_bp.route("/endpoint/clone/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/clone/<config_id>", methods=["POST"])
     @auth_required
-    def clone_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def clone_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         new_config = WebhookConfig(
             name=f"{config.name} (Copy)",
             customer_id_default=config.customer_id_default,
@@ -211,8 +264,16 @@ def _register_crud_routes(main_bp: Any) -> None:
             ai_prompt_template=config.ai_prompt_template,
             timeout_alerts_enabled=config.timeout_alerts_enabled,
             timeout_hours=config.timeout_hours,
+            rate_limit_per_minute=config.rate_limit_per_minute,
+            retry_enabled=config.retry_enabled,
+            retry_max_attempts=config.retry_max_attempts,
+            retry_base_delay_seconds=config.retry_base_delay_seconds,
+            retry_max_delay_seconds=config.retry_max_delay_seconds,
         )
-        new_config.bearer_token = encrypt_string(secrets.token_urlsafe(32))
+        new_token = secrets.token_urlsafe(32)
+        new_config.bearer_token = encrypt_string(new_token)
+        new_config.bearer_token_last4 = new_token[-4:]
+        new_config.tags = list(config.tags)
 
         db.session.add(new_config)
         db.session.commit()
@@ -220,21 +281,29 @@ def _register_crud_routes(main_bp: Any) -> None:
         flash(f'Endpoint "{config.name}" cloned successfully!')
         return redirect(url_for("main.index"))
 
-    @main_bp.route("/endpoint/token/<id>")
+    @main_bp.route("/endpoint/token/<config_id>")
     @auth_required
-    def get_endpoint_token(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        return jsonify({"token": decrypt_string(config.bearer_token)})
+    def get_endpoint_token(config_id: str) -> Any:
+        if denied := _operator_denied():
+            return denied
+        config = WebhookConfig.query.get_or_404(config_id)
+        token = decrypt_string(config.bearer_token)
+        if not config.bearer_token_last4:
+            config.bearer_token_last4 = token[-4:]
+            db.session.commit()
+        response = jsonify({"token": token})
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
-    @main_bp.route("/endpoint/delete/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/delete/<config_id>", methods=["POST"])
     @auth_required
-    def delete_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
+    def delete_endpoint(config_id: str) -> Any:
+        config = WebhookConfig.query.get_or_404(config_id)
         name = config.name
-        WebhookLog.query.filter_by(config_id=id).delete(synchronize_session=False)
+        WebhookLog.query.filter_by(config_id=config_id).delete(synchronize_session=False)
         db.session.delete(config)
         db.session.commit()
-        log_audit("delete", id, f"Endpoint {name} deleted")
+        log_audit("delete", config_id, f"Endpoint {name} deleted")
         flash(f'Endpoint "{name}" deleted.')
         return redirect(url_for("main.index"))
 

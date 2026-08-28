@@ -13,7 +13,7 @@ from prometheus_client import Counter, Histogram
 from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
-from .models import GlobalMapping, WebhookConfig, WebhookLog
+from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
     filter_cipp_app_certificate_expiry_results,
@@ -39,11 +39,54 @@ VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() 
 
 # Regex for token replacement
 TOKEN_RE = re.compile(r"(\$\S+|[^\s]+)")
+_ERROR_SECRET_RE = re.compile(r"(?i)(authorization|token|password|secret|api[-_ ]?key)\s*([:=])\s*[^\s,;]+")
+
+
+def _sanitize_error(error: BaseException | str) -> str:
+    """Bound error text before retaining it in history or a retry attempt."""
+    message = str(error)
+    message = _ERROR_SECRET_RE.sub(r"\1\2***", message)
+    return message[:2000]
+
+
+def _append_error_chain(log_entry: WebhookLog, error: BaseException | str, retry_count: int) -> None:
+    """Append structured, sanitized failure metadata without overwriting evidence."""
+    try:
+        chain = json.loads(log_entry.error_chain or "[]")
+        if not isinstance(chain, list):
+            chain = []
+    except TypeError, ValueError:
+        chain = []
+    chain.append(
+        {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "type": type(error).__name__ if isinstance(error, BaseException) else "Error",
+            "message": _sanitize_error(error),
+            "retry_count": retry_count,
+        }
+    )
+    log_entry.error_chain = json.dumps(chain[-20:])
+    log_entry.error_type = type(error).__name__ if isinstance(error, BaseException) else "Error"
+
+
+def _bounded_retry_policy(config: Optional[WebhookConfig], default_max_retries: int) -> tuple[bool, int, int, int]:
+    """Return a safe retry policy even for legacy or malformed endpoint settings."""
+    if config is None:
+        return True, default_max_retries, 1, 300
+    try:
+        max_attempts = max(0, min(int(config.retry_max_attempts), 20))
+        base_delay = max(1, min(int(config.retry_base_delay_seconds), 3600))
+        max_delay = max(base_delay, min(int(config.retry_max_delay_seconds), 86400))
+    except TypeError, ValueError:
+        return bool(config.retry_enabled), default_max_retries, 1, 300
+    return bool(config.retry_enabled), max_attempts, base_delay, max_delay
+
 
 cw_client = ConnectWiseClient()
 _cached_mappings = None
 _last_cache_update = 0.0
 CACHE_REFRESH_INTERVAL = 300  # 5 minutes
+
 
 def get_all_global_mappings() -> list[dict[str, Any]]:
     """Retrieve all GlobalMapping records as dicts, cached with TTL to avoid N+1 queries."""
@@ -211,7 +254,7 @@ def verify_endpoint_health() -> None:
                     try:
                         statuses = json.loads(raw)
                         status_cache[bid] = {s["name"] for s in statuses}
-                    except (json.JSONDecodeError, TypeError):
+                    except json.JSONDecodeError, TypeError:
                         pass
 
                 if bid not in status_cache:
@@ -538,30 +581,100 @@ def process_webhook_task(
     request_id: str,
     source_ip: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
+    log_id: Optional[str] = None,
 ) -> None:
-    """Background task to process webhook logic."""
+    """Process a delivery with endpoint-specific bounded retries and lineage."""
+    retries = int(getattr(self.request, "retries", 0) or 0)
+    log_entry: Optional[WebhookLog] = None
+    attempt: Optional[WebhookRetryAttempt] = None
+    config = WebhookConfig.query.get(config_id)
+    if log_id:
+        log_entry = WebhookLog.query.get(log_id)
+    if log_entry is None:
+        # Compatibility for queued work created before stable log IDs existed.
+        log_entry = (
+            WebhookLog.query.filter_by(config_id=config_id, request_id=request_id)
+            .order_by(WebhookLog.created_at.desc())
+            .first()
+        )
+
+    if log_entry is not None:
+        now = datetime.now(timezone.utc)
+        if log_entry.processing_started_at is None:
+            log_entry.processing_started_at = now
+        log_entry.status = "processing"
+        attempt = WebhookRetryAttempt(
+            log_id=log_entry.id,
+            attempt_number=retries + 1,
+            started_at=now,
+            status="processing",
+        )
+        db.session.add(attempt)
+        db.session.commit()
+
+    if config is None:
+        now = datetime.now(timezone.utc)
+        if log_entry is not None:
+            log_entry.status = "skipped"
+            log_entry.error_type = "endpoint_deleted"
+            log_entry.error_message = "Endpoint was deleted before the queued delivery was processed."
+            log_entry.completed_at = now
+        if attempt is not None:
+            attempt.status = "skipped"
+            attempt.error_message = "Endpoint was deleted before processing."
+            attempt.completed_at = now
+        db.session.commit()
+        return
+
     try:
         handle_webhook_logic(
-            config_id, data, request_id, source_ip=source_ip, retry_count=self.request.retries, headers=headers
+            config_id,
+            data,
+            request_id,
+            source_ip=source_ip,
+            retry_count=retries,
+            headers=headers,
+            log_id=log_entry.id if log_entry else None,
         )
+        if attempt is not None:
+            attempt.status = "processed"
+            attempt.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
     except Exception as exc:
-        logger.error(f"Task failed (Attempt {self.request.retries}/5): {exc}")
-        if self.request.retries >= self.max_retries:
-            # Final failure, move to DLQ in DB
-            from .extensions import db
-            from .models import WebhookLog
+        enabled, max_attempts, base_delay, max_delay = _bounded_retry_policy(
+            config, int(getattr(self, "max_retries", 5) or 5)
+        )
+        exhausted = not enabled or (retries + 1) >= max_attempts
+        safe_error = _sanitize_error(exc)
+        logger.error("Task failed (attempt %s/%s): %s", retries + 1, max_attempts, safe_error)
+        if log_entry is not None:
+            _append_error_chain(log_entry, exc, retries)
+            log_entry.retry_count = retries
+            log_entry.error_message = safe_error
+            log_entry.error_type = type(exc).__name__
+            log_entry.completed_at = datetime.now(timezone.utc) if exhausted else None
+        if attempt is not None:
+            attempt.completed_at = datetime.now(timezone.utc)
+            attempt.error_message = safe_error
 
-            # We need to find the log entry and mark it as failed/dlq
-            # Since we don't have log_id here, we use request_id
-            log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
-            if log_entry:
+        if exhausted:
+            if log_entry is not None:
                 log_entry.status = "dlq"
-                log_entry.error_message = f"Max retries exceeded: {str(exc)}"
-                log_entry.retry_count = self.request.retries
-                db.session.commit()
+                log_entry.retry_exhausted_at = datetime.now(timezone.utc)
+                log_entry.error_message = f"Max retries exceeded: {safe_error}"
+            if attempt is not None:
+                attempt.status = "dlq"
+            db.session.commit()
             return
+
         jitter = random.uniform(0.8, 1.2)
-        countdown = (2**self.request.retries) * jitter
+        countdown = min(max_delay, base_delay * (2**retries)) * jitter
+        if log_entry is not None:
+            log_entry.status = "retrying"
+        if attempt is not None:
+            attempt.status = "retry_scheduled"
+            attempt.retry_interval_seconds = countdown
+        db.session.commit()
         raise self.retry(exc=exc, countdown=countdown) from exc
 
 
@@ -603,7 +716,7 @@ def _check_once_window(start_str: str, end_str: str, now: datetime) -> bool:
         start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
         end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         return start <= now <= end
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
 
 
@@ -627,7 +740,7 @@ def _check_recurring_window(window: Dict[str, Any], w_type: str, start_str: str,
             return start_time <= now_time <= end_time
         # Overnight range (e.g., 22:00 to 02:00)
         return now_time >= start_time or now_time <= end_time
-    except (ValueError, AttributeError, TypeError):
+    except ValueError, AttributeError, TypeError:
         return False
 
 
@@ -687,6 +800,7 @@ def handle_webhook_logic(
     source_ip: Optional[str] = None,
     retry_count: int = 0,
     headers: Optional[Dict[str, str]] = None,
+    log_id: Optional[str] = None,
 ) -> None:
     """Core logic: process webhook payload and route to ConnectWise."""
     from flask import current_app as app
@@ -702,19 +816,33 @@ def handle_webhook_logic(
         # 1. Create or update Webhook History Log
         from .utils import mask_secrets
 
-        log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
+        log_entry = WebhookLog.query.get(log_id) if log_id else None
+        if log_entry is None:
+            log_entry = (
+                WebhookLog.query.filter_by(config_id=config_id, request_id=request_id)
+                .order_by(WebhookLog.created_at.desc())
+                .first()
+            )
         if not log_entry:
+            now = datetime.now(timezone.utc)
             log_entry = WebhookLog(
                 config_id=config_id,
                 request_id=request_id,
-                payload=json.dumps(mask_secrets(data)),
+                payload=json.dumps(data),
                 headers=json.dumps(mask_secrets(headers)) if headers else None,
                 source_ip=source_ip,
                 status="processing",
+                correlation_id=request_id[:100],
+                received_at=now,
+                queued_at=now,
+                processing_started_at=now,
             )
             db.session.add(log_entry)
 
         log_entry.retry_count = retry_count
+        if log_entry.processing_started_at is None:
+            log_entry.processing_started_at = datetime.now(timezone.utc)
+        log_entry.status = "processing"
         if source_ip:
             config.last_ip = source_ip
         db.session.commit()
@@ -945,6 +1073,7 @@ def handle_webhook_logic(
             cache_key = f"{CACHE_PREFIX}{config_id}:{ticket_summary}"
 
             ticket_id = None
+            log_entry.connectwise_started_at = datetime.now(timezone.utc)
             if alert_type == "DOWN" or alert_type == "GENERIC":
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
                 if cached_val:
@@ -1077,10 +1206,10 @@ def handle_webhook_logic(
                                 if available_companies:
                                     companies_str = ", ".join(available_companies)
                                     llm_prompt = (
-                                        f"Match this incoming tenant string: \"{tenant_val}\" to the best option "
+                                        f'Match this incoming tenant string: "{tenant_val}" to the best option '
                                         f"from this list of company identifiers from ConnectWise: {companies_str}. "
                                         "Respond with ONLY the exact string from the list that matches best. "
-                                        "If none match reasonably well, reply with exactly \"NONE\"."
+                                        'If none match reasonably well, reply with exactly "NONE".'
                                     )
                                     llm_resp = call_llm(llm_prompt)
                                     if (
@@ -1237,6 +1366,8 @@ def handle_webhook_logic(
             log_entry.status = "processed"
             log_entry.ticket_id = ticket_id
             log_entry.processing_time = time.time() - start_time
+            log_entry.connectwise_responded_at = datetime.now(timezone.utc)
+            log_entry.completed_at = datetime.now(timezone.utc)
             db.session.commit()
 
         except Exception as e:
@@ -1244,16 +1375,28 @@ def handle_webhook_logic(
             log_webhook_processed(config_id=config_id, status="failed")
             log_entry.status = "failed"
 
-            error_msg = str(e)
-            if hasattr(e, "response") and e.response is not None:
-                try:
-                    # Capture response body if available (e.g., from requests)
-                    error_msg += f" | Details: {e.response.text}"
-                except Exception as nested_e:
-                    logger.debug(f"Could not extract response text: {nested_e}")
-
+            error_msg = _sanitize_error(e)
+            _append_error_chain(log_entry, e, retry_count)
             log_entry.error_message = error_msg
+            log_entry.error_type = type(e).__name__
             log_entry.processing_time = time.time() - start_time
             db.session.commit()
             logger.error(f"Error handling webhook: {error_msg}", extra=extra)
             raise e
+        finally:
+            # Early successful/skipped paths return before the normal finalizer.
+            if log_entry.status in {"processed", "skipped"}:
+                now = datetime.now(timezone.utc)
+                if log_entry.completed_at is None:
+                    log_entry.completed_at = now
+                if log_entry.connectwise_started_at and log_entry.connectwise_responded_at is None:
+                    log_entry.connectwise_responded_at = now
+                if log_entry.connectwise_started_at and log_entry.connectwise_responded_at:
+                    started = log_entry.connectwise_started_at
+                    responded = log_entry.connectwise_responded_at
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    if responded.tzinfo is None:
+                        responded = responded.replace(tzinfo=timezone.utc)
+                    log_entry.connectwise_duration_ms = int((responded - started).total_seconds() * 1000)
+                db.session.commit()
