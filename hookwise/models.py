@@ -39,6 +39,8 @@ class User(Base):
 
 
 class WebhookConfig(Base):
+    __table_args__ = (db.CheckConstraint("timeout_hours >= 0", name="webhook_config_timeout_hours_check"),)
+
     id = db.Column(db.String(64), primary_key=True, default=lambda: secrets.token_urlsafe(48))
     name = db.Column(db.String(100), nullable=False)
     bearer_token = db.Column(

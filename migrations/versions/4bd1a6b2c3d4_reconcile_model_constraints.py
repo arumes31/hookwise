@@ -40,6 +40,32 @@ def _replace_config_foreign_key(*, ondelete: str | None) -> None:
         )
 
 
+def _unique_constraint_name(table_name: str, column_name: str) -> str:
+    for constraint in sa.inspect(op.get_bind()).get_unique_constraints(table_name):
+        if constraint["column_names"] == [column_name]:
+            return constraint.get("name") or f"uq_{table_name}_{column_name}"
+    raise RuntimeError(f"{table_name}.{column_name} unique constraint was not found")
+
+
+def _drop_unique_constraint(table_name: str, column_name: str) -> None:
+    naming_convention = {"uq": "uq_%(table_name)s_%(column_0_name)s"}
+    with op.batch_alter_table(table_name, naming_convention=naming_convention) as batch_op:
+        batch_op.drop_constraint(_unique_constraint_name(table_name, column_name), type_="unique")
+
+
+def _create_unique_constraint(table_name: str, column_name: str) -> None:
+    with op.batch_alter_table(table_name) as batch_op:
+        batch_op.create_unique_constraint(f"uq_{table_name}_{column_name}", [column_name])
+
+
+def _ensure_timeout_check_constraint() -> None:
+    constraints = sa.inspect(op.get_bind()).get_check_constraints("webhook_config")
+    if any(constraint.get("name") == "webhook_config_timeout_hours_check" for constraint in constraints):
+        return
+    with op.batch_alter_table("webhook_config") as batch_op:
+        batch_op.create_check_constraint("webhook_config_timeout_hours_check", "timeout_hours >= 0")
+
+
 def upgrade() -> None:
     with op.batch_alter_table("user") as batch_op:
         batch_op.alter_column(
@@ -48,9 +74,12 @@ def upgrade() -> None:
             type_=sa.String(length=256),
             existing_nullable=True,
         )
+    _ensure_timeout_check_constraint()
     _replace_config_foreign_key(ondelete="CASCADE")
+    _drop_unique_constraint("endpoint_tag", "name")
     op.drop_index("ix_endpoint_tag_name", table_name="endpoint_tag")
     op.create_index("ix_endpoint_tag_name", "endpoint_tag", ["name"], unique=True)
+    _drop_unique_constraint("user_preference", "user_id")
     op.drop_index("ix_user_preference_user_id", table_name="user_preference")
     op.create_index("ix_user_preference_user_id", "user_preference", ["user_id"], unique=True)
 
@@ -58,9 +87,14 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_user_preference_user_id", table_name="user_preference")
     op.create_index("ix_user_preference_user_id", "user_preference", ["user_id"], unique=False)
+    _create_unique_constraint("user_preference", "user_id")
     op.drop_index("ix_endpoint_tag_name", table_name="endpoint_tag")
     op.create_index("ix_endpoint_tag_name", "endpoint_tag", ["name"], unique=False)
+    _create_unique_constraint("endpoint_tag", "name")
     _replace_config_foreign_key(ondelete=None)
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("webhook_config") as batch_op:
+            batch_op.drop_constraint("webhook_config_timeout_hours_check", type_="check")
     with op.batch_alter_table("user") as batch_op:
         batch_op.alter_column(
             "otp_secret",
