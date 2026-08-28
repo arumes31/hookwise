@@ -1,0 +1,17 @@
+vulnerabilities:
+  - id: GHSA-6v7p-g79w-8964
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    statement: >-
+      The official Python image's third-party SBOM describes a build-time
+      dependency that is absent from the final runtime filesystem. Runtime
+      `pip list` is verified during remediation and does not contain msgpack.
+    expired_at: 2026-11-30
+  - id: CVE-2025-47273
+    purls:
+      - pkg:pypi/setuptools@70.3.0
+    statement: >-
+      The official Python image's third-party SBOM describes a build-time
+      dependency that is absent from the final runtime filesystem. Runtime
+      `pip list` is verified during remediation and does not contain setuptools.
+    expired_at: 2026-11-30

@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc=4:14.2.0-1 \
     python3-dev=3.13.5-1 \
     libpq-dev=17.11-0+deb13u1 \
+    libssl3t64=3.5.7-1~deb13u2 \
+    openssl=3.5.7-1~deb13u2 \
+    openssl-provider-legacy=3.5.7-1~deb13u2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -21,6 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5=17.11-0+deb13u1 \
     postgresql-client=17+278 \
     netcat-openbsd=1.229-1 \
+    libssl3t64=3.5.7-1~deb13u2 \
+    openssl=3.5.7-1~deb13u2 \
+    openssl-provider-legacy=3.5.7-1~deb13u2 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
@@ -28,7 +34,8 @@ COPY --from=builder /install /usr/local
 COPY --chown=appuser:appuser . .
 
 # Remove unnecessary files from production image
-RUN rm -rf tests .venv .git .pytest_cache .qodo
+RUN python -m pip uninstall --yes setuptools && \
+    rm -rf tests .venv .git .pytest_cache .qodo
 
 # Copy and set entrypoint (as root)
 COPY docker-entrypoint.sh /usr/local/bin/
