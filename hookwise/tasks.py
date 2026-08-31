@@ -15,7 +15,6 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketCreationRejected,
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
-from .services.company_resolution import CompanyResolutionError, observe_cid, resolve_company_identifier
 from .services.routing import evaluate_routing
 from .services.ticket_operations import (
     TicketOperationInProgress,
@@ -980,9 +979,6 @@ def handle_webhook_logic(
             mapped_vals = decision.values
             mapped_description = mapped_vals.get("description")
             mapped_customer_id = mapped_vals.get("customer_id")
-            observed_cid = data.get("cid", data.get("CID"))
-            observed_customer = data.get("customer", data.get("Customer"))
-            cid_mapping = observe_cid(observed_cid, observed_customer)
 
             if "ticket_type" in mapped_vals:
                 ticket_type = mapped_vals["ticket_type"]
@@ -1114,11 +1110,7 @@ def handle_webhook_logic(
                     return
 
                 company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
-                try:
-                    mapped_company_id = resolve_company_identifier(mapped_customer_id, observed_cid, cid_mapping)
-                except CompanyResolutionError as exc:
-                    raise TicketCreationRejected(str(exc), retryable=False) from exc
-                company_id = mapped_company_id or (company_id_match.group(1) if company_id_match else None)
+                company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else None)
 
                 # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
                 if not company_id and config.global_routing_enabled:

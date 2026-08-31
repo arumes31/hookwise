@@ -458,33 +458,3 @@ class GlobalMapping(Base):
             "description": self.description,
             "created_at": self.created_at.isoformat(),
         }
-
-
-class CidMapping(Base):
-    """Observed external customer CID mapped to a ConnectWise company identifier."""
-
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    cid = db.Column(db.String(100), nullable=False, unique=True, index=True)
-    customer_name = db.Column(db.String(255))
-    company_id = db.Column(db.String(50))
-    seen_count = db.Column(db.Integer, nullable=False, default=1)
-    first_seen_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    last_seen_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = db.Column(
-        db.DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "cid": self.cid,
-            "customer_name": self.customer_name,
-            "company_id": self.company_id,
-            "seen_count": self.seen_count,
-            "first_seen_at": self.first_seen_at.isoformat(),
-            "last_seen_at": self.last_seen_at.isoformat(),
-        }
