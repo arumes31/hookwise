@@ -209,3 +209,43 @@ def test_process_webhook_task_retry(mock_handle, app):
         mock_self.retry.assert_called_once()
         _, kwargs = mock_self.retry.call_args
         assert "exc" in kwargs
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_process_webhook_task_refreshes_endpoint_settings_for_dlq_replay(mock_handle, app):
+    """A worker must see endpoint edits committed by the web process before replaying."""
+    with app.app_context():
+        config = WebhookConfig(
+            id="refreshed-replay-endpoint",
+            name="Refreshed endpoint",
+            allow_unauthenticated=False,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        cached_config = db.session.get(WebhookConfig, config.id)
+        assert cached_config is not None
+        assert cached_config.allow_unauthenticated is False
+
+        # Simulate Portainer's web process saving the endpoint while this worker
+        # retains the old ORM object in its identity map.
+        with db.engine.begin() as connection:
+            connection.execute(
+                db.update(WebhookConfig).where(WebhookConfig.id == config.id).values(allow_unauthenticated=True)
+            )
+        assert cached_config.allow_unauthenticated is False
+
+        mock_self = MagicMock()
+        mock_self.request.retries = 0
+        mock_self.max_retries = 5
+        process_webhook_task.run.__func__(
+            mock_self,
+            config.id,
+            {"event": "down"},
+            "replay-current-settings",
+        )
+
+        refreshed_config = db.session.get(WebhookConfig, config.id)
+        assert refreshed_config is cached_config
+        assert refreshed_config.allow_unauthenticated is True
+        mock_handle.assert_called_once()
