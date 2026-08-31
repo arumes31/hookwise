@@ -88,9 +88,8 @@ def upgrade() -> None:
         sa.Column("dispatched_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(["log_id"], ["webhook_log.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("log_id"),
     )
-    op.create_index("ix_delivery_outbox_log_id", "delivery_outbox", ["log_id"])
+    op.create_index("ix_delivery_outbox_log_id", "delivery_outbox", ["log_id"], unique=True)
     op.create_index("ix_delivery_outbox_status", "delivery_outbox", ["status"])
     op.create_index("ix_delivery_outbox_created_at", "delivery_outbox", ["created_at"])
     op.create_table(
