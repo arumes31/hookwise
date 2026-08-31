@@ -34,6 +34,15 @@ class User(Base):
     role = db.Column(db.String(20), default="user")  # admin, user
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
+    @validates("otp_secret")
+    def _encrypt_otp_secret(self, key: str, value: str | None) -> str | None:
+        """Ensure newly assigned OTP seeds are encrypted at rest."""
+        if not value:
+            return value
+        from .utils import ensure_encrypted
+
+        return ensure_encrypted(value)
+
     def to_dict(self) -> Dict[str, Any]:
         return {"id": self.id, "username": self.username, "role": self.role, "created_at": self.created_at.isoformat()}
 
