@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pyotp
 import segno
-from flask import flash, redirect, render_template, request, session, url_for
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
 from .extensions import db, limiter
@@ -37,8 +37,19 @@ def _register_login_routes(bp: Any) -> None:
             if pending_user_id and "otp" in request.form:
                 otp = request.form.get("otp")
                 user = User.query.get(pending_user_id)
+                secret_unavailable = bool(user and not user.otp_secret)
 
-                if user and pyotp.TOTP(decrypt_string(cast(str, user.otp_secret))).verify(cast(str, otp)):
+                try:
+                    otp_secret = decrypt_string(cast(str, user.otp_secret)) if user and user.otp_secret else None
+                except ValueError:
+                    otp_secret = None
+                    secret_unavailable = True
+                    current_app.logger.error(
+                        "Unable to decrypt the 2FA secret for user %s; verify ENCRYPTION_KEY",
+                        user.id if user else "unknown",
+                    )
+
+                if user and otp_secret and pyotp.TOTP(otp_secret).verify(cast(str, otp)):
                     # Success
                     session["user_id"] = user.id
                     session["username"] = user.username
@@ -46,6 +57,12 @@ def _register_login_routes(bp: Any) -> None:
                     session.pop("pending_user_id", None)
                     log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
                     return redirect(url_for("main.index"))
+
+                if user and secret_unavailable:
+                    session.pop("pending_user_id", None)
+                    log_audit("login_2fa_secret_error", None, f"Could not decrypt 2FA secret for user {user.id}")
+                    flash("Two-factor authentication is unavailable. Contact an administrator.", "danger")
+                    return render_template("login.html"), 503
 
                 log_audit("login_2fa_failed", None, f"Failed 2FA attempt for pending user {pending_user_id}")
                 flash("Invalid 2FA code", "danger")

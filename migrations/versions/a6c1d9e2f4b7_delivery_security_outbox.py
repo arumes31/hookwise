@@ -36,6 +36,11 @@ def _encrypt_existing_secrets() -> None:
             try:
                 fernet.decrypt(str(value).encode())
             except InvalidToken:
+                if str(value).startswith("gAAAA"):
+                    raise RuntimeError(
+                        f"Stored {field} for endpoint {row['id']} cannot be decrypted; "
+                        "restore the ENCRYPTION_KEY used when it was created"
+                    ) from None
                 updates[field] = fernet.encrypt(str(value).encode()).decode()
         if updates:
             bind.execute(
