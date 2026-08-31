@@ -70,9 +70,7 @@ def _deduplicate_request_ids() -> None:
 
 def upgrade() -> None:
     with op.batch_alter_table("webhook_config") as batch_op:
-        batch_op.add_column(
-            sa.Column("allow_unauthenticated", sa.Boolean(), nullable=False, server_default=sa.false())
-        )
+        batch_op.add_column(sa.Column("allow_unauthenticated", sa.Boolean(), nullable=False, server_default=sa.false()))
     _encrypt_existing_secrets()
     _deduplicate_request_ids()
     with op.batch_alter_table("webhook_log") as batch_op:
