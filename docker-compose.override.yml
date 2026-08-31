@@ -29,8 +29,16 @@ services:
       # ── Model Selection ─────────────────────────────────────────────────────
       # Ollama model to use for RCA analysis. Pull with:
       #   docker exec -it hookwise-llm ollama pull <model>
-      # Default: phi3
-      # - "AI_MODEL=phi3"
+      # Default: qwen3.5:4b (HookWise automatically disables thinking mode).
+      # - "AI_MODEL=qwen3.5:4b"
+
+      # Context tokens allocated by Ollama. 4096 is sufficient for alert payloads
+      # and keeps CPU inference memory usage predictable.
+      # - "LLM_CONTEXT_LENGTH=4096"
+
+      # Qwen3.5 thinking improves difficult analyses but uses substantially more
+      # CPU time and output tokens. Keep disabled for routine RCA generation.
+      # - "LLM_THINK=false"
 
       # ── Security & Access ───────────────────────────────────────────────────
       # Redirect all HTTP traffic to HTTPS. Requires a reverse proxy with TLS.
@@ -52,6 +60,7 @@ services:
       # Worker overrides mirror the proxy. Add any shared env vars here.
       # - "LLM_MAX_TOKENS=512"
       # - "LLM_TIMEOUT=180"
+      # - "LLM_THINK=false"
       # - "VIABILITY_TTL=300"
 
   hookwise-llm:

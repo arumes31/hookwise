@@ -377,6 +377,7 @@ def test_check_auth_fails_empty_password():
 # --- LLM ---
 
 
+@patch.dict(os.environ, {}, clear=True)
 @patch("hookwise.utils.requests.post")
 def test_call_llm_success(mock_post):
     """Test successful LLM call."""
@@ -390,8 +391,11 @@ def test_call_llm_success(mock_post):
     assert result == "Hello from LLM"
     mock_post.assert_called_once()
     args, kwargs = mock_post.call_args
+    assert kwargs["json"]["model"] == "qwen3.5:4b"
     assert kwargs["json"]["prompt"] == "test prompt"
     assert "You are a helpful assistant" in kwargs["json"]["system"]
+    assert kwargs["json"]["think"] is False
+    assert kwargs["json"]["options"] == {"num_ctx": 4096, "num_predict": 512, "temperature": 0.1}
 
 
 @patch.dict(os.environ, {"AI_MODEL": "llama3.2"})
@@ -403,6 +407,29 @@ def test_call_llm_uses_configured_model(mock_post):
 
     assert call_llm("test prompt") == "ok"
     assert mock_post.call_args.kwargs["json"]["model"] == "llama3.2"
+    assert "think" not in mock_post.call_args.kwargs["json"]
+
+
+@patch.dict(
+    os.environ,
+    {
+        "AI_MODEL": "qwen3.5:9b",
+        "LLM_CONTEXT_LENGTH": "8192",
+        "LLM_MAX_TOKENS": "256",
+        "LLM_THINK": "true",
+    },
+)
+@patch("hookwise.utils.requests.post")
+def test_call_llm_configures_qwen35_thinking_and_limits(mock_post):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": "ok"}
+    mock_post.return_value = mock_response
+
+    assert call_llm("test prompt") == "ok"
+    request_body = mock_post.call_args.kwargs["json"]
+    assert request_body["think"] is True
+    assert request_body["options"]["num_ctx"] == 8192
+    assert request_body["options"]["num_predict"] == 256
 
 
 @patch("hookwise.utils.requests.post")

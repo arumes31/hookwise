@@ -37,7 +37,9 @@ services:
       - "GUI_TRUSTED_IPS="
       - "LOG_RETENTION_DAYS=30"
       - "OLLAMA_HOST=http://hookwise-llm:11434"
-      - "AI_MODEL=${AI_MODEL:-phi3}"
+      - "AI_MODEL=${AI_MODEL:-qwen3.5:4b}"
+      - "LLM_CONTEXT_LENGTH=${LLM_CONTEXT_LENGTH:-4096}"
+      - "LLM_THINK=${LLM_THINK:-false}"
       - "BOOTSTRAP_ADMIN=false"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]

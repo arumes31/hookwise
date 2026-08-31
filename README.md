@@ -40,7 +40,7 @@ graph TD
     Client[Monitoring Source] -->|HTTPS Webhook| Proxy[Flask / Gevent Proxy]
     Proxy -->|Queue Task| Redis[(Redis Broker)]
     Redis -->|Process| Worker[Celery Worker]
-    Worker -->|Analyze| AI[Ollama / phi3]
+    Worker -->|Analyze| AI[Ollama / Qwen3.5 4B]
     Worker -->|PSA API| CW[ConnectWise Manage]
     Worker -->|Logs| DB[(PostgreSQL)]
     Proxy -->|Live Feed| GUI[Web GUI / Socket.io]
@@ -87,7 +87,7 @@ sequenceDiagram
     participant P as Flask Proxy
     participant R as Redis Broker
     participant W as Celery Worker
-    participant A as Ollama (phi3)
+    participant A as Ollama (Qwen3.5 4B)
     participant C as ConnectWise API
     participant D as PostgreSQL DB
 
@@ -126,9 +126,9 @@ HookWise can generate automated troubleshoot guides using local LLMs. It analyze
 - Technical summary of the alert.
 
 **Managing the Model:**
-By default, HookWise uses `phi3`. To pull the latest version or update the model manually:
+By default, HookWise uses `qwen3.5:4b`. Pull or update it manually with:
 ```bash
-docker exec -it hookwise-llm ollama pull phi3
+docker exec -it hookwise-llm ollama pull qwen3.5:4b
 ```
 
 ### 📋 Observability
@@ -206,16 +206,18 @@ signature = hmac.new(
 HookWise leverages local LLMs via **Ollama** to provide instant RCA (Root Cause Analysis). This means no data ever leaves your network.
 
 ### Model Customization
-By default, HookWise uses `phi3:latest`. You can swap this for `llama3`, `mistral`, or any other model supported by Ollama:
+By default, HookWise uses `qwen3.5:4b`. You can swap this for `phi4-mini`, `llama3.2`, or another model supported by Ollama:
 
 1. **Pull the model**:
    ```bash
-   docker exec -it hookwise-llm ollama pull llama3
+   docker exec -it hookwise-llm ollama pull phi4-mini
    ```
-2. **Update Configuration**: Set the `AI_MODEL` environment variable to `llama3`.
+2. **Update Configuration**: Set the `AI_MODEL` environment variable to `phi4-mini`.
 3. **Restart Worker**: The Celery worker will now use the new model for all analysis.
 
 `AI_MODEL` is read by every LLM request. Set it on both proxy and worker deployments when they do not share the Compose environment block.
+
+Qwen3.5 uses reasoning mode by default. HookWise sets `LLM_THINK=false` so the configured output-token budget is used for the ticket note rather than an internal reasoning trace. For unusually complex alerts, enable thinking and increase `LLM_MAX_TOKENS` to at least `1536`; expect higher CPU latency. `LLM_CONTEXT_LENGTH` defaults to `4096`, which is sufficient for alert payloads while limiting CPU memory usage.
 
 ### Endpoint templates
 
@@ -264,6 +266,8 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
 | `HTTPS_ORIGIN` | Trusted public HTTPS origin used for redirects (for example, `https://hookwise.example.com`). |
 | `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
+| `LLM_CONTEXT_LENGTH` | Ollama context allocation per request (Default: `4096`). Increase only for unusually large payloads. |
+| `LLM_THINK` | Enable Qwen3.5 reasoning before its response (Default: `false`). Increase the token limit when enabled. |
 | `LLM_TIMEOUT` | Seconds to wait for the LLM to respond (Default: `180`). Increase on slow/CPU-only hosts. |
 
 ---
@@ -442,7 +446,7 @@ HookWise provides a centralized mapping table called **TenantMap** (found in the
 
 **Q: AI RCA is too slow?**
 - LLM inference is CPU-heavy. Ensure the `hookwise-llm` container has at least 4 cores and 8GB RAM assigned.
-- Consider switching to a smaller model (e.g., `phi3:3.8b` instead of larger variants).
+- Consider switching to a smaller model (e.g., `llama3.2:3b` instead of larger variants).
 
 **Q: Getting "400 Bad Request" when creating tickets?**
 - This usually means ConnectWise rejected the payload due to a missing or invalid field.

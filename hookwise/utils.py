@@ -26,16 +26,33 @@ def call_llm(
     ),
 ) -> Optional[str]:
     ollama_host = os.environ.get("OLLAMA_HOST", "http://hookwise-llm:11434")
+    model = os.environ.get("AI_MODEL", "qwen3.5:4b")
+    request_body: Dict[str, Any] = {
+        "model": model,
+        "prompt": prompt,
+        "system": system_prompt,
+        "stream": False,
+        "options": {
+            "num_ctx": int(os.environ.get("LLM_CONTEXT_LENGTH", "4096")),
+            "num_predict": int(os.environ.get("LLM_MAX_TOKENS", "512")),
+            "temperature": 0.1,
+        },
+    }
+
+    # Qwen3.5 reasons by default. HookWise uses direct-response mode unless
+    # explicitly enabled so the token budget remains available for the note.
+    if model.lower().startswith("qwen3.5"):
+        request_body["think"] = os.environ.get("LLM_THINK", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
     try:
         response = requests.post(
             f"{ollama_host}/api/generate",
-            json={
-                "model": os.environ.get("AI_MODEL", "phi3"),
-                "prompt": prompt,
-                "system": system_prompt,
-                "stream": False,
-                "options": {"num_predict": int(os.environ.get("LLM_MAX_TOKENS", "512")), "temperature": 0.1},
-            },
+            json=request_body,
             timeout=int(os.environ.get("LLM_TIMEOUT", "360")),
         )
         response.raise_for_status()
