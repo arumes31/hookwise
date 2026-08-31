@@ -20,6 +20,7 @@ main_bp = Blueprint("main", __name__)
 _PAGE_TITLES = {
     "main.index": "Endpoints",
     "main.tenantmap": "TenantMap",
+    "main.cidmap": "CIDMap",
     "main.history": "History",
     "main.audit_logs": "Audit Log",
     "main.settings": "Settings",
@@ -247,6 +248,7 @@ from . import (  # noqa: E402, F401
     activity_api,
     api,
     auth,
+    cidmap,
     dashboard_api,
     endpoint_summary,
     endpoints,

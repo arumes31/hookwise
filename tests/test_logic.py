@@ -7,7 +7,7 @@ import pytest
 from hookwise import create_app
 from hookwise.client import TicketCreationOutcomeUnknown, TicketCreationRejected
 from hookwise.extensions import db
-from hookwise.models import TicketOperation, WebhookConfig, WebhookLog
+from hookwise.models import CidMapping, TicketOperation, WebhookConfig, WebhookLog
 from hookwise.services.ticket_operations import TicketOperationInProgress
 from hookwise.tasks import handle_webhook_logic
 from hookwise.utils import CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY, resolve_jsonpath
@@ -89,6 +89,61 @@ def test_webhook_logic_with_jsonpath(mock_cw, mock_redis, app):
         mock_cw.create_ticket.assert_called_once()
         call_kwargs = mock_cw.create_ticket.call_args.kwargs
         assert "Mapped Server Down" in call_kwargs["summary"]
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_numeric_mapped_customer_cid_resolves_to_company_identifier(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 45}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CID mapping",
+            json_mapping=json.dumps({"customer_id": "$.cid"}),
+            trigger_field="state",
+            open_value="open",
+            board="Test Board",
+        )
+        db.session.add(config)
+        db.session.add(CidMapping(cid="23243", customer_name="eworxRO", company_id="eworx"))
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"state": "open", "cid": "23243", "customer": "eworxRO"}, "req-cid")
+
+        assert mock_cw.create_ticket.call_args.kwargs["company_id"] == "eworx"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_unmapped_customer_cid_is_discovered_and_rejected(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CID discovery",
+            json_mapping=json.dumps({"customer_id": "$.cid"}),
+            trigger_field="state",
+            open_value="open",
+            board="Test Board",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        with pytest.raises(TicketCreationRejected, match="CIDMap") as failure:
+            handle_webhook_logic(
+                config.id,
+                {"state": "open", "cid": "23243", "customer": "eworxRO"},
+                "req-unmapped-cid",
+            )
+
+        assert failure.value.retryable is False
+        mapping = CidMapping.query.filter_by(cid="23243").one()
+        assert mapping.customer_name == "eworxRO"
+        assert mapping.company_id is None
+        mock_cw.create_ticket.assert_not_called()
 
 
 @patch("hookwise.tasks.redis_client")
