@@ -29,6 +29,20 @@ class TicketRequestError(ConnectWiseError):
     pass
 
 
+class TicketCreationRejected(TicketRequestError):
+    """ConnectWise definitively rejected a ticket create request."""
+
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+class TicketCreationOutcomeUnknown(TicketRequestError):
+    """The ticket request may have reached ConnectWise without a response."""
+
+    retry_after_seconds = 600.0
+
+
 class ConnectWiseClient:
     def __init__(self) -> None:
         self.base_url: str = os.getenv("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0")
@@ -227,7 +241,35 @@ class ConnectWiseClient:
             if e.response is not None:
                 error_msg += f" | Response: {e.response.text}"
             logger.error(error_msg)
-            return None
+            if e.response is not None:
+                status_code = int(e.response.status_code)
+                detail = ""
+                try:
+                    response_data = e.response.json()
+                    errors = response_data.get("errors", []) if isinstance(response_data, dict) else []
+                    if isinstance(errors, list):
+                        messages = [
+                            str(item["message"])[:300]
+                            for item in errors
+                            if isinstance(item, dict) and item.get("message")
+                        ]
+                        detail = "; ".join(messages[:3])
+                    if not detail and isinstance(response_data, dict) and response_data.get("message"):
+                        detail = str(response_data["message"])[:500]
+                except TypeError, ValueError:
+                    pass
+                message = f"ConnectWise rejected ticket creation (HTTP {status_code})"
+                if detail:
+                    message += f": {detail}"
+                if status_code in {408, 409} or status_code >= 500:
+                    raise TicketCreationOutcomeUnknown(
+                        message.replace("rejected", "returned an ambiguous response for")
+                    ) from e
+                retryable = status_code in {425, 429}
+                raise TicketCreationRejected(message, retryable=retryable) from e
+            raise TicketCreationOutcomeUnknown(
+                "ConnectWise ticket creation outcome is unknown because no response was received"
+            ) from e
 
     def close_ticket(self, ticket_id: int, resolution: str, status_name: Optional[str] = None) -> bool:
         target_status = status_name or self.status_closed

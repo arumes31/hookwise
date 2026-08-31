@@ -11,6 +11,10 @@ from ..models import TicketOperation
 class TicketOperationInProgress(RuntimeError):
     """Another worker owns an ambiguous external operation."""
 
+    def __init__(self, message: str, *, retry_after_seconds: float) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
 
 def reserve(log_id: str, operation: str) -> tuple[TicketOperation, bool]:
     """Reserve an operation, returning whether this caller may perform it."""
@@ -34,6 +38,21 @@ def may_take_over(row: TicketOperation) -> bool:
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     return created < datetime.now(timezone.utc) - timedelta(minutes=10)
+
+
+def seconds_until_takeover(row: TicketOperation) -> float:
+    """Return the remaining operation lease, bounded away from an immediate retry."""
+    created = row.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    lease_expires = created + timedelta(minutes=10)
+    return max(1.0, (lease_expires - datetime.now(timezone.utc)).total_seconds())
+
+
+def release(row: TicketOperation) -> None:
+    """Release a definitively failed mutation so a later attempt may reserve it."""
+    db.session.delete(row)
+    db.session.commit()
 
 
 def complete(row: TicketOperation, ticket_id: int) -> None:

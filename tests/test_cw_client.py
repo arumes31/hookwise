@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from hookwise.client import ConnectWiseClient, TicketNotFoundError, TicketRequestError
+from hookwise.client import ConnectWiseClient, TicketCreationOutcomeUnknown, TicketNotFoundError, TicketRequestError
 
 
 @pytest.fixture
@@ -47,8 +47,8 @@ def test_get_ticket_404_error(cw_client):
 
 def test_create_ticket_error(cw_client):
     cw_client.session.post = MagicMock(side_effect=requests.exceptions.RequestException("API Error"))
-    result = cw_client.create_ticket("summary", "desc", "monitor")
-    assert result is None
+    with pytest.raises(TicketCreationOutcomeUnknown):
+        cw_client.create_ticket("summary", "desc", "monitor")
 
 
 def test_close_ticket_error(cw_client):
