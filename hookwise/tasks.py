@@ -82,6 +82,12 @@ def _bounded_retry_policy(config: Optional[WebhookConfig], default_max_retries: 
     return bool(config.retry_enabled), max_attempts, base_delay, max_delay
 
 
+def _load_current_endpoint(config_id: str) -> Optional[WebhookConfig]:
+    """Load endpoint settings from the database, bypassing the worker identity cache."""
+    statement = db.select(WebhookConfig).where(WebhookConfig.id == config_id).execution_options(populate_existing=True)
+    return db.session.execute(statement).scalar_one_or_none()
+
+
 def _add_ticket_note_once(
     log_entry: WebhookLog,
     ticket_id: int,
@@ -620,7 +626,10 @@ def process_webhook_task(
     retries = int(getattr(self.request, "retries", 0) or 0)
     log_entry: Optional[WebhookLog] = None
     attempt: Optional[WebhookRetryAttempt] = None
-    config = WebhookConfig.query.get(config_id)
+    # Workers are long-lived while endpoint edits are committed by a different
+    # web process. Force a round trip so a replay or retry never uses an object
+    # cached before the endpoint's authentication or delivery settings changed.
+    config = _load_current_endpoint(config_id)
     if log_id:
         log_entry = WebhookLog.query.get(log_id)
     if log_entry is None:
@@ -842,7 +851,7 @@ def handle_webhook_logic(
     start_time = time.time()
 
     with app.app_context():
-        config = WebhookConfig.query.get(config_id)
+        config = _load_current_endpoint(config_id)
         if not config:
             logger.error(f"Config {config_id} not found", extra=extra)
             return
