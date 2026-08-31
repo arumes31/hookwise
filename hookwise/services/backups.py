@@ -7,7 +7,7 @@ from typing import Any
 from cryptography.fernet import InvalidToken
 
 from ..extensions import db
-from ..models import EndpointTag, GlobalMapping, User, UserPreference, WebhookConfig
+from ..models import CidMapping, EndpointTag, GlobalMapping, User, UserPreference, WebhookConfig
 from ..utils import get_fernet
 
 BACKUP_FORMAT = "hookwise-config"
@@ -87,6 +87,7 @@ def export_backup() -> bytes:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "configs": [_config_record(config) for config in WebhookConfig.query.order_by(WebhookConfig.id).all()],
         "global_mappings": [mapping.to_dict() for mapping in GlobalMapping.query.order_by(GlobalMapping.id).all()],
+        "cid_mappings": [mapping.to_dict() for mapping in CidMapping.query.order_by(CidMapping.cid).all()],
         "preferences": [
             {
                 "username": preference.user.username,
@@ -202,6 +203,26 @@ def restore_backup(document: dict[str, Any]) -> int:
         row = GlobalMapping.query.filter_by(tenant_value=tenant).first() or GlobalMapping(tenant_value=tenant)
         row.company_id = company
         row.description = str(mapping.get("description") or "")[:255] or None
+        db.session.add(row)
+
+    cid_mappings = document.get("cid_mappings", [])
+    if not isinstance(cid_mappings, list) or len(cid_mappings) > MAX_CONFIGS:
+        raise BackupValidationError("CID mappings are invalid")
+    for mapping in cid_mappings:
+        if not isinstance(mapping, dict):
+            raise BackupValidationError("CID mapping must be an object")
+        cid = mapping.get("cid")
+        company = mapping.get("company_id")
+        customer = mapping.get("customer_name")
+        if not isinstance(cid, str) or not cid or len(cid) > 100:
+            raise BackupValidationError("CID mapping CID is invalid")
+        if company is not None and (not isinstance(company, str) or not company or len(company) > 50):
+            raise BackupValidationError("CID mapping company is invalid")
+        if customer is not None and (not isinstance(customer, str) or len(customer) > 255):
+            raise BackupValidationError("CID mapping customer is invalid")
+        row = CidMapping.query.filter_by(cid=cid).first() or CidMapping(cid=cid)
+        row.company_id = company
+        row.customer_name = customer
         db.session.add(row)
 
     preferences = document.get("preferences", [])
