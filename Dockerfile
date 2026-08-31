@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.14.6-slim AS builder
+FROM python:3.14.7-slim AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN pip install --upgrade pip \
     && pip check
 
 # Stage 2: Runtime
-FROM python:3.14.6-slim AS runtime
+FROM python:3.14.7-slim AS runtime
 
 WORKDIR /app
 
@@ -31,6 +31,14 @@ RUN apt-get update \
 
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 COPY --from=builder /install /usr/local
+# These base-image packaging modules are not runtime dependencies. Remove every
+# known vulnerable package location and the setuptools startup shim before copying app code.
+RUN find /usr/local -depth \( \
+    -name 'msgpack*' -o \
+    -name 'setuptools*' -o \
+    -name '_distutils_hack' -o \
+    -name 'distutils-precedence.pth' \
+    \) -exec rm -rf {} +
 COPY --chown=appuser:appuser . .
 
 # Copy and set entrypoint (as root)

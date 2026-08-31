@@ -8,6 +8,7 @@ import pytest
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import (
+    DeliveryOutbox,
     EndpointTag,
     EventAnnotation,
     SavedHistorySearch,
@@ -17,6 +18,7 @@ from hookwise.models import (
     WebhookLog,
     WebhookRetryAttempt,
 )
+from hookwise.services.delivery_queue import commit_and_dispatch, stage_delivery
 from hookwise.tasks import process_webhook_task
 
 
@@ -112,3 +114,36 @@ def test_deleted_endpoint_marks_log_and_attempt_skipped(mock_handle, session):
     assert attempt.status == "skipped"
     assert attempt.completed_at is not None
     mock_handle.assert_not_called()
+
+
+def test_broker_failure_leaves_a_durable_pending_outbox(session):
+    config = WebhookConfig(name="Endpoint")
+    session.add(config)
+    session.flush()
+    log = WebhookLog(config_id=config.id, request_id="req-outbox", payload="{}")
+    outbox = stage_delivery(log, {"event": "down"})
+    task = MagicMock()
+    task.delay.side_effect = ConnectionError("broker unavailable")
+
+    assert commit_and_dispatch(outbox, task) is False
+
+    session.expire_all()
+    saved_outbox = DeliveryOutbox.query.one()
+    saved_log = WebhookLog.query.one()
+    assert saved_outbox.status == "pending"
+    assert saved_outbox.attempts == 1
+    assert saved_log.status == "enqueue_failed"
+    assert saved_log.error_message == "Task broker unavailable; durable outbox will retry."
+    assert saved_outbox.last_error == "ConnectionError: broker unavailable"
+
+
+def test_outbox_dispatch_omits_absent_optional_task_arguments(session):
+    config = WebhookConfig(name="Endpoint")
+    session.add(config)
+    session.flush()
+    log = WebhookLog(config_id=config.id, request_id="req-compatible", payload="{}")
+    outbox = stage_delivery(log, {"event": "up"})
+    task = MagicMock()
+
+    assert commit_and_dispatch(outbox, task) is True
+    task.delay.assert_called_once_with(config.id, {"event": "up"}, "req-compatible", log_id=log.id)

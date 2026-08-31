@@ -14,6 +14,8 @@ from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
+from .services.routing import evaluate_routing
+from .services.ticket_operations import TicketOperationInProgress, complete, may_take_over, reserve
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
     filter_cipp_app_certificate_expiry_results,
@@ -37,8 +39,6 @@ CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
-# Regex for token replacement
-TOKEN_RE = re.compile(r"(\$\S+|[^\s]+)")
 _ERROR_SECRET_RE = re.compile(r"(?i)(authorization|token|password|secret|api[-_ ]?key)\s*([:=])\s*[^\s,;]+")
 
 
@@ -80,6 +80,26 @@ def _bounded_retry_policy(config: Optional[WebhookConfig], default_max_retries: 
     except TypeError, ValueError:
         return bool(config.retry_enabled), default_max_retries, 1, 300
     return bool(config.retry_enabled), max_attempts, base_delay, max_delay
+
+
+def _add_ticket_note_once(
+    log_entry: WebhookLog,
+    ticket_id: int,
+    text: str,
+    *,
+    operation_name: str,
+    is_internal: bool = False,
+) -> bool:
+    """Protect ConnectWise note POSTs against worker redelivery."""
+    operation, acquired = reserve(log_entry.id, operation_name)
+    if not acquired and operation.status == "completed":
+        return True
+    if not acquired and not may_take_over(operation):
+        raise TicketOperationInProgress(f"{operation_name} is already owned by another worker")
+    result = cw_client.add_ticket_note(ticket_id, text, is_internal=is_internal)
+    if result:
+        complete(operation, ticket_id)
+    return result
 
 
 cw_client = ConnectWiseClient()
@@ -124,6 +144,10 @@ celery.conf.beat_schedule = {
     "check-timeouts-every-30m": {
         "task": "hookwise.check_webhook_timeouts",
         "schedule": 1800.0,  # Every 30 minutes
+    },
+    "dispatch-delivery-outbox": {
+        "task": "hookwise.dispatch_delivery_outbox",
+        "schedule": 10.0,
     },
 }
 
@@ -194,6 +218,15 @@ def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]
     except Exception as e:
         logger.error("run_llm_rca task error: %s", e)
         return {"status": "error", "rca": f"LLM error: {type(e).__name__}"}
+
+
+@celery.task(name="hookwise.dispatch_delivery_outbox")  # type: ignore[untyped-decorator]
+def dispatch_delivery_outbox() -> dict[str, int]:
+    """Retry durable task intents that could not reach the broker after commit."""
+    from .services.delivery_queue import dispatch_pending
+
+    dispatched, failed = dispatch_pending()
+    return {"dispatched": dispatched, "failed": failed}
 
 
 @celery.task(name="hookwise.cleanup_logs")  # type: ignore[untyped-decorator]
@@ -861,9 +894,6 @@ def handle_webhook_logic(
                 return
 
             config_name = config.name
-            trigger_field = config.trigger_field or "heartbeat.status"
-            open_value = config.open_value or "0"
-            close_value = config.close_value or "1"
             ticket_prefix = config.ticket_prefix
             board = config.board
             status = config.status
@@ -873,8 +903,6 @@ def handle_webhook_logic(
             priority = config.priority
             customer_id_default = config.customer_id_default
             description_template = config.description_template
-            json_mapping_str = config.json_mapping
-            routing_rules_str = config.routing_rules
 
             # Heartbeat update and timeout resolution
             _resolve_timeout_alert(config)
@@ -913,78 +941,10 @@ def handle_webhook_logic(
                     )
                     return
 
-            # Parse JSON mappings and routing rules
-            json_mapping = {}
-            if json_mapping_str:
-                try:
-                    json_mapping = json.loads(json_mapping_str)
-                except Exception as e:
-                    logger.error(f"Failed to parse json_mapping: {e}", extra=extra)
-
-            routing_rules = []
-            if routing_rules_str:
-                try:
-                    routing_rules = json.loads(routing_rules_str)
-                except Exception as e:
-                    logger.error(f"Failed to parse routing_rules: {e}", extra=extra)
-
-            # 1. Apply JSONPath Mappings
-            overridable_fields = [
-                "summary",
-                "description",
-                "customer_id",
-                "ticket_type",
-                "subtype",
-                "item",
-                "priority",
-                "board",
-                "status",
-                "severity",
-                "impact",
-            ]
-            mapped_vals = {}
-            for field in overridable_fields:
-                if field in json_mapping:
-                    mapping_val = json_mapping[field]
-                    if isinstance(mapping_val, str) and " " in mapping_val:
-                        # Tokenize: identify $-variable tokens vs literal text tokens
-                        tokens = TOKEN_RE.findall(mapping_val)
-                        # Resolve each token
-                        resolved: list[tuple[str, bool]] = []  # (value, is_variable)
-                        any_jsonpath_resolved = False
-                        for tok in tokens:
-                            if tok.startswith("$"):
-                                r_val = resolve_jsonpath(data, tok)
-                                if r_val is not None and str(r_val).strip():
-                                    resolved.append((str(r_val).strip(), True))
-                                    any_jsonpath_resolved = True
-                                else:
-                                    resolved.append(("", True))  # failed variable
-                            else:
-                                resolved.append((tok, False))  # literal
-                        if any_jsonpath_resolved:
-                            # Drop literals that are only adjacent to failed variables
-                            output_parts = []
-                            for i, (val, is_var) in enumerate(resolved):
-                                if is_var:
-                                    if val:
-                                        output_parts.append(val)
-                                else:
-                                    # Include literal only if a neighbour variable resolved
-                                    left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
-                                    right_ok = any(
-                                        resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved))
-                                    )
-                                    if left_ok or right_ok:
-                                        output_parts.append(val)
-                            if output_parts:
-                                mapped_vals[field] = " ".join(output_parts)
-                    else:
-                        mapped_raw = resolve_jsonpath(data, mapping_val)
-                        if mapped_raw is not None:
-                            mapped_vals[field] = str(mapped_raw)
-
-            mapped_summary = mapped_vals.get("summary")
+            routing_config = config.to_dict()
+            routing_config["ticket_prefix"] = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
+            decision = evaluate_routing(data, routing_config)
+            mapped_vals = decision.values
             mapped_description = mapped_vals.get("description")
             mapped_customer_id = mapped_vals.get("customer_id")
 
@@ -1001,64 +961,27 @@ def handle_webhook_logic(
             if "status" in mapped_vals:
                 status = mapped_vals["status"]
 
-            # 2. Apply Regex Routing Rules
-            for rule in routing_rules:
-                rule_path = rule.get("path")
-                rule_regex = rule.get("regex")
-                rule_overrides = rule.get("overrides", {})
+            if decision.matched_rules:
+                patterns = [str(rule["regex"]) for rule in decision.matched_rules]
+                log_entry.matched_rule = "Matches: " + ", ".join(patterns)
+                if mapped_vals.get("drop"):
+                    log_entry.status = "skipped"
+                    log_entry.error_message = f"Skipped: Dropped by routing rule ({patterns[-1]})"
+                    log_entry.processing_time = time.time() - start_time
+                    db.session.commit()
+                    log_to_web(
+                        f"Webhook skipped (Dropped by routing rule: {patterns[-1]})",
+                        "warning",
+                        config_name,
+                        data=data,
+                    )
+                    return
 
-                if rule_path and rule_regex:
-                    val = str(resolve_jsonpath(data, rule_path))
-                    if re.search(rule_regex, val, re.IGNORECASE):
-                        logger.info(f"Routing rule matched: {rule_regex} on {rule_path}", extra=extra)
-                        log_entry.matched_rule = f"Match: {rule_regex} on {rule_path}"
-
-                        if rule_overrides.get("drop"):
-                            log_entry.status = "skipped"
-                            log_entry.error_message = f"Skipped: Dropped by routing rule ({rule_regex})"
-                            log_entry.processing_time = time.time() - start_time
-                            db.session.commit()
-                            log_to_web(
-                                f"Webhook skipped (Dropped by routing rule: {rule_regex})",
-                                "warning",
-                                config_name,
-                                data=data,
-                            )
-                            return
-
-                        if "board" in rule_overrides:
-                            board = rule_overrides["board"]
-                        if "status" in rule_overrides:
-                            status = rule_overrides["status"]
-                        if "ticket_type" in rule_overrides:
-                            ticket_type = rule_overrides["ticket_type"]
-                        if "subtype" in rule_overrides:
-                            subtype = rule_overrides["subtype"]
-                        if "item" in rule_overrides:
-                            item = rule_overrides["item"]
-                        if "priority" in rule_overrides:
-                            priority = rule_overrides["priority"]
-
-            actual_val = str(resolve_jsonpath(data, trigger_field))
             monitor_name = resolve_monitor_name(data)
             msg = data.get("msg", data.get("message", "No message"))
-
-            open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
-            close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
-
-            if actual_val in open_triggers:
-                alert_type = "DOWN"
-            elif actual_val in close_triggers:
-                alert_type = "UP"
-            else:
-                alert_type = "GENERIC"
-
-            prefix = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-
-            if mapped_summary:
-                ticket_summary = f"{prefix} {mapped_summary}" if prefix else mapped_summary
-            else:
-                ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
+            alert_type = decision.alert_type
+            prefix = str(routing_config["ticket_prefix"])
+            ticket_summary = decision.summary
 
             if config.summary_remove_strings:
                 for s in config.summary_remove_strings.split(","):
@@ -1109,7 +1032,7 @@ def handle_webhook_logic(
                             f"Duplicate {alert_type} alert detected. Updated details:\n"
                             f"Message: {msg}\nRequest ID: {request_id}"
                         )
-                        cw_client.add_ticket_note(ticket_id, note_text)
+                        _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                         log_to_web(
                             f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})",
                             "warning" if alert_type == "DOWN" else "info",
@@ -1137,7 +1060,7 @@ def handle_webhook_logic(
                         f"Duplicate {alert_type} alert found in CW. Updated details:\n"
                         f"Message: {msg}\nRequest ID: {request_id}"
                     )
-                    cw_client.add_ticket_note(ticket_id, note_text)
+                    _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                     log_to_web(
                         f"{alert_type} alert: Found and updated open ticket (ID: {ticket_id})",
                         "warning" if alert_type == "DOWN" else "info",
@@ -1261,24 +1184,42 @@ def handle_webhook_logic(
                         f"Payload: {json.dumps(safe_data)}"
                     )
 
-                new_ticket = cw_client.create_ticket(
-                    summary=ticket_summary,
-                    description=description,
-                    monitor_name=monitor_name,
-                    company_id=company_id,
-                    board=board,
-                    status=status,
-                    ticket_type=ticket_type,
-                    subtype=subtype,
-                    item=item,
-                    priority=priority,
-                    severity=mapped_vals.get("severity"),
-                    impact=mapped_vals.get("impact"),
-                )
+                operation, acquired = reserve(log_entry.id, "create_ticket")
+                new_ticket: dict[str, Any] | None = None
+                if not acquired and operation.status == "completed" and operation.ticket_id:
+                    new_ticket = {"id": operation.ticket_id}
+                elif not acquired:
+                    recovered = cw_client.find_open_ticket(ticket_summary, close_status=config.close_status)
+                    if recovered:
+                        recovered_id = int(recovered["id"])
+                        complete(operation, recovered_id)
+                        new_ticket = {"id": recovered_id}
+                    elif may_take_over(operation):
+                        acquired = True
+                    else:
+                        raise TicketOperationInProgress("Ticket creation is already owned by another worker")
+
+                if acquired:
+                    new_ticket = cw_client.create_ticket(
+                        summary=ticket_summary,
+                        description=description,
+                        monitor_name=monitor_name,
+                        company_id=company_id,
+                        board=board,
+                        status=status,
+                        ticket_type=ticket_type,
+                        subtype=subtype,
+                        item=item,
+                        priority=priority,
+                        severity=mapped_vals.get("severity"),
+                        impact=mapped_vals.get("impact"),
+                    )
                 if not new_ticket:
                     raise Exception("Failed to create ticket: ConnectWise API returned an error.")
 
-                ticket_id = new_ticket["id"]
+                ticket_id = int(new_ticket["id"])
+                if operation.status != "completed":
+                    complete(operation, ticket_id)
                 redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
                 log_to_web(
                     f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})",
@@ -1302,7 +1243,13 @@ def handle_webhook_logic(
                     rca_response = call_llm(rca_prompt)
                     if rca_response:
                         note_text = f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}"
-                        cw_client.add_ticket_note(ticket_id, note_text, is_internal=True)
+                        _add_ticket_note_once(
+                            log_entry,
+                            ticket_id,
+                            note_text,
+                            operation_name="rca_note",
+                            is_internal=True,
+                        )
                         log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
 
             elif alert_type == "UP":
@@ -1317,7 +1264,15 @@ def handle_webhook_logic(
                 if ticket_id:
                     resolution = f"Resource {monitor_name} is back UP.\nMessage: {msg}\nID: {request_id}"
                     try:
-                        success = cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
+                        close_operation, acquired = reserve(log_entry.id, "close_ticket")
+                        if not acquired and close_operation.status == "completed":
+                            success = True
+                        elif not acquired and not may_take_over(close_operation):
+                            raise TicketOperationInProgress("Ticket closure is already owned by another worker")
+                        else:
+                            success = cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
+                            if success:
+                                complete(close_operation, ticket_id)
                         if success:
                             redis_client.delete(cache_key)
                             log_to_web(

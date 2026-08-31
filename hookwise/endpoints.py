@@ -10,6 +10,7 @@ from flask import Response, flash, jsonify, redirect, render_template, request, 
 
 from .extensions import db
 from .models import EndpointTag, WebhookConfig, WebhookLog
+from .services.endpoint_templates import public_endpoint_templates
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 _TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
@@ -39,6 +40,12 @@ def _get_int_form_value(key: str, default: int = 24, min_val: int = 1, max_val: 
         return max(min_val, min(max_val, parsed))
     except ValueError, TypeError:
         return default
+
+
+def _authentication_error(config: WebhookConfig) -> str | None:
+    if config.bearer_auth_enabled or config.hmac_secret or config.allow_unauthenticated:
+        return None
+    return "Enable bearer authentication, configure HMAC, or explicitly allow an unauthenticated endpoint."
 
 
 def _register_crud_routes(main_bp: Any) -> None:
@@ -105,9 +112,11 @@ def _register_crud_routes(main_bp: Any) -> None:
                 routing_rules=request.form.get("routing_rules"),
                 maintenance_windows=request.form.get("maintenance_windows"),
                 trusted_ips=request.form.get("trusted_ips"),
+                hmac_secret=request.form.get("hmac_secret") or None,
                 is_draft=request.form.get("is_draft") == "true",
                 ai_rca_enabled=request.form.get("ai_rca_enabled") == "true",
                 bearer_auth_enabled=request.form.get("bearer_auth_enabled") == "true",
+                allow_unauthenticated=request.form.get("allow_unauthenticated") == "true",
                 global_routing_enabled=request.form.get("global_routing_enabled") == "true",
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
@@ -119,11 +128,30 @@ def _register_crud_routes(main_bp: Any) -> None:
                 retry_max_delay_seconds=_get_int_form_value("retry_max_delay_seconds", 300, 1, 86400),
             )
             db.session.add(config)
+            if auth_error := _authentication_error(config):
+                db.session.rollback()
+                return (
+                    render_template(
+                        "form.html",
+                        base_url=request.url_root.rstrip("/"),
+                        form_error=auth_error,
+                        endpoint_templates=public_endpoint_templates(),
+                    ),
+                    400,
+                )
             try:
                 _set_tags(config, request.form.get("tags"))
             except ValueError as exc:
                 db.session.rollback()
-                return render_template("form.html", base_url=request.url_root.rstrip("/"), form_error=str(exc)), 400
+                return (
+                    render_template(
+                        "form.html",
+                        base_url=request.url_root.rstrip("/"),
+                        form_error=str(exc),
+                        endpoint_templates=public_endpoint_templates(),
+                    ),
+                    400,
+                )
             db.session.commit()
             log_audit("create", config.id, f"Endpoint {config.name} created")
             flash(f'Endpoint "{config.name}" {"saved as draft" if config.is_draft else "created successfully"}!')
@@ -131,7 +159,9 @@ def _register_crud_routes(main_bp: Any) -> None:
             if request.form.get("create_another") == "true":
                 return redirect(url_for("main.new_endpoint", confetti="true"))
             return redirect(url_for("main.index", confetti="true"))
-        return render_template("form.html", base_url=request.url_root.rstrip("/"))
+        return render_template(
+            "form.html", base_url=request.url_root.rstrip("/"), endpoint_templates=public_endpoint_templates()
+        )
 
     @main_bp.route("/endpoint/edit/<config_id>", methods=["GET", "POST"])
     @auth_required
@@ -157,9 +187,12 @@ def _register_crud_routes(main_bp: Any) -> None:
             config.routing_rules = request.form.get("routing_rules")
             config.maintenance_windows = request.form.get("maintenance_windows")
             config.trusted_ips = request.form.get("trusted_ips")
+            if request.form.get("hmac_secret"):
+                config.hmac_secret = request.form["hmac_secret"]
             config.is_draft = request.form.get("is_draft") == "true"
             config.ai_rca_enabled = request.form.get("ai_rca_enabled") == "true"
             config.bearer_auth_enabled = request.form.get("bearer_auth_enabled") == "true"
+            config.allow_unauthenticated = request.form.get("allow_unauthenticated") == "true"
             config.global_routing_enabled = request.form.get("global_routing_enabled") == "true"
             config.ai_prompt_template = request.form.get("ai_prompt_template")
             config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
@@ -172,13 +205,30 @@ def _register_crud_routes(main_bp: Any) -> None:
             if config.retry_max_delay_seconds < config.retry_base_delay_seconds:
                 config.retry_max_delay_seconds = config.retry_base_delay_seconds
 
+            if auth_error := _authentication_error(config):
+                db.session.rollback()
+                return (
+                    render_template(
+                        "form.html",
+                        config=config,
+                        base_url=request.url_root.rstrip("/"),
+                        form_error=auth_error,
+                        endpoint_templates=public_endpoint_templates(),
+                    ),
+                    400,
+                )
+
             try:
                 _set_tags(config, request.form.get("tags"))
             except ValueError as exc:
                 db.session.rollback()
                 return (
                     render_template(
-                        "form.html", config=config, base_url=request.url_root.rstrip("/"), form_error=str(exc)
+                        "form.html",
+                        config=config,
+                        base_url=request.url_root.rstrip("/"),
+                        form_error=str(exc),
+                        endpoint_templates=public_endpoint_templates(),
                     ),
                     400,
                 )
@@ -187,7 +237,12 @@ def _register_crud_routes(main_bp: Any) -> None:
             log_audit("update", config.id, f"Endpoint {config.name} updated")
             flash(f'Endpoint "{config.name}" updated successfully!')
             return redirect(url_for("main.index"))
-        return render_template("form.html", config=config, base_url=request.url_root.rstrip("/"))
+        return render_template(
+            "form.html",
+            config=config,
+            base_url=request.url_root.rstrip("/"),
+            endpoint_templates=public_endpoint_templates(),
+        )
 
     @main_bp.route("/endpoint/toggle/<config_id>", methods=["POST"])
     @auth_required
@@ -258,8 +313,10 @@ def _register_crud_routes(main_bp: Any) -> None:
             routing_rules=config.routing_rules,
             maintenance_windows=config.maintenance_windows,
             trusted_ips=config.trusted_ips,
+            hmac_secret=config.hmac_secret,
             ai_rca_enabled=config.ai_rca_enabled,
             bearer_auth_enabled=config.bearer_auth_enabled,
+            allow_unauthenticated=config.allow_unauthenticated,
             global_routing_enabled=config.global_routing_enabled,
             ai_prompt_template=config.ai_prompt_template,
             timeout_alerts_enabled=config.timeout_alerts_enabled,

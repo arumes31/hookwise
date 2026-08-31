@@ -66,7 +66,7 @@ def test_force_https_rejects_an_untrusted_host(monkeypatch):
 def test_routing_regex_timeout_fails_closed(app):
     with (
         app.app_context(),
-        patch("hookwise.api.safe_regex.search", side_effect=TimeoutError),
+        patch("hookwise.services.routing.safe_regex.search", side_effect=TimeoutError),
     ):
         assert not _routing_regex_matches("(a+)+$", "a" * 1_000)
 
@@ -115,8 +115,8 @@ def test_restore_does_not_disclose_parser_exception(client):
         content_type="multipart/form-data",
     )
 
-    assert response.status_code == 500
-    assert response.json == {"status": "error", "message": "Configuration import failed"}
+    assert response.status_code == 400
+    assert response.json == {"status": "error", "message": "Backup validation failed"}
     assert b"Expecting property name" not in response.data
 
 
@@ -171,17 +171,24 @@ def test_ci_uses_latest_python_and_recommended_pr_guards():
     root = Path(__file__).parents[1]
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     ghcr = (root / ".github/workflows/ghcr.yml").read_text(encoding="utf-8")
+    trivyignore = (root / ".trivyignore.yaml").read_text(encoding="utf-8")
     dependency_review = (root / ".github/workflows/dependency-review.yml").read_text(encoding="utf-8")
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     project = (root / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert "python-version: '3.14.6'" in ci
-    assert "python:3.14.6-slim" in dockerfile
+    assert "python-version: '3.14.7'" in ci
+    assert "python:3.14.7-slim" in dockerfile
     assert 'requires-python = ">=3.14,<3.15"' in project
     assert 'target-version = "py314"' in project
     assert 'python_version = "3.14"' in project
     assert "cancel-in-progress: true" in ci
     assert "cancel-in-progress: true" in ghcr
+    assert "Verify PR runtime image excludes build-only packages" in ghcr
+    assert "trivyignores: .trivyignore.yaml" in ghcr
+    assert "GHSA-6v7p-g79w-8964" in trivyignore
+    assert "pkg:pypi/msgpack@1.1.2" in trivyignore
+    assert "CVE-2025-47273" in trivyignore
+    assert "pkg:pypi/setuptools@70.3.0" in trivyignore
     assert "actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294" in dependency_review
     assert "fail-on-severity: high" in dependency_review
     assert "fail-on-scopes: runtime" in dependency_review

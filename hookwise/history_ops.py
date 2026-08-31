@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -11,6 +12,7 @@ from flask import current_app, jsonify, request, session
 
 from .extensions import db
 from .models import SavedHistorySearch, WebhookConfig, WebhookLog
+from .services.delivery_queue import commit_and_dispatch, stage_delivery
 from .tasks import process_webhook_task, redis_client
 from .utils import auth_required, log_audit, mask_secrets
 
@@ -127,21 +129,21 @@ def _queue_replay(log: WebhookLog, payload: Any, suffix: str) -> dict[str, str]:
     body = json.dumps(payload, separators=(",", ":"))
     if len(body.encode("utf-8")) > _MAX_REPLAY_BYTES:
         raise ValueError("Replay payload exceeds 256 KiB")
-    request_id = f"replay_{int(time.time() * 1000)}_{log.request_id[:16]}_{suffix}"[:100]
+    request_id = f"replay_{int(time.time() * 1000)}_{secrets.token_hex(4)}_{log.request_id[:16]}_{suffix}"[:100]
     now = datetime.now(timezone.utc)
     queued = WebhookLog(
         config_id=log.config_id,
         request_id=request_id,
         correlation_id=(log.correlation_id or log.request_id)[:100],
         payload=json.dumps(payload),
-        status="queued",
+        status="pending_enqueue",
         received_at=now,
         queued_at=now,
         replay_of_log_id=log.id,
     )
-    db.session.add(queued)
-    db.session.commit()
-    process_webhook_task.delay(log.config_id, payload, request_id, log_id=queued.id)
+    outbox = stage_delivery(queued, payload)
+    if not commit_and_dispatch(outbox, process_webhook_task):
+        raise RuntimeError("Task broker unavailable; replay retained in durable outbox")
     log_audit("history_replay", log.config_id, f"Queued replay for log {log.id}")
     return {"request_id": request_id, "log_id": queued.id}
 

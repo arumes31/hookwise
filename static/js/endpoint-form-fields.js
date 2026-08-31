@@ -512,3 +512,28 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             close_value: 'Resolved'
         }
     };
+function applyEndpointTemplate(templateKey) {
+    const dataElement = document.getElementById('endpoint-template-data');
+    if (!dataElement || !templateKey) return;
+    let templates;
+    try {
+        templates = JSON.parse(dataElement.textContent || '{}');
+    } catch (_error) {
+        return;
+    }
+    const preset = templates[templateKey];
+    if (!preset) return;
+    Object.entries(preset).forEach(([name, value]) => {
+        if (name === 'label') return;
+        const field = document.querySelector(`[name="${CSS.escape(name)}"]`);
+        if (!field) return;
+        if (field.type === 'checkbox') field.checked = Boolean(value);
+        else field.value = String(value);
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const selector = document.getElementById('endpoint-template');
+    if (selector) selector.addEventListener('change', () => applyEndpointTemplate(selector.value));
+});

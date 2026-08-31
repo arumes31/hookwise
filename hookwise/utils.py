@@ -9,7 +9,7 @@ from functools import lru_cache, wraps
 from typing import Any, Dict, Optional, cast
 
 import requests
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from flask import Response, jsonify, redirect, request, session, url_for
 from jsonpath_ng import parse as _jsonpath_parse
 
@@ -30,7 +30,7 @@ def call_llm(
         response = requests.post(
             f"{ollama_host}/api/generate",
             json={
-                "model": "phi3",
+                "model": os.environ.get("AI_MODEL", "phi3"),
                 "prompt": prompt,
                 "system": system_prompt,
                 "stream": False,
@@ -427,14 +427,25 @@ def encrypt_string(plain_text: str) -> str:
     return f.encrypt(plain_text.encode()).decode()
 
 
+def ensure_encrypted(value: str) -> str:
+    """Return a Fernet token, encrypting plaintext assignments exactly once."""
+    if not value:
+        return value
+    try:
+        get_fernet().decrypt(value.encode())
+        return value
+    except InvalidToken, ValueError, TypeError:
+        return encrypt_string(value)
+
+
 def decrypt_string(cipher_text: str) -> str:
     if not cipher_text:
         return cipher_text
     f = get_fernet()
     try:
         return f.decrypt(cipher_text.encode()).decode()
-    except Exception:
-        return cipher_text  # Return as is if decryption fails (might be unencrypted)
+    except (InvalidToken, ValueError, TypeError) as exc:
+        raise ValueError("Encrypted secret could not be decrypted") from exc
 
 
 def log_audit(

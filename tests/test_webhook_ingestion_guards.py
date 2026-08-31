@@ -10,6 +10,7 @@ Covers the rejection paths that protect the worker and ConnectWise:
 
 import hashlib
 import hmac
+import time
 from unittest.mock import patch
 
 import pytest
@@ -49,6 +50,7 @@ def _make_config(app, **kw):
         cfg = WebhookConfig(name="Ingest", bearer_token="plain-token")
         cfg.is_enabled = True
         cfg.bearer_auth_enabled = False
+        cfg.allow_unauthenticated = True
         for k, v in kw.items():
             setattr(cfg, k, v)
         db.session.add(cfg)
@@ -65,7 +67,12 @@ def test_invalid_bearer_token_rejected(client, app):
 
 def test_invalid_hmac_signature_rejected(client, app):
     cid = _make_config(app, hmac_secret="shhh")
-    resp = client.post(f"/w/{cid}", json={"x": 1}, headers={"X-HookWise-Signature": "deadbeef"})
+    headers = {
+        "X-HookWise-Signature": "deadbeef",
+        "X-HookWise-Timestamp": str(int(time.time())),
+        "X-HookWise-Nonce": "nonce-for-testing",
+    }
+    resp = client.post(f"/w/{cid}", json={"x": 1}, headers=headers)
     assert resp.status_code == 401
 
 
@@ -73,16 +80,60 @@ def test_valid_hmac_passes_signature_check(client, app):
     # Sanity check the negative test above: a correct signature must NOT 401.
     cid = _make_config(app, hmac_secret="shhh")
     body = b'{"x": 1}'
-    sig = hmac.HMAC(b"shhh", body, hashlib.sha256).hexdigest()
+    timestamp = str(int(time.time()))
+    nonce = "nonce-for-testing"
+    sig = hmac.HMAC(b"shhh", timestamp.encode() + b"." + nonce.encode() + b"." + body, hashlib.sha256).hexdigest()
     with patch("hookwise.webhook.process_webhook_task") as task:
         resp = client.post(
             f"/w/{cid}",
             data=body,
             content_type="application/json",
-            headers={"X-HookWise-Signature": sig},
+            headers={
+                "X-HookWise-Signature": sig,
+                "X-HookWise-Timestamp": timestamp,
+                "X-HookWise-Nonce": nonce,
+            },
         )
     assert resp.status_code == 202
     task.delay.assert_called_once()
+
+
+def test_replayed_hmac_nonce_is_rejected(client, app):
+    cid = _make_config(app, hmac_secret="shhh")
+    body = b'{"x": 1}'
+    timestamp = str(int(time.time()))
+    nonce = "one-time-nonce-1234"
+    signature = hmac.HMAC(b"shhh", timestamp.encode() + b"." + nonce.encode() + b"." + body, hashlib.sha256).hexdigest()
+    headers = {
+        "X-HookWise-Signature": signature,
+        "X-HookWise-Timestamp": timestamp,
+        "X-HookWise-Nonce": nonce,
+    }
+    with (
+        patch("hookwise.webhook.redis_client.set", side_effect=[True, False]),
+        patch("hookwise.webhook.process_webhook_task"),
+    ):
+        first = client.post(f"/w/{cid}", data=body, content_type="application/json", headers=headers)
+        replay = client.post(f"/w/{cid}", data=body, content_type="application/json", headers=headers)
+
+    assert first.status_code == 202
+    assert replay.status_code == 409
+    assert replay.get_json()["message"] == "Replayed HMAC request"
+
+
+def test_corrupt_encrypted_secret_fails_closed(client, app):
+    cid = _make_config(app, bearer_auth_enabled=True)
+    with app.app_context():
+        # Bypass the model validator to emulate corrupt legacy database state.
+        db.session.execute(
+            db.text("UPDATE webhook_config SET bearer_token = :token WHERE id = :config_id"),
+            {"token": "gAAAA-corrupt", "config_id": cid},
+        )
+        db.session.commit()
+
+    response = client.post(f"/w/{cid}", json={"x": 1}, headers={"Authorization": "Bearer secret"})
+    assert response.status_code == 503
+    assert response.get_json()["message"] == "Endpoint authentication secret unavailable"
 
 
 def test_source_ip_not_in_allowlist_rejected(client, app):

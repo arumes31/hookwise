@@ -94,8 +94,8 @@ def test_find_open_ticket_none_found(mock_get, client):
 @patch("requests.Session.get")
 def test_find_open_ticket_error(mock_get, client):
     mock_get.side_effect = requests.exceptions.RequestException("API Error")
-    result = client.find_open_ticket("Test")
-    assert result is None
+    with pytest.raises(TicketRequestError):
+        client.find_open_ticket("Test")
 
 
 @patch("requests.Session.get")

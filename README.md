@@ -91,7 +91,7 @@ sequenceDiagram
     participant C as ConnectWise API
     participant D as PostgreSQL DB
 
-    S->>P: POST /webhook/<id> (Bearer Auth)
+    S->>P: POST /w/<id> (Bearer Auth)
     P->>P: Validate Source & HMAC
     P->>R: Push Task ID
     P-->>S: 202 Accepted (Request ID)
@@ -144,7 +144,7 @@ docker exec -it hookwise-llm ollama pull phi3
 All GUI/Admin endpoints require Session Auth or Basic Auth (if configured). Webhook endpoints require Bearer tokens.
 
 ### Webhook Ingestion
-- `POST /webhook/<endpoint_id>`
+- `POST /w/<endpoint_id>`
   - **Auth**: `Authorization: Bearer <token>`
   - **Returns**: `202 Accepted` with `request_id`.
 
@@ -163,9 +163,9 @@ HMAC (Hash-based Message Authentication Code) provides a way to verify both the 
 
 ### How it Works
 1.  **Shared Secret**: You and HookWise share a secret key (configured per endpoint).
-2.  **Signing**: Your monitor tool calculates a SHA256 hash of the **raw request body** using that secret.
-3.  **Transmission**: The tool sends this hash in the `X-HookWise-Signature` header.
-4.  **Verification**: HookWise recalculates the hash and compares it. If they don't match, the request is rejected.
+2.  **Signing**: Sign `<unix_timestamp>.<unique_nonce>.<raw_request_body>` with HMAC-SHA256.
+3.  **Transmission**: Send the signature, timestamp, and nonce headers.
+4.  **Verification**: HookWise verifies the signature, rejects timestamps outside five minutes, and accepts each nonce once.
 
 ### Implementation Guide (How-to)
 If your monitoring tool supports custom headers and signing scripts, use the following logic:
@@ -174,21 +174,26 @@ If your monitoring tool supports custom headers and signing scripts, use the fol
 ```python
 import hmac
 import hashlib
+import secrets
+import time
 
 secret = "your_hmac_secret_from_gui"
-payload = '{"status": "0", "msg": "Critical Alert"}' # Raw body string
+payload = b'{"status": "0", "msg": "Critical Alert"}'
+timestamp = str(int(time.time()))
+nonce = secrets.token_urlsafe(24)
+signed_payload = timestamp.encode() + b"." + nonce.encode() + b"." + payload
 
 signature = hmac.new(
-    secret.encode(), 
-    payload.encode(), 
+    secret.encode(),
+    signed_payload,
     hashlib.sha256
 ).hexdigest()
-
-print(f"Header Value: {signature}")
 ```
 
 **2. Send the Request**:
 - **Header**: `X-HookWise-Signature: <calculated_signature>`
+- **Header**: `X-HookWise-Timestamp: <unix_timestamp>`
+- **Header**: `X-HookWise-Nonce: <unique_random_value>`
 - **Content-Type**: `application/json`
 
 > [!IMPORTANT]
@@ -209,6 +214,12 @@ By default, HookWise uses `phi3:latest`. You can swap this for `llama3`, `mistra
    ```
 2. **Update Configuration**: Set the `AI_MODEL` environment variable to `llama3`.
 3. **Restart Worker**: The Celery worker will now use the new model for all analysis.
+
+`AI_MODEL` is read by every LLM request. Set it on both proxy and worker deployments when they do not share the Compose environment block.
+
+### Endpoint templates
+
+The new-endpoint page includes presets for Uptime Kuma, Zabbix, Grafana, Datadog, and CIPP. A preset only pre-fills routing defaults; review authentication and ConnectWise fields before saving.
 
 ### The RCA System Prompt
 The analysis is guided by a global system prompt that tells the AI to be concise and focused on remediation. You can customize the **RCA Instructions** per endpoint in the Web GUI, allowing different alerts to receive different styles of analysis (e.g., "Developer-focused" vs "Support-focused").
@@ -445,7 +456,7 @@ HookWise provides a centralized mapping table called **TenantMap** (found in the
 **Q: HMAC verification fails on every request?**
 - Ensure your monitoring tool is sending the payload as raw JSON.
 - If your tool adds extra whitespace or re-orders JSON keys after signing, the signature won't match.
-- Try testing with the `X-HookWise-Signature` header disabled first to verify the basic connectivity.
+- Ensure all three HMAC headers are present, the timestamp is within five minutes, and every request uses a fresh nonce.
 
 ---
 
