@@ -37,6 +37,8 @@ services:
       - "GUI_TRUSTED_IPS="
       - "LOG_RETENTION_DAYS=30"
       - "OLLAMA_HOST=http://hookwise-llm:11434"
+      - "AI_MODEL=${AI_MODEL:-phi3}"
+      - "BOOTSTRAP_ADMIN=false"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
       interval: 30s
@@ -48,6 +50,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      hookwise-migrate:
+        condition: service_completed_successfully
       hookwise-llm:
         condition: service_healthy
 
@@ -55,7 +59,7 @@ services:
     build: .
     container_name: hookwise-worker
     restart: unless-stopped
-    command: celery -A worker.celery worker --loglevel=info -P gevent -c 100
+    command: celery -A worker.celery worker --loglevel=info -P gevent -c ${CELERY_CONCURRENCY:-20}
     environment: *env
     healthcheck:
       test: ["CMD-SHELL", "celery -A worker.celery inspect ping --timeout 5 | grep -q pong"]
@@ -68,6 +72,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      hookwise-migrate:
+        condition: service_completed_successfully
       hookwise-llm:
         condition: service_healthy
 
@@ -88,6 +94,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      hookwise-migrate:
+        condition: service_completed_successfully
       hookwise-llm:
         condition: service_healthy
 
@@ -105,6 +113,15 @@ services:
       start_period: 30s
     # Ollama automatically uses CPU if no GPU is detected
 
+  hookwise-migrate:
+    build: .
+    restart: "no"
+    command: sh -c "flask db upgrade && flask bootstrap-admin"
+    environment: *env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   redis:
     image: redis:8.10.1-alpine
     container_name: hookwise-redis
@@ -112,7 +129,7 @@ services:
     command: >
       sh -c "redis-server --requirepass $$REDIS_PASSWORD"
     environment:
-      - "REDIS_PASSWORD=your_secure_redis_password"
+      - "REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
     volumes:
       - redis_data:/data
     healthcheck:

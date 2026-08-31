@@ -105,6 +105,19 @@
                                     data-tooltip="A descriptive name for this webhook source.">
                             </div>
 
+                            {% if not config %}
+                            <div class="mb-4">
+                                <label for="endpoint-template" class="form-label fw-bold text-light">Start from a template</label>
+                                <select id="endpoint-template" class="form-select bg-dark border-secondary text-light">
+                                    <option value="">Custom endpoint</option>
+                                    {% for key, preset in endpoint_templates.items() %}
+                                    <option value="{{ key }}">{{ preset.label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">Pre-fills safe defaults; review every value before saving.</div>
+                            </div>
+                            {% endif %}
+
                             <div class="mb-4">
                                 <label for="tags" class="form-label fw-bold text-light">Tags</label>
                                 <input type="text" class="form-control bg-dark border-secondary text-light" id="tags"
@@ -232,8 +245,9 @@
                                 <input type="text"
                                     class="form-control font-monospace bg-dark border-secondary text-warning small"
                                     id="hmac_secret" name="hmac_secret" placeholder="Optional shared secret"
-                                    value="{{ config.hmac_secret or '' if config else '' }}"
-                                    data-tooltip="If set, incoming webhooks must include a valid X-HookWise-Signature header.">
+                                    value=""
+                                    data-tooltip="If set, incoming webhooks must include timestamped, nonce-protected HMAC headers.">
+                                {% if config and config.hmac_secret %}<div class="form-text">An encrypted secret is configured. Leave blank to keep it.</div>{% endif %}
                             </div>
 
                             <div class="form-check form-switch mb-4">
@@ -538,6 +552,15 @@
                                 </div>
                             </div>
 
+                            <div class="form-check form-switch mb-4">
+                                <input class="form-check-input" type="checkbox" role="switch" id="allow_unauthenticated"
+                                    name="allow_unauthenticated" value="true" {{ 'checked' if config and config.allow_unauthenticated else '' }}>
+                                <label class="form-check-label fw-bold text-warning" for="allow_unauthenticated">
+                                    Explicitly allow unauthenticated delivery
+                                </label>
+                                <div class="small text-secondary">Use only when the sender cannot support bearer or HMAC authentication.</div>
+                            </div>
+
                             <div class="mb-4 p-3 rounded-2 border border-info border-opacity-25"
                                 style="background: rgba(13, 202, 240, 0.03);">
                                 <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
@@ -686,6 +709,7 @@
 <meta name="hookwise-endpoint-id" content="{{ config.id }}">
 {% endif %}
 <meta name="hookwise-base-url" content="{{ base_url }}">
+<script id="endpoint-template-data" type="application/json">{{ endpoint_templates|default({})|tojson }}</script>
 <script src="{{ url_for('static', filename='js/endpoint-form-fields.js') }}"></script>
 <script src="{{ url_for('static', filename='js/endpoint-form-actions.js') }}"></script>
 <script src="{{ url_for('static', filename='js/endpoint-form.js') }}"></script>

@@ -1,11 +1,23 @@
 import logging
+from typing import cast
 
 import click
+from flask import Flask, current_app
 from flask.cli import with_appcontext
 
 from .extensions import redis_client
 
 logger = logging.getLogger(__name__)
+
+
+@click.command("bootstrap-admin")
+@with_appcontext
+def bootstrap_admin_command() -> None:
+    """Create or explicitly rotate the configured bootstrap administrator."""
+    from . import _init_db_data
+
+    _init_db_data(cast(Flask, current_app))
+    click.echo("Administrator bootstrap completed.")
 
 
 @click.command("clear-cw-cache")

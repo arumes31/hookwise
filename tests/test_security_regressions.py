@@ -66,7 +66,7 @@ def test_force_https_rejects_an_untrusted_host(monkeypatch):
 def test_routing_regex_timeout_fails_closed(app):
     with (
         app.app_context(),
-        patch("hookwise.api.safe_regex.search", side_effect=TimeoutError),
+        patch("hookwise.services.routing.safe_regex.search", side_effect=TimeoutError),
     ):
         assert not _routing_regex_matches("(a+)+$", "a" * 1_000)
 
@@ -115,8 +115,8 @@ def test_restore_does_not_disclose_parser_exception(client):
         content_type="multipart/form-data",
     )
 
-    assert response.status_code == 500
-    assert response.json == {"status": "error", "message": "Configuration import failed"}
+    assert response.status_code == 400
+    assert response.json == {"status": "error", "message": "Backup authentication or JSON validation failed"}
     assert b"Expecting property name" not in response.data
 
 

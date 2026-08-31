@@ -9,13 +9,14 @@ from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Dict, Tuple, cast
 
-import regex as safe_regex
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
 
 from .extensions import csrf, db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
+from .services.delivery_queue import commit_and_dispatch, stage_delivery
+from .services.routing import routing_regex_matches
 from .tasks import celery, cw_client, process_webhook_task, redis_client
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
@@ -28,9 +29,6 @@ from .utils import (
     resolve_monitor_name,
 )
 
-ROUTING_REGEX_MAX_PATTERN_LENGTH = 512
-ROUTING_REGEX_TIMEOUT_SECONDS = 0.05
-ROUTING_REGEX_MAX_VALUE_LENGTH = 100_000
 _DELIVERY_CONTROL_BOUNDS = {
     "rate_limit_per_minute": (60, 1, 10_000),
     "retry_max_attempts": (5, 0, 20),
@@ -53,15 +51,8 @@ def _restore_delivery_control(field: str, value: Any) -> bool | int:
 
 
 def _routing_regex_matches(pattern: str, value: str) -> bool:
-    """Evaluate an administrator-defined routing regex with strict resource bounds."""
-    if len(pattern) > ROUTING_REGEX_MAX_PATTERN_LENGTH or len(value) > ROUTING_REGEX_MAX_VALUE_LENGTH:
-        return False
-    try:
-        match = safe_regex.search(pattern, value, safe_regex.IGNORECASE, timeout=ROUTING_REGEX_TIMEOUT_SECONDS)
-        return match is not None
-    except safe_regex.error, TimeoutError:
-        current_app.logger.warning("Routing regex was invalid or exceeded the execution timeout")
-        return False
+    """Compatibility wrapper for callers importing the legacy API helper."""
+    return routing_regex_matches(pattern, value)
 
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
@@ -302,21 +293,21 @@ def _register() -> None:
         log_entry = WebhookLog.query.get_or_404(log_id)
         try:
             data = json.loads(log_entry.payload)
-            request_id = f"replay_{int(time.time())}_{log_entry.request_id[:8]}"
+            request_id = f"replay_{int(time.time())}_{secrets.token_hex(4)}_{log_entry.request_id[:8]}"[:100]
             now = datetime.now(timezone.utc)
             replay_log = WebhookLog(
                 config_id=log_entry.config_id,
                 request_id=request_id,
                 correlation_id=log_entry.correlation_id or log_entry.request_id[:100],
                 payload=json.dumps(data),
-                status="queued",
+                status="pending_enqueue",
                 received_at=now,
                 queued_at=now,
                 replay_of_log_id=log_entry.id,
             )
-            db.session.add(replay_log)
-            db.session.commit()
-            process_webhook_task.delay(log_entry.config_id, data, request_id, log_id=replay_log.id)
+            outbox = stage_delivery(replay_log, data)
+            if not commit_and_dispatch(outbox, process_webhook_task):
+                return jsonify({"status": "enqueue_failed", "message": "Replay retained for retry"}), 503
             log_to_web(
                 f"REPLAY started (Original: {log_entry.request_id[:8]})", "info", log_entry.config.name, data=data
             )
@@ -349,191 +340,6 @@ def _register() -> None:
         WebhookLog.query.filter(WebhookLog.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"status": "success"})
-
-    # --- Endpoint Testing ---
-
-    @main_bp.route("/endpoint/test/<config_id>", methods=["POST"])
-    @auth_required
-    def test_endpoint(config_id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(config_id)
-        request_id = f"test_{int(time.time())}"
-        data = {
-            "monitor": {"name": f"Test Monitor for {config.name}"},
-            "status": "0",
-            "msg": "Common test message for webhook verification",
-            "heartbeat": {"status": "0"},
-            "title": "Manual Test Trigger",
-            "message": "This is a simulated webhook payload.",
-        }
-        now = datetime.now(timezone.utc)
-        log_entry = WebhookLog(
-            config_id=config_id,
-            request_id=request_id,
-            correlation_id=request_id[:100],
-            payload=json.dumps(data),
-            status="queued",
-            source_ip="system",
-            received_at=now,
-            queued_at=now,
-        )
-        db.session.add(log_entry)
-        db.session.commit()
-        process_webhook_task.delay(config_id, data, request_id, log_id=log_entry.id)
-        log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
-        return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
-
-    @main_bp.route("/endpoint/dry-run/<config_id>", methods=["POST"])
-    @auth_required
-    def dry_run_endpoint(config_id: str) -> Any:
-        """Simulate webhook processing without calling ConnectWise or Redis."""
-        config = WebhookConfig.query.get_or_404(config_id)
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-        except Exception:
-            return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
-
-        from .tasks import is_in_maintenance
-        from .utils import resolve_jsonpath
-
-        steps = []
-        result: dict[str, Any] = {}
-
-        # Step 1: Maintenance window
-        maintenance_active = is_in_maintenance(config)
-        steps.append(
-            {
-                "step": "Maintenance Window",
-                "active": maintenance_active,
-                "result": "skipped" if maintenance_active else "ok",
-            }
-        )
-        if maintenance_active:
-            return jsonify({"action": "skip", "reason": "maintenance_window", "steps": steps})
-
-        # Step 2: JSON mapping
-        json_mapping: dict[str, str] = {}
-        if config.json_mapping:
-            try:
-                json_mapping = json.loads(config.json_mapping)
-            except Exception:
-                pass
-
-        mapped_vals: dict[str, str] = {}
-        overridable = [
-            "summary",
-            "description",
-            "customer_id",
-            "ticket_type",
-            "subtype",
-            "item",
-            "priority",
-            "board",
-            "status",
-        ]
-        for field in overridable:
-            if field in json_mapping:
-                mapping_val = json_mapping[field]
-                if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = re.compile(r"(\$\S+|[^\s]+)")
-                    tokens = token_re.findall(mapping_val)
-                    resolved: list[tuple[str, bool]] = []
-                    any_resolved = False
-                    for tok in tokens:
-                        if tok.startswith("$"):
-                            r_val = resolve_jsonpath(data, tok)
-                            if r_val is not None and str(r_val).strip():
-                                resolved.append((str(r_val).strip(), True))
-                                any_resolved = True
-                            else:
-                                resolved.append(("", True))
-                        else:
-                            resolved.append((tok, False))
-                    if any_resolved:
-                        output_parts = []
-                        for i, (v, is_var) in enumerate(resolved):
-                            if is_var:
-                                if v:
-                                    output_parts.append(v)
-                            else:
-                                left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
-                                right_ok = any(resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved)))
-                                if left_ok or right_ok:
-                                    output_parts.append(v)
-                        if output_parts:
-                            mapped_vals[field] = " ".join(output_parts)
-                else:
-                    r = resolve_jsonpath(data, mapping_val)
-                    if r is not None:
-                        mapped_vals[field] = str(r)
-        steps.append({"step": "JSONPath Mapping", "resolved": mapped_vals})
-
-        # Step 3: Routing rules
-        routing_rules: list[dict[str, Any]] = []
-        if config.routing_rules:
-            try:
-                routing_rules = json.loads(config.routing_rules)
-            except Exception:
-                pass
-        matched_rules = []
-        for rule in routing_rules:
-            rule_path = rule.get("path")
-            rule_regex = rule.get("regex")
-            if rule_path and rule_regex:
-                val = str(resolve_jsonpath(data, rule_path))
-                if _routing_regex_matches(str(rule_regex), val):
-                    matched_rules.append(
-                        {
-                            "regex": rule_regex,
-                            "path": rule_path,
-                            "overrides": rule.get("overrides", {}),
-                        }
-                    )
-        steps.append({"step": "Routing Rules", "matched": matched_rules})
-
-        # Step 4: Trigger field evaluation
-        trigger_field = config.trigger_field or ""
-        open_value = config.open_value or ""
-        close_value = config.close_value or ""
-        actual_val = str(resolve_jsonpath(data, trigger_field)) if trigger_field else ""
-        open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
-        close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
-        if actual_val in open_triggers:
-            alert_type = "DOWN"
-        elif actual_val in close_triggers:
-            alert_type = "UP"
-        else:
-            alert_type = "GENERIC"
-
-        steps.append(
-            {
-                "step": "Trigger Evaluation",
-                "trigger_field": trigger_field,
-                "actual_value": actual_val,
-                "alert_type": alert_type,
-            }
-        )
-
-        # Step 5: Predicted action
-        prefix = config.ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-        mapped_summary = mapped_vals.get("summary")
-        monitor_name = resolve_monitor_name(data)
-        ticket_summary = f"{prefix} {mapped_summary}" if mapped_summary else f"{prefix} {monitor_name}"
-        predicted_action = (
-            "create_ticket" if alert_type == "DOWN" else "close_ticket" if alert_type == "UP" else "add_note_or_skip"
-        )
-
-        result = {
-            "action": predicted_action,
-            "alert_type": alert_type,
-            "ticket_summary": ticket_summary,
-            "description": mapped_vals.get("description") or data.get("msg", ""),
-            "company_id": mapped_vals.get("customer_id", config.customer_id_default or ""),
-            "board": (matched_rules[0] if matched_rules else {})
-            .get("overrides", {})
-            .get("board", mapped_vals.get("board", config.board or "")),
-            "steps": steps,
-        }
-        return jsonify(result)
 
     # --- LLM Health ---
 
@@ -983,80 +789,6 @@ def _register() -> None:
         return jsonify({"status": "error", "message": "LLM call failed or returned empty result"}), 500
 
     @auth_required
-    def backup_config() -> Any:
-        configs = WebhookConfig.query.all()
-        data = [c.to_dict(include_token=True) for c in configs]
-        return Response(
-            json.dumps(data, indent=2),
-            mimetype="application/json",
-            headers={"Content-Disposition": "attachment;filename=hookwise_backup.json"},
-        )
-
-    @auth_required
-    def restore_config() -> Any:
-        file = request.files.get("backup_file")
-        if not file:
-            return jsonify({"status": "error", "message": "No file"}), 400
-        try:
-            data = json.load(file)
-            ids = [c["id"] for c in data if "id" in c]
-            existing_configs = {cfg.id: cfg for cfg in WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()}
-
-            for c in data:
-                config_id = c.get("id")
-                if not config_id:
-                    continue
-                config = existing_configs.get(config_id)
-                if not config:
-                    config = WebhookConfig(id=config_id)
-                    db.session.add(config)
-                fields = [
-                    "name",
-                    "customer_id_default",
-                    "board",
-                    "status",
-                    "ticket_type",
-                    "subtype",
-                    "item",
-                    "priority",
-                    "trigger_field",
-                    "open_value",
-                    "close_value",
-                    "ticket_prefix",
-                    "json_mapping",
-                    "routing_rules",
-                    "maintenance_windows",
-                    "trusted_ips",
-                    "is_enabled",
-                    "is_pinned",
-                    "is_draft",
-                    "ai_rca_enabled",
-                    "ai_prompt_template",
-                    "bearer_token",
-                    "description_template",
-                    "hmac_secret",
-                    "rate_limit_per_minute",
-                    "retry_enabled",
-                    "retry_max_attempts",
-                    "retry_base_delay_seconds",
-                    "retry_max_delay_seconds",
-                ]
-                for f in fields:
-                    if f in c:
-                        value = _restore_delivery_control(f, c[f]) if f in _DELIVERY_CONTROL_FIELDS else c[f]
-                        setattr(config, f, value)
-                if _DELIVERY_CONTROL_FIELDS.intersection(c):
-                    base_delay = int(config.retry_base_delay_seconds or 1)
-                    max_delay = int(config.retry_max_delay_seconds or 300)
-                    if max_delay < base_delay:
-                        config.retry_max_delay_seconds = base_delay
-            db.session.commit()
-            return jsonify({"status": "success"})
-        except Exception:
-            current_app.logger.exception("Failed to import configuration")
-            return jsonify({"status": "error", "message": "Configuration import failed"}), 500
-
-    @auth_required
     def submit_feedback() -> Any:
         data = request.json
         message = data.get("message")
@@ -1183,6 +915,7 @@ def _register() -> None:
     from .admin_api import register_admin_routes
     from .backup_api import register_backup_routes
     from .connectwise_api import register_connectwise_routes
+    from .delivery_api import register_delivery_routes
     from .health_api import register_health_routes
 
     handlers = locals()
@@ -1190,6 +923,7 @@ def _register() -> None:
     register_connectwise_routes(main_bp, handlers)
     register_admin_routes(main_bp, handlers)
     register_backup_routes(main_bp, handlers)
+    register_delivery_routes(main_bp)
 
 
 _register()

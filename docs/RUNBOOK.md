@@ -69,6 +69,10 @@ Symptoms: failures and DLQ growth, `create_ticket` errors in worker logs,
    maintenance operation — never rotate it without a re-encryption plan, or
    stored bearer tokens/HMAC secrets become undecryptable.
 
+HMAC senders must sign `<timestamp>.<nonce>.<raw body>` and provide
+`X-HookWise-Signature`, `X-HookWise-Timestamp`, and `X-HookWise-Nonce`. Nonces
+cannot be reused and timestamps are accepted only within a five-minute window.
+
 ---
 
 ## Worker / beat not processing

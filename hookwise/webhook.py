@@ -2,6 +2,7 @@
 
 import ipaddress
 import json
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,7 @@ from prometheus_client import Counter
 from .extensions import csrf, db, limiter, redis_client
 from .metrics import log_webhook_received
 from .models import WebhookConfig, WebhookLog
+from .services.delivery_queue import commit_and_dispatch, stage_delivery
 from .tasks import process_webhook_task
 from .utils import decrypt_string, log_to_web, mask_secrets
 
@@ -97,7 +99,11 @@ def _validate_request_auth(config: WebhookConfig) -> tuple[bool, str, int]:
         token = auth_header.split(" ")[1]
         import hmac as _hmac
 
-        if not _hmac.compare_digest(token, decrypt_string(config.bearer_token)):
+        try:
+            expected_token = decrypt_string(config.bearer_token)
+        except ValueError:
+            return False, "Endpoint authentication secret unavailable", 503
+        if not _hmac.compare_digest(token, expected_token):
             return False, "Invalid Bearer Token", 401
 
     if config.hmac_secret:
@@ -105,12 +111,35 @@ def _validate_request_auth(config: WebhookConfig) -> tuple[bool, str, int]:
         import hmac
 
         signature = request.headers.get("X-HookWise-Signature")
-        if not signature:
-            return False, "Missing HMAC Signature", 401
-
-        computed = hmac.HMAC(config.hmac_secret.encode(), request.data, hashlib.sha256).hexdigest()
+        timestamp = request.headers.get("X-HookWise-Timestamp")
+        nonce = request.headers.get("X-HookWise-Nonce")
+        if not signature or not timestamp or not nonce:
+            return False, "Missing HMAC signature, timestamp, or nonce", 401
+        try:
+            signed_at = int(timestamp)
+        except ValueError:
+            return False, "Invalid HMAC timestamp", 401
+        if abs(int(time.time()) - signed_at) > 300:
+            return False, "Expired HMAC timestamp", 401
+        if not 16 <= len(nonce) <= 128 or not nonce.replace("-", "").replace("_", "").isalnum():
+            return False, "Invalid HMAC nonce", 401
+        try:
+            secret = decrypt_string(config.hmac_secret)
+        except ValueError:
+            return False, "Endpoint authentication secret unavailable", 503
+        signed_payload = timestamp.encode() + b"." + nonce.encode() + b"." + request.get_data(cache=True)
+        computed = hmac.HMAC(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(computed, signature):
             return False, "Invalid HMAC Signature", 401
+        nonce_key = f"hookwise:hmac-nonce:{config.id}:{nonce}"
+        try:
+            if not redis_client.set(nonce_key, "1", nx=True, ex=600):
+                return False, "Replayed HMAC request", 409
+        except Exception:
+            return False, "HMAC replay protection unavailable", 503
+
+    if not config.bearer_auth_enabled and not config.hmac_secret and not config.allow_unauthenticated:
+        return False, "Endpoint has no approved authentication mode", 403
 
     return True, "", 200
 
@@ -167,11 +196,18 @@ def _register() -> None:
             _log_webhook_rejection(config_id, request_id, error_msg)
             return jsonify({"status": "error", "message": error_msg}), status_code
 
-        data = request.json
-        if not data:
+        if not request.is_json:
+            return jsonify({"status": "error", "message": "Content-Type must be application/json"}), 415
+        data = request.get_json(silent=True)
+        if data is None:
             log_webhook_received(status="bad_request", config_name=config.name)
-            _log_webhook_rejection(config_id, request_id, "No JSON payload")
-            return jsonify({"status": "error", "message": "No JSON payload", "request_id": request_id}), 400
+            _log_webhook_rejection(config_id, request_id, "Malformed or missing JSON payload")
+            return jsonify({"status": "error", "message": "Malformed JSON payload", "request_id": request_id}), 400
+        if not isinstance(data, dict):
+            return (
+                jsonify({"status": "error", "message": "JSON payload must be an object", "request_id": request_id}),
+                400,
+            )
 
         headers = dict(request.headers)
         headers.pop("Authorization", None)
@@ -185,20 +221,27 @@ def _register() -> None:
             payload=json.dumps(data),
             headers=json.dumps(mask_secrets(headers)),
             source_ip=request.remote_addr,
-            status="queued",
+            status="pending_enqueue",
             received_at=now,
             queued_at=now,
         )
-        db.session.add(log_entry)
-        db.session.commit()
-        process_webhook_task.delay(
-            config_id,
+        outbox = stage_delivery(
+            log_entry,
             data,
-            request_id,
             source_ip=request.remote_addr,
             headers=headers,
-            log_id=log_entry.id,
         )
+        if not commit_and_dispatch(outbox, process_webhook_task):
+            return (
+                jsonify(
+                    {
+                        "status": "enqueue_failed",
+                        "message": "Task broker unavailable; delivery retained for retry",
+                        "request_id": request_id,
+                    }
+                ),
+                503,
+            )
         log_webhook_received(status="queued", config_name=config.name)
         log_to_web(f"Webhook received and queued (ID: {request_id})", "info", config.name, data=data)
         return jsonify({"status": "queued", "message": "Webhook received", "request_id": request_id}), 202

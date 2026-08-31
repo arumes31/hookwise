@@ -79,7 +79,7 @@ def test_dry_run_maintenance(mock_redis, auth_client, app):
         db.session.commit()
         config_id = config.id
 
-    with patch("hookwise.tasks.is_in_maintenance", return_value=True):
+    with patch("hookwise.delivery_api.is_in_maintenance", return_value=True):
         resp = auth_client.post(f"/endpoint/dry-run/{config_id}", json={})
         assert resp.status_code == 200
         data = resp.get_json()
@@ -142,5 +142,5 @@ def test_dry_run_invalid_json(mock_redis, auth_client, app):
     resp = auth_client.post(
         f"/endpoint/dry-run/{config_id}", data="not json", headers={"Content-Type": "application/json"}
     )
-    # The current code returns 200 even with empty data if JSON is invalid but silent=True
-    assert resp.status_code == 200
+    assert resp.status_code == 400
+    assert resp.get_json()["message"] == "JSON object body is required"

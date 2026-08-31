@@ -29,7 +29,8 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     _register_extensions(app)
     _register_request_handlers(app)
     _register_blueprints(app)
-    _init_db_data(app)
+    if os.environ.get("BOOTSTRAP_ADMIN", "false").lower() == "true":
+        _init_db_data(app)
     _register_error_handlers(app)
     _register_commands(app)
 
@@ -218,6 +219,8 @@ def _init_db_data(app: Flask) -> None:
                 _logger.info("Admin password hash updated to match GUI_PASSWORD.")
         except Exception:
             db.session.rollback()
+            _logger.exception("Admin bootstrap failed")
+            raise
 
 
 def _register_error_handlers(app: Flask) -> None:
@@ -256,6 +259,7 @@ def _register_error_handlers(app: Flask) -> None:
 
 def _register_commands(app: Flask) -> None:
     """Register Flask CLI commands."""
-    from .commands import clear_cw_cache_command
+    from .commands import bootstrap_admin_command, clear_cw_cache_command
 
     app.cli.add_command(clear_cw_cache_command)
+    app.cli.add_command(bootstrap_admin_command)

@@ -50,11 +50,12 @@ def test_encrypt_decrypt_roundtrip(app):
         assert decrypt_string(encrypted) == plaintext
 
 
-def test_decrypt_unencrypted_returns_input(app):
-    """decrypt_string should return the original input if decryption fails."""
+def test_decrypt_unencrypted_fails_closed(app):
+    """Plaintext must never be accepted as a successfully decrypted secret."""
     with app.app_context():
         raw = "not-encrypted-at-all"
-        assert decrypt_string(raw) == raw
+        with pytest.raises(ValueError, match="could not be decrypted"):
+            decrypt_string(raw)
 
 
 def test_encrypt_decrypt_empty_string(app):
@@ -76,15 +77,16 @@ def test_encrypt_decrypt_unicode(app):
 
 
 def test_decrypt_invalid_token(app):
-    """Invalid tokens (malformed Fernet) should return the original input."""
+    """Invalid Fernet-looking tokens must fail closed."""
     with app.app_context():
         # Looks like Fernet but is invalid/corrupted
         invalid_token = "gAAAAABl-ThisIsInvalidTokenValue-xyz="
-        assert decrypt_string(invalid_token) == invalid_token
+        with pytest.raises(ValueError, match="could not be decrypted"):
+            decrypt_string(invalid_token)
 
 
 def test_decrypt_with_different_key(app):
-    """Decryption with a different key should return the original input."""
+    """Decryption with a different key must fail closed."""
     from cryptography.fernet import Fernet
 
     with app.app_context():
@@ -93,8 +95,8 @@ def test_decrypt_with_different_key(app):
         plaintext = "secret-info"
         encrypted_with_other = other_f.encrypt(plaintext.encode()).decode()
 
-        # Should fail to decrypt with app's key and return the cipher_text
-        assert decrypt_string(encrypted_with_other) == encrypted_with_other
+        with pytest.raises(ValueError, match="could not be decrypted"):
+            decrypt_string(encrypted_with_other)
 
 
 # --- JSONPath ---
@@ -390,6 +392,17 @@ def test_call_llm_success(mock_post):
     args, kwargs = mock_post.call_args
     assert kwargs["json"]["prompt"] == "test prompt"
     assert "You are a helpful assistant" in kwargs["json"]["system"]
+
+
+@patch.dict(os.environ, {"AI_MODEL": "llama3.2"})
+@patch("hookwise.utils.requests.post")
+def test_call_llm_uses_configured_model(mock_post):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": "ok"}
+    mock_post.return_value = mock_response
+
+    assert call_llm("test prompt") == "ok"
+    assert mock_post.call_args.kwargs["json"]["model"] == "llama3.2"
 
 
 @patch("hookwise.utils.requests.post")

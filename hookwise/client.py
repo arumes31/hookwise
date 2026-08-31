@@ -40,6 +40,10 @@ class ConnectWiseClient:
         self.service_board_name: str = os.getenv("CW_SERVICE_BOARD", "Service Board")
         self.status_new: str = os.getenv("CW_STATUS_NEW", "New")
         self.status_closed: str = os.getenv("CW_STATUS_CLOSED", "Closed")
+        self.timeout = (
+            max(1.0, float(os.getenv("CW_CONNECT_TIMEOUT", "5"))),
+            max(1.0, float(os.getenv("CW_READ_TIMEOUT", "30"))),
+        )
 
         if not all([self.base_url, self.company, self.public_key, self.private_key, self.client_id]):
             logger.warning("ConnectWise credentials (including CW_CLIENT_ID) are missing. API calls will fail.")
@@ -65,7 +69,8 @@ class ConnectWiseClient:
             backoff_factor=2,  # Exponential backoff: 2, 4, 8, 16, 32 seconds
             backoff_jitter=0.1,  # Added jitter to prevent thundering herd
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
+            respect_retry_after_header=True,
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
@@ -109,12 +114,12 @@ class ConnectWiseClient:
             excluded_statuses = [self.status_closed, "Cancelled", "Completed"]
             if close_status:
                 excluded_statuses.append(close_status)
-            status_clauses = " AND ".join([f"status/name != '{s}'" for s in excluded_statuses])
+            status_clauses = " AND ".join([f"status/name != '{s.replace("'", "''")}'" for s in excluded_statuses])
 
             conditions = f"closedFlag=false AND {status_clauses} AND summary contains '{safe_summary}'"
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(
-                f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30
+                f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=self.timeout
             )
             response.raise_for_status()
             data = response.json()
@@ -123,12 +128,12 @@ class ConnectWiseClient:
             return None
         except requests.exceptions.RequestException as e:
             logger.error(f"Error finding ticket: {e}")
-            return None
+            raise TicketRequestError("Unable to determine whether an open ticket exists") from e
 
     def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, timeout=30
+                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, timeout=self.timeout
             )
             if response.status_code == 404:
                 raise TicketNotFoundError(f"Ticket {ticket_id} not found")
@@ -211,7 +216,7 @@ class ConnectWiseClient:
             )
 
             response = self.session.post(
-                f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30
+                f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=self.timeout
             )
             response.raise_for_status()
             ticket = response.json()
@@ -229,7 +234,10 @@ class ConnectWiseClient:
         patch_payload = [{"op": "replace", "path": "/status/name", "value": target_status}]
         try:
             response = self.session.patch(
-                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
+                f"{self.base_url}/service/tickets/{ticket_id}",
+                headers=self.headers,
+                json=patch_payload,
+                timeout=self.timeout,
             )
             if response.status_code == 404:
                 raise TicketNotFoundError(f"Ticket {ticket_id} not found")
@@ -259,7 +267,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/tickets/{ticket_id}/notes",
                 headers=self.headers,
                 json=note_payload,
-                timeout=30,
+                timeout=self.timeout,
             )
             if note_response.status_code not in [200, 201]:
                 logger.error(
@@ -286,7 +294,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/tickets/{ticket_id}/notes",
                 headers=self.headers,
                 json=note_payload,
-                timeout=30,
+                timeout=self.timeout,
             )
             if response.status_code not in [200, 201]:
                 logger.error(f"Error adding note to ticket #{ticket_id}: {response.status_code} - {response.text}")
@@ -300,7 +308,7 @@ class ConnectWiseClient:
 
     def get_boards(self) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=30)
+            response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=self.timeout)
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
@@ -309,7 +317,9 @@ class ConnectWiseClient:
 
     def get_priorities(self) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/priorities", headers=self.headers, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/service/priorities", headers=self.headers, timeout=self.timeout
+            )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
@@ -319,7 +329,7 @@ class ConnectWiseClient:
     def get_board_statuses(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -330,7 +340,7 @@ class ConnectWiseClient:
     def get_board_types(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -341,7 +351,7 @@ class ConnectWiseClient:
     def get_board_subtypes(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -352,7 +362,7 @@ class ConnectWiseClient:
     def get_board_items(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -366,7 +376,7 @@ class ConnectWiseClient:
             if search:
                 params["conditions"] = f"identifier contains '{search}' OR name contains '{search}'"
             response = self.session.get(
-                f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=30
+                f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())

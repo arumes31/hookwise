@@ -23,8 +23,8 @@ def cw_client():
 
 def test_find_open_ticket_error(cw_client):
     cw_client.session.get = MagicMock(side_effect=requests.exceptions.RequestException("API Error"))
-    result = cw_client.find_open_ticket("test summary")
-    assert result is None
+    with pytest.raises(TicketRequestError):
+        cw_client.find_open_ticket("test summary")
 
 
 def test_get_ticket_error(cw_client):

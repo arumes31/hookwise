@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, validates
 
 from .extensions import db
 
@@ -69,6 +69,7 @@ class WebhookConfig(Base):
     maintenance_windows = db.Column(db.Text)  # JSON string for maintenance intervals
     trusted_ips = db.Column(db.Text)  # Comma-separated IPs or CIDRs
     hmac_secret = db.Column(db.String(256))
+    allow_unauthenticated = db.Column(db.Boolean, default=False, nullable=False)
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     is_pinned = db.Column(db.Boolean, default=False, nullable=False)
     is_draft = db.Column(db.Boolean, default=False, nullable=False)
@@ -107,6 +108,15 @@ class WebhookConfig(Base):
     timeout_ticket_id = db.Column(db.Integer, nullable=True)
     last_stale_alert_at = db.Column(db.DateTime, nullable=True)
 
+    @validates("bearer_token", "hmac_secret")
+    def _encrypt_secret(self, key: str, value: str | None) -> str | None:
+        """Ensure secrets assigned through the model are never stored as plaintext."""
+        if not value:
+            return value
+        from .utils import ensure_encrypted
+
+        return ensure_encrypted(value)
+
     def to_dict(self, include_token: bool = False) -> Dict[str, Any]:
         d = {
             "id": self.id,
@@ -130,6 +140,7 @@ class WebhookConfig(Base):
             "maintenance_windows": self.maintenance_windows,
             "trusted_ips": self.trusted_ips,
             "bearer_auth_enabled": self.bearer_auth_enabled,
+            "allow_unauthenticated": self.allow_unauthenticated,
             "bearer_token_last4": self.bearer_token_last4,
             "rate_limit_per_minute": self.rate_limit_per_minute,
             "retry_enabled": self.retry_enabled,
@@ -153,6 +164,7 @@ class WebhookConfig(Base):
         }
         if include_token:
             d["bearer_token"] = self.bearer_token
+            d["hmac_secret"] = self.hmac_secret
         return d
 
 
@@ -193,6 +205,7 @@ class WebhookLog(Base):
     # Composite index for the common history query: filter by endpoint + status,
     # ordered by recency. Complements the single-column indexes above.
     __table_args__ = (
+        db.UniqueConstraint("config_id", "request_id", name="uq_webhook_log_config_request"),
         db.Index("ix_webhook_log_config_status_created", "config_id", "status", "created_at"),
         db.Index("ix_webhook_log_config_request", "config_id", "request_id"),
         db.Index("ix_webhook_log_status_created", "status", "created_at"),
@@ -255,6 +268,41 @@ class WebhookLog(Base):
             "created_at": self.created_at.isoformat(),
             "config_name": self.config.name if self.config else "Unknown",
         }
+
+
+class DeliveryOutbox(Base):
+    """Durable task-dispatch intent committed atomically with a webhook log."""
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    log_id = db.Column(
+        db.String(36), db.ForeignKey("webhook_log.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    task_name = db.Column(db.String(100), nullable=False, default="hookwise.process_webhook")
+    arguments = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="pending", index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    last_error = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    dispatched_at = db.Column(db.DateTime, nullable=True)
+
+    log = db.relationship(
+        "WebhookLog",
+        backref=db.backref("outbox", uselist=False, cascade="all, delete-orphan", passive_deletes=True),
+    )
+
+
+class TicketOperation(Base):
+    """Idempotency record for external ticket mutations."""
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    log_id = db.Column(db.String(36), db.ForeignKey("webhook_log.id", ondelete="CASCADE"), nullable=False, index=True)
+    operation = db.Column(db.String(30), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="started")
+    ticket_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (db.UniqueConstraint("log_id", "operation", name="uq_ticket_operation_log_operation"),)
 
 
 class WebhookRetryAttempt(Base):

@@ -7,6 +7,7 @@ import pytest
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig
+from hookwise.services.backups import parse_backup
 
 
 @pytest.fixture
@@ -100,7 +101,7 @@ def test_restore_config_no_n_plus_one(client, app):
         assert WebhookConfig.query.count() == num_configs
 
 
-def test_restore_config_applies_bounded_delivery_controls(client, app):
+def test_restore_config_rejects_out_of_range_delivery_controls(client, app):
     with app.app_context():
         config = WebhookConfig(id="delivery-controls", name="Endpoint")
         db.session.add(config)
@@ -126,10 +127,38 @@ def test_restore_config_applies_bounded_delivery_controls(client, app):
             content_type="multipart/form-data",
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 400
         db.session.refresh(config)
-        assert config.retry_enabled is False
-        assert config.retry_max_attempts == 20
-        assert config.retry_base_delay_seconds == 120
-        assert config.retry_max_delay_seconds == 120
-        assert config.rate_limit_per_minute == 1
+        assert config.retry_enabled is True
+        assert config.retry_max_attempts == 5
+        assert config.retry_base_delay_seconds == 1
+        assert config.retry_max_delay_seconds == 300
+        assert config.rate_limit_per_minute == 60
+
+
+def test_backup_is_encrypted_authenticated_and_versioned(client, app):
+    with app.app_context():
+        db.session.add(WebhookConfig(id="secure-backup", name="Secure", bearer_token="super-secret"))
+        db.session.commit()
+    with client.session_transaction() as sess:
+        sess.update(user_id="admin-id", username="admin", role="admin")
+
+    response = client.get("/admin/backup")
+
+    assert response.status_code == 200
+    assert response.mimetype == "application/vnd.hookwise.backup"
+    assert b"super-secret" not in response.data
+    document = parse_backup(response.data)
+    assert document["format"] == "hookwise-config"
+    assert document["version"] == 2
+    assert document["configs"][0]["id"] == "secure-backup"
+
+    tampered = bytearray(response.data)
+    tampered[-1] = tampered[-1] ^ 1
+    rejected = client.post(
+        "/admin/restore",
+        data={"backup_file": (io.BytesIO(tampered), "backup.hwbackup")},
+        content_type="multipart/form-data",
+    )
+    assert rejected.status_code == 400
+    assert "authentication" in rejected.get_json()["message"]
