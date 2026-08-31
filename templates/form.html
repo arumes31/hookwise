@@ -446,9 +446,7 @@
                                     class="form-control font-monospace small bg-dark border-secondary text-warning"
                                     id="json_mapping" name="json_mapping" rows="3"
                                     placeholder='{"summary": "$.title", "description": "$.msg"}'
-                                    data-tooltip="Override CW fields using JSONPath. Map customer_id to $.cid to use CIDMap.">{{ config.json_mapping if config else '' }}</textarea>
-                                <div class="form-text">Map <code>customer_id</code> to <code>$.cid</code> to resolve the
-                                    source system's custom CID through <a href="{{ url_for('main.cidmap') }}">CIDMap</a>.</div>
+                                    data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
                             </div>
 
                             <div class="mb-4">
