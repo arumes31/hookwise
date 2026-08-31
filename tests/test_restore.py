@@ -161,4 +161,4 @@ def test_backup_is_encrypted_authenticated_and_versioned(client, app):
         content_type="multipart/form-data",
     )
     assert rejected.status_code == 400
-    assert "authentication" in rejected.get_json()["message"]
+    assert rejected.get_json()["message"] == "Backup validation failed"

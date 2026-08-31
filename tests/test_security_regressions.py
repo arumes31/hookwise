@@ -116,7 +116,7 @@ def test_restore_does_not_disclose_parser_exception(client):
     )
 
     assert response.status_code == 400
-    assert response.json == {"status": "error", "message": "Backup authentication or JSON validation failed"}
+    assert response.json == {"status": "error", "message": "Backup validation failed"}
     assert b"Expecting property name" not in response.data
 
 

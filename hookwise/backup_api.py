@@ -31,7 +31,8 @@ def register_backup_routes(blueprint: Blueprint, handlers: Mapping[str, Callable
             return jsonify({"status": "success", "restored": count})
         except BackupValidationError as exc:
             db.session.rollback()
-            return jsonify({"status": "error", "message": str(exc)}), 400
+            current_app.logger.warning("Rejected configuration backup: %s", exc)
+            return jsonify({"status": "error", "message": "Backup validation failed"}), 400
         except Exception:
             db.session.rollback()
             current_app.logger.exception("Failed to import configuration")
