@@ -17,8 +17,8 @@ services:
       # - "LLM_MAX_TOKENS=512"
 
       # Seconds to wait for Ollama to respond before giving up.
-      # Increase on slow CPU-only hosts. Default: 180.
-      # - "LLM_TIMEOUT=180"
+      # Increase on slow CPU-only hosts. Default: 900 (15 minutes).
+      # - "LLM_TIMEOUT=900"
 
       # ── Deduplication ───────────────────────────────────────────────────────
       # How long (seconds) a ticket is cached as "open" before re-checking CW.
@@ -59,7 +59,7 @@ services:
     environment:
       # Worker overrides mirror the proxy. Add any shared env vars here.
       # - "LLM_MAX_TOKENS=512"
-      # - "LLM_TIMEOUT=180"
+      # - "LLM_TIMEOUT=900"
       # - "LLM_THINK=false"
       # - "VIABILITY_TTL=300"
 

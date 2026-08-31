@@ -173,11 +173,11 @@
                 const { task_id } = await enqueueResp.json();
 
                 // Step 2: poll /status/<task_id> every 2 seconds
-                const deadline = Date.now() + 420000; // 7 min hard stop
+                const deadline = Date.now() + 960000; // 15 min inference plus shutdown grace
                 pollInterval = setInterval(async () => {
                     if (Date.now() > deadline) {
                         stopPolling();
-                        llmErrorEl.textContent = '⏱ LLM timed out — no result after 7 minutes.';
+                        llmErrorEl.textContent = '⏱ LLM timed out — no result after 16 minutes.';
                         llmErrorEl.style.display = 'block';
                         llmLoading.style.display = 'none';
                         llmSubmitBtn.disabled = false;

@@ -53,7 +53,7 @@ def call_llm(
         response = requests.post(
             f"{ollama_host}/api/generate",
             json=request_body,
-            timeout=int(os.environ.get("LLM_TIMEOUT", "360")),
+            timeout=int(os.environ.get("LLM_TIMEOUT", "900")),
         )
         response.raise_for_status()
         return cast(str, response.json().get("response", "").strip())

@@ -9,7 +9,13 @@ from celery.exceptions import Retry as CeleryRetry
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig, WebhookLog
-from hookwise.tasks import ContextTask, cleanup_logs, process_webhook_task, run_llm_rca
+from hookwise.tasks import (
+    ContextTask,
+    cleanup_logs,
+    process_webhook_task,
+    run_llm_rca,
+    run_llm_test,
+)
 
 
 @pytest.fixture
@@ -158,6 +164,31 @@ def test_run_llm_rca_exception():
 
         assert result["status"] == "error"
         assert "LLM error: Exception" in result["rca"]
+
+
+def test_run_llm_test_success():
+    with patch("hookwise.utils.call_llm") as mock_call:
+        mock_call.return_value = "Diagnostic response"
+
+        result = run_llm_test("hello")
+
+        assert result == {"status": "success", "result": "Diagnostic response"}
+        mock_call.assert_called_once_with("hello")
+
+
+def test_run_llm_test_no_response():
+    with patch("hookwise.utils.call_llm", return_value=None):
+        result = run_llm_test("hello")
+
+    assert result["status"] == "error"
+    assert "empty result" in result["message"]
+
+
+def test_run_llm_test_exception():
+    with patch("hookwise.utils.call_llm", side_effect=RuntimeError("failed")):
+        result = run_llm_test("hello")
+
+    assert result == {"status": "error", "message": "LLM error: RuntimeError"}
 
 
 def test_context_task_does_not_log_expected_retry_as_failure(app):

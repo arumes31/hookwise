@@ -192,6 +192,15 @@ if _soft_time_limit >= _hard_time_limit:
 celery.conf.task_soft_time_limit = _soft_time_limit
 celery.conf.task_time_limit = _hard_time_limit
 
+# LLM inference on CPU can legitimately run longer than the general task
+# guard, especially while Ollama loads a model for the first request. Keep the
+# request timeout and Celery limits aligned so Celery does not kill a healthy
+# inference before requests has a chance to report its result.
+_raw_llm_timeout = os.environ.get("LLM_TIMEOUT", "900")
+LLM_REQUEST_TIMEOUT = max(1, int(_raw_llm_timeout)) if _raw_llm_timeout.isdigit() else 900
+LLM_TASK_SOFT_TIME_LIMIT = LLM_REQUEST_TIMEOUT + 15
+LLM_TASK_TIME_LIMIT = LLM_TASK_SOFT_TIME_LIMIT + 15
+
 _app = None
 
 
@@ -221,7 +230,11 @@ class ContextTask(Task):  # type: ignore[misc]
 celery.Task = ContextTask
 
 
-@celery.task(name="hookwise.run_llm_rca")  # type: ignore[untyped-decorator]
+@celery.task(
+    name="hookwise.run_llm_rca",
+    soft_time_limit=LLM_TASK_SOFT_TIME_LIMIT,
+    time_limit=LLM_TASK_TIME_LIMIT,
+)  # type: ignore[untyped-decorator]
 def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]) -> dict:
     """Run LLM root cause analysis in background so the HTTP request returns immediately."""
     from .utils import call_llm
@@ -242,6 +255,25 @@ def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]
     except Exception as e:
         logger.error("run_llm_rca task error: %s", e)
         return {"status": "error", "rca": f"LLM error: {type(e).__name__}"}
+
+
+@celery.task(
+    name="hookwise.run_llm_test",
+    soft_time_limit=LLM_TASK_SOFT_TIME_LIMIT,
+    time_limit=LLM_TASK_TIME_LIMIT,
+)  # type: ignore[untyped-decorator]
+def run_llm_test(prompt: str) -> dict[str, str]:
+    """Run an administrator diagnostic without holding an HTTP connection open."""
+    from .utils import call_llm
+
+    try:
+        result = call_llm(prompt)
+        if result:
+            return {"status": "success", "result": result}
+        return {"status": "error", "message": "LLM call failed or returned empty result"}
+    except Exception as e:
+        logger.error("run_llm_test task error: %s", e)
+        return {"status": "error", "message": f"LLM error: {type(e).__name__}"}
 
 
 @celery.task(name="hookwise.dispatch_delivery_outbox")  # type: ignore[untyped-decorator]

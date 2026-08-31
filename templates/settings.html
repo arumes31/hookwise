@@ -373,7 +373,7 @@
     }
 
     async function testLLM() {
-        const query = document.getElementById('llm-query').value;
+        const query = document.getElementById('llm-query').value.trim();
         if (!query) return showToast('Please enter a query', 'danger');
 
         const btn = document.getElementById('llm-test-btn');
@@ -381,11 +381,11 @@
         const resultArea = document.getElementById('llm-result');
 
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
         container.classList.add('d-none');
 
         try {
-            const res = await fetch('/admin/llm-test', {
+            const enqueueResponse = await fetch('/admin/llm-test', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -393,15 +393,39 @@
                 },
                 body: JSON.stringify({ prompt: query })
             });
-            if (!res.ok) throw new Error(`Server error ${res.status}`);
-            const data = await res.json();
-            if (data.status === 'success') {
-                resultArea.textContent = data.result;
+
+            const enqueueData = await enqueueResponse.json();
+            if (!enqueueResponse.ok || !enqueueData.task_id) {
+                throw new Error(enqueueData.message || `Server error ${enqueueResponse.status}`);
+            }
+
+            const startedAt = Date.now();
+            const pollAfterMs = enqueueData.poll_after_ms || 2000;
+            const deadline = startedAt + (enqueueData.timeout_seconds || 960) * 1000;
+
+            while (Date.now() < deadline) {
+                const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+                btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Testing... ${elapsedSeconds}s`;
+                await new Promise(resolve => setTimeout(resolve, pollAfterMs));
+
+                const statusResponse = await fetch(`/admin/llm-test/status/${encodeURIComponent(enqueueData.task_id)}`, {
+                    headers: { 'X-CSRFToken': CSRF_TOKEN },
+                    cache: 'no-store',
+                });
+                const statusData = await statusResponse.json();
+
+                if (statusData.status === 'pending') continue;
+                if (!statusResponse.ok || statusData.status !== 'success') {
+                    throw new Error(statusData.message || statusData.error || 'Unknown LLM error');
+                }
+
+                resultArea.textContent = statusData.result;
                 container.classList.remove('d-none');
                 showToast('LLM response received', 'success');
-            } else {
-                showToast('LLM test failed: ' + (data.message || data.error || 'Unknown error'), 'danger');
+                return;
             }
+
+            throw new Error('LLM diagnostic exceeded its server-side time limit');
         } catch (e) {
             showToast('Error calling LLM: ' + e.message, 'danger');
         } finally {

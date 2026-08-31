@@ -773,8 +773,6 @@ def _register() -> None:
 
     @auth_required
     def llm_test() -> Any:
-        from .utils import call_llm
-
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({"status": "error", "message": "JSON body as dictionary is required"}), 400
@@ -783,10 +781,40 @@ def _register() -> None:
         if not prompt:
             return jsonify({"status": "error", "message": "Prompt is required"}), 400
 
-        result = call_llm(prompt)
-        if result:
-            return jsonify({"status": "success", "result": result})
-        return jsonify({"status": "error", "message": "LLM call failed or returned empty result"}), 500
+        from .tasks import LLM_TASK_TIME_LIMIT, run_llm_test
+
+        try:
+            task = run_llm_test.delay(prompt)
+        except Exception:
+            current_app.logger.exception("Failed to enqueue LLM diagnostic")
+            return jsonify({"status": "error", "message": "Failed to enqueue LLM diagnostic"}), 503
+
+        return (
+            jsonify(
+                {
+                    "status": "pending",
+                    "task_id": task.id,
+                    "poll_after_ms": 2000,
+                    "timeout_seconds": LLM_TASK_TIME_LIMIT + 30,
+                }
+            ),
+            202,
+        )
+
+    @auth_required
+    def llm_test_status(task_id: str) -> Any:
+        from celery.result import AsyncResult
+
+        from .tasks import celery
+
+        result = AsyncResult(task_id, app=celery)
+        if result.state in {"PENDING", "RECEIVED", "STARTED", "RETRY"}:
+            return jsonify({"status": "pending", "state": result.state.lower()})
+        if result.state == "SUCCESS":
+            if isinstance(result.result, dict):
+                return jsonify(result.result)
+            return jsonify({"status": "error", "message": "LLM diagnostic returned an invalid result"}), 500
+        return jsonify({"status": "error", "message": f"LLM diagnostic failed: {result.state}"}), 500
 
     @auth_required
     def submit_feedback() -> Any:

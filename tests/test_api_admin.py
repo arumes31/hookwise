@@ -67,26 +67,68 @@ def test_llm_test_missing_prompt(client):
     assert "Prompt is required" in response.json["message"]
 
 
-@patch("hookwise.utils.call_llm")
-def test_llm_test_call_failed(mock_call, client):
-    """Test /admin/llm-test when call_llm returns None."""
+@patch("hookwise.tasks.run_llm_test.delay")
+def test_llm_test_enqueue_failed(mock_delay, client):
+    """Test /admin/llm-test when the broker is unavailable."""
     login(client)
-    mock_call.return_value = None
+    mock_delay.side_effect = ConnectionError("broker unavailable")
     response = client.post("/admin/llm-test", json={"prompt": "hello"})
+    assert response.status_code == 503
+    assert response.json["status"] == "error"
+    assert "enqueue" in response.json["message"]
+
+
+@patch("hookwise.tasks.run_llm_test.delay")
+def test_llm_test_enqueues_background_task(mock_delay, client):
+    """The diagnostic request should return before inference completes."""
+    login(client)
+    mock_delay.return_value.id = "task-123"
+    response = client.post("/admin/llm-test", json={"prompt": "hello"})
+    assert response.status_code == 202
+    assert response.json["status"] == "pending"
+    assert response.json["task_id"] == "task-123"
+    assert response.json["timeout_seconds"] >= 900
+    mock_delay.assert_called_once_with("hello")
+
+
+def test_llm_test_status_no_auth(client):
+    response = client.get("/admin/llm-test/status/task-123")
+    assert response.status_code == 302
+
+
+@patch("celery.result.AsyncResult")
+def test_llm_test_status_pending(mock_result, client):
+    login(client)
+    mock_result.return_value.state = "STARTED"
+
+    response = client.get("/admin/llm-test/status/task-123")
+
+    assert response.status_code == 200
+    assert response.json == {"status": "pending", "state": "started"}
+
+
+@patch("celery.result.AsyncResult")
+def test_llm_test_status_success(mock_result, client):
+    login(client)
+    mock_result.return_value.state = "SUCCESS"
+    mock_result.return_value.result = {"status": "success", "result": "LLM response"}
+
+    response = client.get("/admin/llm-test/status/task-123")
+
+    assert response.status_code == 200
+    assert response.json == {"status": "success", "result": "LLM response"}
+
+
+@patch("celery.result.AsyncResult")
+def test_llm_test_status_failure(mock_result, client):
+    login(client)
+    mock_result.return_value.state = "FAILURE"
+
+    response = client.get("/admin/llm-test/status/task-123")
+
     assert response.status_code == 500
     assert response.json["status"] == "error"
-    assert "LLM call failed" in response.json["message"]
-
-
-@patch("hookwise.utils.call_llm")
-def test_llm_test_success(mock_call, client):
-    """Test /admin/llm-test success scenario."""
-    login(client)
-    mock_call.return_value = "This is a response from LLM"
-    response = client.post("/admin/llm-test", json={"prompt": "hello"})
-    assert response.status_code == 200
-    assert response.json["status"] == "success"
-    assert response.json["result"] == "This is a response from LLM"
+    assert "FAILURE" in response.json["message"]
 
 
 def test_settings_update_saves_cipp_certificate_exclusions(mock_redis, client):

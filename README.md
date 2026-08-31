@@ -268,7 +268,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
 | `LLM_CONTEXT_LENGTH` | Ollama context allocation per request (Default: `4096`). Increase only for unusually large payloads. |
 | `LLM_THINK` | Enable Qwen3.5 reasoning before its response (Default: `false`). Increase the token limit when enabled. |
-| `LLM_TIMEOUT` | Seconds to wait for the LLM to respond (Default: `180`). Increase on slow/CPU-only hosts. |
+| `LLM_TIMEOUT` | Seconds to wait for LLM inference (Default: `900`, or 15 minutes). Background tasks and diagnostics include additional shutdown grace. |
 
 ---
 
