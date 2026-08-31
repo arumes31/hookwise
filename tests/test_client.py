@@ -5,7 +5,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from hookwise.client import ConnectWiseClient, TicketNotFoundError, TicketRequestError
+from hookwise.client import (
+    ConnectWiseClient,
+    TicketCreationOutcomeUnknown,
+    TicketCreationRejected,
+    TicketNotFoundError,
+    TicketRequestError,
+)
 
 
 @pytest.fixture
@@ -150,8 +156,32 @@ def test_create_ticket_success(mock_post, client):
 @patch("requests.Session.post")
 def test_create_ticket_error(mock_post, client):
     mock_post.side_effect = requests.exceptions.RequestException("Error")
-    result = client.create_ticket("Summary", "Desc", "Monitor")
-    assert result is None
+    with pytest.raises(TicketCreationOutcomeUnknown):
+        client.create_ticket("Summary", "Desc", "Monitor")
+
+
+@patch("requests.Session.post")
+def test_create_ticket_rejection_exposes_safe_field_error(mock_post, client):
+    response = MagicMock(status_code=400, text='{"errors": [{"message": "The field severity is invalid."}]}')
+    response.json.return_value = {"errors": [{"message": "The field severity is invalid."}]}
+    error = requests.exceptions.HTTPError("400 Client Error", response=response)
+    mock_post.return_value.raise_for_status.side_effect = error
+
+    with pytest.raises(TicketCreationRejected, match="HTTP 400.*severity") as raised:
+        client.create_ticket("Summary", "Desc", "Monitor")
+
+    assert raised.value.retryable is False
+
+
+@patch("requests.Session.post")
+def test_create_ticket_server_error_preserves_ambiguous_outcome_guard(mock_post, client):
+    response = MagicMock(status_code=503, text="Service unavailable")
+    response.json.side_effect = ValueError("not JSON")
+    error = requests.exceptions.HTTPError("503 Server Error", response=response)
+    mock_post.return_value.raise_for_status.side_effect = error
+
+    with pytest.raises(TicketCreationOutcomeUnknown, match="HTTP 503"):
+        client.create_ticket("Summary", "Desc", "Monitor")
 
 
 @patch("requests.Session.patch")

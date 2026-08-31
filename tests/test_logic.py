@@ -5,8 +5,10 @@ from unittest.mock import patch
 import pytest
 
 from hookwise import create_app
+from hookwise.client import TicketCreationOutcomeUnknown, TicketCreationRejected
 from hookwise.extensions import db
-from hookwise.models import WebhookConfig, WebhookLog
+from hookwise.models import TicketOperation, WebhookConfig, WebhookLog
+from hookwise.services.ticket_operations import TicketOperationInProgress
 from hookwise.tasks import handle_webhook_logic
 from hookwise.utils import CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY, resolve_jsonpath
 
@@ -24,7 +26,8 @@ def app():
     app.config["WTF_CSRF_ENABLED"] = False
     with app.app_context():
         db.create_all()
-        yield app
+        with patch("hookwise.tasks._app", app):
+            yield app
         db.session.remove()
         db.drop_all()
 
@@ -86,6 +89,75 @@ def test_webhook_logic_with_jsonpath(mock_cw, mock_redis, app):
         mock_cw.create_ticket.assert_called_once()
         call_kwargs = mock_cw.create_ticket.call_args.kwargs
         assert "Mapped Server Down" in call_kwargs["summary"]
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_definitive_ticket_rejection_releases_operation_for_a_later_attempt(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.side_effect = TicketCreationRejected(
+        "ConnectWise rejected ticket creation (HTTP 400): The field severity is invalid.",
+        retryable=False,
+    )
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Invalid severity",
+            trigger_field="status",
+            open_value="down",
+            board="Test Board",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        with pytest.raises(TicketCreationRejected, match="severity"):
+            handle_webhook_logic(config.id, {"status": "down"}, "req-rejected")
+
+        assert TicketOperation.query.count() == 0
+
+        mock_cw.create_ticket.side_effect = None
+        mock_cw.create_ticket.return_value = {"id": 46}
+        handle_webhook_logic(config.id, {"status": "down"}, "req-rejected")
+
+        operation = TicketOperation.query.one()
+        assert operation.status == "completed"
+        assert operation.ticket_id == 46
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_unknown_ticket_outcome_keeps_duplicate_guard(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.side_effect = TicketCreationOutcomeUnknown("No response")
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Unknown outcome",
+            trigger_field="status",
+            open_value="down",
+            board="Test Board",
+            customer_id_default="TESTCO",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        with pytest.raises(TicketCreationOutcomeUnknown):
+            handle_webhook_logic(config.id, {"status": "down"}, "req-unknown")
+
+        operation = TicketOperation.query.one()
+        assert operation.status == "started"
+
+        mock_cw.create_ticket.reset_mock()
+        mock_cw.create_ticket.side_effect = None
+        mock_cw.create_ticket.return_value = {"id": 47}
+        with pytest.raises(TicketOperationInProgress) as raised:
+            handle_webhook_logic(config.id, {"status": "down"}, "req-unknown")
+
+        assert raised.value.retry_after_seconds > 500
+        mock_cw.create_ticket.assert_not_called()
 
 
 @patch("hookwise.tasks.redis_client")

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from hookwise import create_app
+from hookwise.client import TicketCreationOutcomeUnknown, TicketCreationRejected
 from hookwise.extensions import db
 from hookwise.models import (
     DeliveryOutbox,
@@ -93,6 +94,61 @@ def test_final_retry_moves_stable_log_to_dlq_and_records_sanitized_attempt(mock_
     assert "should-not-be-stored" not in (log.error_message or "")
     assert attempt.status == "dlq"
     assert attempt.error_message == "token=***"
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_permanent_connectwise_rejection_goes_directly_to_dlq(mock_handle, session):
+    config = WebhookConfig(name="Endpoint", retry_enabled=True, retry_max_attempts=5)
+    session.add(config)
+    session.flush()
+    log = WebhookLog(config_id=config.id, request_id="req-invalid", payload="{}", status="queued")
+    session.add(log)
+    session.commit()
+
+    mock_handle.side_effect = TicketCreationRejected(
+        "ConnectWise rejected ticket creation (HTTP 400): The field severity is invalid.",
+        retryable=False,
+    )
+    task = MagicMock()
+    task.request = SimpleNamespace(retries=0)
+    task.max_retries = 5
+
+    process_webhook_task.run.__func__(task, config.id, {}, "req-invalid", log_id=log.id)
+
+    session.refresh(log)
+    assert log.status == "dlq"
+    assert log.retry_count == 0
+    assert log.error_message == (
+        "Non-retryable failure: ConnectWise rejected ticket creation (HTTP 400): The field severity is invalid."
+    )
+    task.retry.assert_not_called()
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_unknown_ticket_outcome_waits_instead_of_immediately_colliding(mock_handle, session):
+    config = WebhookConfig(
+        name="Endpoint",
+        retry_enabled=True,
+        retry_max_attempts=5,
+        retry_base_delay_seconds=1,
+        retry_max_delay_seconds=300,
+    )
+    session.add(config)
+    session.flush()
+    log = WebhookLog(config_id=config.id, request_id="req-unknown", payload="{}", status="queued")
+    session.add(log)
+    session.commit()
+
+    mock_handle.side_effect = TicketCreationOutcomeUnknown("No response")
+    task = MagicMock()
+    task.request = SimpleNamespace(retries=0)
+    task.max_retries = 5
+    task.retry.side_effect = RuntimeError("retry scheduled")
+
+    with pytest.raises(RuntimeError, match="retry scheduled"):
+        process_webhook_task.run.__func__(task, config.id, {}, "req-unknown", log_id=log.id)
+
+    assert task.retry.call_args.kwargs["countdown"] == 300
 
 
 @patch("hookwise.tasks.handle_webhook_logic")

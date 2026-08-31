@@ -8,14 +8,22 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
 
 from celery import Celery, Task
+from celery.exceptions import Retry as CeleryRetry
 from prometheus_client import Counter, Histogram
 
-from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
+from .client import ConnectWiseClient, ConnectWiseError, TicketCreationRejected, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
 from .services.routing import evaluate_routing
-from .services.ticket_operations import TicketOperationInProgress, complete, may_take_over, reserve
+from .services.ticket_operations import (
+    TicketOperationInProgress,
+    complete,
+    may_take_over,
+    release,
+    reserve,
+    seconds_until_takeover,
+)
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
     filter_cipp_app_certificate_expiry_results,
@@ -101,10 +109,15 @@ def _add_ticket_note_once(
     if not acquired and operation.status == "completed":
         return True
     if not acquired and not may_take_over(operation):
-        raise TicketOperationInProgress(f"{operation_name} is already owned by another worker")
+        raise TicketOperationInProgress(
+            f"{operation_name} is already owned by another worker",
+            retry_after_seconds=seconds_until_takeover(operation),
+        )
     result = cw_client.add_ticket_note(ticket_id, text, is_internal=is_internal)
     if result:
         complete(operation, ticket_id)
+    else:
+        release(operation)
     return result
 
 
@@ -192,6 +205,11 @@ class ContextTask(Task):  # type: ignore[misc]
         with _app.app_context():
             try:
                 return self.run(*args, **kwargs)
+            except CeleryRetry:
+                # Celery uses this control-flow exception for an expected retry;
+                # the worker will emit the concise retry event itself.
+                db.session.rollback()
+                raise
             except Exception:
                 db.session.rollback()
                 logger.exception("Celery task %s failed", self.name)
@@ -686,7 +704,8 @@ def process_webhook_task(
         enabled, max_attempts, base_delay, max_delay = _bounded_retry_policy(
             config, int(getattr(self, "max_retries", 5) or 5)
         )
-        exhausted = not enabled or (retries + 1) >= max_attempts
+        non_retryable = isinstance(exc, TicketCreationRejected) and not exc.retryable
+        exhausted = non_retryable or not enabled or (retries + 1) >= max_attempts
         safe_error = _sanitize_error(exc)
         logger.error("Task failed (attempt %s/%s): %s", retries + 1, max_attempts, safe_error)
         if log_entry is not None:
@@ -703,7 +722,8 @@ def process_webhook_task(
             if log_entry is not None:
                 log_entry.status = "dlq"
                 log_entry.retry_exhausted_at = datetime.now(timezone.utc)
-                log_entry.error_message = f"Max retries exceeded: {safe_error}"
+                prefix = "Non-retryable failure" if non_retryable else "Max retries exceeded"
+                log_entry.error_message = f"{prefix}: {safe_error}"
             if attempt is not None:
                 attempt.status = "dlq"
             db.session.commit()
@@ -711,6 +731,9 @@ def process_webhook_task(
 
         jitter = random.uniform(0.8, 1.2)
         countdown = min(max_delay, base_delay * (2**retries)) * jitter
+        requested_delay = getattr(exc, "retry_after_seconds", None)
+        if isinstance(requested_delay, (int, float)):
+            countdown = max(countdown, min(max_delay, max(1.0, float(requested_delay))))
         if log_entry is not None:
             log_entry.status = "retrying"
         if attempt is not None:
@@ -1206,25 +1229,36 @@ def handle_webhook_logic(
                     elif may_take_over(operation):
                         acquired = True
                     else:
-                        raise TicketOperationInProgress("Ticket creation is already owned by another worker")
+                        raise TicketOperationInProgress(
+                            "Ticket creation is already owned by another worker",
+                            retry_after_seconds=seconds_until_takeover(operation),
+                        )
 
                 if acquired:
-                    new_ticket = cw_client.create_ticket(
-                        summary=ticket_summary,
-                        description=description,
-                        monitor_name=monitor_name,
-                        company_id=company_id,
-                        board=board,
-                        status=status,
-                        ticket_type=ticket_type,
-                        subtype=subtype,
-                        item=item,
-                        priority=priority,
-                        severity=mapped_vals.get("severity"),
-                        impact=mapped_vals.get("impact"),
-                    )
+                    try:
+                        new_ticket = cw_client.create_ticket(
+                            summary=ticket_summary,
+                            description=description,
+                            monitor_name=monitor_name,
+                            company_id=company_id,
+                            board=board,
+                            status=status,
+                            ticket_type=ticket_type,
+                            subtype=subtype,
+                            item=item,
+                            priority=priority,
+                            severity=mapped_vals.get("severity"),
+                            impact=mapped_vals.get("impact"),
+                        )
+                    except TicketCreationRejected:
+                        release(operation)
+                        raise
                 if not new_ticket:
-                    raise Exception("Failed to create ticket: ConnectWise API returned an error.")
+                    release(operation)
+                    raise TicketCreationRejected(
+                        "ConnectWise rejected ticket creation without a ticket response",
+                        retryable=True,
+                    )
 
                 ticket_id = int(new_ticket["id"])
                 if operation.status != "completed":
@@ -1277,11 +1311,16 @@ def handle_webhook_logic(
                         if not acquired and close_operation.status == "completed":
                             success = True
                         elif not acquired and not may_take_over(close_operation):
-                            raise TicketOperationInProgress("Ticket closure is already owned by another worker")
+                            raise TicketOperationInProgress(
+                                "Ticket closure is already owned by another worker",
+                                retry_after_seconds=seconds_until_takeover(close_operation),
+                            )
                         else:
                             success = cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
                             if success:
                                 complete(close_operation, ticket_id)
+                            else:
+                                release(close_operation)
                         if success:
                             redis_client.delete(cache_key)
                             log_to_web(

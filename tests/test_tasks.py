@@ -4,11 +4,12 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from celery.exceptions import Retry as CeleryRetry
 
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig, WebhookLog
-from hookwise.tasks import cleanup_logs, process_webhook_task, run_llm_rca
+from hookwise.tasks import ContextTask, cleanup_logs, process_webhook_task, run_llm_rca
 
 
 @pytest.fixture
@@ -157,6 +158,20 @@ def test_run_llm_rca_exception():
 
         assert result["status"] == "error"
         assert "LLM error: Exception" in result["rca"]
+
+
+def test_context_task_does_not_log_expected_retry_as_failure(app):
+    task = ContextTask()
+    task.run = MagicMock(side_effect=CeleryRetry("scheduled"))
+
+    with (
+        patch("hookwise.tasks._app", app),
+        patch("hookwise.tasks.logger.exception") as mock_exception,
+        pytest.raises(CeleryRetry),
+    ):
+        task()
+
+    mock_exception.assert_not_called()
 
 
 @patch("hookwise.tasks.handle_webhook_logic")
