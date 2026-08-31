@@ -73,7 +73,7 @@ jobs:
           fi
 
       - name: Scan image for high-severity vulnerabilities
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ github.event_name == 'pull_request' && steps.build.outputs.imageid || format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.meta.outputs.version) }}
           version: v0.74.0
