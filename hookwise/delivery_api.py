@@ -47,7 +47,7 @@ def register_delivery_routes(blueprint: Blueprint) -> None:
                 # open_value kann eine Kommaliste sein -- der Test setzt den
                 # ersten Wert, wie ihn ein einzelner echter Alarm liefert.
                 wert = str(config.open_value).split(",")[0].strip()
-                ziel = data
+                ziel: Any = data
                 for teil in teile[:-1]:
                     if not isinstance(ziel.get(teil), dict):
                         ziel[teil] = {}

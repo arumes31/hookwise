@@ -360,7 +360,7 @@ def _register_crud_routes(main_bp: Any) -> None:
         # wird gegen die Spaltendefinition geprueft -- eine manipulierte Datei
         # darf weder 500er ausloesen noch Falschtypen einschleusen.
         gesperrt = {"bearer_token", "hmac_secret", "name", "is_enabled", "is_draft", "is_pinned", "tags", "archived_at"}
-        spalten = WebhookConfig.__table__.columns
+        spalten = WebhookConfig.__table__.columns  # type: ignore[attr-defined]
         config = WebhookConfig(name=name, is_enabled=False)
         for key, value in felder.items():
             if key not in CONFIG_FIELDS or key in gesperrt:

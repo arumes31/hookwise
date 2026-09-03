@@ -288,8 +288,9 @@ def favicon_ico() -> Any:
     (vorher 404) blieb Chromiums Favicon-Datenbank auf dem alten Icon sitzen."""
     import os as _os
 
+    static_ordner = current_app.static_folder or "static"
     return send_from_directory(
-        _os.path.join(current_app.static_folder, "img"),
+        _os.path.join(static_ordner, "img"),
         "favicon-hook-32.png",
         mimetype="image/png",
     )
