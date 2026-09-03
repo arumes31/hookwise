@@ -287,6 +287,7 @@ def favicon_ico() -> Any:
     """Root-Fallback fuer Browser, die /favicon.ico anfragen. Ohne diese Route
     (vorher 404) blieb Chromiums Favicon-Datenbank auf dem alten Icon sitzen."""
     import os as _os
+
     return send_from_directory(
         _os.path.join(current_app.static_folder, "img"),
         "favicon-hook-32.png",
@@ -320,35 +321,34 @@ def webhook_detail_json(config_id: str) -> Any:
 
     sortiert = sorted(ms) or [0]
     p95 = sortiert[min(len(sortiert) - 1, int(len(sortiert) * 0.95))]
-    return jsonify({
-        "id": config.id,
-        "name": config.name,
-        "url": f"{base_url}/w/{config.id}",
-        "board": config.board or "Default",
-        "trigger": f"{config.trigger_field} = {config.open_value}",
-        "is_enabled": bool(config.is_enabled),
-        "is_pinned": bool(config.is_pinned),
-        "archived": config.archived_at is not None,
-        "stats": {
-            "events24": anzahl(["processed", "failed", "skipped", "dlq", "queued"]),
-            "failed24": anzahl(["failed", "dlq"]),
-            "avg_ms": round(sum(ms) / len(ms)) if ms else 0,
-            "p95_ms": p95,
-        },
-        "latenzen": [
-            {"ms": m, "ok": log.status not in ("failed", "dlq")}
-            for m, log in zip(ms, logs, strict=True)
-        ],
-        "deliveries": [
-            {
-                "ts": (log.created_at.isoformat() + ("Z" if log.created_at.tzinfo is None else "")),
-                "status": log.status,
-                "ms": round((log.processing_time or 0) * 1000),
-                "request_id": log.request_id,
-            }
-            for log in reversed(logs[-8:])
-        ],
-    })
+    return jsonify(
+        {
+            "id": config.id,
+            "name": config.name,
+            "url": f"{base_url}/w/{config.id}",
+            "board": config.board or "Default",
+            "trigger": f"{config.trigger_field} = {config.open_value}",
+            "is_enabled": bool(config.is_enabled),
+            "is_pinned": bool(config.is_pinned),
+            "archived": config.archived_at is not None,
+            "stats": {
+                "events24": anzahl(["processed", "failed", "skipped", "dlq", "queued"]),
+                "failed24": anzahl(["failed", "dlq"]),
+                "avg_ms": round(sum(ms) / len(ms)) if ms else 0,
+                "p95_ms": p95,
+            },
+            "latenzen": [{"ms": m, "ok": log.status not in ("failed", "dlq")} for m, log in zip(ms, logs, strict=True)],
+            "deliveries": [
+                {
+                    "ts": (log.created_at.isoformat() + ("Z" if log.created_at.tzinfo is None else "")),
+                    "status": log.status,
+                    "ms": round((log.processing_time or 0) * 1000),
+                    "request_id": log.request_id,
+                }
+                for log in reversed(logs[-8:])
+            ],
+        }
+    )
 
 
 @main_bp.route("/webhooks")

@@ -71,13 +71,11 @@ def check_failure_threshold(config_id: str) -> None:
             letzte = letzte.replace(tzinfo=timezone.utc) if letzte.tzinfo is None else letzte
             if letzte > seit:
                 return  # im aktuellen Fenster schon gemeldet
-        anzahl = (
-            WebhookLog.query.filter(
-                WebhookLog.config_id == config_id,
-                WebhookLog.status.in_(["failed", "dlq"]),
-                WebhookLog.created_at >= seit,
-            ).count()
-        )
+        anzahl = WebhookLog.query.filter(
+            WebhookLog.config_id == config_id,
+            WebhookLog.status.in_(["failed", "dlq"]),
+            WebhookLog.created_at >= seit,
+        ).count()
         if anzahl < int(config.notify_failure_threshold):
             return
         ziel = redis_client.get("hookwise_health_webhook")
@@ -97,20 +95,21 @@ def check_failure_threshold(config_id: str) -> None:
 
             requests.post(
                 ziel,
-                json={"content": (
-                    f"HookWise: endpoint '{config.name}' reached {anzahl} failures "
-                    f"in {fenster} minutes (threshold {config.notify_failure_threshold})."
-                )},
+                json={
+                    "content": (
+                        f"HookWise: endpoint '{config.name}' reached {anzahl} failures "
+                        f"in {fenster} minutes (threshold {config.notify_failure_threshold})."
+                    )
+                },
                 timeout=5,
             )
         except Exception:
             logger.warning("Threshold alert webhook unreachable (throttled anyway)")
-        logger.info(
-            f"Failure threshold alert for {config.name}: {anzahl} failures in {fenster}m"
-        )
+        logger.info(f"Failure threshold alert for {config.name}: {anzahl} failures in {fenster}m")
     except Exception:
         db.session.rollback()
         logger.exception("Failure-threshold check failed (non-fatal)")
+
 
 def _sanitize_error(error: BaseException | str) -> str:
     """Bound error text before retaining it in history or a retry attempt."""

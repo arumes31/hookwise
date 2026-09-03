@@ -11,6 +11,7 @@ der Autogenerate-Fassung fuer eine einzelne nullable Spalte.
 Revision ID: 9a4b7c1d2e3f
 Revises: c8e3f1a2b5d6
 """
+
 import sqlalchemy as sa
 from alembic import op
 

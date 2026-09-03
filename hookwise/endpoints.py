@@ -121,9 +121,7 @@ def _register_crud_routes(main_bp: Any) -> None:
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
                 timeout_hours=_get_int_form_value("timeout_hours", 24),
-                notify_failure_threshold=_get_int_form_value(
-                    "notify_failure_threshold", 0, min_val=0, max_val=1000
-                )
+                notify_failure_threshold=_get_int_form_value("notify_failure_threshold", 0, min_val=0, max_val=1000)
                 or None,
                 notify_window_minutes=max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440)),
                 rate_limit_per_minute=_get_int_form_value("rate_limit_per_minute", 60, 1, 10000),
@@ -305,8 +303,9 @@ def _register_crud_routes(main_bp: Any) -> None:
             alter_wert = getattr(config, field)
             setattr(config, field, value)
             db.session.commit()
-            log_audit("quick_update", config_id,
-                      f"Endpoint {config.name}: {field} changed from {alter_wert!r} to {value!r}")
+            log_audit(
+                "quick_update", config_id, f"Endpoint {config.name}: {field} changed from {alter_wert!r} to {value!r}"
+            )
             return jsonify({"status": "success"})
         return jsonify({"status": "error", "message": "Invalid field"}), 400
 
@@ -324,15 +323,16 @@ def _register_crud_routes(main_bp: Any) -> None:
 
         config = WebhookConfig.query.get_or_404(config_id)
         record = config.to_dict(include_token=False)
-        daten = {key: value for key, value in record.items()
-                 if key in CONFIG_FIELDS and key not in {"bearer_token", "hmac_secret"}}
+        daten = {
+            key: value
+            for key, value in record.items()
+            if key in CONFIG_FIELDS and key not in {"bearer_token", "hmac_secret"}
+        }
         daten["tags"] = [tag.name for tag in config.tags]
         dokument = {"format": "hookwise-endpoint", "version": 1, "endpoint": daten}
         antwort = jsonify(dokument)
         dateiname = "".join(c if c.isalnum() or c in "-_" else "-" for c in config.name.lower())
-        antwort.headers["Content-Disposition"] = (
-            f'attachment; filename="{dateiname or "endpoint"}.hookwise.json"'
-        )
+        antwort.headers["Content-Disposition"] = f'attachment; filename="{dateiname or "endpoint"}.hookwise.json"'
         return antwort
 
     @main_bp.route("/endpoint/import", methods=["POST"])
@@ -359,8 +359,7 @@ def _register_crud_routes(main_bp: Any) -> None:
         # Zustand und Geheimnisse kommen nie aus der Datei; jeder uebrige Wert
         # wird gegen die Spaltendefinition geprueft -- eine manipulierte Datei
         # darf weder 500er ausloesen noch Falschtypen einschleusen.
-        gesperrt = {"bearer_token", "hmac_secret", "name", "is_enabled",
-                    "is_draft", "is_pinned", "tags", "archived_at"}
+        gesperrt = {"bearer_token", "hmac_secret", "name", "is_enabled", "is_draft", "is_pinned", "tags", "archived_at"}
         spalten = WebhookConfig.__table__.columns
         config = WebhookConfig(name=name, is_enabled=False)
         for key, value in felder.items():
@@ -523,9 +522,9 @@ def _register_bulk_routes(main_bp: Any) -> None:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookConfig.query.filter(
-            WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)
-        ).update({"is_enabled": False}, synchronize_session=False)
+        WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
+            {"is_enabled": False}, synchronize_session=False
+        )
         db.session.commit()
         log_audit("bulk_pause", None, f"Paused endpoints: {', '.join(ids)}")
         return jsonify({"status": "success", "message": f"Paused {len(ids)} endpoints"})
@@ -561,9 +560,9 @@ def _register_bulk_routes(main_bp: Any) -> None:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookConfig.query.filter(
-            WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)
-        ).update({"is_enabled": True}, synchronize_session=False)
+        WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
+            {"is_enabled": True}, synchronize_session=False
+        )
         db.session.commit()
         log_audit("bulk_resume", None, f"Resumed endpoints: {', '.join(ids)}")
         return jsonify({"status": "success", "message": f"Resumed {len(ids)} endpoints"})

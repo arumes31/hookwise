@@ -110,8 +110,10 @@ def _percentile(values: list[float], percent: int) -> float:
 
 def _stale_config_ids(now: datetime) -> list[str]:
     configs = WebhookConfig.query.filter(
-        WebhookConfig.is_draft.is_(False), WebhookConfig.timeout_alerts_enabled.is_(True),
-        WebhookConfig.is_enabled.is_(True), WebhookConfig.archived_at.is_(None),
+        WebhookConfig.is_draft.is_(False),
+        WebhookConfig.timeout_alerts_enabled.is_(True),
+        WebhookConfig.is_enabled.is_(True),
+        WebhookConfig.archived_at.is_(None),
     ).all()
     stale: list[str] = []
     for config in configs:

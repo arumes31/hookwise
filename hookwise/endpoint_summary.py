@@ -63,7 +63,7 @@ def _token_suffix_matches(config: WebhookConfig, suffix: str) -> bool:
         voll = decrypt_string(config.bearer_token or "")
     except Exception:
         return False
-    return len(voll) >= len(suffix) and hmac.compare_digest(voll[-len(suffix):], suffix)
+    return len(voll) >= len(suffix) and hmac.compare_digest(voll[-len(suffix) :], suffix)
 
 
 def _latest_rows(config_ids: list[str], statuses: tuple[str, ...], cutoff: datetime) -> dict[str, dict[str, Any]]:
@@ -189,7 +189,8 @@ def _register() -> None:
     @auth_required
     def endpoint_summary() -> Any:
         configs = (
-            WebhookConfig.query.options(selectinload(WebhookConfig.tags)).filter(WebhookConfig.archived_at.is_(None))
+            WebhookConfig.query.options(selectinload(WebhookConfig.tags))
+            .filter(WebhookConfig.archived_at.is_(None))
             .order_by(WebhookConfig.is_pinned.desc(), WebhookConfig.display_order, WebhookConfig.created_at.desc())
             .all()
         )
@@ -201,8 +202,7 @@ def _register() -> None:
                 "endpoints": _build_summaries(configs),
                 "token_matches": matches,
                 "token_search_hint": (
-                    "Use token: followed by at least the last 4 token characters "
-                    "(a full token works too)."
+                    "Use token: followed by at least the last 4 token characters (a full token works too)."
                 ),
             }
         )
