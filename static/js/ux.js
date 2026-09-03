@@ -383,12 +383,16 @@ function initServiceHealth(container = document) {
             canvas.width = 32; canvas.height = 32;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(bild, 0, 0, 32, 32);
-            const farbe = faviconStatus === 'up' ? '#00e38b'
-                : faviconStatus === 'warning' ? '#ffdd65' : '#a90219';
-            ctx.beginPath(); ctx.arc(6.3, 8.3, 5.6, 0, 2 * Math.PI);
-            ctx.fillStyle = hell ? '#f2f8f4' : '#0b0f0f'; ctx.fill();
-            ctx.beginPath(); ctx.arc(6.3, 8.3, 4.4, 0, 2 * Math.PI);
-            ctx.fillStyle = farbe; ctx.fill();
+            // Der Center Knot fuellt die Kachel -- ein Statuspunkt wuerde ihn
+            // im Normalfall nur beschaedigen. Er erscheint deshalb nur, wenn
+            // wirklich etwas zu melden ist.
+            if (faviconStatus !== 'up') {
+                const farbe = faviconStatus === 'warning' ? '#ffdd65' : '#a90219';
+                ctx.beginPath(); ctx.arc(24.5, 24.5, 7, 0, 2 * Math.PI);
+                ctx.fillStyle = hell ? '#f2f8f4' : '#0b0f0f'; ctx.fill();
+                ctx.beginPath(); ctx.arc(24.5, 24.5, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = farbe; ctx.fill();
+            }
             const daten = canvas.toDataURL('image/png');
             document.querySelectorAll("link[rel~='icon']").forEach(l => { l.href = daten; });
         };
