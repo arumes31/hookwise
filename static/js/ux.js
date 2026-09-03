@@ -453,13 +453,16 @@ function initTransitions() {
 }
 
 // Bulk Actions Implementation
-window.bulkDelete = async function () {
+// Endpoints werden nie geloescht, nur archiviert -- umkehrbar ueber die
+// Archivgruppe am Listenende.
+window.bulkArchive = async function () {
     const checked = Array.from(document.querySelectorAll('.endpoint-check:checked')).map(c => c.dataset.id);
     if (!checked.length) return;
 
-    if (await hwConfirm(`Delete ${checked.length} endpoints?`, { title: 'Bulk Delete', okText: 'Delete All' })) {
+    if (await hwConfirm(`Archive ${checked.length} endpoints? They stop receiving events and can be restored anytime.`,
+        { title: 'Bulk Archive', okText: 'Archive All' })) {
         try {
-            const resp = await fetch('/endpoint/bulk/delete', {
+            const resp = await fetch('/endpoint/bulk/archive', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: checked })
@@ -470,7 +473,7 @@ window.bulkDelete = async function () {
                 setTimeout(() => window.hwReloadInPlace(), 1000);
             }
         } catch (e) {
-            showToast('Error deleting endpoints', 'error');
+            showToast('Error archiving endpoints', 'error');
         }
     }
 };
@@ -862,12 +865,13 @@ function initContextMenu(container = document) {
                 document.body.appendChild(form);
                 form.submit();
             };
-            document.getElementById('ctx-delete').onclick = async () => {
-                if (await hwConfirm('Delete endpoint ' + name + '?', { title: 'Delete Endpoint', okText: 'Delete' })) {
+            document.getElementById('ctx-archive').onclick = async () => {
+                if (await hwConfirm('Archive endpoint ' + name + '? It stops receiving events and can be restored anytime.',
+                    { title: 'Archive Endpoint', okText: 'Archive' })) {
                     setTimeout(() => {
                         const form = document.createElement('form');
                         form.method = 'POST';
-                        form.action = '/endpoint/delete/' + id;
+                        form.action = '/endpoint/archive/' + id;
                         const csrfInput = document.createElement('input');
                         csrfInput.type = 'hidden';
                         csrfInput.name = 'csrf_token';

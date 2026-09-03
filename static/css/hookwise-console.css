@@ -1925,9 +1925,16 @@ code, pre, .font-monospace, kbd, samp {
         border:1px solid var(--line-2); border-radius:var(--radius-md);
         background:var(--bg-surface); color:var(--text-faint); cursor:pointer;
         box-shadow:var(--shadow-1);
-        transition:color var(--dur-1) var(--ease), left var(--dur-2) var(--ease);
+        transition:color var(--dur-1) var(--ease), left var(--dur-2) var(--ease),
+                   opacity var(--dur-1) var(--ease);
     }
     .hw-rail-griff:hover { color:var(--accent); border-color:var(--accent); }
+    /* Der Griff liegt ueber der Rail; ein geoeffnetes Rail-Menue (z. B.
+       Notifications) klappt darunter auf und wurde von ihm durchschnitten.
+       Solange ein Menue offen ist, weicht der Griff. */
+    body:has(.navbar .dropdown-menu.show) .hw-rail-griff {
+        opacity:0; pointer-events:none;
+    }
     .hw-rail-griff svg { transition:transform var(--dur-2) var(--ease); }
     :root.hw-rail-breit { --rail-w:212px; }
     :root.hw-rail-breit .hw-rail-griff svg { transform:rotate(180deg); }

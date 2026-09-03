@@ -101,13 +101,14 @@
         document.getElementById('endpoint-form').submit();
     }
 
-    async function confirmDelete(id, name) {
-        if (await hwConfirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`, { title: 'Delete Endpoint', okText: 'Delete' })) {
+    async function confirmArchive(id, name) {
+        if (await hwConfirm(`Archive "${name}"? It stops receiving events and can be restored anytime from the archive.`,
+            { title: 'Archive Endpoint', okText: 'Archive' })) {
             // Add a tiny delay to let the modal finish hiding before navigation
             setTimeout(() => {
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = `/endpoint/delete/${id}`;
+                form.action = `/endpoint/archive/${id}`;
                 const csrfInput = document.createElement('input');
                 csrfInput.type = 'hidden';
                 csrfInput.name = 'csrf_token';

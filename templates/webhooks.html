@@ -94,7 +94,7 @@
                style="width:130px" placeholder="Priority&hellip;" aria-label="Set priority for selected endpoints">
         <button class="btn btn-sm btn-outline-primary" onclick="bulkFieldUpdate()">Apply</button>
         <span class="vr opacity-25"></span>
-        <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">Delete Selected</button>
+        <button class="btn btn-sm btn-outline-warning" onclick="bulkArchive()">Archive Selected</button>
         <button class="btn btn-sm btn-outline-warning" onclick="bulkPause()">Pause Selected</button>
         <button class="btn btn-sm btn-outline-success" onclick="bulkResume()">Resume Selected</button>
         <button class="btn btn-sm btn-outline-info" onclick="bulkExport()">Export Selected</button>
@@ -264,7 +264,7 @@
                         <span class="hw-more-row">
                         <button onclick="archiveEndpoint('{{ config.id }}')"
                             class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Archive endpoint" aria-label="Archive endpoint">
-                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>
+                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>
                         </button>
                             <span class="hw-more-text">Archive</span>
                         </span>
@@ -596,9 +596,9 @@
         Clone Configuration
     </a>
     <div class="dropdown-divider border-secondary border-opacity-10"></div>
-    <a class="dropdown-item d-flex align-items-center text-danger" href="#" id="ctx-delete">
-        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-trash3-fill"></use></svg>
-        Delete Endpoint
+    <a class="dropdown-item d-flex align-items-center text-warning" href="#" id="ctx-archive">
+        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>
+        Archive Endpoint
     </a>
 </div>
 
@@ -611,7 +611,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
             </div>
             <div class="modal-body text-center py-5">
-                <img src="{{ url_for('static', filename='img/logo.png', v='20260907f') }}" alt="HookWise" height="80" class="mb-4">
+                <img src="{{ url_for('static', filename='img/logo.png', v='20260908a') }}" alt="HookWise" height="80" class="mb-4">
                 <h3 class="fw-bold">Let's get you set up.</h3>
                 <p class="text-secondary mb-5">HookWise bridges your monitoring tools to ConnectWise Manage tickets.</p>
 
@@ -702,8 +702,8 @@
 
 <meta name="hookwise-cw-url" content="{{ cw_url }}">
 
-<script src="{{ url_for('static', filename='js/dashboard.js', v='20260907f') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260907f') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js', v='20260908a') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260908a') }}"></script>
 
 <script>
     // Endpoint-Detail-Drawer: ersetzt die fruehere Detailseite.

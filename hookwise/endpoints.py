@@ -9,7 +9,7 @@ from typing import Any
 from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
 
 from .extensions import db
-from .models import EndpointTag, WebhookConfig, WebhookLog
+from .models import EndpointTag, WebhookConfig
 from .services.endpoint_templates import public_endpoint_templates
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
@@ -490,31 +490,24 @@ def _register_crud_routes(main_bp: Any) -> None:
         response.headers["Cache-Control"] = "no-store"
         return response
 
-    @main_bp.route("/endpoint/delete/<config_id>", methods=["POST"])
-    @auth_required
-    def delete_endpoint(config_id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(config_id)
-        name = config.name
-        WebhookLog.query.filter_by(config_id=config_id).delete(synchronize_session=False)
-        db.session.delete(config)
-        db.session.commit()
-        log_audit("delete", config_id, f"Endpoint {name} deleted")
-        flash(f'Endpoint "{name}" deleted.')
-        return redirect(url_for("main.webhooks"))
-
 
 def _register_bulk_routes(main_bp: Any) -> None:
-    @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
+    @main_bp.route("/endpoint/bulk/archive", methods=["POST"])
     @auth_required
-    def bulk_delete_endpoints() -> Any:
+    def bulk_archive_endpoints() -> Any:
+        """Endpoints werden nie geloescht, nur archiviert: Zustellhistorie und
+        Tickets bleiben nachvollziehbar. Archiviert = zusaetzlich pausiert,
+        damit die bestehenden is_enabled-Filter greifen."""
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookLog.query.filter(WebhookLog.config_id.in_(ids)).delete(synchronize_session=False)
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).delete(synchronize_session=False)
+        betroffen = WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
+            {"archived_at": datetime.now(timezone.utc), "is_enabled": False},
+            synchronize_session=False,
+        )
         db.session.commit()
-        log_audit("bulk_delete", None, f"Deleted endpoints: {', '.join(ids)}")
-        return jsonify({"status": "success", "message": f"Deleted {len(ids)} endpoints"})
+        log_audit("bulk_archive", None, f"Archived endpoints: {', '.join(ids)}")
+        return jsonify({"status": "success", "message": f"Archived {betroffen} endpoints"})
 
     @main_bp.route("/endpoint/bulk/pause", methods=["POST"])
     @auth_required
