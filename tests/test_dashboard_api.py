@@ -147,7 +147,8 @@ def test_dashboard_page_contains_live_controls_and_accessible_analytics_table(cl
     assert 'id="dashboard-chart-table"' in html
     assert 'class="container-fluid dashboard-content pb-5 app-content"' in html
     index_template = (Path(__file__).resolve().parents[1] / "templates/index.html").read_text(encoding="utf-8")
-    assert "col-xxl-4 col-xl-6 col-lg-12" in index_template
+    assert "dashboard-kpi-grid" in index_template
+    assert 'data-kpi="{{ key }}"' in index_template
     assert "static/js/dashboard.js" in html
 
 

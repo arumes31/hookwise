@@ -179,6 +179,41 @@ function initTooltips(container = document) {
 function initToasts() {
 }
 
+// Programmatische Reloads (Pin, Pause, Bulk, Import ...) warfen den Nutzer an
+// den Seitenanfang. hwReloadInPlace merkt sich die Scroll-Position; der
+// Block darunter stellt sie nach dem naechsten Seitenaufbau wieder her --
+// auch nach POST-Redirects (Archivieren/Duplizieren), die hwMerkeScroll
+// vor dem Absenden aufrufen.
+window.hwMerkeScroll = function () {
+    try {
+        sessionStorage.setItem('hw.scrollpos', JSON.stringify({
+            p: window.location.pathname, y: Math.round(window.scrollY),
+        }));
+    } catch (e) {}
+};
+window.hwReloadInPlace = function () {
+    window.hwMerkeScroll();
+    window.location.reload();
+};
+(function () {
+    let wert = null;
+    try {
+        wert = sessionStorage.getItem('hw.scrollpos');
+        if (wert !== null) sessionStorage.removeItem('hw.scrollpos');
+    } catch (e) {}
+    if (wert === null) return;
+    let daten = null;
+    try { daten = JSON.parse(wert); } catch (e) { return; }
+    // Nur auf derselben Seite wiederherstellen -- ein Redirect auf eine
+    // andere (womoeglich kuerzere) Seite soll oben beginnen.
+    if (!daten || daten.p !== window.location.pathname) return;
+    const ziel = Number(daten.y);
+    if (!Number.isFinite(ziel) || ziel <= 0) return;
+    window.addEventListener('load', function () {
+        requestAnimationFrame(function () { window.scrollTo(0, ziel); });
+    });
+})();
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -187,16 +222,15 @@ function showToast(message, type = 'info') {
     const normalizedType = allowedTypes.has(type) ? type : 'info';
     const visualType = normalizedType === 'error' ? 'danger' : normalizedType;
     const toast = document.createElement('div');
-    toast.className = `alert alert-${visualType} alert-dismissible fade show shadow-lg border-0 mb-2`;
+    toast.className = `alert alert-${visualType} alert-dismissible fade show shadow-lg border-0`;
     toast.style.minWidth = '300px';
-    toast.style.backdropFilter = 'blur(10px)';
-    toast.style.background = 'rgba(15, 23, 42, 0.9)';
-    toast.style.color = 'white';
+    // Flaeche und Textfarbe kommen aus den Alert-Tokens (Abschnitt 16) --
+    // die vorherige Inline-Dunkelflaeche blieb auch im hellen Theme dunkel.
 
     let iconSvg = '';
-    if (normalizedType === 'success') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-circle-fill" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>';
-    else if (visualType === 'danger') iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-exclamation-triangle-fill" viewBox="0 0 16 16"><path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>';
-    else iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-info-circle-fill" viewBox="0 0 16 16"><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>';
+    if (normalizedType === 'success') iconSvg = '<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-check-circle-fill"></use></svg>';
+    else if (visualType === 'danger') iconSvg = '<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-exclamation-triangle-fill"></use></svg>';
+    else iconSvg = '<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-info-circle-fill"></use></svg>';
 
     const content = document.createElement('div');
     content.className = 'd-flex align-items-center';
@@ -252,6 +286,12 @@ function initSearch(container = document) {
         const board = boardFilter.value;
         const status = statusFilter.value;
 
+        // Historischer Doppelfilter: endpoints-dashboard.js verdrahtet dieselben
+        // Felder vollstaendig (Chips, token-Suche, Persistenz). Laeuft das
+        // moderne System, tritt dieser Handler ab -- sonst kaempfen hidden
+        // und display gegeneinander. Er stuerzte zudem seit der Wrapper-
+        // Aenderung an .closest(...) ab und hat real nie gefiltert.
+        if (document.getElementById('endpoint-filter-chips')) return;
         document.querySelectorAll('.endpoint-card').forEach(card => {
             const name = card.dataset.name.toLowerCase();
             const id = card.dataset.id.toLowerCase();
@@ -262,7 +302,8 @@ function initSearch(container = document) {
             const matchesBoard = !board || cardBoard === board;
             const matchesStatus = !status || cardStatus === status;
 
-            card.closest('.col-md-6, .col-12').style.display =
+            const wrapper = card.closest('.draggable-card, .col-md-6, .col-12');
+            if (wrapper) wrapper.style.display =
                 (matchesSearch && matchesBoard && matchesStatus) ? 'block' : 'none';
         });
     };
@@ -318,26 +359,46 @@ function initServiceHealth(container = document) {
         if (container === document.body && window.healthInterval) clearInterval(window.healthInterval);
         return;
     }
-    const updateFavicon = (status) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 32;
-        canvas.height = 32;
-        const ctx = canvas.getContext('2d');
-
-        ctx.beginPath();
-        ctx.arc(16, 16, 14, 0, 2 * Math.PI);
-        ctx.fillStyle = status === 'up' ? '#3fb950' : status === 'warning' ? '#d29922' : '#f85149';
-        ctx.fill();
-
-        ctx.fillStyle = 'white';
-        ctx.font = 'bold 20px Inter';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('H', 16, 16);
-
-        const link = document.querySelector("link[rel~='icon']");
-        if (link) link.href = canvas.toDataURL('image/png');
+    // Velocity: das Tab-Icon bleibt die Hook-Marke; der Systemzustand haengt
+    // als kleiner Status-Punkt unten rechts dran (vorher uebermalte hier ein
+    // "H"-Kreis das Favicon komplett -- daher sprang das Icon zurueck).
+    // Hell/Dunkel folgt dem OS-Schema, auch bei Wechseln zur Laufzeit.
+    const faviconBilder = { dark: new Image(), light: new Image() };
+    // Quellen aus den <link>-Tags uebernehmen: die tragen den ?v=-Parameter,
+    // sonst liefert der Browser-Cache ein veraltetes SVG in den Canvas.
+    const faviconQuelle = (schema, fallback) => {
+        const link = document.querySelector('link[rel="icon"][media*="' + schema + '"]');
+        return link ? link.href : fallback;
     };
+    faviconBilder.dark.src = faviconQuelle('dark', '/static/img/favicon-hook.svg');
+    faviconBilder.light.src = faviconQuelle('light', '/static/img/favicon-hook-light.svg');
+    let faviconStatus = 'up';
+    const schemaHell = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+    const updateFavicon = (status) => {
+        faviconStatus = status || faviconStatus;
+        const hell = !!(schemaHell && schemaHell.matches);
+        const bild = faviconBilder[hell ? 'light' : 'dark'];
+        const zeichnen = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bild, 0, 0, 32, 32);
+            const farbe = faviconStatus === 'up' ? '#00e38b'
+                : faviconStatus === 'warning' ? '#ffdd65' : '#a90219';
+            ctx.beginPath(); ctx.arc(6.3, 8.3, 5.6, 0, 2 * Math.PI);
+            ctx.fillStyle = hell ? '#f2f8f4' : '#0b0f0f'; ctx.fill();
+            ctx.beginPath(); ctx.arc(6.3, 8.3, 4.4, 0, 2 * Math.PI);
+            ctx.fillStyle = farbe; ctx.fill();
+            const daten = canvas.toDataURL('image/png');
+            document.querySelectorAll("link[rel~='icon']").forEach(l => { l.href = daten; });
+        };
+        if (bild.complete && bild.naturalWidth) zeichnen();
+        else bild.onload = zeichnen;
+    };
+    if (schemaHell && schemaHell.addEventListener && !window.hwFaviconSchema) {
+        window.hwFaviconSchema = true;
+        schemaHell.addEventListener('change', () => updateFavicon(faviconStatus));
+    }
 
     const updateHealth = async () => {
         try {
@@ -384,7 +445,7 @@ function initServiceHealth(container = document) {
 
 // Transitions
 function initTransitions() {
-    const savedView = localStorage.getItem('endpoint-view') || 'grid';
+    const savedView = localStorage.getItem('endpoint-view') || 'list';
     if (window.toggleView) window.toggleView(savedView);
 
     document.body.classList.add('page-loaded');
@@ -406,7 +467,7 @@ window.bulkDelete = async function () {
             const data = await resp.json();
             if (data.status === 'success') {
                 showToast(data.message, 'success');
-                setTimeout(() => window.location.reload(), 1000);
+                setTimeout(() => window.hwReloadInPlace(), 1000);
             }
         } catch (e) {
             showToast('Error deleting endpoints', 'error');
@@ -427,7 +488,7 @@ window.bulkPause = async function () {
         const data = await resp.json();
         if (data.status === 'success') {
             showToast(data.message, 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.hwReloadInPlace(), 1000);
         }
     } catch (e) {
         showToast('Error pausing endpoints', 'error');
@@ -447,7 +508,7 @@ window.bulkResume = async function () {
         const data = await resp.json();
         if (data.status === 'success') {
             showToast(data.message, 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.hwReloadInPlace(), 1000);
         }
     } catch (e) {
         showToast('Error resuming endpoints', 'error');
@@ -483,7 +544,7 @@ window.toggleEndpoint = async function (id) {
         const data = await resp.json();
         if (data.status === 'success') {
             showToast(`Endpoint ${data.is_enabled ? 'enabled' : 'disabled'}`, 'success');
-            setTimeout(() => window.location.reload(), 500);
+            setTimeout(() => window.hwReloadInPlace(), 500);
         }
     } catch (e) {
         showToast('Error toggling endpoint', 'error');
@@ -496,7 +557,7 @@ window.togglePin = async function (id) {
         const data = await resp.json();
         if (data.status === 'success') {
             showToast('Endpoint ' + (data.is_pinned ? 'pinned' : 'unpinned'), 'success');
-            setTimeout(() => window.location.reload(), 500);
+            setTimeout(() => window.hwReloadInPlace(), 500);
         }
     } catch (e) {
         showToast('Error toggling pin', 'error');
@@ -518,13 +579,59 @@ window.toggleView = function (view) {
             col.classList.add('col-12');
         });
     } else {
-        grid.querySelectorAll('.col-12').forEach(col => {
+        grid.querySelectorAll('.draggable-card.col-12').forEach(col => {
             col.classList.remove('col-12');
             col.classList.add('col-xl-6', 'col-lg-12');
         });
     }
     localStorage.setItem('endpoint-view', view);
 };
+
+// Kartenmenues (details.hw-more): der Browser schliesst <details> nie von
+// selbst -- Klick ausserhalb und Escape schliessen jetzt alle offenen
+// Menues. Beim Oeffnen schliessen sich Geschwister, und wenn das Menue
+// unten aus dem Viewport laufen wuerde, klappt es nach oben auf
+// (.hw-more-menu--oben, Gegenstueck in hookwise-console.css). Alles
+// delegiert und im Head-Skript registriert: gilt damit auch fuer per
+// hx-boost getauschte Seiten und fuer geklonte Menues in Tabellenzeilen.
+document.addEventListener('pointerdown', function (ev) {
+    document.querySelectorAll('details.hw-more[open]').forEach(function (menue) {
+        if (!menue.contains(ev.target)) menue.removeAttribute('open');
+    });
+});
+document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    document.querySelectorAll('details.hw-more[open]').forEach(function (menue) {
+        menue.removeAttribute('open');
+        const griff = menue.querySelector('summary');
+        if (griff) griff.focus();
+    });
+});
+document.addEventListener('toggle', function (ev) {
+    const det = ev.target;
+    if (!det || !det.matches || !det.matches('details.hw-more') || !det.open) return;
+    document.querySelectorAll('details.hw-more[open]').forEach(function (anderes) {
+        if (anderes !== det) anderes.removeAttribute('open');
+    });
+    const menue = det.querySelector('.hw-more-menu');
+    if (!menue) return;
+    menue.classList.remove('hw-more-menu--oben');
+    const kante = menue.getBoundingClientRect();
+    if (kante.bottom > window.innerHeight - 8) menue.classList.add('hw-more-menu--oben');
+}, true);
+
+// Die Menuezeilen bestanden aus Icon-Knopf + Textbeschriftung -- klickbar
+// war nur das Icon, der Text tat nichts. Delegiert: ein Klick irgendwo in
+// der Zeile leitet auf das Bedienelement der Zeile weiter (ausser der
+// Klick traf bereits ein Bedienelement, dann laeuft dessen Handler nativ).
+document.addEventListener('click', function (ev) {
+    if (!(ev.target instanceof Element)) return;
+    const zeile = ev.target.closest('.hw-more-row');
+    if (!zeile) return;
+    if (ev.target.closest('button, a, input, select, label')) return;
+    const steuer = zeile.querySelector('button, a');
+    if (steuer) steuer.click();
+});
 
 window.revealToken = async function (id) {
     const el = document.getElementById('token-' + id);
@@ -619,6 +726,37 @@ window.escapeHtml = function (text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+};
+
+// Nr. 14: Duplizieren aus dem Kartenmenue. Nutzt dieselbe POST-Form wie das
+// Rechtsklick-Kontextmenue -- eine Route, zwei Wege dorthin.
+// Nr. 12: Archivieren -- umkehrbar, deshalb ohne Rueckfrage.
+window.archiveEndpoint = function (id) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/endpoint/archive/' + id;
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+    form.appendChild(csrfInput);
+    document.body.appendChild(form);
+    window.hwMerkeScroll();
+    form.submit();
+};
+
+window.cloneEndpoint = function (id) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/endpoint/clone/' + id;
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+    form.appendChild(csrfInput);
+    document.body.appendChild(form);
+    window.hwMerkeScroll();
+    form.submit();
 };
 
 window.copyToClipboard = function (text) {

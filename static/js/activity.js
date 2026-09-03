@@ -52,18 +52,29 @@
         if (data.level === 'success' || data.status === 'processed') state.counters.success += 1;
         updateUi(); return true;
     }
+    // Icon aus dem Sprite statt Unicode-Zeichen: Zeichen kommen aus der
+    // Systemschrift und passen weder in Strichstaerke noch Groesse zu den
+    // uebrigen Icons. Zusaetzlich variierten sie je nach Betriebssystem.
+    function spriteIcon(name) {
+        return '<svg class="hw-icon" width="14" height="14" aria-hidden="true" '
+             + 'focusable="false"><use href="#i-' + name + '"></use></svg>';
+    }
+
     function decorate(entry, data) {
         const key = eventKey(data); const saved = notes(); const persisted = data.annotation || {};
         if (data.id && data.annotation) saved[key] = { note: persisted.text || '', pinned: Boolean(persisted.is_pinned) };
         const controls = document.createElement('span');
         controls.className = 'activity-entry-controls ms-2';
-        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn btn-sm btn-link p-0 text-warning'; pin.textContent = saved[key]?.pinned ? '★' : '☆'; pin.title = 'Pin event';
-        const annotate = document.createElement('button'); annotate.type = 'button'; annotate.className = 'btn btn-sm btn-link p-0 text-secondary ms-1'; annotate.textContent = '✎'; annotate.title = 'Annotate event';
+        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn btn-sm btn-link p-0' + (saved[key]?.pinned ? ' is-pinned' : ''); pin.innerHTML = spriteIcon(saved[key]?.pinned ? 'pin-fill' : 'pin'); pin.title = 'Pin event';
+        pin.setAttribute('aria-label', 'Ereignis anheften');
+        const annotate = document.createElement('button'); annotate.type = 'button'; annotate.className = 'btn btn-sm btn-link p-0 text-secondary ms-1'; annotate.innerHTML = spriteIcon('pencil-square'); annotate.title = 'Annotate event';
+        annotate.setAttribute('aria-label', 'Ereignis kommentieren');
         const note = document.createElement('small'); note.className = 'text-info ms-1'; note.textContent = saved[key]?.note || '';
         pin.addEventListener('click', async event => {
             event.stopPropagation();
-            const next = notes(); next[key] = { ...(next[key] || {}), pinned: !next[key]?.pinned }; saveNotes(next);
-            pin.textContent = next[key].pinned ? '★' : '☆'; entry.classList.toggle('activity-pinned', next[key].pinned);
+            const next = notes(); const basis = next[key] || saved[key] || {}; next[key] = { ...basis, pinned: !basis.pinned }; saveNotes(next);
+            pin.innerHTML = spriteIcon(next[key].pinned ? 'pin-fill' : 'pin');
+            pin.classList.toggle('is-pinned', next[key].pinned); entry.classList.toggle('activity-pinned', next[key].pinned);
             try { await persistAnnotation(data, next[key]); } catch (error) { window.showToast?.(error.message, 'danger'); }
         });
         annotate.addEventListener('click', async event => {
@@ -72,7 +83,7 @@
             next[key] = { ...(next[key] || {}), note: value.slice(0, 280) }; saveNotes(next); note.textContent = next[key].note;
             try { await persistAnnotation(data, next[key]); } catch (error) { window.showToast?.(error.message, 'danger'); }
         });
-        entry.classList.toggle('activity-pinned', Boolean(saved[key]?.pinned)); controls.append(pin, annotate, note); entry.querySelector('.d-flex')?.append(controls);
+        entry.classList.toggle('activity-pinned', Boolean(saved[key]?.pinned)); controls.append(pin, annotate, note); (entry.querySelector('.d-flex') || entry).append(controls);
         entry.hidden = !matches(data);
         entry.dataset.requestId = data.request_id || '';
         state.rendered.set(entry, data);

@@ -59,7 +59,7 @@ def test_login_normal(client, sample_users):
     # GET login page
     resp = client.get("/login")
     assert resp.status_code == 200
-    assert b"Login to HookWise" in resp.data
+    assert b"Enter the console" in resp.data
 
     # POST correct credentials
     resp = client.post("/login", data={"username": "user1", "password": "pass1"}, follow_redirects=True)
@@ -126,7 +126,7 @@ def test_login_2fa_back_button(client, sample_users):
     # For now, let's just assert that we can get back to the login form.
 
     resp = client.get("/login")
-    assert b"Login to HookWise" in resp.data
+    assert b"Enter the console" in resp.data
     assert b"USERNAME" in resp.data
 
 

@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="hw-hist-head mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Audit Logs</h1>
-    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm">Back to dashboard</a>
 </div>
 
 <div class="card bg-dark text-white shadow-lg overflow-hidden border-0">
@@ -15,7 +15,6 @@
                         <th class="ps-4 py-3">TIMESTAMP</th>
                         <th class="py-3">ACTION</th>
                         <th class="py-3">USER</th>
-                        <th class="py-3">ENDPOINT ID</th>
                         <th class="pe-4 py-3">DETAILS</th>
                     </tr>
                 </thead>
@@ -30,9 +29,11 @@
                                 log.action.upper() }}</span>
                         </td>
                         <td class="py-3 text-secondary">{{ log.user or 'System' }}</td>
-                        <td class="py-3 font-monospace small lightgrey">{{ log.config_id[:8] if log.config_id else '-'
-                            }}</td>
-                        <td class="pe-4 py-3">{{ log.details }}</td>
+                        <td class="pe-4 py-3">
+                            {# config_id wird derzeit nirgends geschrieben; sobald es das wird,
+                               erscheint es hier als Praefix statt in einer eigenen Spalte. #}
+                            {% if log.config_id %}<code class="hw-t-xs me-2">{{ log.config_id[:8] }}</code>{% endif %}{{ log.details }}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

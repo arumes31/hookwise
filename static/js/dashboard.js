@@ -2,6 +2,33 @@
     'use strict';
 
     const storageKey = 'hookwise.dashboard.layout.v1';
+
+    // Jede KPI-Kachel verlinkt auf die Sicht, die ihre Zahl erklaert:
+    // DLQ -> History mit status=dlq, Failing -> Webhooks-Quickfilter usw.
+    // (/webhooks liest q/status/filter aus der URL, /history filtert serverseitig.)
+    const KPI_ZIELE = {
+        dead_letter_queue: '/history?status=dlq',
+        failing_endpoints: '/webhooks?filter=recent_failures',
+        success_rate: '/history?status=processed',
+        total_endpoints: '/webhooks',
+        active_endpoints: '/webhooks?status=enabled',
+        total_events: '/history',
+        processed_events: '/history?status=processed',
+        average_latency: '/history',
+        skipped_no_action: '/history?status=skipped',
+        failed_events: '/history?status=failed',
+        stale_endpoints: '/webhooks?filter=stale',
+    };
+    if (!window.hwKpiNavigation) {
+        window.hwKpiNavigation = true;
+        document.addEventListener('click', (ev) => {
+            const kachel = ev.target.closest('.dashboard-kpi[data-kpi]');
+            if (!kachel) return;
+            const ziel = KPI_ZIELE[kachel.dataset.kpi];
+            if (ziel) window.location.href = ziel;
+        });
+    }
+
     const DEFAULT_REFRESH_INTERVAL = 30;
     const state = { range: '24h', hidden: [], order: [], compact: false, interval: DEFAULT_REFRESH_INTERVAL, timer: null, points: [], zoom: 0, pan: 0 };
     let saveTimer = null;
@@ -58,6 +85,10 @@
             const delta = data.deltas && data.deltas[key];
             const deltaText = delta === null || delta === undefined ? 'No prior comparison' : `${delta > 0 ? '↑' : delta < 0 ? '↓' : '→'} ${Math.abs(delta).toFixed(1)}% vs previous period`;
             const detail = card.querySelector('.dashboard-kpi-delta');
+            // Ohne Vergleichswert stand auf fast jeder Kachel 'No prior
+            // comparison' -- eine Zeile, die nur sagt, dass es nichts zu
+            // sagen gibt. Sie entfaellt; ein echtes Delta erscheint weiter.
+            detail.hidden = deltaText === 'No prior comparison';
             detail.textContent = deltaText;
             detail.className = `dashboard-kpi-delta ${delta > 0 && ['failed_events', 'dead_letter_queue', 'average_latency'].includes(key) ? 'is-negative' : delta < 0 && ['failed_events', 'dead_letter_queue', 'average_latency'].includes(key) ? 'is-positive' : ''}`;
             card.classList.remove('is-loading');
@@ -79,45 +110,198 @@
     }
 
     function renderSvg(points) {
+        // Version 2. Wichtigste Korrektur gegenueber v1: failure_rate ist ein
+        // Prozentwert und teilte sich die Achse mit Stueckzahlen -- die Linie
+        // lag damit an beliebiger Hoehe. Sie hat jetzt eine eigene rechte
+        // Achse (0..max %). p95 (Sekunden) wird auf seine eigene Spanne
+        // normiert und gestrichelt gezeichnet; den echten Wert nennt der
+        // Tooltip. Linien laufen als weiche Kurven, Balken haben eine
+        // Mindestbreite, das Volumen eine Verlaufsflaeche.
         const host = byId('dashboard-chart');
         const enabled = [...document.querySelectorAll('#dashboard-legend input:checked')].map(input => input.value);
         if (!points.length || !enabled.length) { host.replaceChildren(); return; }
-        const width = 920, height = 260, pad = 28;
+        const width = 920, height = 260, padL = 46, padR = 46, padY = 24;
         const ns = 'http://www.w3.org/2000/svg';
-        const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('preserveAspectRatio', 'none');
-        const colors = { volume: '#38bdf8', successful: '#10b981', failed: '#f43f5e', failure_rate: '#fbbf24', p95: '#c084fc' };
-        const max = Math.max(1, ...enabled.flatMap(key => points.map(point => Number(point[key] || 0))));
-        if (enabled.includes('successful') || enabled.includes('failed')) {
+        const css = getComputedStyle(document.documentElement);
+        const tok = name => css.getPropertyValue(name).trim();
+        const colors = {
+            volume: tok('--accent'), successful: tok('--ok'), failed: tok('--crit'),
+            failure_rate: tok('--warn'), p95: tok('--text-muted'),
+        };
+        const innerW = width - padL - padR, innerH = height - padY * 2;
+        const xAt = index => padL + (points.length === 1 ? innerW / 2 : index * (innerW / (points.length - 1)));
+        const countKeys = ['volume', 'successful', 'failed'].filter(key => enabled.includes(key));
+        const maxCount = Math.max(1, ...countKeys.flatMap(key => points.map(point => Number(point[key] || 0))));
+        const maxRate = Math.max(10, ...points.map(point => Number(point.failure_rate || 0)));
+        const maxP95 = Math.max(0.1, ...points.map(point => Number(point.p95 || 0)));
+        const yCount = value => height - padY - (value / maxCount) * innerH;
+        const yRate = value => height - padY - (value / maxRate) * innerH;
+        const yP95 = value => height - padY - (value / maxP95) * innerH;
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', 'Event history for the selected range');
+        svg.style.width = '100%';
+        const el = (tag, attrs, parent = svg) => {
+            const node = document.createElementNS(ns, tag);
+            Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+            parent.appendChild(node); return node;
+        };
+        const defs = el('defs', {});
+        const grad = el('linearGradient', { id: 'hw-vol-grad', x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+        el('stop', { offset: '0%', 'stop-color': colors.volume, 'stop-opacity': '.22' }, grad);
+        el('stop', { offset: '100%', 'stop-color': colors.volume, 'stop-opacity': '0' }, grad);
+        // Weiche Kurve durch die Punkte (Catmull-Rom als Bezier)
+        const glatt = coords => {
+            if (coords.length < 3) return 'M' + coords.map(c => c.join(',')).join(' L');
+            let d = `M${coords[0][0]},${coords[0][1]}`;
+            for (let i = 0; i < coords.length - 1; i++) {
+                const p0 = coords[Math.max(0, i - 1)], p1 = coords[i],
+                      p2 = coords[i + 1], p3 = coords[Math.min(coords.length - 1, i + 2)];
+                // Kontrollpunkte in Y auf den Bereich der beiden Stuetzpunkte
+                // klemmen: Catmull-Rom schiesst sonst an Extremen ueber das
+                // Maximum hinaus -- die Kurve zeigte Werte, die es nicht gibt.
+                const lo = Math.min(p1[1], p2[1]), hi = Math.max(p1[1], p2[1]);
+                const klemm = y => Math.min(hi, Math.max(lo, y));
+                const c1 = [p1[0] + (p2[0] - p0[0]) / 6, klemm(p1[1] + (p2[1] - p0[1]) / 6)];
+                const c2 = [p2[0] - (p3[0] - p1[0]) / 6, klemm(p2[1] - (p3[1] - p1[1]) / 6)];
+                d += ` C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${p2[0]},${p2[1]}`;
+            }
+            return d;
+        };
+        [0, .25, .5, .75, 1].forEach(f => {
+            const y = height - padY - f * innerH;
+            el('line', { x1: padL, x2: width - padR, y1: y, y2: y,
+                stroke: tok('--line'), 'stroke-width': 1,
+                'stroke-dasharray': '2 6' });
+            if (f > 0 && countKeys.length) {
+                const lbl = el('text', { x: padL - 8, y: y + 3, 'text-anchor': 'end',
+                    fill: tok('--text-faint'), 'font-size': '10' });
+                lbl.textContent = String(Math.round(maxCount * f));
+            }
+            if (f > 0 && enabled.includes('failure_rate')) {
+                const lbl = el('text', { x: width - padR + 8, y: y + 3, 'text-anchor': 'start',
+                    fill: colors.failure_rate, 'font-size': '10', 'fill-opacity': '.85' });
+                lbl.textContent = Math.round(maxRate * f) + '%';
+            }
+        });
+        const step = Math.ceil(points.length / 8);
+        points.forEach((point, index) => {
+            if (index % step !== 0 && index !== points.length - 1) return;
+            const lbl = el('text', { x: xAt(index), y: height - 6, 'text-anchor': 'middle',
+                fill: tok('--text-faint'), 'font-size': '10' });
+            lbl.textContent = String(point.label).slice(5);
+        });
+        // Velocity-Stil: keine Balken. successful als duenne Zweitlinie,
+        // failed als rote Punkte auf Werthoehe -- wie im Artifact-Chart.
+        if (enabled.includes('successful')) {
+            const coords = points.map((point, index) => [xAt(index), yCount(Number(point.successful || 0))]);
+            el('path', { d: glatt(coords), fill: 'none', stroke: colors.successful,
+                'stroke-width': 1.6, 'stroke-opacity': '.7',
+                'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+        }
+        if (enabled.includes('failed')) {
             points.forEach((point, index) => {
-                const x = pad + index * ((width - pad * 2) / Math.max(1, points.length - 1));
-                const barWidth = Math.max(3, (width - pad * 2) / Math.max(1, points.length) * .42);
-                let y = height - pad;
-                [['successful', '#10b981'], ['failed', '#f43f5e']].forEach(([key, color]) => {
-                    if (!enabled.includes(key)) return;
-                    const barHeight = Number(point[key] || 0) / max * (height - pad * 2); y -= barHeight;
-                    const rect = document.createElementNS(ns, 'rect'); rect.setAttribute('x', x - barWidth / 2); rect.setAttribute('y', y); rect.setAttribute('width', barWidth); rect.setAttribute('height', barHeight); rect.setAttribute('fill', color); rect.setAttribute('opacity', '.55');
-                    const title = document.createElementNS(ns, 'title'); title.textContent = `${point.label}: ${key} ${point[key]}`; rect.append(title); svg.append(rect);
-                });
+                const value = Number(point.failed || 0);
+                if (!value) return;
+                const dot = el('circle', { cx: xAt(index), cy: yCount(value), r: 3.5,
+                    fill: tok('--crit-soft'), stroke: colors.failed, 'stroke-width': 1.5 });
+                const title = document.createElementNS(ns, 'title');
+                title.textContent = `${point.label} · failed: ${value}`;
+                dot.appendChild(title);
             });
         }
-        enabled.forEach(key => {
-            if (key === 'successful' || key === 'failed') return;
-            const path = document.createElementNS(ns, 'polyline');
-            const series = points.map((point, index) => `${pad + index * ((width - pad * 2) / Math.max(1, points.length - 1))},${height - pad - Number(point[key] || 0) / max * (height - pad * 2)}`).join(' ');
-            path.setAttribute('points', series); path.setAttribute('fill', 'none'); path.setAttribute('stroke', colors[key]); path.setAttribute('stroke-width', key === 'failure_rate' ? '2' : '3'); svg.append(path);
+        if (enabled.includes('volume')) {
+            const coords = points.map((point, index) => [xAt(index), yCount(Number(point.volume || 0))]);
+            if (points.length > 1) {
+                el('path', { d: glatt(coords)
+                    + ` L${coords[coords.length - 1][0]},${height - padY} L${coords[0][0]},${height - padY} Z`,
+                    fill: 'url(#hw-vol-grad)' });
+            }
+            el('path', { d: glatt(coords), fill: 'none', stroke: colors.volume,
+                'stroke-width': 2.25, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+            const last = coords[coords.length - 1];
+            el('circle', { cx: last[0], cy: last[1], r: 4, fill: colors.volume,
+                stroke: tok('--bg-surface'), 'stroke-width': 1.5, 'class': 'hw-chart-puls' });
+        }
+        [['failure_rate', yRate, 'none'], ['p95', yP95, '5 4']].forEach(entry => {
+            const key = entry[0], yFn = entry[1], dash = entry[2];
+            if (!enabled.includes(key)) return;
+            const coords = points.map((point, index) => [xAt(index), yFn(Number(point[key] || 0))]);
+            el('path', { d: glatt(coords), fill: 'none', stroke: colors[key],
+                'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+                'stroke-dasharray': dash });
+            const last = coords[coords.length - 1];
+            el('circle', { cx: last[0], cy: last[1], r: 3, fill: colors[key] });
         });
         points.forEach((point, index) => {
-            const x = pad + index * ((width - pad * 2) / Math.max(1, points.length - 1));
-            const dot = document.createElementNS(ns, 'circle'); dot.setAttribute('cx', x); dot.setAttribute('cy', height - pad); dot.setAttribute('r', point.anomaly ? '5' : '2'); dot.setAttribute('fill', point.anomaly ? '#fbbf24' : '#94a3b8');
-            const title = document.createElementNS(ns, 'title'); title.textContent = `${point.label}: ${point.volume} events, ${point.failed} failed (${point.failure_rate}%); p95 ${point.p95}s${point.busiest ? '; busiest period' : ''}${point.highest_failure ? '; highest failure period' : ''}${point.anomaly ? '; anomaly detected' : ''}`; dot.append(title); svg.append(dot);
+            const zone = el('rect', { x: xAt(index) - innerW / Math.max(1, points.length) / 2, y: padY,
+                width: innerW / Math.max(1, points.length), height: innerH, fill: 'transparent' });
+            const title = document.createElementNS(ns, 'title');
+            title.textContent = `${point.label}: ${point.volume} Ereignisse · ${point.failed} fehlgeschlagen (${point.failure_rate}%) · p95 ${point.p95}s`;
+            zone.appendChild(title);
         });
         host.replaceChildren(svg);
+    }
+
+
+    function renderKpiSparks(points) {
+        // Hinterlegte Miniverlaeufe auf den Kacheln, deren Kennzahl eine
+        // Zeitreihe hat (Ereignisse, Raten, Latenz). Bestandszaehler wie
+        // "Total endpoints" haben keine Historie und bleiben ruhig.
+        // Die Reihe kommt aus denselben Analytics-Punkten wie das grosse
+        // Diagramm -- keine zweite Datenquelle, kein weiterer Abruf.
+        const css = getComputedStyle(document.documentElement);
+        const tok = name => css.getPropertyValue(name).trim();
+        const reihen = {
+            total_events: { werte: p => Number(p.volume || 0), farbe: tok('--accent') },
+            processed_events: { werte: p => Number(p.processed || 0), farbe: tok('--accent') },
+            failed_events: { werte: p => Number(p.failed || 0), farbe: tok('--crit') },
+            skipped_no_action: { werte: p => Math.max(0, Number(p.successful || 0) - Number(p.processed || 0)), farbe: tok('--accent') },
+            success_rate: { werte: p => 100 - Number(p.failure_rate || 0), farbe: tok('--ok') },
+            average_latency: { werte: p => Number(p.average_latency || 0), farbe: tok('--accent') },
+        };
+        document.querySelectorAll('.dashboard-kpi').forEach(card => {
+            card.querySelector('.hw-kpi-spark')?.remove();
+            const reihe = reihen[card.dataset.kpi];
+            if (!reihe || points.length < 2) return;
+            const werte = points.map(reihe.werte);
+            const max = Math.max(1, ...werte);
+            const w = 120, h = 30;
+            const ns = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(ns, 'svg');
+            svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            svg.setAttribute('preserveAspectRatio', 'none');
+            svg.setAttribute('class', 'hw-kpi-spark');
+            svg.setAttribute('aria-hidden', 'true');
+            const xy = werte.map((v, i) => [i * (w / (werte.length - 1)), h - 3 - (v / max) * (h - 6)]);
+            const linie = 'M' + xy.map(c => c[0].toFixed(1) + ',' + c[1].toFixed(1)).join(' L');
+            const flaeche = document.createElementNS(ns, 'path');
+            flaeche.setAttribute('d', `${linie} L${w},${h} L0,${h} Z`);
+            flaeche.setAttribute('fill', reihe.farbe);
+            flaeche.setAttribute('fill-opacity', '.10');
+            svg.appendChild(flaeche);
+            const pfad = document.createElementNS(ns, 'path');
+            pfad.setAttribute('d', linie);
+            pfad.setAttribute('fill', 'none');
+            pfad.setAttribute('stroke', reihe.farbe);
+            pfad.setAttribute('stroke-opacity', '.45');
+            pfad.setAttribute('stroke-width', '1.5');
+            svg.appendChild(pfad);
+            card.appendChild(svg);
+        });
     }
 
     function renderAnalytics(data) {
         state.points = data.points || [];
         state.pan = 0;
+        renderKpiSparks(state.points);
         byId('dashboard-timezone').textContent = data.timezone || 'UTC';
+        const rangeNamen = { '24h': 'last 24 hours', '7d': 'last 7 days',
+            '30d': 'last 30 days', '90d': 'last 90 days', custom: 'custom range' };
+        document.querySelectorAll('.hw-range-label').forEach(el => {
+            el.textContent = rangeNamen[state.range] || state.range;
+        });
         const points = visiblePoints();
         byId('dashboard-chart-empty').classList.toggle('d-none', points.length > 0);
         renderSvg(points);
@@ -147,6 +331,28 @@
     }
 
     function applyEndpointFilter(key) {
+        // Seit der Seitentrennung liegt die Endpoint-Liste auf /webhooks.
+        // Auf dem Dashboard gibt es sie nicht mehr -- der Klick fuehrt dann
+        // dorthin und uebergibt die Kennzahl als Parameter; webhooks.html
+        // wendet den Filter beim Laden an.
+        if (!byId('endpoint-list')) {
+            // Abbildung auf die Schnellfilter, die /webhooks bereits kennt
+            // (endpoints-dashboard.js): so greifen Chips, Leerzustand und
+            // URL-Persistenz der Zielseite, statt dass hier ein zweites
+            // Filtersystem entsteht.
+            const ziel = {
+                failing_endpoints: '?filter=recent_failures',
+                dead_letter_queue: '?filter=recent_failures',
+                failed_events: '?filter=recent_failures',
+                stale_endpoints: '?filter=stale',
+                average_latency: '?filter=high_latency',
+                active_endpoints: '?status=enabled',
+            };
+            // Ohne Parameter wuerde /webhooks den zuletzt gespeicherten Filter
+            // wiederherstellen -- ein leerer filter-Parameter loescht ihn explizit.
+            window.location.href = '/webhooks' + (ziel[key] || '?filter=&status=&q=');
+            return;
+        }
         const cards = document.querySelectorAll('.endpoint-card');
         const ids = new Set(state.filters && state.filters[key] || []);
         cards.forEach(card => {
@@ -258,6 +464,16 @@
         applyKpiOrder();
         renderToggleMenu();
         byId('dashboard-refresh').addEventListener('click', refresh);
+        // Schnellwahl im Leerzustand des Diagramms: setzt den Regler und laedt
+        // neu -- niemand muss den Bezug zum Regler oben rechts erst suchen.
+        document.querySelectorAll('.hw-range-quick').forEach(btn => {
+            btn.addEventListener('click', () => {
+                byId('dashboard-range').value = btn.dataset.range;
+                state.range = btn.dataset.range;
+                byId('dashboard-custom-range').hidden = true;
+                persist(); refresh();
+            });
+        });
         byId('dashboard-range').addEventListener('change', event => { state.range = event.target.value; byId('dashboard-custom-range').hidden = state.range !== 'custom'; persist(); if (state.range !== 'custom') refresh(); });
         byId('dashboard-custom-range').addEventListener('click', () => { byId('dashboard-custom-form').hidden = false; });
         byId('dashboard-custom-form').addEventListener('submit', event => { event.preventDefault(); refresh(); });

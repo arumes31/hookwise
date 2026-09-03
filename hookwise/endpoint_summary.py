@@ -13,9 +13,9 @@ from sqlalchemy.orm import selectinload
 
 from .extensions import db
 from .models import WebhookConfig, WebhookLog
-from .utils import auth_required
+from .utils import auth_required, decrypt_string
 
-_TOKEN_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{4}$")
+_TOKEN_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{4,128}$")
 _ACTIVE = ("queued", "processing", "retrying")
 _SUMMARY_WINDOW = timedelta(days=30)
 
@@ -45,10 +45,25 @@ def _tags(config: WebhookConfig) -> list[str]:
 
 
 def _token_suffix_matches(config: WebhookConfig, suffix: str) -> bool:
+    """Endung ab 4 Zeichen bis zum ganzen Token (Nutzer fuegen oft den
+    kompletten Wert ein). Erst der Last4-Hinweis in konstanter Zeit, bei
+    laengerer Eingabe zusaetzlich die echte Token-Endung -- ebenfalls in
+    konstanter Zeit, damit die Suche kein Orakel ueber fremde Tokens wird."""
     if not suffix or not _TOKEN_SUFFIX.fullmatch(suffix):
         return False
     hint = config.bearer_token_last4 or ""
-    return len(hint) == 4 and hmac.compare_digest(hint, suffix)
+    if len(hint) != 4 or not hmac.compare_digest(hint, suffix[-4:]):
+        return False
+    if len(suffix) == 4:
+        return True
+    # bearer_token liegt verschluesselt in der DB. Entschluesselt wird NUR,
+    # wenn der Last4-Hinweis schon getroffen hat -- also fuer hoechstens eine
+    # Handvoll Kandidaten je Suche, nie fuer die blosse Liste.
+    try:
+        voll = decrypt_string(config.bearer_token or "")
+    except Exception:
+        return False
+    return len(voll) >= len(suffix) and hmac.compare_digest(voll[-len(suffix):], suffix)
 
 
 def _latest_rows(config_ids: list[str], statuses: tuple[str, ...], cutoff: datetime) -> dict[str, dict[str, Any]]:
@@ -121,7 +136,18 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
         failure = failures.get(config.id)
         last_activity = _as_utc(config.last_seen_at) or _as_utc(config.created_at)
         timeout_hours = max(1, int(config.timeout_hours or 24))
-        stale = bool(config.is_enabled and last_activity and now - last_activity > timedelta(hours=timeout_hours))
+        # Nr. 19: eine stale-Definition. Vorher zaehlte diese Summary jeden
+        # aktiven, ruhigen Endpoint, waehrend die Dashboard-Kachel
+        # (_stale_config_ids) nur solche mit timeout_alerts_enabled zaehlt --
+        # daher die gemessene Diskrepanz 1 vs. 5. Beide folgen jetzt derselben
+        # Regel: Alerts aktiv, kein Entwurf, seit timeout_hours nichts gesehen.
+        stale = bool(
+            config.timeout_alerts_enabled
+            and config.is_enabled
+            and not config.is_draft
+            and last_activity
+            and now - last_activity > timedelta(hours=timeout_hours)
+        )
         token_reference = _as_utc(config.last_rotated_at) or _as_utc(config.created_at)
         outcomes = values["good"] + values["failed"]
         summaries.append(
@@ -163,7 +189,7 @@ def _register() -> None:
     @auth_required
     def endpoint_summary() -> Any:
         configs = (
-            WebhookConfig.query.options(selectinload(WebhookConfig.tags))
+            WebhookConfig.query.options(selectinload(WebhookConfig.tags)).filter(WebhookConfig.archived_at.is_(None))
             .order_by(WebhookConfig.is_pinned.desc(), WebhookConfig.display_order, WebhookConfig.created_at.desc())
             .all()
         )
@@ -174,7 +200,7 @@ def _register() -> None:
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "endpoints": _build_summaries(configs),
                 "token_matches": matches,
-                "token_search_hint": "Use token: followed by the final four token characters.",
+                "token_search_hint": "Use token: followed by at least the last 4 token characters (a full token works too).",
             }
         )
 

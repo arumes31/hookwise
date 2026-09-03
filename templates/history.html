@@ -1,66 +1,92 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4">
+{# Kopfzeile: eine Bank statt drei. Die Filter- und Aktionsfelder sind
+   unveraendert -- sie liegen nur in zwei Aufklappmenues statt nebeneinander.
+   Alle IDs, Handler und aria-Label bleiben, damit searchHistory(),
+   exportCSV(), deleteAllLogs() und die Skripte weiter greifen. #}
+<div class="hw-hist-head mb-4">
     <h1 class="accent-gradient fw-bold mb-0">Webhook History</h1>
-    <div class="d-flex flex-wrap gap-2 history-toolbar">
-        <div class="form-check form-switch d-flex align-items-center me-3">
-            <input class="form-check-input me-2" type="checkbox" role="switch" id="live-tail-toggle">
-            <label class="form-check-label small text-secondary fw-bold" for="live-tail-toggle">LIVE TAIL</label>
-        </div>
-        <button class="btn btn-outline-danger btn-sm" onclick="deleteAllLogs()" data-tooltip="Delete All History" aria-label="Delete all history">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-trash-fill"
-                viewBox="0 0 16 16">
-                <path
-                    d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
-            </svg>
-        </button>
-        <button class="btn btn-outline-success btn-sm" onclick="exportCSV()" data-tooltip="Export CSV" aria-label="Export history as CSV">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-download"
-                viewBox="0 0 16 16">
-                <path
-                    d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z" />
-                <path
-                    d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z" />
-            </svg>
-        </button>
-        <input type="date" id="date-from" class="form-control form-control-sm bg-dark border-secondary text-white"
-            style="width: 130px;" onchange="searchHistory()" aria-label="History start date">
-        <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white"
-            style="width: 130px;" onchange="searchHistory()" aria-label="History end date">
-        <select id="endpoint-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 200px;" onchange="searchHistory()" aria-label="Filter history by endpoint">
-            <option value="">All Endpoints</option>
-            {% for cfg in all_configs %}
-            <option value="{{ cfg.id }}" {% if cfg.id==endpoint_id %}selected{% endif %}>{{ cfg.name }}</option>
-            {% endfor %}
-        </select>
-        <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 140px;" onchange="searchHistory()" aria-label="Filter history by status">
-            <option value="">All Statuses</option>
-            <option value="processed" {% if status=='processed' %}selected{% endif %}>Processed</option>
-            <option value="skipped" {% if status=='skipped' %}selected{% endif %}>Skipped</option>
-            <option value="failed" {% if status=='failed' %}selected{% endif %}>Failed</option>
-            <option value="dlq" {% if status=='dlq' %}selected{% endif %}>DLQ</option>
-            <option value="queued" {% if status=='queued' %}selected{% endif %}>Queued</option>
-        </select>
-        <input type="text" id="source-ip-filter"
-            class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 150px;"
-            placeholder="Source IP..." value="{{ source_ip or '' }}" onchange="searchHistory()">
-        <div class="input-group input-group-sm" style="width: 250px;">
-            <input type="text" id="history-search" class="form-control bg-dark border-secondary text-white"
-                placeholder="Search Ticket or Request ID...">
-            <button class="btn btn-outline-secondary" type="button" onclick="searchHistory()">Search</button>
-        </div>
-        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-sm d-flex align-items-center">Back to
-            Dashboard</a>
+
+    <div class="form-check form-switch d-flex align-items-center">
+        <input class="form-check-input me-2" type="checkbox" role="switch" id="live-tail-toggle">
+        <label class="form-check-label small text-secondary fw-bold" for="live-tail-toggle">LIVE TAIL</label>
     </div>
+
+    <div class="input-group input-group-sm hw-hist-search">
+        <input type="text" id="history-search" class="form-control bg-dark border-secondary text-white"
+            placeholder="Search ticket or request ID&hellip;">
+        <button class="btn btn-outline-secondary" type="button" onclick="searchHistory()">Search</button>
+    </div>
+
+    <details class="hw-more hw-menu-wide" id="hw-hist-filter">
+        <summary class="hw-menu-summary">Filter<span class="hw-filter-dot" id="hw-filter-active" hidden></span></summary>
+        <div class="hw-more-menu">
+            <label class="hw-field">
+                <span>From</span>
+                <input type="date" id="date-from" class="form-control form-control-sm bg-dark border-secondary text-white"
+                    onchange="searchHistory()" aria-label="History start date">
+            </label>
+            <label class="hw-field">
+                <span>To</span>
+                <input type="date" id="date-to" class="form-control form-control-sm bg-dark border-secondary text-white"
+                    onchange="searchHistory()" aria-label="History end date">
+            </label>
+            <label class="hw-field">
+                <span>Endpoint</span>
+                <select id="endpoint-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+                    onchange="searchHistory()" aria-label="Filter history by endpoint">
+                    <option value="">All endpoints</option>
+                    {% for cfg in all_configs %}
+                    <option value="{{ cfg.id }}" {% if cfg.id==endpoint_id %}selected{% endif %}>{{ cfg.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="hw-field">
+                <span>Status</span>
+                <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+                    onchange="searchHistory()" aria-label="Filter history by status">
+                    <option value="">All statuses</option>
+                    <option value="processed" {% if status=='processed' %}selected{% endif %}>Processed</option>
+                    <option value="skipped" {% if status=='skipped' %}selected{% endif %}>Skipped</option>
+                    <option value="failed" {% if status=='failed' %}selected{% endif %}>Failed</option>
+                    <option value="dlq" {% if status=='dlq' %}selected{% endif %}>DLQ</option>
+                    <option value="queued" {% if status=='queued' %}selected{% endif %}>Queued</option>
+                </select>
+            </label>
+            <label class="hw-field">
+                <span>Source IP</span>
+                <input type="text" id="source-ip-filter"
+                    class="form-control form-control-sm bg-dark border-secondary text-white" placeholder="e.g. 10.14.37.176"
+                    value="{{ source_ip or '' }}" onchange="searchHistory()">
+            </label>
+        </div>
+    </details>
+
+    <details class="hw-more" id="hw-hist-actions">
+        <summary class="hw-menu-summary">Actions</summary>
+        <div class="hw-more-menu">
+            <button class="hw-more-row" type="button" onclick="exportCSV()" aria-label="Export history as CSV">
+                <span class="hw-more-text">Export as CSV</span>
+            </button>
+            <a class="hw-more-row" href="{{ url_for('main.index') }}">
+                <span class="hw-more-text">Back to dashboard</span>
+            </a>
+            <button class="hw-more-row hw-more-danger" type="button" onclick="deleteAllLogs()"
+                aria-label="Delete all history">
+                <span class="hw-more-text">Delete entire history</span>
+            </button>
+        </div>
+    </details>
 </div>
 
 <section id="history-operations" class="history-operations card glass-card mb-4" aria-labelledby="history-operations-title">
     <div class="card-body py-3">
-        <div class="d-flex flex-wrap align-items-center gap-2">
-            <h2 id="history-operations-title" class="h6 mb-0 me-auto">Troubleshooting &amp; operations</h2>
+        {# Zugeklappt: der Block belegte rund 200px oberhalb der Tabelle fuer
+           Bedienelemente, die nur bei der Fehlersuche gebraucht werden. #}
+        <details>
+        <summary><h2 id="history-operations-title" class="h6 mb-0 d-inline">Troubleshooting &amp; operations</h2></summary>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
             <button id="history-save-search" class="btn btn-sm btn-outline-primary" type="button">Save search</button>
             <select id="history-saved-searches" class="form-select form-select-sm" aria-label="Saved history searches"><option value="">Saved searches</option></select>
             <button id="history-delete-search" class="btn btn-sm btn-outline-danger" type="button" disabled>Delete saved search</button>
@@ -87,6 +113,7 @@
             <button id="history-replay-dlq" class="btn btn-sm btn-outline-warning" type="button" hidden>Replay selected DLQ</button>
         </div>
         <div id="history-rate-limits" class="small text-secondary mt-2"></div>
+        </details>
     </div>
 </section>
 
@@ -107,121 +134,19 @@
                     <tr>
                         <th class="ps-4 py-3"><input type="checkbox" id="check-all-logs" onchange="toggleAllLogs()" aria-label="Select all history entries">
                         </th>
-                        <th class="py-3">TIMESTAMP</th>
+                        <th class="py-3">TIME</th>
                         <th class="py-3">ENDPOINT</th>
                         <th class="py-3">STATUS</th>
                         <th class="py-3">SOURCE IP</th>
-                        <th class="py-3">RETRY</th>
                         <th class="py-3">TICKET</th>
                         <th class="py-3">REQUEST ID</th>
-                        <th class="py-3">MATCHED RULE</th>
-                        <th class="pe-4 py-3 text-end">ACTIONS</th>
+                        <th class="pe-4 py-3 text-end"><span class="visually-hidden">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for log in logs %}
-                    <tr class="border-bottom border-light border-opacity-5" data-history-status="{{ log.status }}">
-                        <td class="ps-4 py-3"><input type="checkbox" class="log-check" data-id="{{ log.id }}" aria-label="Select history entry"
-                                onchange="updateBulkHistory()"></td>
-                        <td class="py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S')
-                            }}</td>
-                        <td class="py-3 fw-bold">{{ log.config_name }}</td>
-                        <td class="py-3">
-                            {% if log.status == 'processed' %}
-                            <span
-                                class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">PROCESSED</span>
-                            {% if log.action %}
-                            <span
-                                class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 ms-1">{{
-                                log.action.upper() }}</span>
-                            {% endif %}
-                            {% elif log.status == 'skipped' %}
-                            <span
-                                class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">SKIPPED</span>
-                            {% elif log.status == 'failed' %}
-                            <span
-                                class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">FAILED</span>
-                            {% else %}
-                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25">{{
-                                log.status.upper() }}</span>
-                            {% endif %}
-                        </td>
-                        <td class="py-3 text-secondary font-monospace small">{{ log.source_ip or '-' }}</td>
-                        <td class="py-3">
-                            {% if log.retry_count > 0 %}
-                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">{{ log.retry_count
-                                }}</span>
-                            {% else %}
-                            <span class="lightgrey opacity-50">-</span>
-                            {% endif %}
-                        </td>
-                        <td class="py-3 font-monospace">
-                            {% if log.ticket_id %}
-                            <a href="{{ cw_url }}/service/tickets/{{ log.ticket_id }}" target="_blank"
-                                class="btn btn-sm btn-primary py-0 px-2 fw-bold" style="font-size: 0.7rem;">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
-                                    class="bi bi-box-arrow-up-right me-1" viewBox="0 0 16 16">
-                                    <path fill-rule="evenodd"
-                                        d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z" />
-                                    <path fill-rule="evenodd"
-                                        d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z" />
-                                </svg>
-                                #{{ log.ticket_id }}
-                            </a>
-                            {% else %}
-                            <span class="lightgrey opacity-50">-</span>
-                            {% endif %}
-                        </td>
-                        <td class="py-3 text-secondary font-monospace small" data-request-id="{{ log.request_id }}">
-                            <span class="user-select-all">{{ log.request_id[:16] }}...</span>
-                            <button class="btn btn-sm btn-link p-0 ms-1 opacity-50"
-                                onclick="copyToClipboard('{{ log.request_id }}')" data-tooltip="Copy Full ID" aria-label="Copy full request ID">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor"
-                                    class="bi bi-clipboard" viewBox="0 0 16 16">
-                                    <path
-                                        d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
-                                    <path
-                                        d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
-                                </svg>
-                            </button>
-                        </td>
-                        <td class="py-3">
-                            {% if log.matched_rule %}
-                            <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25"
-                                data-tooltip="{{ log.matched_rule }}">RULE MATCH</span>
-                            {% else %}
-                            <span class="lightgrey opacity-50">-</span>
-                            {% endif %}
-                        </td>
-                        <td class="pe-4 py-3 text-end">
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-info" onclick="viewPayload('{{ log.id }}')"
-                                    data-payload='{{ log.masked_payload | tojson | safe }}'
-                                    data-headers='{{ log.masked_headers | tojson | safe }}'
-                                    data-rule="{{ log.matched_rule or '' }}">View</button>
-                                <button class="btn btn-outline-warning" onclick="comparePayload('{{ log.id }}', event)"
-                                    data-payload='{{ log.masked_payload | tojson | safe }}'>Compare</button>
-                                <button class="btn btn-outline-secondary history-diagnostics" type="button"
-                                    data-log-id="{{ log.id }}">Diagnose</button>
-                                {% if log.status in ['failed', 'dlq', 'retrying'] %}
-                                <button class="btn btn-outline-warning history-retry" type="button"
-                                    data-log-id="{{ log.id }}">Retry now</button>
-                                {% endif %}
-                                <button class="btn btn-outline-primary"
-                                    onclick="replayWebhook('{{ log.id }}')">Replay</button>
-                                <button class="btn btn-outline-danger" onclick="deleteHistory('{{ log.id }}')">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor"
-                                        class="bi bi-trash" viewBox="0 0 16 16">
-                                        <path
-                                            d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z" />
-                                        <path
-                                            d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
+                    {# Zeilen kommen aus dem Partial, das auch htmx nachlaedt --
+                       so koennen die beiden Darstellungen nicht auseinanderlaufen. #}
+                    {% include 'history_rows.html' %}
                 </tbody>
             </table>
         </div>
@@ -271,7 +196,7 @@
                     <small class="fw-bold">Matched Rule:</small> <span id="rule-text" class="small"></span>
                 </div>
                 <pre
-                    class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
+                    class="bg-black p-0 rounded"><code id="payload-display" class="language-json hw-t-md" style="max-height: 500px; overflow: auto; display: block"></code></pre>
             </div>
         </div>
     </div>
@@ -619,20 +544,14 @@
                     tdIp.className = 'py-3 text-secondary font-monospace small';
                     tdIp.textContent = data.source_ip || '-';
 
-                    // Retry
-                    const tdRetry = document.createElement('td');
-                    tdRetry.className = 'py-3';
+                    // Wiederholungen haengen am Status, statt eine eigene Spalte
+                    // zu belegen, die in 87 % der Zeilen nur einen Strich zeigt.
                     if (data.retry_count > 0) {
                         const retryBadge = document.createElement('span');
-                        retryBadge.className = 'badge bg-warning text-dark';
-                        retryBadge.style.fontSize = '0.65rem';
-                        retryBadge.textContent = data.retry_count;
-                        tdRetry.appendChild(retryBadge);
-                    } else {
-                        const span = document.createElement('span');
-                        span.className = 'lightgrey opacity-50';
-                        span.textContent = '-';
-                        tdRetry.appendChild(span);
+                        retryBadge.className = 'hw-retry';
+                        retryBadge.dataset.tooltip = `${data.retry_count} Wiederholungen`;
+                        retryBadge.innerHTML = '<svg class="hw-icon" width="10" height="10" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg>' + data.retry_count;
+                        tdStatus.appendChild(retryBadge);
                     }
 
                     // Ticket
@@ -642,8 +561,7 @@
                         const a = document.createElement('a');
                         a.href = `{{ cw_url }}/service/tickets/${data.ticket_id}`;
                         a.target = '_blank';
-                        a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold';
-                        a.style.fontSize = '0.7rem';
+                        a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold hw-t-xs';
                         a.textContent = `#${data.ticket_id}`;
                         tdTicket.appendChild(a);
                     } else {
@@ -663,21 +581,6 @@
                     reqSpan.textContent = (fullId.toString().substring(0, 16)) + '...';
                     tdReqId.appendChild(reqSpan);
 
-                    // Matched Rule
-                    const tdRule = document.createElement('td');
-                    tdRule.className = 'py-3';
-                    if (data.matched_rule) {
-                        const ruleBadge = document.createElement('span');
-                        ruleBadge.className = 'badge bg-info bg-opacity-10 text-info border border-info border-opacity-25';
-                        ruleBadge.dataset.tooltip = data.matched_rule;
-                        ruleBadge.textContent = 'RULE MATCH';
-                        tdRule.appendChild(ruleBadge);
-                    } else {
-                        const span = document.createElement('span');
-                        span.className = 'lightgrey opacity-50';
-                        span.textContent = '-';
-                        tdRule.appendChild(span);
-                    }
 
                     // Actions
                     const tdActions = document.createElement('td');
@@ -692,7 +595,7 @@
                     tdActions.appendChild(group);
 
                     // Append cells in order
-                    [tdCheck, tdTs, tdConfig, tdStatus, tdIp, tdRetry, tdTicket, tdReqId, tdRule, tdActions].forEach(td => tr.appendChild(td));
+                    [tdCheck, tdTs, tdConfig, tdStatus, tdIp, tdTicket, tdReqId, tdActions].forEach(td => tr.appendChild(td));
 
                     tableBody.insertBefore(tr, tableBody.firstChild);
                     if (tableBody.children.length > 50) tableBody.lastChild.remove();
@@ -706,5 +609,38 @@
     } else {
         document.addEventListener('DOMContentLoaded', runHistoryOnLoad);
     }
+
+    // ---- Detailzeilen und Ueberlaufmenues --------------------------------
+    // Delegiert am document, damit von htmx nachgeladene oder vom Live-Tail
+    // erzeugte Zeilen ohne erneutes Verdrahten funktionieren.
+    document.addEventListener('click', (ev) => {
+        const toggle = ev.target.closest('[data-toggle-detail]');
+        if (toggle) {
+            const row = document.getElementById(toggle.dataset.toggleDetail);
+            if (row) {
+                const open = toggle.getAttribute('aria-expanded') === 'true';
+                toggle.setAttribute('aria-expanded', String(!open));
+                row.hidden = open;
+            }
+            return;
+        }
+        // Menue-Schliessen (Aussenklick + Escape) uebernimmt seit dem
+        // Konsolen-Umbau global ux.js -- hier nicht noch einmal stapeln.
+    });
+
+    // Punkt am Filter-Knopf, sobald ein Filter gesetzt ist -- sonst ist im
+    // zugeklappten Zustand nicht erkennbar, dass die Liste gefiltert wird.
+    const markActiveFilters = () => {
+        const dot = document.getElementById('hw-filter-active');
+        if (!dot) return;
+        const ids = ['date-from', 'date-to', 'endpoint-filter', 'status-filter', 'source-ip-filter'];
+        dot.hidden = !ids.some((id) => {
+            const el = document.getElementById(id);
+            return el && el.value;
+        });
+    };
+    document.getElementById('hw-hist-filter')
+        ?.addEventListener('change', markActiveFilters);
+    markActiveFilters();
 </script>
 {% endblock %}

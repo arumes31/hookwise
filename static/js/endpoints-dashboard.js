@@ -73,7 +73,8 @@
     async function fetchTokenMatches(query) {
         if (!query.startsWith(tokenPrefix)) return null;
         const suffix = query.slice(tokenPrefix.length).trim();
-        if (suffix.length !== 4) return new Set();
+        // 4 Zeichen bis ganzer Token -- das Backend prueft dieselbe Spanne.
+        if (suffix.length < 4 || suffix.length > 128) return new Set();
         const response = await fetch(`/api/endpoints/summary?token_suffix=${encodeURIComponent(suffix)}`);
         if (!response.ok) throw new Error('Token suffix search unavailable');
         return new Set((await response.json()).token_matches || []);
@@ -115,6 +116,13 @@
             [['q', state.q], ['board', state.board], ['status', state.status], ['filter', state.quick]].forEach(([key, value]) => value ? params.set(key, value) : params.delete(key));
             history.replaceState(null, '', `${location.pathname}${params.toString() ? `?${params}` : ''}`);
         } catch (_) { /* Storage/history are enhancements only. */ }
+        // The table view renders from the card list; rebuild it so search,
+        // filters and the Refresh button are visible in list view too.
+        try {
+            if ((localStorage.getItem('endpoint-view') || 'list') === 'list') {
+                window.hwTabellenAnsicht?.('list');
+            }
+        } catch (_) { /* view rebuild is an enhancement */ }
     }
     async function refreshSummaries() {
         const dashboard = root(); if (!dashboard || dashboard.dataset.loading === 'true') return;

@@ -1,15 +1,19 @@
 <!DOCTYPE html>
+{% import '_brand.html' as brandlib %}
 {% macro nav_icon(name) -%}
-<svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-    {% if name == 'endpoints' %}<path d="M1 1h6v6H1V1zm8 0h6v6H9V1zM1 9h6v6H1V9zm8 0h6v6H9V9z" />
-    {% elif name == 'tenantmap' %}<path d="M8 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM3 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm10 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7.5 5v2.5h-4V10h1V8.5h7V10h1V7.5h-4V5z" />
-    {% elif name == 'history' %}<path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" />
-    {% elif name == 'audit' %}<path d="M5 1h6a1 1 0 0 1 1 1h2v13H2V2h2a1 1 0 0 1 1-1zm0 2H3v11h10V3h-2v1H5V3zm1-1v1h4V2H6zm0 5h5v1H6V7zm0 3h5v1H6v-1zM4 7h1v1H4V7zm0 3h1v1H4v-1z" />
-    {% elif name == 'settings' %}<path d="M9.4 1.2 9.8 3a5.5 5.5 0 0 1 1.1.6l1.7-.5 1.2 2-1.3 1.2a5.5 5.5 0 0 1 0 1.3l1.3 1.2-1.2 2-1.7-.5a5.5 5.5 0 0 1-1.1.6l-.4 1.8H7.1l-.4-1.8a5.5 5.5 0 0 1-1.1-.6l-1.7.5-1.2-2L4 7.6a5.5 5.5 0 0 1 0-1.3L2.7 5.1l1.2-2 1.7.5A5.5 5.5 0 0 1 6.7 3l.4-1.8h2.3zM8.25 5A2.25 2.25 0 1 0 8.25 9.5 2.25 2.25 0 0 0 8.25 5z" />
-    {% elif name == 'logout' %}<path d="M6 2H2v12h4v-1H3V3h3V2zm4.3 2.3-.7.7L12 7.5H5v1h7L9.6 11l.7.7L14 8l-3.7-3.7z" />
-    {% elif name == 'docs' %}<path d="M2 2.5A2.5 2.5 0 0 1 4.5 0H8v14H4.5A2.5 2.5 0 0 0 2 16V2.5zM9 0h2.5A2.5 2.5 0 0 1 14 2.5V16a2.5 2.5 0 0 0-2.5-2H9V0z" />
-    {% elif name == 'new' %}<path d="M7.5 1h1v6.5H15v1H8.5V15h-1V8.5H1v-1h6.5V1z" />
-    {% elif name == 'bell' %}<path d="M8 16a2 2 0 0 0 1.9-1.4H6.1A2 2 0 0 0 8 16zm5-4V7a5 5 0 0 0-4-4.9V1a1 1 0 0 0-2 0v1.1A5 5 0 0 0 3 7v5l-1.5 1.5v.5h13v-.5L13 12z" />
+{# Velocity-Rail-Icons: exakt die Glyphen der Artifact-Suite (Lucide-
+   Geometrie, 24er-Viewbox, Strich 2, runde Kappen). #}
+<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+    {% if name == 'endpoints' %}<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>
+    {% elif name == 'webhooks' %}<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>
+    {% elif name == 'tenantmap' %}<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
+    {% elif name == 'history' %}<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>
+    {% elif name == 'audit' %}<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>
+    {% elif name == 'settings' %}<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
+    {% elif name == 'logout' %}<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>
+    {% elif name == 'docs' %}<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>
+    {% elif name == 'new' %}<path d="M5 12h14"/><path d="M12 5v14"/>
+    {% elif name == 'bell' %}<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
     {% endif %}
 </svg>
 {%- endmacro %}
@@ -20,67 +24,85 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="htmx-config" content='{"historyCacheSize": 0}'>
     <title>{{ page_title }} · HookWise</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
-    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/prism.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {# Velocity-Typografie: Geist + JetBrains Mono. Faellt ohne Netz sauber
+       auf Inter/Segoe bzw. Cascadia/Consolas zurueck (Stacks in den Tokens). #}
+    {# Favicon = die geroutete Hook-Marke (templates/_brand.html), nicht mehr
+       das alte Logo. SVG zuerst (scharf in jeder Groesse), PNG als Fallback
+       fuer Altbrowser, Apple-Touch fuer Homescreen-Verknuepfungen. #}
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ url_for('static', filename='img/favicon-hook.svg', v='20260907f') }}">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ url_for('static', filename='img/favicon-hook-light.svg', v='20260907f') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-hook-32.png', v='20260907f') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-hook.png', v='20260907f') }}">
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css', v='20260907f') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/prism.css', v='20260907f') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css', v='20260907f') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/hookwise-console.css', v='20260907f') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <script src="{{ url_for('static', filename='js/http.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/socket.io.min.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/prism.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mini-charts.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/htmx.min.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/ux.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/activity.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/history-operations.js') }}" defer></script>
+    {# Theme is applied before first paint so an explicit choice never flashes. #}
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('hw-theme');
+                if (t === 'light' || t === 'dark') {
+                    document.documentElement.setAttribute('data-theme', t);
+                    document.documentElement.setAttribute('data-bs-theme', t);
+                }
+            } catch (e) { /* private mode: keep the default */ }
+        })();
+    </script>
+    <script src="{{ url_for('static', filename='js/http.js', v='20260907f') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/socket.io.min.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/prism.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mini-charts.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/htmx.min.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/ux.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/activity.js', v='20260907f') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/history-operations.js', v='20260907f') }}" defer></script>
 </head>
 
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
+    {# Icon-Sprite, genau einmal pro Seite. Alle <use href="#i-...">
+       im Dokument beziehen sich hierauf. #}
+    {% include '_icons.html' %}
     <div id="loading-bar" style="width: 0%;"></div>
+    {# Rail-Griff: klappt die Seitenleiste auf Icons+Beschriftung aus.
+       Auf der Login-Seite gibt es keine Rail, also auch keinen Griff. #}
+    {% if request.endpoint != 'main.login' %}
+    <button type="button" id="hw-rail-griff" class="hw-rail-griff"
+        aria-label="Expand navigation labels" aria-expanded="false" data-tooltip="Expand menu">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m9 18 6-6-6-6"/>
+        </svg>
+    </button>
+    <script>
+        /* Vor dem ersten Paint: gespeicherte Rail-Breite anwenden, sonst
+           springt das Layout beim Laden. */
+        try {
+            if (localStorage.getItem('hw.rail') === 'breit') {
+                document.documentElement.classList.add('hw-rail-breit');
+            }
+        } catch (e) {}
+        document.getElementById('hw-rail-griff').addEventListener('click', function () {
+            const breit = document.documentElement.classList.toggle('hw-rail-breit');
+            this.setAttribute('aria-expanded', String(breit));
+            this.setAttribute('aria-label', breit ? 'Collapse navigation labels' : 'Expand navigation labels');
+            this.setAttribute('data-tooltip', breit ? 'Collapse menu' : 'Expand menu');
+            try { localStorage.setItem('hw.rail', breit ? 'breit' : 'schmal'); } catch (e) {}
+        });
+    </script>
+    {% endif %}
     {% if request.endpoint != 'main.login' %}
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top" aria-label="Primary navigation">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main.index') }}"
                 aria-label="HookWise dashboard">
                 <div class="hw-logo-container" id="persistent-logo" hx-preserve="true">
-                    <svg class="logo-8bit-svg" viewBox="0 0 400 80" xmlns="http://www.w3.org/2000/svg">
-                        <!-- Refined Spawning Word Group (Centered @ 42,16) -->
-                        <g class="word-group" transform="translate(42, 16)">
-                            <!-- 'H' -->
-                            <path class="snap-letter" style="animation-delay: 0.1s" fill="none"
-                                stroke="var(--retro-cyan)" stroke-width="8" d="M4 0 v48 M4 24 h24 M28 0 v48" />
-                            <!-- 'o' -->
-                            <rect class="snap-letter" style="animation-delay: 0.2s" x="44" y="16" width="32" height="32"
-                                fill="none" stroke="var(--retro-white)" stroke-width="8" />
-                            <!-- 'o' -->
-                            <rect class="snap-letter" style="animation-delay: 0.3s" x="88" y="16" width="32" height="32"
-                                fill="none" stroke="var(--retro-white)" stroke-width="8" />
-                            <!-- 'k' -->
-                            <path class="snap-letter" style="animation-delay: 0.4s" fill="none"
-                                stroke="var(--retro-cyan)" stroke-width="8"
-                                d="M136 0 v48 M136 24 l24 -20 M136 24 l24 24" />
-                            <!-- 'W' -->
-                            <path class="snap-letter" style="animation-delay: 0.5s" fill="none"
-                                stroke="var(--retro-white)" stroke-width="8" d="M172 0 v48 l16 -16 l16 16 v-48" />
-                            <!-- 'i' -->
-                            <g class="snap-letter" style="animation-delay: 0.6s">
-                                <rect x="216" y="16" width="8" height="32" fill="var(--retro-cyan)" />
-                                <rect x="216" y="0" width="8" height="8" fill="var(--retro-yellow)" />
-                            </g>
-                            <!-- 's' -->
-                            <path class="snap-letter" style="animation-delay: 0.7s" fill="none"
-                                stroke="var(--retro-magenta)" stroke-width="8" d="M236 16 h32 v12 h-32 v12 h32" />
-                            <!-- 'e' -->
-                            <path class="snap-letter" style="animation-delay: 0.8s" fill="none"
-                                stroke="var(--retro-white)" stroke-width="8"
-                                d="M280 16 h32 v32 h-32 v-32 M280 32 h32" />
-                            <!-- Instant Sparkle SNAPS -->
-                            <rect class="sparkle" style="animation-delay: 0.1s" x="0" y="24" width="8" height="8"
-                                fill="var(--retro-yellow)" />
-                        </g>
-                    </svg>
+                    {# Mark alone in the rail, full lockup in the mobile bar. #}
+                    <span class="hw-brand-slot hw-brand-slot--mark">{{ brandlib.brand(height=30, wordmark=false) }}</span>
+                    <span class="hw-brand-slot hw-brand-slot--full">{{ brandlib.brand(height=30) }}</span>
                 </div>
             </a>
             <span class="navbar-page-title">{{ page_title }}</span>
@@ -124,7 +146,7 @@
                             </a>
                             {% else %}
                             <div class="notification-empty">
-                                <span class="notification-empty-icon">✓</span>
+                                <span class="notification-empty-icon"><svg class="hw-icon" width="18" height="18" aria-hidden="true" focusable="false"><use href="#i-check-circle-fill"></use></svg></span>
                                 <span class="fw-bold text-light">All clear</span>
                                 <span class="small text-secondary">No endpoint issues in the last 24 hours.</span>
                             </div>
@@ -133,9 +155,13 @@
                     </div>
                 </div>
                 <span class="nav-link small lightgrey me-2">Hi, {{ session.username }}</span>
-                <a class="nav-link{% if request.endpoint in ['main.index', 'main.edit_endpoint'] %} active{% endif %}"
-                    href="{{ url_for('main.index') }}"{% if request.endpoint in ['main.index', 'main.edit_endpoint'] %} aria-current="page"{% endif %}>
-                    {{ nav_icon('endpoints') }}<span>Endpoints</span>
+                <a class="nav-link{% if request.endpoint == 'main.index' %} active{% endif %}"
+                    href="{{ url_for('main.index') }}"{% if request.endpoint == 'main.index' %} aria-current="page"{% endif %}>
+                    {{ nav_icon('endpoints') }}<span>Dashboard</span>
+                </a>
+                <a class="nav-link{% if request.endpoint in ['main.webhooks', 'main.webhook_detail', 'main.edit_endpoint'] %} active{% endif %}"
+                    href="{{ url_for('main.webhooks') }}"{% if request.endpoint in ['main.webhooks', 'main.webhook_detail', 'main.edit_endpoint'] %} aria-current="page"{% endif %}>
+                    {{ nav_icon('webhooks') }}<span>Webhooks</span>
                 </a>
                 <a class="nav-link{% if request.endpoint == 'main.tenantmap' %} active{% endif %}"
                     href="{{ url_for('main.tenantmap') }}"{% if request.endpoint == 'main.tenantmap' %} aria-current="page"{% endif %}>
@@ -170,6 +196,40 @@
             </div>
         </div>
     </nav>
+
+    {# Context bar. The rail is icon-only, so the page title and the signed-in
+       user live here. Desktop only; below lg the navbar still shows both. #}
+    <div class="hw-topbar">
+        <span class="hw-topbar-title">{{ page_title }}</span>
+        <span class="hw-topbar-user">
+            {% if session.user_id %}
+            {# Systemstatus sass in der Fusszeile -- unterhalb der ersten
+               Bildschirmhoehe sieht ihn dort niemand. In der Kopfleiste ist er
+               staendig im Blick; die IDs bleiben, ux.js aktualisiert weiter. #}
+            {# Ein zusammengefasster Statuspunkt; die drei Dienste erscheinen
+               beim Ueberfahren oder Fokussieren. Der Sammelpunkt zeigt den
+               schlechtesten Zustand (error > warning > up) -- ein kleines
+               Skript unten spiegelt die Klassen der drei Einzelpunkte,
+               die ux.js unveraendert weiterpflegt. #}
+            <span class="health-indicators hw-health" tabindex="0"
+                  aria-label="Systemstatus: Redis, Datenbank, Celery">
+                <span id="hw-health-summary" class="heartbeat-dot heartbeat-warning" aria-hidden="true"></span>
+                <span class="hw-health-flyout" role="status">
+                    <span class="hw-health-item"><span id="health-redis" class="heartbeat-dot heartbeat-warning"></span> Redis</span>
+                    <span class="hw-health-item"><span id="health-database" class="heartbeat-dot heartbeat-warning"></span> DB</span>
+                    <span class="hw-health-item"><span id="health-celery" class="heartbeat-dot heartbeat-warning"></span> Celery</span>
+                </span>
+            </span>
+            <button type="button" class="hw-theme-toggle hw-theme-toggle--icon" id="hw-theme-toggle"
+                    aria-pressed="false" aria-label="Zwischen hellem und dunklem Theme wechseln"
+                    title="Helles / dunkles Theme">
+                <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-theme"></use></svg>
+            </button>
+            <span>{{ session.username }}</span>
+            <span class="hw-topbar-avatar" aria-hidden="true">{{ (session.username or '??')[:2]|upper }}</span>
+            {% endif %}
+        </span>
+    </div>
     {% endif %}
 
     <!-- Documentation Sidebar -->
@@ -214,20 +274,7 @@
             <div class="modal-content glass-card shadow-lg border-0 w-100 p-1" style="max-width: 400px; margin: auto;">
                 <div class="p-4 text-center">
                     <div class="hw-logo-container mb-3 opacity-50" style="transform: scale(0.6);">
-                        <svg class="logo-8bit-svg" viewBox="0 0 400 80">
-                            <g class="word-group" transform="translate(42, 16)">
-                                <path fill="none" stroke="var(--retro-cyan)" stroke-width="8"
-                                    d="M4 0 v48 M4 24 h24 M28 0 v48" />
-                                <rect x="44" y="16" width="32" height="32" fill="none" stroke="var(--retro-white)"
-                                    stroke-width="8" />
-                                <rect x="88" y="16" width="32" height="32" fill="none" stroke="var(--retro-white)"
-                                    stroke-width="8" />
-                                <path fill="none" stroke="var(--retro-cyan)" stroke-width="8"
-                                    d="M136 0 v48 M136 24 l24 -20 M136 24 l24 24" />
-                                <path fill="none" stroke="var(--retro-white)" stroke-width="8"
-                                    d="M172 0 v48 l16 -16 l16 16 v-48" />
-                            </g>
-                        </svg>
+                        {{ brandlib.brand(height=22) }}
                     </div>
                     <h5 id="hw-confirm-title" class="fw-bold text-light mb-3 h5">Confirm Action</h5>
                     <p id="hw-confirm-message" class="text-secondary small mb-4">Are you sure you want to proceed?</p>
@@ -261,33 +308,60 @@
 
     <button id="back-to-top" class="btn btn-primary position-fixed bottom-0 end-0 m-4 rounded-circle shadow-lg d-none"
         style="z-index: 1050; width: 45px; height: 45px;" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-arrow-up"
-            viewBox="0 0 16 16">
-            <path fill-rule="evenodd"
-                d="M8 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L7.5 2.707V14.5a.5.5 0 0 0 .5.5z" />
-        </svg>
+        <svg class="hw-icon" width="20" height="20" aria-hidden="true" focusable="false"><use href="#i-arrow-up"></use></svg>
     </button>
 
     {% if request.endpoint != 'main.login' %}
     <footer class="footer mt-auto py-3 bg-dark bg-opacity-50 border-top border-secondary border-opacity-10">
         <div class="container d-flex justify-content-between align-items-center">
             <span class="text-secondary small">&copy; 2026 HookWise</span>
-            <div class="health-indicators">
-                <span class="text-secondary small me-3">
-                    <span id="health-redis" class="heartbeat-dot heartbeat-warning"></span> Redis
-                </span>
-                <span class="text-secondary small me-3">
-                    <span id="health-database" class="heartbeat-dot heartbeat-warning"></span> DB
-                </span>
-                <span class="text-secondary small">
-                    <span id="health-celery" class="heartbeat-dot heartbeat-warning"></span> Celery
-                </span>
-            </div>
-        </div>
+                    </div>
     </footer>
     {% endif %}
 
+    <script>
+    // Sammelpunkt = schlechtester Einzelzustand. ux.js pflegt die Klassen der
+    // drei Dienste; der Observer spiegelt jede Aenderung sofort.
+    (function () {
+        const summary = document.getElementById('hw-health-summary');
+        if (!summary) return;
+        const dots = ['health-redis', 'health-database', 'health-celery']
+            .map(id => document.getElementById(id)).filter(Boolean);
+        const rang = ['heartbeat-error', 'heartbeat-down', 'heartbeat-warning', 'heartbeat-up'];
+        const angleichen = () => {
+            const klassen = dots.map(d => rang.find(k => d.classList.contains(k)) || 'heartbeat-warning');
+            const schlechtester = rang.find(k => klassen.includes(k)) || 'heartbeat-warning';
+            summary.className = 'heartbeat-dot ' + schlechtester;
+        };
+        const beobachter = new MutationObserver(angleichen);
+        dots.forEach(d => beobachter.observe(d, { attributes: true, attributeFilter: ['class'] }));
+        angleichen();
+    })();
+</script>
     {% block scripts %}{% endblock %}
+    <script>
+        // Theme toggle. Sets data-theme for the console layer and data-bs-theme
+        // so Bootstrap 5.3's own dark-mode assets (select chevron, .btn-close,
+        // navbar toggler) flip with it rather than staying in the wrong theme.
+        (function () {
+            var btn = document.getElementById('hw-theme-toggle');
+            if (!btn) return;
+            var root = document.documentElement;
+            function current() {
+                return root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+            }
+            function apply(mode) {
+                root.setAttribute('data-theme', mode);
+                root.setAttribute('data-bs-theme', mode);
+                btn.setAttribute('aria-pressed', String(mode === 'light'));
+                try { localStorage.setItem('hw-theme', mode); } catch (e) { /* private mode */ }
+            }
+            btn.setAttribute('aria-pressed', String(current() === 'light'));
+            btn.addEventListener('click', function () {
+                apply(current() === 'light' ? 'dark' : 'light');
+            });
+        })();
+    </script>
 </body>
 
 </html>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- HookWise favicon, 16px-Schnitt: ein einzelner Receiver-Haken aus dem
+       Center Knot. Der volle Knoten lebt in Marke, Apple-Touch und logo.png. -->
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7" fill="#0b0f0f" stroke="#1d5c3f" stroke-width="1.5"/>
+  <g transform="translate(6.3 8.3) scale(1.45)" stroke="#00e38b" stroke-width="3">
+    <circle cx="0" cy="0" r="3.2" fill="#00e38b" stroke="none"/>
+    <path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke-linecap="round"/>
+    <path d="M12 0l4 7h-8z" fill="#00e38b" stroke="none"/>
+  </g>
+</svg>

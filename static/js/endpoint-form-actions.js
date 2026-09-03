@@ -51,7 +51,7 @@
                     item.className = 'list-group-item bg-transparent border-secondary border-opacity-10 text-secondary py-1 px-0';
                     const arrow = document.createElement('span');
                     arrow.className = 'text-info me-2';
-                    arrow.textContent = '→';
+                    arrow.innerHTML = '<svg class="hw-icon" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrow-right"></use></svg>';
                     item.append(arrow, document.createTextNode(` ${String(step)}`));
                     list.appendChild(item);
                 });
@@ -63,7 +63,7 @@
                 resultTitle.textContent = 'FINAL RESULT:';
                 const resultPre = document.createElement('pre');
                 resultPre.className = 'mb-0 text-white font-monospace small';
-                resultPre.style.fontSize = '0.7rem';
+                resultPre.classList.add('hw-t-xs');
                 resultPre.textContent = JSON.stringify(data.results, null, 2);
                 resultPanel.append(resultTitle, resultPre);
                 resultDiv.append(list, resultPanel);
@@ -119,6 +119,15 @@
         }
     }
 
+    // Das Auge war eine Font-Awesome-Klasse, die nie geladen wurde -- der
+    // Klassentausch schaltete also zwischen zwei unsichtbaren Zustaenden um.
+    // Jetzt zeigt es auf ein Symbol im Sprite und wird ueber href getauscht.
+    function setEyeIcon(icon, name) {
+        if (!icon) return;
+        const use = icon.querySelector('use');
+        if (use) use.setAttribute('href', '#i-' + name);
+    }
+
     var tokenLoaded = false;
     async function toggleTokenVisibility() {
         const input = document.getElementById('bearer-token-display');
@@ -140,10 +149,10 @@
                 }
             }
             input.type = 'text';
-            icon.classList.replace('fa-eye', 'fa-eye-slash');
+            setEyeIcon(icon, 'eye-slash');
         } else {
             input.type = 'password';
-            icon.classList.replace('fa-eye-slash', 'fa-eye');
+            setEyeIcon(icon, 'eye');
         }
     }
 
@@ -183,7 +192,7 @@
                 input.type = 'text';
                 tokenLoaded = true;
                 const icon = document.getElementById('token-eye-icon');
-                if (icon) icon.classList.replace('fa-eye', 'fa-eye-slash');
+                setEyeIcon(icon, 'eye-slash');
                 showToast('Token regenerated successfully!', 'success');
             } else {
                 showToast('Rotation failed', 'danger');
@@ -224,3 +233,85 @@
         }
     });
 
+    // ---- Stand der Pflichtfelder in der Aktionsleiste --------------------
+    // 5 Felder sind Pflicht; sie verteilen sich seit dem Tab-Umbau ueber
+    // mehrere Panes. Ohne Rueckmeldung merkt man das erst beim Absenden --
+    // den Tab-Sprung uebernimmt der invalid-Handler weiter unten.
+    (function () {
+        const anzeige = document.getElementById('hw-req-state');
+        if (!anzeige) return;
+        const form = anzeige.closest('form');
+        if (!form) return;
+
+        // checkVisibility fehlt aelteren Safari/Firefox -- Fallback statt
+        // eines Absturzes beim ersten Tastendruck.
+        const istSichtbar = (e) => (typeof e.checkVisibility === 'function'
+            ? e.checkVisibility()
+            : !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+
+        function pflichtfelder() {
+            return [...form.querySelectorAll('[required]')].filter(
+                (e) => e.type !== 'hidden');
+        }
+
+        function aktualisieren() {
+            const alle = pflichtfelder();
+            const offen = alle.filter((e) => !String(e.value || '').trim());
+            const verborgen = offen.filter((e) => !istSichtbar(e));
+            if (!offen.length) {
+                anzeige.dataset.state = 'fertig';
+                anzeige.textContent = 'All ' + alle.length + ' required fields filled';
+            } else {
+                anzeige.dataset.state = 'offen';
+                anzeige.textContent = offen.length + ' of ' + alle.length
+                    + ' required fields open'
+                    + (verborgen.length ? ' (' + verborgen.length + ' hidden in advanced fields or another tab)' : '');
+            }
+            // Verborgene Pflichtfelder markieren, damit sie beim Aufklappen
+            // sofort ins Auge fallen.
+            alle.forEach((e) => {
+                const feld = e.closest('.mb-3, .mb-4, .col-md-6, .col-12') || e;
+                feld.classList.toggle('hw-req-hidden',
+                    !String(e.value || '').trim() && !istSichtbar(e));
+            });
+        }
+
+        form.addEventListener('input', aktualisieren);
+        form.addEventListener('change', aktualisieren);
+        aktualisieren();
+    })();
+
+    // ---- Pflichtfeld in einem inaktiven Tab -----------------------------
+    // Chrome bricht den Submit ab, wenn das erste ungueltige Feld nicht
+    // fokussierbar ist ("not focusable") -- mit dem Tab-Layout waere das
+    // ein stiller Fehlschlag. Beim invalid-Ereignis wird der Tab des
+    // Feldes synchron geoeffnet, dann greift der Browser-Fokus normal.
+    (function () {
+        const form = document.getElementById('endpoint-form');
+        if (!form) return;
+        form.addEventListener('invalid', (ev) => {
+            const pane = ev.target.closest('.tab-pane');
+            if (pane && !pane.classList.contains('active')) {
+                const knopf = document.querySelector('.hw-formtabs [data-bs-target="#' + pane.id + '"]');
+                if (knopf && window.bootstrap) {
+                    bootstrap.Tab.getOrCreateInstance(knopf).show();
+                } else {
+                    // Ohne Bootstrap von Hand umschalten -- sonst bricht
+                    // Chrome den Submit an einem unfokussierbaren Feld ab.
+                    document.querySelectorAll('.hw-formtab-inhalt > .tab-pane.active')
+                        .forEach((p) => p.classList.remove('active'));
+                    document.querySelectorAll('.hw-formtabs .nav-link.active')
+                        .forEach((k) => { k.classList.remove('active'); k.setAttribute('aria-selected', 'false'); });
+                    pane.classList.add('active');
+                    if (knopf) { knopf.classList.add('active'); knopf.setAttribute('aria-selected', 'true'); }
+                }
+            }
+            const kasten = document.getElementById('advanced-fields');
+            const schalter = document.getElementById('show-advanced');
+            if (kasten && schalter && kasten.classList.contains('d-none')
+                && kasten.contains(ev.target) && typeof toggleAdvanced === 'function') {
+                schalter.checked = true;
+                toggleAdvanced();
+            }
+        }, true);
+    })();

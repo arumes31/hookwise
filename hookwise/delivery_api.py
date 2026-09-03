@@ -29,6 +29,30 @@ def register_delivery_routes(blueprint: Blueprint) -> None:
             "title": "Manual Test Trigger",
             "message": "This is a simulated webhook payload.",
         }
+        # Nr. 16: der statische Payload traf nur Endpoints, deren Trigger
+        # zufaellig heartbeat.status ist. Der Test setzt jetzt zusaetzlich den
+        # KONFIGURIERTEN Trigger-Pfad dieses Endpoints auf seinen open_value --
+        # damit prueft er den echten Routing-Weg, nicht ein Beispiel.
+        if config.trigger_field and config.open_value is not None:
+            pfad = str(config.trigger_field)
+            # trigger_field ist ein JSONPath: fuehrendes "$." abstreifen.
+            # Index-Pfade ([0]) lassen sich in einen frischen Payload nicht
+            # sinnvoll synthetisieren -- dann bleibt der Beispiel-Payload.
+            if pfad.startswith("$."):
+                pfad = pfad[2:]
+            elif pfad.startswith("$"):
+                pfad = pfad[1:]
+            teile = [teil for teil in pfad.split(".") if teil]
+            if teile and not any("[" in teil for teil in teile):
+                # open_value kann eine Kommaliste sein -- der Test setzt den
+                # ersten Wert, wie ihn ein einzelner echter Alarm liefert.
+                wert = str(config.open_value).split(",")[0].strip()
+                ziel = data
+                for teil in teile[:-1]:
+                    if not isinstance(ziel.get(teil), dict):
+                        ziel[teil] = {}
+                    ziel = ziel[teil]
+                ziel[teile[-1]] = wert
         now = datetime.now(timezone.utc)
         log_entry = WebhookLog(
             config_id=config_id,

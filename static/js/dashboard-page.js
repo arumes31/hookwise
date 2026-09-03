@@ -54,7 +54,8 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
     }
 
     function confirmRotate(id, name) {
-        document.getElementById('rotate-endpoint-name').textContent = name;
+        const rotateName = document.getElementById('rotate-endpoint-name');
+        if (rotateName) rotateName.textContent = name;
         document.getElementById('rotate-form').action = `/endpoint/rotate-token/${id}`;
         new bootstrap.Modal(document.getElementById('rotateModal')).show();
     }
@@ -81,7 +82,10 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
         Prism.highlightElement(display);
     }
 
-    document.getElementById('pretty-toggle').addEventListener('click', () => {
+    // Das Element gehoert zum Payload-Dialog und existiert nur dort, wo dieser
+    // Dialog im Markup steht. Ein ungeschuetzter Zugriff bricht das gesamte
+    // Skript ab -- inklusive Live-Feed und Kennzahlen darunter.
+    document.getElementById('pretty-toggle')?.addEventListener('click', () => {
         window.dashboardState.isDashboardPretty = !window.dashboardState.isDashboardPretty;
         updateDashboardPayloadDisplay();
     });
@@ -148,10 +152,7 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
                 btn.disabled = true;
                 // Swap to spinning refresh icon
                 btn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-arrow-clockwise spin" viewBox="0 0 16 16">
-                        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
-                        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
-                    </svg>
+                    <svg class="hw-icon spin" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg>
                 `;
                 
                 const res = await fetch('/api/activity/trigger-timeout-check', { method: 'POST' });
@@ -219,7 +220,7 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
             }
 
             const logEntry = document.createElement('div');
-            logEntry.className = `log-entry mb-1 p-2 border-bottom border-light border-opacity-5 hover-bg-light animate-fade-in`;
+            logEntry.className = `log-entry hw-act-row animate-fade-in`;
             logEntry.dataset.timestamp = data.timestamp;
             logEntry.dataset.activityKey = data.id || `${data.request_id || ''}:${data.config_name || ''}:${data.timestamp || ''}`;
 
@@ -229,49 +230,17 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
             const date = new Date(data.timestamp);
             const timeStr = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
 
+            const sevKlasse = data.level === 'error' ? 'crit' : data.level === 'warning' ? 'warn' : 'ok';
+            const sevText   = data.level === 'error' ? 'FAIL' : data.level === 'warning' ? 'WARN' : 'OK';
             let flowHtml = `
-                <div class="d-flex align-items-center gap-2 small">
-                    <span class="text-secondary font-monospace" style="font-size: 0.7rem;">${timeStr}</span>
-                    <span class="fw-bold text-light">${escapeHtml(data.config_name)}</span>
-                    
-                    <!-- Flow Icons (SVG Bootstrap Icons) -->
-                    <div class="d-flex align-items-center bg-dark bg-opacity-50 rounded px-2 py-1 ms-2 border border-secondary border-opacity-10" style="gap: 6px;">
-                        <!-- Step 1: Payload Received (Transmit) -->
-                        <span class="text-success opacity-75 d-flex" title="Payload Received">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm6 10.792l-4.25-4.25a.5.5 0 0 1 .708-.708L8 9.378l3.542-3.544a.5.5 0 0 1 .708.708L8 10.792z"/>
-                            </svg>
-                        </span>
-                        <span class="text-secondary opacity-25" style="font-size: 0.6rem;">&rarr;</span>
-                        
-                        <!-- Step 2: Processing (Gear) -->
-                        <span class="text-${statusColor} d-flex ${isError ? 'spin text-danger' : 'opacity-75'}" title="${escapeHtml(data.message)}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.17.31a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.31-.17a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.17-.31a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.31.17a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/>
-                            </svg>
-                        </span>
-                        <span class="text-secondary opacity-25" style="font-size: 0.6rem;">&rarr;</span>
-                        
-                        <!-- Step 3: Action (Ticket) -->
-                        <span class="text-${data.ticket_id ? 'primary' : 'secondary opacity-50'} d-flex" title="${data.ticket_id ? 'Ticket Created' : 'No Action'}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
-                                <path d="M0 4.5A1.5 1.5 0 0 1 1.5 3h13A1.5 1.5 0 0 1 16 4.5V6a.5.5 0 0 1-.5.5 1.5 1.5 0 0 0 0 3 .5.5 0 0 1 .5.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 11.5V10a.5.5 0 0 1 .5-.5 1.5 1.5 0 1 0 0-3 .5.5 0 0 1-.5-.5V4.5Zm4 1h8v1H4v-1Zm0 3h8v1H4v-1Zm0 3h8v1H4v-1Z"/>
-                            </svg>
-                        </span>
-                    </div>
-
-                     <span class="text-${statusColor} ms-2 text-truncate" style="max-width: 300px;">
-                        ${escapeHtml(data.message)}
-                    </span>
-                    
-                    ${data.ticket_id ? `<a href="${hookwiseCwUrl}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none ms-auto">#${data.ticket_id}</a>` : ''}
-                    
-                    <button class="btn btn-sm btn-link text-secondary ms-auto p-0 log-expand-payload" aria-label="Expand payload">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-arrows-angle-expand" viewBox="0 0 16 16">
-                            <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 1 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707z"/>
-                        </svg>
-                    </button>
-                </div>
+                <span class="hw-act-time">${timeStr}</span>
+                <span class="hw-act-sev hw-act-sev--${sevKlasse}" title="${escapeHtml(data.level || 'info')}">${sevText}</span>
+                <span class="hw-act-name">${escapeHtml(data.config_name)}</span>
+                <span class="hw-act-msg" title="${escapeHtml(data.message)}">${escapeHtml(data.message)}</span>
+                ${data.ticket_id ? `<a href="${hookwiseCwUrl}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none hw-t-xs">#${data.ticket_id}</a>` : ''}
+                <button class="btn btn-sm btn-link text-secondary p-0 log-expand-payload" aria-label="Expand payload">
+                    <svg class="hw-icon" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
+                </button>
             `;
             logEntry.innerHTML = flowHtml;
             const payloadButton = logEntry.querySelector('.log-expand-payload');
@@ -303,9 +272,20 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
             }
         }
 
+        // The dashboard backfills only a short tail of recent events. Loading 200
+        // put 120 entries and 438 controls into a 250px panel that shows about
+        // three of them, which was 77% of every control on the page and made the
+        // whole list part of the keyboard tab order. Older events belong in the
+        // History screen, which is built for browsing them.
+        //
+        // This limits the BACKFILL only. Live events still arrive over Socket.IO
+        // and still accumulate up to the user's buffer setting (100/200/500), so
+        // the pause control, the filters and the buffer selector are unchanged.
+        const ACTIVITY_BACKFILL = 15;
+
         async function loadActivityHistory() {
             try {
-                const res = await fetch('/api/activity/stream?limit=200');
+                const res = await fetch(`/api/activity/stream?limit=${ACTIVITY_BACKFILL}`);
                 const result = await res.json();
                 const history = result.events || [];
                 if (history.length > 0) {
@@ -363,7 +343,7 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
     }
 
     function copyModalPayload() {
-        const text = document.getElementById('payload-display').textContent;
+        const text = document.getElementById('payload-display')?.textContent || '';
         navigator.clipboard.writeText(text);
         showToast('Payload copied to clipboard!', 'success');
     }
@@ -465,15 +445,15 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
 
         // Status Logic
         if (status === 'OK') {
-            icon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+            icon.innerHTML = '<svg class="hw-icon text-success" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-check-circle-fill"></use></svg>';
             text.className = 'fw-bold text-success';
             text.textContent = 'System Healthy';
         } else if (status === 'ERROR') {
-            icon.innerHTML = '<i class="fas fa-exclamation-triangle text-danger"></i>';
+            icon.innerHTML = '<svg class="hw-icon text-danger" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-exclamation-triangle-fill"></use></svg>';
             text.className = 'fw-bold text-danger';
             text.textContent = 'Security Alert';
         } else {
-            icon.innerHTML = '<i class="fas fa-info-circle text-warning"></i>';
+            icon.innerHTML = '<svg class="hw-icon text-warning" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-info-circle-fill"></use></svg>';
             text.className = 'fw-bold text-warning';
             text.textContent = 'Warning';
         }
@@ -511,7 +491,7 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
                     llmModelRow.style.display = 'none';
                 }
             }).catch(() => {
-                llmStatus.textContent = '⚠ Unreachable';
+                llmStatus.textContent = 'Unreachable';
                 llmStatus.className = 'font-monospace small text-warning';
             });
         }

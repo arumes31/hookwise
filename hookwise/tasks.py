@@ -50,6 +50,68 @@ VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() 
 _ERROR_SECRET_RE = re.compile(r"(?i)(authorization|token|password|secret|api[-_ ]?key)\s*([:=])\s*[^\s,;]+")
 
 
+def check_failure_threshold(config_id: str) -> None:
+    """Nr. 18: je-Endpoint-Schwelle pruefen und ggf. an den Health-Webhook melden.
+
+    Wird nach jedem als failed/dlq markierten Log gerufen. Nebenbefund beim
+    Bau: der in den Einstellungen hinterlegte Health-Webhook wurde bisher von
+    keiner Stelle beschickt -- dies ist sein erster Konsument.
+    Die Funktion darf die Verarbeitung nie mitreissen: alles gekapselt,
+    Fehler landen nur im Log.
+    """
+    try:
+        config = WebhookConfig.query.get(config_id)
+        if config is None or not config.notify_failure_threshold:
+            return
+        fenster = max(1, int(config.notify_window_minutes or 60))
+        jetzt = datetime.now(timezone.utc)
+        seit = jetzt - timedelta(minutes=fenster)
+        letzte = config.last_threshold_alert_at
+        if letzte is not None:
+            letzte = letzte.replace(tzinfo=timezone.utc) if letzte.tzinfo is None else letzte
+            if letzte > seit:
+                return  # im aktuellen Fenster schon gemeldet
+        anzahl = (
+            WebhookLog.query.filter(
+                WebhookLog.config_id == config_id,
+                WebhookLog.status.in_(["failed", "dlq"]),
+                WebhookLog.created_at >= seit,
+            ).count()
+        )
+        if anzahl < int(config.notify_failure_threshold):
+            return
+        ziel = redis_client.get("hookwise_health_webhook")
+        ziel = ziel.decode() if isinstance(ziel, bytes) else (ziel or "")
+        if not ziel:
+            # Kein Health-Webhook konfiguriert: NICHT drosseln -- sonst wird
+            # der erste Alarm nach dem Eintragen der URL ein Fenster lang
+            # verschluckt.
+            return
+        # Erst Drossel-Stempel setzen und committen, DANN senden: der Versand
+        # haelt so weder die DB-Transaktion offen, noch kann eine kaputte URL
+        # die Drossel umgehen.
+        config.last_threshold_alert_at = jetzt
+        db.session.commit()
+        try:
+            import requests
+
+            requests.post(
+                ziel,
+                json={"content": (
+                    f"HookWise: endpoint '{config.name}' reached {anzahl} failures "
+                    f"in {fenster} minutes (threshold {config.notify_failure_threshold})."
+                )},
+                timeout=5,
+            )
+        except Exception:
+            logger.warning("Threshold alert webhook unreachable (throttled anyway)")
+        logger.info(
+            f"Failure threshold alert for {config.name}: {anzahl} failures in {fenster}m"
+        )
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failure-threshold check failed (non-fatal)")
+
 def _sanitize_error(error: BaseException | str) -> str:
     """Bound error text before retaining it in history or a retry attempt."""
     message = str(error)
@@ -759,6 +821,7 @@ def process_webhook_task(
             if attempt is not None:
                 attempt.status = "dlq"
             db.session.commit()
+            check_failure_threshold(config_id)
             return
 
         jitter = random.uniform(0.8, 1.2)
@@ -1417,6 +1480,7 @@ def handle_webhook_logic(
             log_entry.processing_time = time.time() - start_time
             db.session.commit()
             logger.error(f"Error handling webhook: {error_msg}", extra=extra)
+            check_failure_threshold(config_id)
             raise e
         finally:
             # Early successful/skipped paths return before the normal finalizer.

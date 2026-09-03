@@ -103,7 +103,7 @@ def test_dashboard_kpis_navigation_and_notifications(app, client):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "<title>Endpoints · HookWise</title>" in html
+    assert "<title>Dashboard · HookWise</title>" in html
     assert re.search(r'href="/"[^>]*aria-current="page"', html)
     assert re.search(r'id="kpi-total-endpoints">\s*2\s*</strong>', html)
     assert re.search(r'id="kpi-active-endpoints">\s*1\s*</strong>', html)
@@ -132,4 +132,6 @@ def test_login_uses_full_navigation_so_document_title_updates(client):
     response = client.get("/login")
 
     assert response.status_code == 200
-    assert '<form method="POST" id="login-form" hx-boost="false">' in response.get_data(as_text=True)
+    login_html = response.get_data(as_text=True)
+    assert 'id="login-form"' in login_html
+    assert 'hx-boost="false"' in login_html

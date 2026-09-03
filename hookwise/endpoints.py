@@ -121,6 +121,8 @@ def _register_crud_routes(main_bp: Any) -> None:
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
                 timeout_hours=_get_int_form_value("timeout_hours", 24),
+                notify_failure_threshold=_get_int_form_value("notify_failure_threshold", 0, min_val=0, max_val=1000) or None,
+                notify_window_minutes=max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440)),
                 rate_limit_per_minute=_get_int_form_value("rate_limit_per_minute", 60, 1, 10000),
                 retry_enabled=request.form.get("retry_enabled", "true") == "true",
                 retry_max_attempts=_get_int_form_value("retry_max_attempts", 5, 0, 20),
@@ -158,7 +160,7 @@ def _register_crud_routes(main_bp: Any) -> None:
 
             if request.form.get("create_another") == "true":
                 return redirect(url_for("main.new_endpoint", confetti="true"))
-            return redirect(url_for("main.index", confetti="true"))
+            return redirect(url_for("main.webhooks", confetti="true"))
         return render_template(
             "form.html", base_url=request.url_root.rstrip("/"), endpoint_templates=public_endpoint_templates()
         )
@@ -197,6 +199,8 @@ def _register_crud_routes(main_bp: Any) -> None:
             config.ai_prompt_template = request.form.get("ai_prompt_template")
             config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
             config.timeout_hours = _get_int_form_value("timeout_hours", 24)
+            config.notify_failure_threshold = _get_int_form_value("notify_failure_threshold", 0, min_val=0, max_val=1000) or None
+            config.notify_window_minutes = max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440))
             config.rate_limit_per_minute = _get_int_form_value("rate_limit_per_minute", 60, 1, 10000)
             config.retry_enabled = request.form.get("retry_enabled", "true") == "true"
             config.retry_max_attempts = _get_int_form_value("retry_max_attempts", 5, 0, 20)
@@ -236,7 +240,7 @@ def _register_crud_routes(main_bp: Any) -> None:
             db.session.commit()
             log_audit("update", config.id, f"Endpoint {config.name} updated")
             flash(f'Endpoint "{config.name}" updated successfully!')
-            return redirect(url_for("main.index"))
+            return redirect(url_for("main.webhooks"))
         return render_template(
             "form.html",
             config=config,
@@ -248,6 +252,10 @@ def _register_crud_routes(main_bp: Any) -> None:
     @auth_required
     def toggle_endpoint(config_id: str) -> Any:
         config = WebhookConfig.query.get_or_404(config_id)
+        if config.archived_at is not None:
+            # Archiviert impliziert pausiert; reaktivieren geht nur ueber
+            # Wiederherstellen -- sonst ingestiert ein unsichtbarer Endpoint.
+            return jsonify({"status": "error", "message": "Endpoint is archived"}), 400
         config.is_enabled = not config.is_enabled
         db.session.commit()
         action = "enable" if config.is_enabled else "disable"
@@ -273,7 +281,7 @@ def _register_crud_routes(main_bp: Any) -> None:
             return response
 
         flash(f'Token for "{config.name}" rotated successfully!')
-        return redirect(url_for("main.index"))
+        return redirect(url_for("main.webhooks"))
 
     @main_bp.route("/endpoint/quick-update/<config_id>", methods=["POST"])
     @auth_required
@@ -282,12 +290,138 @@ def _register_crud_routes(main_bp: Any) -> None:
         field = request.json.get("field")
         value = request.json.get("value")
 
-        if field in ["board", "priority", "close_status", "status"]:
+        # Nr. 15 (Inline-Umbenennen): name gehoert in die Whitelist; ein leerer
+        # oder ueberlanger Name wird abgewiesen wie ein unbekanntes Feld.
+        if field == "name":
+            value = (value or "").strip()
+            if not value or len(value) > 100:
+                return jsonify({"status": "error", "message": "Invalid name"}), 400
+        if field in ["name", "board", "priority", "close_status", "status"]:
+            alter_wert = getattr(config, field)
             setattr(config, field, value)
             db.session.commit()
-            log_audit("quick_update", config_id, f"Endpoint {config.name} {field} updated to {value}")
+            log_audit("quick_update", config_id,
+                      f"Endpoint {config.name}: {field} changed from {alter_wert!r} to {value!r}")
             return jsonify({"status": "success"})
         return jsonify({"status": "error", "message": "Invalid field"}), 400
+
+    @main_bp.route("/endpoint/export/<config_id>")
+    @auth_required
+    def export_endpoint(config_id: str) -> Any:
+        """Nr. 13: einen Endpoint als JSON-Datei exportieren.
+
+        Nutzt die CONFIG_FIELDS-Whitelist der Backups, aber OHNE Geheimnisse:
+        Backups sind verschluesselt, eine einzelne JSON-Datei waere es nicht.
+        bearer_token und hmac_secret bleiben deshalb draussen; der Import
+        erzeugt frische Werte.
+        """
+        from .services.backups import CONFIG_FIELDS
+
+        config = WebhookConfig.query.get_or_404(config_id)
+        record = config.to_dict(include_token=False)
+        daten = {key: value for key, value in record.items()
+                 if key in CONFIG_FIELDS and key not in {"bearer_token", "hmac_secret"}}
+        daten["tags"] = [tag.name for tag in config.tags]
+        dokument = {"format": "hookwise-endpoint", "version": 1, "endpoint": daten}
+        antwort = jsonify(dokument)
+        dateiname = "".join(c if c.isalnum() or c in "-_" else "-" for c in config.name.lower())
+        antwort.headers["Content-Disposition"] = (
+            f'attachment; filename="{dateiname or "endpoint"}.hookwise.json"'
+        )
+        return antwort
+
+    @main_bp.route("/endpoint/import", methods=["POST"])
+    @auth_required
+    def import_endpoint() -> Any:
+        """Nr. 13: Endpoint aus einer Export-Datei anlegen.
+
+        Erzeugt einen NEUEN Endpoint (frische ID, frischer Token), pausiert --
+        wer importiert, prueft und aktiviert selbst. Es werden ausschliesslich
+        Felder der CONFIG_FIELDS-Whitelist uebernommen; Geheimnisse aus der
+        Datei werden ignoriert.
+        """
+        from .services.backups import CONFIG_FIELDS
+
+        daten = request.get_json(silent=True) or {}
+        if daten.get("format") != "hookwise-endpoint" or "endpoint" not in daten:
+            return jsonify({"status": "error", "message": "Not a HookWise endpoint file."}), 400
+        felder = daten.get("endpoint")
+        if not isinstance(felder, dict):
+            return jsonify({"status": "error", "message": "Not a HookWise endpoint file."}), 400
+        name = str(felder.get("name") or "").strip()
+        if not name or len(name) > 100:
+            return jsonify({"status": "error", "message": "Invalid name in the file."}), 400
+        # Zustand und Geheimnisse kommen nie aus der Datei; jeder uebrige Wert
+        # wird gegen die Spaltendefinition geprueft -- eine manipulierte Datei
+        # darf weder 500er ausloesen noch Falschtypen einschleusen.
+        gesperrt = {"bearer_token", "hmac_secret", "name", "is_enabled",
+                    "is_draft", "is_pinned", "tags", "archived_at"}
+        spalten = WebhookConfig.__table__.columns
+        config = WebhookConfig(name=name, is_enabled=False)
+        for key, value in felder.items():
+            if key not in CONFIG_FIELDS or key in gesperrt:
+                continue
+            spalte = spalten.get(key)
+            if spalte is None:
+                continue
+            typ = spalte.type
+            if isinstance(typ, db.Boolean):
+                if not isinstance(value, bool):
+                    return jsonify({"status": "error", "message": f"Invalid value for {key}."}), 400
+            elif isinstance(typ, db.Integer):
+                if isinstance(value, bool) or not isinstance(value, int):
+                    return jsonify({"status": "error", "message": f"Invalid value for {key}."}), 400
+            elif isinstance(typ, (db.String, db.Text)):
+                if value is not None and not isinstance(value, str):
+                    return jsonify({"status": "error", "message": f"Invalid value for {key}."}), 400
+                laenge = getattr(typ, "length", None)
+                if value is not None and laenge and len(value) > laenge:
+                    return jsonify({"status": "error", "message": f"Value too long for {key}."}), 400
+            else:
+                continue
+            setattr(config, key, value)
+        db.session.add(config)
+        db.session.flush()
+        # Wie new_endpoint/clone_endpoint: Last4-Hinweis fuer die Token-Suche
+        # mitschreiben (der Spalten-Default hat frisch verschluesselt erzeugt).
+        config.bearer_token_last4 = decrypt_string(config.bearer_token)[-4:]
+        db.session.commit()
+        log_audit("import", config.id, f"Endpoint {config.name} imported from JSON")
+        return jsonify({"status": "success", "id": config.id, "name": config.name})
+
+    @main_bp.route("/endpoint/archive/<config_id>", methods=["POST"])
+    @auth_required
+    def archive_endpoint(config_id: str) -> Any:
+        """Nr. 12: Archivieren statt Loeschen.
+
+        Setzt archived_at und pausiert den Endpoint -- die bestehenden
+        is_enabled-Filter halten ihn damit aus Ingest, Tasks und
+        Timeout-Monitor heraus. History und Konfiguration bleiben erhalten;
+        der Vorgang ist ueber /endpoint/restore umkehrbar.
+        """
+        config = WebhookConfig.query.get_or_404(config_id)
+        config.archived_at = datetime.now(timezone.utc)
+        config.is_enabled = False
+        db.session.commit()
+        log_audit("archive", config_id, f"Endpoint {config.name} archived")
+        flash(f'Endpoint "{config.name}" archived. You can restore it anytime.')
+        return redirect(url_for("main.webhooks"))
+
+    @main_bp.route("/endpoint/restore/<config_id>", methods=["POST"])
+    @auth_required
+    def restore_endpoint(config_id: str) -> Any:
+        """Nr. 12: Wiederherstellen aus dem Archiv.
+
+        Der Endpoint bleibt bewusst pausiert -- wer wiederherstellt, soll die
+        Konfiguration pruefen und selbst aktivieren, statt dass ein alter
+        Endpoint unbemerkt wieder Tickets erzeugt.
+        """
+        config = WebhookConfig.query.get_or_404(config_id)
+        config.archived_at = None
+        db.session.commit()
+        log_audit("restore", config_id, f"Endpoint {config.name} restored from archive")
+        flash(f'Endpoint "{config.name}" restored (paused).')
+        return redirect(url_for("main.webhooks"))
 
     @main_bp.route("/endpoint/clone/<config_id>", methods=["POST"])
     @auth_required
@@ -336,7 +470,7 @@ def _register_crud_routes(main_bp: Any) -> None:
         db.session.commit()
         log_audit("clone", new_config.id, f"Endpoint {new_config.name} cloned from {config.id}")
         flash(f'Endpoint "{config.name}" cloned successfully!')
-        return redirect(url_for("main.index"))
+        return redirect(url_for("main.webhooks"))
 
     @main_bp.route("/endpoint/token/<config_id>")
     @auth_required
@@ -362,7 +496,7 @@ def _register_crud_routes(main_bp: Any) -> None:
         db.session.commit()
         log_audit("delete", config_id, f"Endpoint {name} deleted")
         flash(f'Endpoint "{name}" deleted.')
-        return redirect(url_for("main.index"))
+        return redirect(url_for("main.webhooks"))
 
 
 def _register_bulk_routes(main_bp: Any) -> None:
@@ -384,10 +518,37 @@ def _register_bulk_routes(main_bp: Any) -> None:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": False}, synchronize_session=False)
+        WebhookConfig.query.filter(
+            WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)
+        ).update({"is_enabled": False}, synchronize_session=False)
         db.session.commit()
         log_audit("bulk_pause", None, f"Paused endpoints: {', '.join(ids)}")
         return jsonify({"status": "success", "message": f"Paused {len(ids)} endpoints"})
+
+    @main_bp.route("/endpoint/bulk/update", methods=["POST"])
+    @auth_required
+    def bulk_update_endpoints() -> Any:
+        """Nr. 11: Board oder Prioritaet fuer eine Auswahl setzen.
+
+        Gleiche Form wie die uebrigen Bulk-Routen; die Feld-Whitelist ist die
+        der Quick-Update-Route (ohne name -- Massen-Umbenennen ergibt keinen
+        Sinn und waere ein Fussschuss).
+        """
+        ids = request.json.get("ids", [])
+        field = request.json.get("field")
+        value = request.json.get("value")
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+            return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        if field not in ["board", "priority", "close_status", "status"]:
+            return jsonify({"status": "error", "message": "Invalid field"}), 400
+        if value is not None and (not isinstance(value, str) or len(value) > 100):
+            return jsonify({"status": "error", "message": "Invalid value"}), 400
+        betroffen = WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update(
+            {field: value}, synchronize_session=False
+        )
+        db.session.commit()
+        log_audit("bulk_update", None, f"Set {field}={value!r} on {betroffen} endpoints")
+        return jsonify({"status": "success", "message": f"Updated {betroffen} endpoints"})
 
     @main_bp.route("/endpoint/bulk/resume", methods=["POST"])
     @auth_required
@@ -395,7 +556,9 @@ def _register_bulk_routes(main_bp: Any) -> None:
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).update({"is_enabled": True}, synchronize_session=False)
+        WebhookConfig.query.filter(
+            WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)
+        ).update({"is_enabled": True}, synchronize_session=False)
         db.session.commit()
         log_audit("bulk_resume", None, f"Resumed endpoints: {', '.join(ids)}")
         return jsonify({"status": "success", "message": f"Resumed {len(ids)} endpoints"})

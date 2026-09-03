@@ -58,6 +58,10 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
     function saveState() {
         if (isUndoing) return;
         const form = document.getElementById('endpoint-form');
+        // Das verzoegerte Autosave kann nach einer hx-boost-Navigation feuern,
+        // wenn das Formular bereits aus dem DOM ist -- dann still aussteigen
+        // statt an FormData(null) zu scheitern.
+        if (!form || !form.isConnected) return;
         const formData = new FormData(form);
         const state = {};
         formData.forEach((value, key) => state[key] = value);
@@ -200,7 +204,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 </div>
                 <div class="col-md-8 text-end">
                     <button type="button" class="btn btn-sm btn-link text-danger p-0 fw-bold text-decoration-none" onclick="this.closest('.maintenance-entry').remove(); syncMaintenance();">
-                        <i class="fas fa-times me-1"></i>Remove Window
+                        <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-x-lg"></use></svg>Remove Window
                     </button>
                 </div>
             </div>
@@ -213,7 +217,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                         ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `
                             <div>
                                 <input type="checkbox" class="btn-check mw-day" id="mw-${count}-${d}" value="${d}" onchange="syncMaintenance()">
-                                <label class="btn btn-sm btn-outline-secondary px-2 py-1" for="mw-${count}-${d}" style="font-size: 0.7rem;">${d}</label>
+                                <label class="btn btn-sm btn-outline-secondary px-2 py-1 hw-t-xs" for="mw-${count}-${d}">${d}</label>
                             </div>
                         `).join('')}
                     </div>
@@ -304,7 +308,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 placeholder="e.g. *All Tenants (AllTenants): " maxlength="500"
                 oninput="syncRemoveStrings()">
             <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('.remove-string-entry').remove(); syncRemoveStrings();">
-                <i class="fas fa-times"></i>
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-x-lg"></use></svg>
             </button>
         `;
         div.querySelector('.remove-string-input').value = String(value);
@@ -325,32 +329,32 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             <div class="row g-2 mb-2 align-items-center">
                 <div class="col-md-5">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">PATH</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">PATH</span>
                         <input type="text" class="form-control bg-dark border-secondary text-info font-monospace rule-path" 
                                placeholder="$.field" oninput="syncRoutingRules()">
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">REGEX</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">REGEX</span>
                         <input type="text" class="form-control bg-dark border-secondary text-warning font-monospace rule-regex" 
                                placeholder=".*" oninput="validateRegex(this); syncRoutingRules()">
                         <span class="input-group-text bg-dark border-secondary regex-status">
-                            <i class="fas fa-check-circle text-success"></i>
+                            <svg class="hw-icon text-success" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-check-circle-fill"></use></svg>
                         </span>
                     </div>
                 </div>
                 <div class="col-md-1 text-end">
                     <button type="button" class="btn btn-sm btn-link text-danger p-0 fw-bold text-decoration-none" 
                             onclick="this.closest('.rule-entry').remove(); syncRoutingRules(); document.getElementById('routing_rules').dispatchEvent(new Event('input', { bubbles: true }));">
-                        <i class="fas fa-times me-1"></i>Delete Rule
+                        <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-x-lg"></use></svg>Delete Rule
                     </button>
                 </div>
             </div>
             <div class="row g-2">
                 <div class="col-md-2">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">BOARD</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">BOARD</span>
                         <select class="form-select bg-dark border-secondary text-light rule-board" onchange="syncRoutingRules()">
                             <option value="">-- No Change --</option>
                         </select>
@@ -358,7 +362,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 </div>
                 <div class="col-md-2">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">PRIORITY</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">PRIORITY</span>
                         <select class="form-select bg-dark border-secondary text-light rule-priority" onchange="syncRoutingRules()">
                             <option value="">-- No Change --</option>
                         </select>
@@ -366,14 +370,14 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 </div>
                  <div class="col-md-2">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">STATUS</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">STATUS</span>
                         <input type="text" class="form-control bg-dark border-secondary text-light rule-status" 
                                placeholder="New Status" oninput="syncRoutingRules()">
                     </div>
                 </div>
                 <div class="col-md-2">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">TYPE</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">TYPE</span>
                         <select class="form-select bg-dark border-secondary text-light rule-type" onchange="syncRoutingRules()">
                             <option value="">-- No Change --</option>
                         </select>
@@ -381,7 +385,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 </div>
                 <div class="col-md-2">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">SUBTYPE</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">SUBTYPE</span>
                         <select class="form-select bg-dark border-secondary text-light rule-subtype" onchange="syncRoutingRules()">
                             <option value="">-- No Change --</option>
                         </select>
@@ -389,7 +393,7 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
                 </div>
                 <div class="col-md-2">
                     <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-dark border-secondary text-secondary" style="font-size: 0.7rem;">ITEM</span>
+                        <span class="input-group-text bg-dark border-secondary text-secondary hw-t-xs">ITEM</span>
                         <select class="form-select bg-dark border-secondary text-light rule-item" onchange="syncRoutingRules()">
                             <option value="">-- No Change --</option>
                         </select>
@@ -447,11 +451,11 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
         const statusIcon = input.nextElementSibling;
         try {
             if (val) new RegExp(val);
-            statusIcon.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+            statusIcon.innerHTML = '<svg class="hw-icon text-success" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-check-circle-fill"></use></svg>';
             input.classList.remove('is-invalid');
             input.classList.add('is-valid');
         } catch (e) {
-            statusIcon.innerHTML = '<i class="fas fa-exclamation-circle text-danger" title="Invalid Regex"></i>';
+            statusIcon.innerHTML = '<svg class="hw-icon text-danger" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-exclamation-triangle-fill"></use></svg><span class="visually-hidden">Invalid Regex</span>';
             input.classList.remove('is-valid');
             input.classList.add('is-invalid');
         }
@@ -537,3 +541,87 @@ document.addEventListener('DOMContentLoaded', () => {
     const selector = document.getElementById('endpoint-template');
     if (selector) selector.addEventListener('change', () => applyEndpointTemplate(selector.value));
 });
+
+// ---- Field Mapping als Code-Editor (Prism-Overlay, ohne neue Abhaengigkeit).
+// Die Textarea bleibt das echte Formularfeld (Name, Submit, Autosave,
+// insertAtCursor unveraendert); dahinter liegt ein deckungsgleiches,
+// hervorgehobenes <pre>. Programmatische Schreiber (Apply Template, Format)
+// laufen ueber einen umgeleiteten value-Setter mit.
+(function () {
+    const feld = document.getElementById('json_mapping');
+    if (!feld || feld.dataset.codeInit) return;
+    feld.dataset.codeInit = '1';
+    const huelle = document.createElement('div');
+    huelle.className = 'hw-code';
+    feld.parentNode.insertBefore(huelle, feld);
+    const glanz = document.createElement('pre');
+    glanz.className = 'hw-code-glanz';
+    glanz.setAttribute('aria-hidden', 'true');
+    const code = document.createElement('code');
+    // Das lokale Prism-Bundle enthaelt kein json-Grammar -- js hebt
+    // Strings/Zahlen/Interpunktion identisch hervor.
+    code.className = 'language-js';
+    glanz.appendChild(code);
+    huelle.appendChild(glanz);
+    huelle.appendChild(feld);
+    feld.classList.add('hw-code-feld');
+    const status = document.getElementById('json-mapping-status');
+    const rendern = () => {
+        const wert = basis.get.call(feld);
+        code.textContent = wert + '\n';
+        if (window.Prism) Prism.highlightElement(code);
+        if (status) {
+            if (!wert.trim()) {
+                status.hidden = true;
+            } else {
+                status.hidden = false;
+                try {
+                    JSON.parse(wert);
+                    status.textContent = 'Valid JSON';
+                    status.dataset.zustand = 'ok';
+                } catch (err) {
+                    status.textContent = 'Invalid JSON';
+                    status.dataset.zustand = 'crit';
+                }
+            }
+        }
+    };
+    const basis = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+    Object.defineProperty(feld, 'value', {
+        configurable: true,
+        get() { return basis.get.call(this); },
+        set(v) {
+            basis.set.call(this, v);
+            rendern();
+            // Programmatische Schreiber (Apply Template, Format) sollen wie
+            // Nutzereingaben zaehlen: Autosave/Undo haengen am input-Event.
+            this.dispatchEvent(new Event('input', { bubbles: true }));
+        },
+    });
+    feld.addEventListener('input', rendern);
+    feld.addEventListener('scroll', () => {
+        glanz.scrollTop = feld.scrollTop;
+        glanz.scrollLeft = feld.scrollLeft;
+    });
+    rendern();
+    // prism.js laedt defer im Head und ist beim ersten rendern() noch nicht
+    // da -- einmal nachziehen, sobald alles geladen ist.
+    if (!window.Prism) window.addEventListener('load', rendern, { once: true });
+})();
+
+// ---- Skeleton-Schimmer statt "Loading..." in den CW-Selects ----------------
+(function () {
+    ['board', 'priority'].forEach((id) => {
+        const sel = document.getElementById(id);
+        if (!sel || sel.dataset.ladeInit) return;
+        sel.dataset.ladeInit = '1';
+        const pruefen = () => {
+            // Exakt nur der Platzhalter -- 'Error loading boards' darf den
+            // Schimmer NICHT halten, sonst pulsiert er bei CW-Fehlern ewig.
+            const laedt = sel.options.length === 1 && /^loading\.\.\.$/i.test((sel.options[0].text || '').trim());
+            sel.classList.toggle('hw-lade', laedt);
+        };
+        new MutationObserver(pruefen).observe(sel, { childList: true, subtree: true });
+        pruefen();
+    });
+})();

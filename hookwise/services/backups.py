@@ -16,6 +16,8 @@ MAX_BACKUP_BYTES = 5 * 1024 * 1024
 MAX_CONFIGS = 10_000
 CONFIG_FIELDS = {
     "name",
+    "notify_failure_threshold",
+    "notify_window_minutes",
     "customer_id_default",
     "board",
     "status",

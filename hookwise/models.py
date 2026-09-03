@@ -82,6 +82,18 @@ class WebhookConfig(Base):
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     is_pinned = db.Column(db.Boolean, default=False, nullable=False)
     is_draft = db.Column(db.Boolean, default=False, nullable=False)
+    # Nr. 12 (Archivieren statt Loeschen): gesetzt = archiviert. Archivierte
+    # Endpoints sind zusaetzlich pausiert (is_enabled=False), womit alle
+    # bestehenden is_enabled-Filter (Ingest, Tasks, Timeout-Monitor) sie
+    # ohne weitere Aenderung aus dem aktiven Betrieb heraushalten.
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    # Nr. 18 (Benachrichtigungsschwelle je Endpoint): NULL = aus. Erreicht
+    # ein Endpoint im Fenster die Schwelle an Fehlschlaegen, geht eine Meldung
+    # an den System-Health-Webhook; last_threshold_alert_at drosselt auf
+    # hoechstens eine Meldung je Fenster.
+    notify_failure_threshold = db.Column(db.Integer, nullable=True)
+    notify_window_minutes = db.Column(db.Integer, nullable=False, server_default="60")
+    last_threshold_alert_at = db.Column(db.DateTime(timezone=True), nullable=True)
     display_order = db.Column(db.Integer, default=0)
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
@@ -166,6 +178,8 @@ class WebhookConfig(Base):
             "last_ip": self.last_ip,
             "timeout_alerts_enabled": self.timeout_alerts_enabled,
             "timeout_hours": self.timeout_hours,
+            "notify_failure_threshold": self.notify_failure_threshold,
+            "notify_window_minutes": self.notify_window_minutes,
             "timeout_ticket_id": self.timeout_ticket_id,
             "last_stale_alert_at": self.last_stale_alert_at.isoformat() if self.last_stale_alert_at else None,
             "created_at": self.created_at.isoformat(),

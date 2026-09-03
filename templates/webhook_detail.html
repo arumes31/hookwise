@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{# Nr. 17: eigene Seite je Endpoint -- Uebersicht, vorgefilterte History und
+   30-Tage-Metriken an einer teilbaren Adresse. Die History-Zeilen kommen aus
+   demselben Partial wie die History-Seite; bearbeitet wird im bestehenden
+   Formular, das hier nur verlinkt ist. #}
+{% import '_brand.html' as brandlib %}
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('main.webhooks') }}">Webhooks</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ config.name }}</li>
+    </ol>
+</nav>
+
+<div class="hw-hist-head mb-4">
+    <h1 class="accent-gradient fw-bold mb-0">{{ config.name }}</h1>
+    {% if config.is_enabled %}
+    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ACTIVE</span>
+    {% else %}
+    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">PAUSED</span>
+    {% endif %}
+    {% if config.archived_at %}
+    <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-25">ARCHIVED</span>
+    {% endif %}
+    <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}" class="btn btn-outline-secondary btn-sm ms-auto">
+        <svg class="hw-icon me-1" width="13" height="13" aria-hidden="true" focusable="false"><use href="#i-gear-fill"></use></svg>Edit</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card bg-dark border-0 hw-kpi p-3">
+        <div class="dashboard-kpi-label">EVENTS &middot; 30 DAYS</div>
+        <div class="dashboard-kpi-value">{{ stats_30d.volume }}</div></div></div>
+    <div class="col-md-3"><div class="card bg-dark border-0 hw-kpi p-3 {{ 'hw-kpi--crit' if stats_30d.failed else '' }}">
+        <div class="dashboard-kpi-label">FAILED</div>
+        <div class="dashboard-kpi-value {{ 'text-danger' if stats_30d.failed else '' }}">{{ stats_30d.failed }}</div></div></div>
+    <div class="col-md-3"><div class="card bg-dark border-0 hw-kpi p-3">
+        <div class="dashboard-kpi-label">FAILURE RATE</div>
+        <div class="dashboard-kpi-value">{{ stats_30d.rate }}%</div></div></div>
+    <div class="col-md-3"><div class="card bg-dark border-0 hw-kpi p-3">
+        <div class="dashboard-kpi-label">LAST SEEN</div>
+        <div class="dashboard-kpi-value hw-t-lg">
+            {{ config.last_seen_at.strftime('%d.%m. %H:%M') if config.last_seen_at else 'never' }}</div></div></div>
+</div>
+
+<div class="card bg-dark border-0 glass-card mb-4">
+    <div class="card-body py-3">
+        <div class="tech-label">Endpoint URL</div>
+        <div class="copyable-field">
+            {% set voll_url = base_url ~ '/w/' ~ config.id %}
+            <code class="flex-grow-1" title="{{ voll_url }}">{{ voll_url[:40] }}&hellip;{{ voll_url[-10:] }}</code>
+            <button class="btn btn-sm btn-link text-primary p-0" onclick="copyToClipboard('{{ voll_url }}')"
+                data-tooltip="Copy URL" aria-label="Copy endpoint URL">
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clipboard"></use></svg>
+            </button>
+        </div>
+        <div class="d-flex gap-4 mt-2 hw-t-sm text-secondary flex-wrap">
+            <span>Board: <strong class="text-white">{{ config.board or 'Default' }}</strong></span>
+            <span>Trigger: <code>{{ config.trigger_field }}</code> = <code>{{ config.open_value }}</code></span>
+            {% if config.priority %}<span>Priority: <strong class="text-white">{{ config.priority }}</strong></span>{% endif %}
+        </div>
+    </div>
+</div>
+
+<section class="mb-4" aria-labelledby="metriken-titel">
+    <h2 id="metriken-titel" class="hw-section-title">Metrics &middot; 30 days</h2>
+    {% if metriken | length > 1 %}
+    {% set mmax = metriken | map(attribute='volume') | max %}
+    {% set mmax = mmax if mmax > 0 else 1 %}
+    <div class="card bg-dark border-0 glass-card"><div class="card-body">
+        <svg viewBox="0 0 900 140" style="width:100%" role="img" aria-label="Events and failures per day, 30 days">
+            {% for f in [0.5, 1] %}
+            <line x1="0" x2="900" y1="{{ 130 - f * 110 }}" y2="{{ 130 - f * 110 }}"
+                  stroke="var(--line)" stroke-dasharray="2 4"/>
+            <text x="4" y="{{ 128 - f * 110 }}" fill="var(--text-faint)" font-size="10">{{ (mmax * f) | round | int }}</text>
+            {% endfor %}
+            {% set schritt = 900 / metriken | length %}
+            {% for punkt in metriken %}
+            {% set x = loop.index0 * schritt + schritt / 2 %}
+            <rect x="{{ x - 5 }}" y="{{ 130 - punkt.volume / mmax * 110 }}" width="10"
+                  height="{{ (punkt.volume / mmax * 110) | round(1) }}" rx="2"
+                  fill="var(--accent)" fill-opacity=".55">
+                <title>{{ punkt.tag }}: {{ punkt.volume }} events, {{ punkt.failed }} failed</title></rect>
+            {% if punkt.failed %}
+            <rect x="{{ x - 5 }}" y="{{ 130 - punkt.failed / mmax * 110 }}" width="10"
+                  height="{{ (punkt.failed / mmax * 110) | round(1) }}" rx="2" fill="var(--crit)">
+                <title>{{ punkt.tag }}: {{ punkt.failed }} failed</title></rect>
+            {% endif %}
+            {% endfor %}
+        </svg>
+    </div></div>
+    {% else %}
+    <p class="text-secondary">No events in the last 30 days.</p>
+    {% endif %}
+</section>
+
+<section aria-labelledby="verlauf-titel">
+    <div class="d-flex align-items-center gap-3 mb-2">
+        <h2 id="verlauf-titel" class="hw-section-title mb-0">Recent deliveries</h2>
+        <a class="hw-t-sm" href="{{ url_for('main.history', endpoint_id=config.id) }}">Open full history</a>
+    </div>
+    <div class="card bg-dark text-white shadow-lg overflow-hidden border-0">
+        <div class="table-responsive" tabindex="0" role="region" aria-label="Deliveries for this endpoint">
+            <table class="table table-dark table-hover mb-0 align-middle small">
+                <thead class="bg-black bg-opacity-50 text-secondary"><tr>
+                    <th class="ps-4 py-3"></th><th class="py-3">TIME</th><th class="py-3">ENDPOINT</th>
+                    <th class="py-3">STATUS</th><th class="py-3">SOURCE IP</th>
+                    <th class="py-3">TICKET</th><th class="py-3">REQUEST ID</th>
+                    <th class="pe-4 py-3 text-end"><span class="visually-hidden">Actions</span></th>
+                </tr></thead>
+                <tbody>
+                    {% include 'history_rows.html' %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+{% endblock %}

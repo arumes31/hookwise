@@ -16,7 +16,7 @@
                 </div>
 
                 <div class="mb-4">
-                    <small class="text-secondary d-block mb-1 text-uppercase ls-1" style="font-size: 0.7rem;">Unable to
+                    <small class="text-secondary d-block mb-1 text-uppercase ls-1 hw-t-xs">Unable to
                         scan? Use this key:</small>
                     <code
                         class="user-select-all font-monospace text-info bg-dark px-2 py-1 rounded border border-secondary border-opacity-25">{{ secret }}</code>
@@ -29,9 +29,7 @@
                     <div class="mb-3">
                         <label for="otp" class="form-label small fw-bold text-light text-uppercase ls-1">Enter Code to
                             Verify</label>
-                        <input type="text"
-                            class="form-control text-center font-monospace bg-dark border-secondary text-light" id="otp"
-                            name="otp" placeholder="000000" required style="font-size: 1.5rem; letter-spacing: 0.5em;">
+                        <input type="text" class="form-control text-center font-monospace bg-dark border-secondary text-light hw-t-xl" id="otp" name="otp" placeholder="000000" required style="letter-spacing: 0.5em">
                     </div>
                     <div class="d-grid gap-2 d-md-flex justify-content-md-center">
                         <a href="{{ url_for('main.settings') }}" class="btn btn-outline-secondary px-4">Cancel</a>

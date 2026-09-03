@@ -1,155 +1,137 @@
 {% extends 'base.html' %}
+{# Jinja does not inherit a parent's imports into a child template. #}
+{% import '_brand.html' as brandlib %}
+
+{% block main_content_class %}hw-login-main{% endblock %}
 
 {% block content %}
-<canvas id="bg-animation"></canvas>
-
-<div class="row justify-content-center align-items-center" style="min-height: 100vh; overflow-x: hidden; margin: 0;">
-    <div class="col-md-5 col-lg-4">
-        <div class="glass-card shadow-premium p-4 p-md-5">
-            <div class="text-center mb-4">
-                <div class="hw-logo-container mb-3">
-                    <svg class="logo-8bit-svg" style="height: 100px;" viewBox="0 0 400 80"
-                        xmlns="http://www.w3.org/2000/svg">
-                        <!-- Refined Spawning Word Group (Centered @ 42,16) -->
-                        <g class="word-group" transform="translate(42, 16)">
-                            <!-- 'H' -->
-                            <path class="snap-letter" style="animation-delay: 0.1s" fill="none"
-                                stroke="var(--retro-cyan)" stroke-width="8" d="M4 0 v48 M4 24 h24 M28 0 v48" />
-                            <!-- 'o' -->
-                            <rect class="snap-letter" style="animation-delay: 0.2s" x="44" y="16" width="32" height="32"
-                                fill="none" stroke="var(--retro-white)" stroke-width="8" />
-                            <!-- 'o' -->
-                            <rect class="snap-letter" style="animation-delay: 0.3s" x="88" y="16" width="32" height="32"
-                                fill="none" stroke="var(--retro-white)" stroke-width="8" />
-                            <!-- 'k' -->
-                            <path class="snap-letter" style="animation-delay: 0.4s" fill="none"
-                                stroke="var(--retro-cyan)" stroke-width="8"
-                                d="M136 0 v48 M136 24 l24 -20 M136 24 l24 24" />
-                            <!-- 'W' -->
-                            <path class="snap-letter" style="animation-delay: 0.5s" fill="none"
-                                stroke="var(--retro-white)" stroke-width="8" d="M172 0 v48 l16 -16 l16 16 v-48" />
-                            <!-- 'i' -->
-                            <g class="snap-letter" style="animation-delay: 0.6s">
-                                <rect x="216" y="16" width="8" height="32" fill="var(--retro-cyan)" />
-                                <rect x="216" y="0" width="8" height="8" fill="var(--retro-yellow)" />
-                            </g>
-                            <!-- 's' -->
-                            <path class="snap-letter" style="animation-delay: 0.7s" fill="none"
-                                stroke="var(--retro-magenta)" stroke-width="8" d="M236 16 h32 v12 h-32 v12 h32" />
-                            <!-- 'e' -->
-                            <path class="snap-letter" style="animation-delay: 0.8s" fill="none"
-                                stroke="var(--retro-white)" stroke-width="8"
-                                d="M280 16 h32 v32 h-32 v-32 M280 32 h32" />
-
-                            <!-- Instant Sparkle SNAPS -->
-                            <rect class="sparkle" style="animation-delay: 0.1s" x="0" y="24" width="8" height="8"
-                                fill="var(--retro-yellow)" />
-                        </g>
-
-                    </svg>
-                </div>
-
-                {% if step == '2fa' %}
-                <h1 class="h4 mb-0 fw-bold accent-gradient">Two-Factor Auth</h1>
-                {% else %}
-                <h1 class="h4 mb-0 fw-bold accent-gradient">Login to HookWise</h1>
-                {% endif %}
-            </div>
-
-            <form method="POST" id="login-form" hx-boost="false">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-
-                {% if step == '2fa' %}
-                <p class="text-secondary text-center mb-4">Enter the 6-digit code from your authenticator app.</p>
-                <div class="mb-4">
-                    <input type="text"
-                        class="form-control form-control-lg text-center font-monospace ls-wide bg-dark bg-opacity-50 border-secondary text-light"
-                        style="letter-spacing: 0.5em; font-size: 1.5rem;" id="otp" name="otp" placeholder="000000"
-                        required autofocus autocomplete="one-time-code" maxlength="6">
-                </div>
-                <div class="d-grid mb-3">
-                    <button type="submit" class="btn btn-primary btn-lg fw-bold shadow-lg" id="submit-btn">
-                        <span class="btn-text">Verify Code</span>
-                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                    </button>
-                </div>
-                <div class="text-center">
-                    <a href="{{ url_for('main.login') }}"
-                        class="text-secondary small text-decoration-none hover-text-primary transition-colors">
-                        &larr; Back to Login
-                    </a>
-                </div>
-                {% else %}
-                <div class="mb-3">
-                    <label for="username" class="form-label small fw-bold text-secondary ls-wide">USERNAME</label>
-                    <input type="text" class="form-control bg-dark bg-opacity-50 border-secondary text-light"
-                        id="username" name="username" required autofocus placeholder="Enter your username">
-                </div>
-                <div class="mb-4">
-                    <label for="password" class="form-label small fw-bold text-secondary ls-wide">PASSWORD</label>
-                    <div class="input-group">
-                        <input type="password"
-                            class="form-control bg-dark bg-opacity-50 border-secondary text-light border-end-0"
-                            id="password" name="password" required placeholder="Enter your password">
-                        <button
-                            class="btn btn-outline-secondary bg-dark bg-opacity-50 border-secondary border-start-0 text-secondary"
-                            type="button" id="toggle-password" aria-label="Show password" aria-pressed="false">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
-                                class="bi bi-eye" viewBox="0 0 16 16" id="eye-icon">
-                                <path
-                                    d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z" />
-                                <path
-                                    d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z" />
-                            </svg>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
-                                class="bi bi-eye-slash d-none" viewBox="0 0 16 16" id="eye-slash-icon">
-                                <path
-                                    d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z" />
-                                <path
-                                    d="M11.297 9.32l.766.766a2.775 2.775 0 0 1-4.31.03l2.884-2.884a2.775 2.775 0 0 1 .66.766zm-4.296-4.296L8.258 6.65a2.775 2.775 0 0 1 4.52 4.52l3.65 3.65a.5.5 0 0 1-.708.708l-12-12a.5.5 0 0 1 .708 0l1.5 1.5z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="d-grid gap-2">
-                    <button type="submit" class="btn btn-primary btn-lg fw-bold shadow-lg" id="submit-btn">
-                        <span class="btn-text">Sign In</span>
-                        <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                    </button>
-                </div>
-                {% endif %}
-            </form>
+{# Split Signal: form on the left, a slow synthetic delivery feed with the
+   hook watermark on the right. The feed is generated client-side -- the
+   login page is unauthenticated and must never show real delivery data. #}
+<div class="hw-login-split">
+    <section class="hw-login-links">
+        <div class="hw-login-wm" aria-label="HookWise">
+            <svg width="44" height="44" viewBox="7 7 50 50" stroke-width="3.4" color="var(--text)"
+                aria-hidden="true" focusable="false"><g transform="translate(32 32)"><g class="hw-knoten-akzent" transform="rotate(0)"><g transform="translate(-5.5 -18.5) scale(1.12)"><circle cx="0" cy="0" r="3.4" fill="currentColor" stroke="none"/><path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke="currentColor" stroke-linecap="round"/><path d="M12 0l4 7h-8z" fill="currentColor" stroke="none"/></g></g><g transform="rotate(120)"><g transform="translate(-5.5 -18.5) scale(1.12)"><circle cx="0" cy="0" r="3.4" fill="currentColor" stroke="none"/><path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke="currentColor" stroke-linecap="round"/><path d="M12 0l4 7h-8z" fill="currentColor" stroke="none"/></g></g><g transform="rotate(240)"><g transform="translate(-5.5 -18.5) scale(1.12)"><circle cx="0" cy="0" r="3.4" fill="currentColor" stroke="none"/><path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke="currentColor" stroke-linecap="round"/><path d="M12 0l4 7h-8z" fill="currentColor" stroke="none"/></g></g></g></svg>
+            <span>HOOK<i>WISE</i></span>
         </div>
 
+        <form method="POST" id="login-form" hx-boost="false" class="hw-login-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
-    </div>
+            {% if step == '2fa' %}
+            <h1 class="hw-login-titel">Two-factor auth</h1>
+            <p class="hw-login-untertitel">Enter the 6-digit code from your authenticator app.</p>
+            <div class="mb-4">
+                <input type="text" class="form-control form-control-lg text-center font-monospace hw-t-xl"
+                    style="letter-spacing: 0.5em" id="otp" name="otp" placeholder="000000" required autofocus
+                    autocomplete="one-time-code" maxlength="6" aria-label="One-time code">
+            </div>
+            <div class="d-grid mb-3">
+                <button type="submit" class="btn btn-primary btn-lg fw-bold" id="submit-btn">
+                    <span class="btn-text">Verify Code</span>
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                </button>
+            </div>
+            <div class="text-center">
+                <a href="{{ url_for('main.login') }}"
+                    class="text-secondary small text-decoration-none hover-text-primary transition-colors">
+                    &larr; Back to Login
+                </a>
+            </div>
+            {% else %}
+            <h1 class="hw-login-titel">Enter the console</h1>
+            <p class="hw-login-untertitel">Sign in with your operator account.</p>
+            <div class="mb-3">
+                <label for="username" class="form-label small fw-bold text-secondary ls-wide">USERNAME</label>
+                <input type="text" class="form-control" id="username" name="username" required autofocus
+                    placeholder="Enter your username" autocomplete="username">
+            </div>
+            <div class="mb-4">
+                <label for="password" class="form-label small fw-bold text-secondary ls-wide">PASSWORD</label>
+                <div class="input-group">
+                    <input type="password" class="form-control border-end-0" id="password" name="password" required
+                        placeholder="Enter your password" autocomplete="current-password">
+                    <button class="btn btn-outline-secondary border-start-0" type="button" id="toggle-password"
+                        aria-label="Show password" aria-pressed="false">
+                        <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-eye"></use></svg>
+                        <svg class="hw-icon d-none" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-eye-slash"></use></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary btn-lg fw-bold" id="submit-btn">
+                    <span class="btn-text">Sign In</span>
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                </button>
+            </div>
+            {% endif %}
+        </form>
+
+        <span class="hw-login-mikro">&copy; 2026 HookWise &middot; operator console</span>
+    </section>
+
+    <aside class="hw-login-rechts" aria-hidden="true">
+        <svg class="hw-login-wasser" width="560" height="560" viewBox="0 0 64 64" stroke-width="3"
+            focusable="false">
+            <g transform="translate(32 32)"><g class="hw-knoten-akzent" transform="rotate(0)"><g transform="translate(-5.5 -18.5) scale(1.12)"><circle cx="0" cy="0" r="3.4" fill="currentColor" stroke="none"/><path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke="currentColor" stroke-linecap="round"/><path d="M12 0l4 7h-8z" fill="currentColor" stroke="none"/></g></g><g transform="rotate(120)"><g transform="translate(-5.5 -18.5) scale(1.12)"><circle cx="0" cy="0" r="3.4" fill="currentColor" stroke="none"/><path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke="currentColor" stroke-linecap="round"/><path d="M12 0l4 7h-8z" fill="currentColor" stroke="none"/></g></g><g transform="rotate(240)"><g transform="translate(-5.5 -18.5) scale(1.12)"><circle cx="0" cy="0" r="3.4" fill="currentColor" stroke="none"/><path d="M0 0v7c0 4 2.5 6 6 6s6-2.5 6-6v-2.5" fill="none" stroke="currentColor" stroke-linecap="round"/><path d="M12 0l4 7h-8z" fill="currentColor" stroke="none"/></g></g></g>
+        </svg>
+        <div class="hw-login-term" id="hw-login-term"></div>
+    </aside>
 </div>
 
-<script src="{{ url_for('static', filename='js/login-animation.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        // Password Toggle
+        // Live terminal feed: new lines append at the bottom in random
+        // intervals and push the stream upward; the DOM stays capped.
+        const term = document.getElementById('hw-login-term');
+        if (term) {
+            const pfade = ['grafana-pay', 'stripe-bill', 'gh-ci', 'zbx-edge', 'kuma-prod'];
+            const MAX_ZEILEN = 40;
+            let reqNr = 1000 + Math.floor(Math.random() * 900);
+
+            const neueZeile = () => {
+                const w = Math.random();
+                const status = w < 0.9 ? 200 : (w < 0.96 ? 500 : 404);
+                const el = document.createElement('div');
+                el.className = 'hw-term-zeile';
+                const s = document.createElement('span');
+                s.className = status === 200 ? 'ok' : (status === 500 ? 'crit' : 'warn');
+                s.textContent = String(status);
+                el.appendChild(s);
+                el.appendChild(document.createTextNode(
+                    '  POST /v1/hooks/' + pfade[Math.floor(Math.random() * pfade.length)]
+                    + '  \u00b7  ' + (45 + Math.floor(Math.random() * 306)) + 'ms'
+                    + '  \u00b7  req-' + (reqNr++)));
+                term.appendChild(el);
+                while (term.children.length > MAX_ZEILEN) term.removeChild(term.firstChild);
+            };
+
+            // Start with a filled column, then keep appending forever.
+            for (let i = 0; i < 26; i++) neueZeile();
+            (function tick() {
+                window.setTimeout(() => { neueZeile(); tick(); }, 800 + Math.random() * 1700);
+            })();
+        }
+
+        // Password toggle
         const toggleBtn = document.getElementById('toggle-password');
         const passwordInput = document.getElementById('password');
-        const eyeIcon = document.getElementById('eye-icon');
-        const eyeSlashIcon = document.getElementById('eye-slash-icon');
-
-        if (toggleBtn) {
+        if (toggleBtn && passwordInput) {
+            const augen = toggleBtn.querySelectorAll('svg');
             toggleBtn.addEventListener('click', function () {
                 const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
                 passwordInput.setAttribute('type', type);
                 const passwordVisible = type === 'text';
                 toggleBtn.setAttribute('aria-pressed', String(passwordVisible));
                 toggleBtn.setAttribute('aria-label', passwordVisible ? 'Hide password' : 'Show password');
-                eyeIcon.classList.toggle('d-none');
-                eyeSlashIcon.classList.toggle('d-none');
+                augen.forEach(a => a.classList.toggle('d-none'));
             });
         }
 
-        // Loading State
+        // Loading state
         const form = document.getElementById('login-form');
         const submitBtn = document.getElementById('submit-btn');
-
         if (form) {
             form.addEventListener('submit', function () {
                 if (submitBtn) {

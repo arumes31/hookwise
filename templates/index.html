@@ -3,6 +3,10 @@
 {% block main_content_class %}container-fluid dashboard-content{% endblock %}
 
 {% block content %}
+{# Dashboard: Ueberwachen. Kennzahlen, Live-Feed und Diagramm.
+   Die Endpoint-Verwaltung liegt seit der Trennung unter /webhooks --
+   wer eine Stoerung sichtet, legt keine Endpoints an. Beide Seiten
+   teilen sich denselben Kontext aus _dashboard_context(). #}
 <section id="operations-dashboard" class="operations-dashboard page-section" aria-labelledby="operations-dashboard-title">
     <div class="dashboard-heading">
         <div>
@@ -33,40 +37,37 @@
     </form>
     <div id="dashboard-outage" class="alert alert-danger d-none mb-3" role="alert"><strong>Operational data is unavailable.</strong> <span id="dashboard-outage-message">Trying again on the next refresh.</span></div>
     <div id="dashboard-error" class="alert alert-warning d-none" role="alert"></div>
-    <div id="dashboard-kpis" class="dashboard-kpi-grid" aria-live="polite">
+    {# Eleven equal tiles answered "show me every counter". The question an
+       operator opens this page with is "is anything wrong", so the three
+       figures that can demand action are promoted and the eight that are
+       context drop to a strip. Every button keeps its data-kpi and its
+       aria-label, so dashboard-page.js fills them exactly as before. #}
+    <div id="dashboard-kpis" class="dashboard-kpi-grid hw-kpi-primary" aria-live="polite">
+        {% for key, label, detail, tone in [
+            ('dead_letter_queue', 'Dead-letter queue', 'Awaiting intervention', 'crit'),
+            ('failing_endpoints', 'Failing endpoints', 'Endpoints with failures', 'warn'),
+            ('success_rate', 'Success rate', 'Processed or skipped successfully', 'ok')
+        ] %}
+        <button class="dashboard-kpi is-loading hw-kpi hw-kpi--{{ tone }}" type="button" data-kpi="{{ key }}" aria-label="Open filtered view: {{ label }}" data-tooltip="Open filtered view">
+            <span class="dashboard-kpi-label">{{ label }}</span><strong class="dashboard-kpi-value">—</strong><span class="dashboard-kpi-delta">Loading…</span><span class="dashboard-kpi-detail">{{ detail }}</span>
+        </button>
+        {% endfor %}
         {% for key, label, detail in [
             ('total_endpoints', 'Total endpoints', 'Configured for routing'), ('active_endpoints', 'Active endpoints', 'Currently accepting traffic'),
             ('total_events', 'Total events', 'Received in selected period'), ('processed_events', 'Processed events', 'Completed in selected period'),
-            ('success_rate', 'Success rate', 'Processed or skipped successfully'),
-            ('average_latency', 'Average latency', 'Processing time'), ('dead_letter_queue', 'Dead-letter queue', 'Awaiting intervention'),
+            ('average_latency', 'Average latency', 'Processing time'),
             ('skipped_no_action', 'Skipped / no action', 'Handled without ticket action'), ('failed_events', 'Failed events', 'Failed or dead-lettered'),
-            ('failing_endpoints', 'Failing endpoints', 'Endpoints with failures'), ('stale_endpoints', 'Stale endpoints', 'Past their configured timeout')
+            ('stale_endpoints', 'Stale endpoints', 'Past their configured timeout')
         ] %}
-        <button class="dashboard-kpi is-loading" type="button" data-kpi="{{ key }}" aria-label="Filter endpoints by {{ label }}">
+        <button class="dashboard-kpi is-loading hw-kpi hw-kpi--quiet" type="button" data-kpi="{{ key }}" aria-label="Open filtered view: {{ label }}" data-tooltip="Open filtered view">
             <span class="dashboard-kpi-label">{{ label }}</span><strong class="dashboard-kpi-value">—</strong><span class="dashboard-kpi-delta">Loading…</span><span class="dashboard-kpi-detail">{{ detail }}</span>
         </button>
         {% endfor %}
     </div>
 </section>
 
-<section id="dashboard-analytics" class="card glass-card shadow-lg page-section" aria-labelledby="dashboard-analytics-title">
-    <div class="card-body p-4">
-        <div class="dashboard-analytics-heading">
-            <div><h2 id="dashboard-analytics-title" class="h5 mb-1">Event analytics</h2><p class="small text-secondary mb-0">Labels are shown in <span id="dashboard-timezone">your local timezone</span>.</p></div>
-            <div class="d-flex gap-2"><button id="dashboard-pan-back" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Pan chart backward">←</button><button id="dashboard-zoom-out" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Zoom chart out">−</button><button id="dashboard-zoom-in" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Zoom chart in">+</button><button id="dashboard-pan-forward" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Pan chart forward">→</button></div>
-        </div>
-        <fieldset id="dashboard-legend" class="dashboard-legend"><legend class="visually-hidden">Chart series</legend>
-            <label><input type="checkbox" value="volume" checked> Volume</label><label><input type="checkbox" value="successful" checked> Success</label><label><input type="checkbox" value="failed" checked> Failure</label><label><input type="checkbox" value="failure_rate" checked> Failure rate</label><label><input type="checkbox" value="p95"> P95 latency</label>
-        </fieldset>
-        <div id="dashboard-chart-empty" class="dashboard-chart-empty d-none">No events were recorded in this period. Try a broader date range or confirm webhooks are flowing.</div>
-        <div id="dashboard-chart" class="dashboard-chart" role="img" aria-label="Event volume, success, failure, failure rate, and latency chart"></div>
-        <div class="table-responsive" tabindex="0" role="region" aria-label="Event analytics data"><table class="table table-sm table-dark table-striped mb-0"><caption class="visually-hidden">Accessible event analytics data</caption><thead><tr><th>Date</th><th>Volume</th><th>Success</th><th>Failed</th><th>Failure rate</th><th>P50</th><th>P95</th><th>P99</th></tr></thead><tbody id="dashboard-chart-table"></tbody></table></div>
-        <div id="dashboard-endpoint-activity" class="dashboard-endpoint-activity" role="region" aria-label="Endpoint activity comparison"></div>
-    </div>
-</section>
-
 <section class="dashboard-kpis page-section legacy-dashboard" aria-labelledby="operational-overview-title">
-    <h1 id="operational-overview-title" class="visually-hidden">Operational overview</h1>
+    <h2 id="operational-overview-title" class="visually-hidden">Operational overview</h2>
     <div class="kpi-grid">
         <a class="kpi-card kpi-card-primary" href="#endpoint-list">
             <span class="kpi-icon" aria-hidden="true">
@@ -119,13 +120,13 @@
                     <h6 class="text-secondary text-uppercase small ls-wide mb-0">Ticket History</h6>
                     <div class="btn-group btn-group-sm" role="group">
                         <input type="radio" class="btn-check" name="chartPeriod" id="periodDaily" value="daily" checked autocomplete="off" onchange="window.dashboardState.chartPeriod = 'daily'; refreshStats();">
-                        <label class="btn btn-outline-secondary text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;" for="periodDaily">Daily</label>
+                        <label class="btn btn-outline-secondary text-uppercase hw-t-xs" style="letter-spacing: 0.05em;" for="periodDaily">Daily</label>
                         
                         <input type="radio" class="btn-check" name="chartPeriod" id="periodWeekly" value="weekly" autocomplete="off" onchange="window.dashboardState.chartPeriod = 'weekly'; refreshStats();">
-                        <label class="btn btn-outline-secondary text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;" for="periodWeekly">Weekly</label>
+                        <label class="btn btn-outline-secondary text-uppercase hw-t-xs" style="letter-spacing: 0.05em;" for="periodWeekly">Weekly</label>
                         
                         <input type="radio" class="btn-check" name="chartPeriod" id="periodMonthly" value="monthly" autocomplete="off" onchange="window.dashboardState.chartPeriod = 'monthly'; refreshStats();">
-                        <label class="btn btn-outline-secondary text-uppercase" style="font-size: 0.65rem; letter-spacing: 0.05em;" for="periodMonthly">Monthly</label>
+                        <label class="btn btn-outline-secondary text-uppercase hw-t-xs" style="letter-spacing: 0.05em;" for="periodMonthly">Monthly</label>
                     </div>
                 </div>
                 <canvas id="historyChart" height="100"></canvas>
@@ -137,7 +138,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #3b82f6;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Created</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">Created</h6>
                         <h3 class="fw-bold mb-0 text-white" id="stat-created">0</h3>
                     </div>
                 </div>
@@ -145,7 +146,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #f59e0b;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Updated</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">Updated</h6>
                         <h3 class="fw-bold mb-0 text-white" id="stat-updated">0</h3>
                     </div>
                 </div>
@@ -153,7 +154,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #10b981;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Closed</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">Closed</h6>
                         <h3 class="fw-bold mb-0 text-white" id="stat-closed">0</h3>
                     </div>
                 </div>
@@ -161,7 +162,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #bc8cff;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Succ Rate</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">Succ Rate</h6>
                         <h3 class="fw-bold mb-0 text-white"><span id="stat-rate">100</span><span class="fs-6 opacity-75">%</span></h3>
                     </div>
                 </div>
@@ -169,7 +170,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #a3a3a3;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Avg Latency</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">Avg Latency</h6>
                         <h3 class="fw-bold mb-0 text-white"><span id="stat-latency">0</span><span class="fs-6 opacity-75">s</span></h3>
                     </div>
                 </div>
@@ -177,7 +178,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #ef4444;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">Failed</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">Failed</h6>
                         <h3 class="fw-bold mb-0 text-white" id="stat-failed">0</h3>
                     </div>
                 </div>
@@ -185,7 +186,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #9f1239;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">DLQ</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">DLQ</h6>
                         <h3 class="fw-bold mb-0 text-white" id="stat-dlq">0</h3>
                     </div>
                 </div>
@@ -193,7 +194,7 @@
             <div class="col-6">
                 <div class="card glass-card shadow-lg h-100" style="--accent: #64748b;">
                     <div class="card-body text-center p-3 d-flex flex-column justify-content-center">
-                        <h6 class="text-secondary text-uppercase small ls-wide mb-2" style="font-size: 0.65rem;">No Action</h6>
+                        <h6 class="text-secondary text-uppercase small ls-wide mb-2 hw-t-xs">No Action</h6>
                         <h3 class="fw-bold mb-0 text-white" id="stat-noaction">0</h3>
                     </div>
                 </div>
@@ -205,13 +206,7 @@
                             <h6 class="text-secondary text-uppercase small ls-wide mb-0">Service Health</h6>
                             <button class="btn btn-sm btn-link text-secondary p-0" onclick="refreshStats()"
                                 aria-label="Refresh service health">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                                    class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
-                                    <path fill-rule="evenodd"
-                                        d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z" />
-                                    <path
-                                        d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z" />
-                                </svg>
+                                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg>
                             </button>
                         </div>
                         <div class="d-flex justify-content-around">
@@ -243,160 +238,48 @@
     </div>
 </div>
 
-<div id="endpoint-dashboard">
-<div id="endpoint-list" class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4 scroll-target">
-    <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
-    {% if debug_mode %}
-    <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
-    {% endif %}
-    <div class="d-flex flex-wrap gap-2 endpoint-toolbar">
-        <select id="board-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 150px;" aria-label="Filter endpoints by board">
-            <option value="">All Boards</option>
-        </select>
-        <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 150px;" aria-label="Filter endpoints by status">
-            <option value="">All Statuses</option>
-            <option value="enabled">Enabled</option>
-            <option value="paused">Paused</option>
-        </select>
-        <select id="endpoint-quick-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 170px;" aria-label="Quick endpoint filters">
-            <option value="">All endpoint health</option>
-            <option value="recent_failures">Recent failures</option>
-            <option value="stale">Stale endpoints</option>
-            <option value="unhealthy">Unhealthy services</option>
-            <option value="high_latency">High latency</option>
-            <option value="drafts">Draft endpoints</option>
-            <option value="pinned">Pinned endpoints</option>
-            <option value="inactive">No activity</option>
-        </select>
-        <div class="input-group input-group-sm" style="width: 250px;">
-            <span class="input-group-text bg-dark border-secondary text-secondary">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-search"
-                    viewBox="0 0 16 16">
-                    <path
-                        d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z" />
-                </svg>
-            </span>
-            <input type="text" id="endpoint-search" class="form-control bg-dark border-secondary text-white"
-                placeholder="Search URL, board, company, or token:abcdef">
-        </div>
-        <button id="clear-endpoint-filters" type="button" class="btn btn-outline-secondary" aria-label="Clear all endpoint filters">Clear</button>
-        <button id="refresh-endpoints" type="button" class="btn btn-outline-info" aria-label="Refresh endpoint telemetry">Refresh</button>
-        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
-                class="bi bi-plus-lg me-2" viewBox="0 0 16 16">
-                <path fill-rule="evenodd"
-                    d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2Z" />
-            </svg>
-            Create New
-        </a>
-    </div>
-</div>
 
-<div class="endpoint-filter-status mb-3" aria-live="polite">
-    <span id="endpoint-result-count" class="text-secondary small">Loading endpoints…</span>
-    <div id="endpoint-filter-chips" class="filter-chips" role="region" aria-label="Active endpoint filters"></div>
-</div>
-<div id="endpoint-summary-error" class="alert alert-warning py-2" hidden role="status"></div>
-<div id="endpoint-filter-empty" class="endpoint-filter-empty" hidden>
-    <strong>No endpoints match these filters.</strong> Adjust or clear a filter to see your configured endpoints.
-</div>
-
-<div id="bulk-controls"
-    class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
-    <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
-    <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">Delete Selected</button>
-        <button class="btn btn-sm btn-outline-warning" onclick="bulkPause()">Pause Selected</button>
-        <button class="btn btn-sm btn-outline-success" onclick="bulkResume()">Resume Selected</button>
-        <button class="btn btn-sm btn-outline-info" onclick="bulkExport()">Export Selected</button>
-    </div>
-</div>
-
-{% if not configs %}
-<div class="row justify-content-center py-5">
-    <div class="col-md-8 text-center">
-        <h2 class="h3 text-secondary">Ready to start routing?</h2>
-        <p class="lightgrey mb-5">Create your first webhook endpoint to bridge monitoring alerts to ConnectWise Manage.
-        </p>
-
-        <div class="row g-4 text-start">
-            <div class="col-md-4">
-                <div class="card h-100 bg-dark border-secondary border-opacity-25 shadow-sm">
-                    <div class="card-body p-3">
-                        <div class="h5 text-primary mb-2">1. Create</div>
-                        <p class="small text-secondary mb-0">Define an endpoint name and target service board.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card h-100 bg-dark border-secondary border-opacity-25 shadow-sm">
-                    <div class="card-body p-3">
-                        <div class="h5 text-primary mb-2">2. Configure</div>
-                        <p class="small text-secondary mb-0">Copy the unique URL and Bearer Token to your alert source.
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card h-100 bg-dark border-secondary border-opacity-25 shadow-sm">
-                    <div class="card-body p-3">
-                        <div class="h5 text-primary mb-2">3. Automate</div>
-                        <p class="small text-secondary mb-0">Watch as HookWise creates and manages tickets for you.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary btn-lg mt-5 px-5">Create First Endpoint</a>
-    </div>
-</div>
-{% else %}
-<div id="endpoint-skeleton" class="row d-none">
-    {% for i in range(4) %}
-    <div class="col-md-6 mb-4">
-        <div class="card h-100 skeleton-card skeleton" style="height: 250px;"></div>
-    </div>
-    {% endfor %}
-</div>
-
+<!-- HW: Live-Feed unter die Endpoint-Liste verschoben, Primaerobjekt zuerst -->
 <div class="row mb-5">
     <div class="col-12">
         <div class="card glass-card shadow-lg border-0 overflow-hidden terminal-window">
             <div
                 class="card-header bg-transparent border-bottom border-light border-opacity-10 d-flex justify-content-between align-items-center py-2 px-3">
-                <div class="d-flex gap-2">
-                    <div class="terminal-dot bg-danger"></div>
-                    <div class="terminal-dot bg-warning"></div>
-                    <div class="terminal-dot bg-success"></div>
+                <div class="d-flex align-items-center gap-2">
+                    <h2 class="hw-section-title mb-0" id="live-activity-title">Live activity</h2>
+                    <span id="socket-status" class="badge bg-secondary">Connecting</span>
                 </div>
-                <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 0.1em;">LIVE
-                    ACTIVITY STREAM <span id="socket-status" class="badge bg-secondary ms-1">Connecting</span></div>
                 <div class="d-flex gap-3">
                     <button id="btn-trigger-timeout" class="btn btn-sm btn-link p-0 text-warning" data-tooltip="Run Timeout Monitor Now" aria-label="Run timeout monitor now">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-clock-history" viewBox="0 0 16 16">
-                            <path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022l-.074.997zm2.004.45a7.003 7.003 0 0 0-.985-.299l.219-.976c.383.086.76.2 1.126.342l-.36.933zm1.37.71a7.01 7.01 0 0 0-.439-.74l.824-.568c.19.274.364.56.517.857l-.902.451zM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
-                            <path d="M7 3h1v4h3v1H7V3z"/>
-                        </svg>
+                        <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clock-history"></use></svg>
                     </button>
                     <button id="btn-clear-stream" class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Clear Stream" aria-label="Clear activity stream">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                            class="bi bi-trash-fill" viewBox="0 0 16 16">
-                            <path
-                                d="M2.5 1a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H10a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1H2.5zm3 4a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 .5-.5zM8 5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0v-7A.5.5 0 0 1 8 5zm3 .5v7a.5.5 0 0 1-1 0v-7a.5.5 0 0 1 1 0z" />
-                        </svg>
+                        <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-trash-fill"></use></svg>
                     </button>
                 </div>
             </div>
+            {# Sechs Auswahlfelder standen dauerhaft nebeneinander -- dieselbe
+               Ueberladung wie im History-Kopf, mit demselben Mittel geloest:
+               ein Filter-Menue, Pause/Leeren und Zaehler bleiben sichtbar.
+               Alle IDs unveraendert, die Skripte greifen weiter. #}
             <div id="activity-controls" class="activity-controls border-bottom border-light border-opacity-10 p-2" aria-label="Live activity controls">
-                <select id="activity-severity" class="form-select form-select-sm"><option value="">All severity</option><option value="failure">Failures</option><option value="success">Success</option><option value="info">Info</option></select>
-                <select id="activity-action" class="form-select form-select-sm"><option value="">All actions</option><option value="create">Create</option><option value="update">Update</option><option value="close">Close</option></select>
-                <select id="activity-status" class="form-select form-select-sm"><option value="">All status</option><option value="processed">Processed</option><option value="failed">Failed</option><option value="dlq">Dead-lettered</option><option value="skipped">Skipped</option></select>
-                <select id="activity-endpoint" class="form-select form-select-sm"><option value="">All endpoints</option></select>
-                <select id="activity-board" class="form-select form-select-sm"><option value="">All boards</option></select>
-                <select id="activity-buffer" class="form-select form-select-sm" aria-label="Activity buffer size"><option value="100">100 events</option><option value="200" selected>200 events</option><option value="500">500 events</option></select>
+                <details class="hw-more hw-menu-wide" id="hw-activity-filter">
+                    <summary class="hw-menu-summary">Filter<span class="hw-filter-dot" id="hw-activity-filter-dot" hidden></span></summary>
+                    <div class="hw-more-menu" style="left:0; right:auto;">
+                        <label class="hw-field"><span>Severity</span>
+                            <select id="activity-severity" class="form-select form-select-sm"><option value="">All severity</option><option value="failure">Failures</option><option value="success">Success</option><option value="info">Info</option></select></label>
+                        <label class="hw-field"><span>Action</span>
+                            <select id="activity-action" class="form-select form-select-sm"><option value="">All actions</option><option value="create">Create</option><option value="update">Update</option><option value="close">Close</option></select></label>
+                        <label class="hw-field"><span>Status</span>
+                            <select id="activity-status" class="form-select form-select-sm"><option value="">All status</option><option value="processed">Processed</option><option value="failed">Failed</option><option value="dlq">Dead-lettered</option><option value="skipped">Skipped</option></select></label>
+                        <label class="hw-field"><span>Endpoint</span>
+                            <select id="activity-endpoint" class="form-select form-select-sm"><option value="">All endpoints</option></select></label>
+                        <label class="hw-field"><span>Board</span>
+                            <select id="activity-board" class="form-select form-select-sm"><option value="">All boards</option></select></label>
+                        <label class="hw-field"><span>Buffer</span>
+                            <select id="activity-buffer" class="form-select form-select-sm" aria-label="Activity buffer size"><option value="100">100 events</option><option value="200" selected>200 events</option><option value="500">500 events</option></select></label>
+                    </div>
+                </details>
                 <button id="activity-pause" type="button" class="btn btn-sm btn-outline-secondary" aria-pressed="false" title="Pause stream (Alt+P)">Pause</button>
                 <button id="activity-clear" type="button" class="btn btn-sm btn-outline-secondary">Clear</button>
                 <span id="activity-counter" class="small text-secondary ms-auto">0 events · 0 failures</span>
@@ -404,396 +287,57 @@
             </div>
             <div id="activity-disconnected" class="alert alert-danger rounded-0 mb-0 py-2" role="status" hidden>Live activity disconnected.</div>
             <div class="card-body p-0">
-                <div id="log-container" class="bg-transparent text-white font-monospace p-3"
-                    style="height: 250px; overflow-y: auto; font-size: 0.8rem; scrollbar-width: thin; scrollbar-color: var(--border) transparent;">
+                <div id="log-container" class="bg-transparent text-white font-monospace p-3 hw-t-sm" style="height: 250px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent;">
                     <div class="text-secondary opacity-50 italic">Initializing secure socket connection...</div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="mb-3 d-flex justify-content-between align-items-center">
-    <div class="form-check">
-        <input class="form-check-input" type="checkbox" id="check-all">
-        <label class="form-check-label small text-secondary fw-bold" for="check-all">SELECT ALL</label>
-    </div>
-    <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-secondary active" onclick="toggleView('grid')">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-grid-fill"
-                viewBox="0 0 16 16">
-                <path
-                    d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zM9 2.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zM1 10.5A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zM9 10.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z" />
-            </svg>
-        </button>
-        <button class="btn btn-outline-secondary" onclick="toggleView('list')">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-list-task"
-                viewBox="0 0 16 16">
-                <path fill-rule="evenodd"
-                    d="M2 2.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5V3a.5.5 0 0 0-.5-.5H2zM3 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm9 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm0-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM9.172 3.03a.5.5 0 0 1 .664-.058l.1.058l2 2a.5.5 0 1 1-.708.707L10 4.414V11a.5.5 0 0 1-1 0V4.414L7.854 5.51a.5.5 0 0 1-.708-.707l2-2z" />
-            </svg>
-        </button>
-    </div>
-</div>
-
-<div class="row" id="endpoint-grid">
-    {% for config in configs %}
-    <div class="col-xxl-4 col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
-        <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
-            data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
-            data-company="{{ config.customer_id_default or '' }}" data-tags="" data-health="{{ config.config_health_status or 'OK' }}"
-            data-status="{{ 'enabled' if config.is_enabled else 'paused' }}">
-            <div class="paused-badge">PAUSED</div>
-            <div class="card-body p-4">
-                <!-- Action Toolbar Overlay -->
-                <div class="endpoint-actions">
-                    <button onclick="togglePin('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
-                        data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
-                        {% if config.is_pinned %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                            fill="currentColor" class="bi bi-pin-fill" viewBox="0 0 16 16">
-                            <path
-                                d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224.5-.5.5s-.5-.224-.5-.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 0 1 5 6.708V2.277a2.77 2.77 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z" />
-                        </svg>{% else %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                            fill="currentColor" class="bi bi-pin" viewBox="0 0 16 16">
-                            <path
-                                d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224.5-.5.5s-.5-.224-.5-.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A5.921 5.921 0 0 1 5 6.708V2.277a2.77 2.77 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354zm1.58 1.408-.002-.001.002.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447L5.048 8H10.952l-.676-.353A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .146-.354c.14-.14.343-.311.55-.515C10.983 1.112 11.246 1 11.5 1h-7c.254 0 .517.112.804.401.207.204.41.375.55.515z" />
-                        </svg>{% endif %}
-                    </button>
-                    <button onclick="toggleEndpoint('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
-                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}" aria-label="{{ 'Resume' if not config.is_enabled else 'Pause' }} endpoint">
-                        {% if config.is_enabled %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                            fill="currentColor" class="bi bi-pause-circle" viewBox="0 0 16 16">
-                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
-                            <path
-                                d="M5 6.25a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5zm3.5 0a1.25 1.25 0 1 1 2.5 0v3.5a1.25 1.25 0 1 1-2.5 0v-3.5z" />
-                        </svg>{% else %}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                            fill="currentColor" class="bi bi-play-circle" viewBox="0 0 16 16">
-                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z" />
-                            <path
-                                d="M6.271 5.055a.5.5 0 0 1 .52.038l3.5 2.5a.5.5 0 0 1 0 .814l-3.5 2.5A.5.5 0 0 1 6 10.5v-5a.5.5 0 0 1 .271-.445z" />
-                        </svg>{% endif %}
-                    </button>
-                    <button onclick="testEndpoint('{{ config.id }}')"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook" aria-label="Test webhook">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
-                            class="bi bi-play-fill" viewBox="0 0 16 16">
-                            <path
-                                d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
-                        </svg>
-                    </button>
-                    <button onclick="confirmRotate('{{ config.id }}', {{ config.name | tojson }})"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-warning" data-tooltip="Rotate Token" aria-label="Rotate endpoint token">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" /></svg>
-                    </button>
-                    <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}"
-                        class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings" aria-label="Edit endpoint settings">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
-                            class="bi bi-gear-fill" viewBox="0 0 16 16">
-                            <path
-                                d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z" />
-                        </svg>
-                    </a>
-                </div>
-
-                <!-- Header: Name & Sparkline -->
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div class="d-flex align-items-center">
-                        <input type="checkbox" class="endpoint-check form-check-input me-3" data-id="{{ config.id }}">
-                        <div>
-                            <h4 class="mb-1 text-white fw-bold">{{ config.name }}</h4>
-                            <div class="d-flex gap-2">
-                                <span
-                                    class="heartbeat-dot {{ 'pulse-success' if config.is_enabled else '' }} {{ 'status-paused' if not config.is_enabled else 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
-
-                                <small class="text-secondary opacity-75 font-monospace" style="font-size: 0.65rem;">UID:
-                                    {{ config.id[:16] }}</small>
-                            </div>
-                        </div>
-                    </div>
-                    <canvas id="sparkline-{{ config.id }}" width="100" height="40"
-                        data-sparkline='{{ sparklines.get(config.id, [0, 0, 0, 0, 0, 0, 0]) | tojson }}'></canvas>
-                </div>
-
-                <!-- Security HUD Trigger -->
-                <div class="position-absolute top-0 start-0 p-3">
-                    <button
-                        class="btn btn-sm btn-link p-0 text-{{ 'success' if config.config_health_status == 'OK' else 'danger' if config.config_health_status == 'ERROR' else 'warning' }} opacity-50 hover-opacity-100"
-                        data-id="{{ config.id }}" data-status="{{ config.config_health_status }}"
-                        data-message="{{ config.config_health_message or '' }}" data-ip="{{ config.last_ip or '' }}"
-                        data-rotated="{{ config.last_rotated_at or '' }}"
-                        onclick="showSecurityHud(this.dataset.id, this.dataset.status, this.dataset.message, this.dataset.ip, this.dataset.rotated)"
-                        data-tooltip="Security & Health: {{ config.config_health_status }}" aria-label="View endpoint security and health">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                            class="bi bi-shield-check" viewBox="0 0 16 16">
-                            <path
-                                d="M5.338 1.59a61.44 61.44 0 0 0-2.837.856.481.481 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.725 10.725 0 0 0 2.287 2.233c.346.244.652.42.893.533.12.057.218.095.293.118a.55.55 0 0 0 .101.025.615.615 0 0 0 .1-.025c.076-.023.174-.061.294-.118.24-.113.547-.29.893-.533a10.726 10.726 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.775 11.775 0 0 1-2.517 2.453 7.159 7.159 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7.158 7.158 0 0 1-1.048-.625 11.777 11.777 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43 62.456 62.456 0 0 1 5.072.56z" />
-                        </svg>
-                    </button>
-                </div>
-
-                <!-- Technical Fields -->
-                <div class="mb-3">
-                    <div class="tech-label">Endpoint URL</div>
-                    <div class="copyable-field">
-                        <code class="user-select-all text-truncate flex-grow-1">{{ base_url }}/w/{{ config.id }}</code>
-                        <button class="btn btn-sm btn-link text-primary p-0"
-                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL" aria-label="Copy endpoint URL">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-                                class="bi bi-clipboard" viewBox="0 0 16 16">
-                                <path
-                                    d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z" />
-                                <path
-                                    d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z" />
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Simplified Activity Stats -->
-                <div class="tech-grid mb-4">
-                    <div class="tech-item">
-                        <div class="tech-label text-success">SUCCESS</div>
-                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('processed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('processed', 0) }}</span></div>
-                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
-                            24H / Total</div>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-label text-danger">FAILED</div>
-                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('failed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('failed', 0) }}</span></div>
-                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
-                            24H / Total</div>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-label text-warning">SKIPPED</div>
-                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('skipped', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('skipped', 0) }}</span></div>
-                        <div class="small text-secondary opacity-50 text-uppercase ls-1" style="font-size: 0.5rem;">
-                            24H / Total</div>
-                    </div>
-                    <div class="tech-item">
-                        <div class="tech-label text-primary">LAST SEEN</div>
-                        <div class="small fw-bold text-white text-truncate" style="font-size: 0.7rem;">
-                            {{ config.last_seen_at.strftime('%H:%M %m/%d') if config.last_seen_at else 'NEVER' }}
-                        </div>
-                        <div class="small text-secondary opacity-50 text-uppercase ls-1 {{ 'mb-2' if config.timeout_alerts_enabled else 'mb-1' }}" style="font-size: 0.5rem;">UTC
-                            Time</div>
-                        
-                        {% if config.timeout_alerts_enabled and next_stale_times.get(config.id) %}
-                        <div class="tech-label text-warning mt-1" style="font-size: 0.5rem;">NEXT STALE</div>
-                        <div class="small fw-bold text-warning opacity-75 text-truncate" style="font-size: 0.65rem;">
-                            {{ next_stale_times[config.id].strftime('%H:%M %m/%d') }}
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                <details class="endpoint-details mt-3">
-                    <summary>Delivery telemetry</summary>
-                    <div class="endpoint-summary-grid mt-2">
-                        <span>Token age <strong data-summary="token-age">Loading…</strong></span>
-                        <span>Uptime <strong data-summary="uptime">—</strong></span>
-                        <span>Last success <strong data-summary="last-success">Loading…</strong></span>
-                        <span>Last failure <strong data-summary="last-failure">Loading…</strong></span>
-                        <span>Response time <strong data-summary="latency">—</strong></span>
-                        <span>Queue depth <strong data-summary="queue">—</strong></span>
-                        <span>Retries <strong data-summary="retries">—</strong></span>
-                    </div>
-                    <div class="endpoint-tags mt-2" data-summary="tags">Loading tags…</div>
-                    <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('main.history') }}?endpoint_id={{ config.id }}">View logs</a>
-                </details>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-</div>
-
-<!-- Payload Modal -->
-<div class="modal fade" id="payloadModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content bg-dark border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title">Webhook Payload</h5>
-                <div class="ms-auto me-2">
-                    <button id="pretty-toggle" class="btn btn-sm btn-outline-info me-2">Minified</button>
-                    <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close payload details"></button>
-            </div>
-            <div class="modal-body">
-                <pre
-                    class="bg-black p-0 rounded"><code id="payload-display" class="language-json" style="font-size: 0.85rem; max-height: 500px; overflow: auto; display: block;"></code></pre>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Rotate Token Modal -->
-<div class="modal fade" id="rotateModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content bg-dark border-warning">
-            <div class="modal-header border-warning border-opacity-25">
-                <h5 class="modal-title text-warning">Rotate Bearer Token</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close token rotation dialog"></button>
-            </div>
-            <div class="modal-body">
-                <p>Are you sure you want to rotate the token for <strong id="rotate-endpoint-name"></strong>?</p>
-                <p class="text-danger small"><strong>Warning:</strong> Any source currently using the old token will
-                    immediately fail until updated.</p>
-            </div>
-            <div class="modal-footer border-warning border-opacity-25">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <form id="rotate-form" method="POST">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-sm btn-warning text-dark fw-bold">Rotate Token</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Context Menu -->
-<div id="context-menu" class="dropdown-menu shadow-lg border border-secondary border-opacity-25"
-    style="display: none; position: absolute; z-index: 10000; min-width: 180px;">
-    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-edit">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-            class="bi bi-pencil-square me-2" viewBox="0 0 16 16">
-            <path
-                d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z" />
-            <path fill-rule="evenodd"
-                d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5v11z" />
-        </svg>
-        Edit Endpoint
-    </a>
-    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-test">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-play-fill me-2"
-            viewBox="0 0 16 16">
-            <path
-                d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z" />
-        </svg>
-        Test Webhook
-    </a>
-    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-clone">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-copy me-2"
-            viewBox="0 0 16 16">
-            <path fill-rule="evenodd"
-                d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2Zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6Z" />
-            <path
-                d="M2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2Z" />
-        </svg>
-        Clone Configuration
-    </a>
-    <div class="dropdown-divider border-secondary border-opacity-10"></div>
-    <a class="dropdown-item d-flex align-items-center text-danger" href="#" id="ctx-delete">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor"
-            class="bi bi-trash3-fill me-2" viewBox="0 0 16 16">
-            <path
-                d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5Zm-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5ZM4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06Zm6.53-.06a.5.5 0 0 0-.598.374l-1.5 8.5a.5.5 0 1 0 .98.173l1.5-8.5a.5.5 0 0 0-.382-.547ZM6.274 5.05a.5.5 0 0 0-.516.474l-.5 8.5a.5.5 0 1 0 .998.06l.5-8.5a.5.5 0 0 0-.482-.534Z" />
-        </svg>
-        Delete Endpoint
-    </a>
-</div>
-
-<!-- Onboarding Modal -->
-<div class="modal fade" id="onboardingModal" tabindex="-1" aria-labelledby="onboarding-title">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content bg-dark border-primary">
-            <div class="modal-header border-primary border-opacity-25">
-                <h2 id="onboarding-title" class="h5 modal-title text-primary">Welcome to HookWise!</h2>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
-            </div>
-            <div class="modal-body text-center py-5">
-                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="HookWise" height="80" class="mb-4">
-                <h3 class="fw-bold">Let's get you set up.</h3>
-                <p class="text-secondary mb-5">HookWise bridges your monitoring tools to ConnectWise Manage tickets.</p>
-
-                <div class="row g-4 text-start">
-                    <div class="col-md-4">
-                        <div class="card h-100 bg-black bg-opacity-25 border-0">
-                            <div class="card-body">
-                                <div class="h6 text-info">1. API Keys</div>
-                                <p class="small lightgrey">Ensure your ConnectWise API keys are set in your
-                                    <code>.env</code> file.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card h-100 bg-black bg-opacity-25 border-0">
-                            <div class="card-body">
-                                <div class="h6 text-info">2. Endpoint</div>
-                                <p class="small lightgrey">Create an endpoint for each tool (e.g. Uptime Kuma,
-                                    Grafana).</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card h-100 bg-black bg-opacity-25 border-0">
-                            <div class="card-body">
-                                <div class="h6 text-info">3. Webhooks</div>
-                                <p class="small lightgrey">Copy your endpoint URL to your monitoring tool's webhook
-                                    settings.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer border-primary border-opacity-25">
-                <button type="button" class="btn btn-primary px-5" data-bs-dismiss="modal">I'm ready!</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Security HUD Modal -->
-<div class="modal fade" id="securityHudModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content glass-card border-0">
-            <div class="modal-header border-bottom border-light border-opacity-10">
-                <h5 class="modal-title text-white"><i class="fas fa-shield-alt me-2 text-info"></i>Security & Health
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close security details"></button>
-            </div>
-            <div class="modal-body">
-                <div class="text-center mb-4">
-                    <div id="hud-status-icon" class="display-4 mb-2"></div>
-                    <h4 id="hud-status-text" class="fw-bold"></h4>
-                    <p id="hud-message" class="text-secondary small"></p>
-                </div>
-
-                <div class="bg-black bg-opacity-25 rounded p-3 mb-3">
-                    <div class="d-flex justify-content-between mb-2">
-                        <span class="text-secondary small">Last IP Address</span>
-                        <span id="hud-last-ip" class="font-monospace text-info small"></span>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                        <span class="text-secondary small">Token Age</span>
-                        <span id="hud-token-age" class="font-monospace text-warning small"></span>
-                    </div>
-                </div>
-
-                <div class="bg-black bg-opacity-25 rounded p-3 mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span class="text-secondary small">LLM (Ollama)</span>
-                        <span id="hud-llm-status" class="font-monospace small text-secondary">—</span>
-                    </div>
-                    <div class="d-flex justify-content-between mt-1" id="hud-llm-model-row"
-                        style="display:none!important;">
-                        <span class="text-secondary small">Active Model</span>
-                        <span id="hud-llm-model" class="font-monospace text-info small"></span>
-                    </div>
-                </div>
-
-                <div class="d-grid">
-                    <button class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Close</button>
+                {# The stream backfills only the recent tail; browsing older events
+                   belongs in History, which is built for it. #}
+                <div class="hw-activity-more">
+                    <a href="{{ url_for('main.history') }}">View older events in history</a>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<meta name="hookwise-cw-url" content="{{ cw_url }}">
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-page.js') }}"></script>
+<!-- HW: analytics moved below the endpoint list, see hookwise-console.css -->
+<section id="dashboard-analytics" class="card glass-card shadow-lg page-section" aria-labelledby="dashboard-analytics-title">
+    <div class="card-body p-4">
+        <div class="dashboard-analytics-heading">
+            <div><h2 id="dashboard-analytics-title" class="h5 mb-1">Event analytics</h2><p class="small text-secondary mb-0">Range: <span class="hw-range-label">last 24 hours</span> &middot; timezone <span id="dashboard-timezone">your local timezone</span>.</p></div>
+            <div class="d-flex gap-2"><button id="dashboard-pan-back" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Pan chart backward" data-tooltip="Pan chart backward"><svg class="hw-icon" width="13" height="13" aria-hidden="true" focusable="false"><use href="#i-arrow-left"></use></svg></button><button id="dashboard-zoom-out" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Zoom chart out" data-tooltip="Zoom chart out"><svg class="hw-icon" width="13" height="13" aria-hidden="true" focusable="false"><use href="#i-dash-lg"></use></svg></button><button id="dashboard-zoom-in" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Zoom chart in" data-tooltip="Zoom chart in"><svg class="hw-icon" width="13" height="13" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg></button><button id="dashboard-pan-forward" type="button" class="btn btn-sm btn-outline-secondary" aria-label="Pan chart forward" data-tooltip="Pan chart forward"><svg class="hw-icon" width="13" height="13" aria-hidden="true" focusable="false"><use href="#i-arrow-right"></use></svg></button></div>
+        </div>
+        <fieldset id="dashboard-legend" class="dashboard-legend"><legend class="visually-hidden">Chart series</legend>
+            <label><input type="checkbox" value="volume" checked> Volume</label><label><input type="checkbox" value="successful" checked> Success</label><label><input type="checkbox" value="failed" checked> Failure</label><label><input type="checkbox" value="failure_rate" checked> Failure rate</label><label><input type="checkbox" value="p95"> P95 latency</label>
+        </fieldset>
+        <div id="dashboard-chart-empty" class="dashboard-chart-empty d-none">No events in the selected range (<span class="hw-range-label">last 24 hours</span>). Widen the range: <button type="button" class="btn btn-sm btn-outline-secondary hw-range-quick" data-range="7d">7 days</button> <button type="button" class="btn btn-sm btn-outline-secondary hw-range-quick" data-range="30d">30 days</button> <button type="button" class="btn btn-sm btn-outline-secondary hw-range-quick" data-range="90d">90 days</button></div>
+        <div id="dashboard-chart" class="dashboard-chart" role="img" aria-label="Event volume, success, failure, failure rate, and latency chart"></div>
+        <div class="table-responsive" tabindex="0" role="region" aria-label="Event analytics data"><table class="table table-sm table-dark table-striped mb-0"><caption class="visually-hidden">Accessible event analytics data</caption><thead><tr><th>Date</th><th>Volume</th><th>Success</th><th>Failed</th><th>Failure rate</th><th>P50</th><th>P95</th><th>P99</th></tr></thead><tbody id="dashboard-chart-table"></tbody></table></div>
+        <div id="dashboard-endpoint-activity" class="dashboard-endpoint-activity" role="region" aria-label="Endpoint activity comparison"></div>
+    </div>
+</section>
+
+<script src="{{ url_for('static', filename='js/dashboard.js', v='20260907f') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260907f') }}"></script>
+
+<script>
+    // Punkt am Stream-Filter, sobald einer der Filter greift -- zugeklappt
+    // waere sonst nicht erkennbar, dass der Feed gefiltert ist.
+    (function () {
+        const dot = document.getElementById('hw-activity-filter-dot');
+        const menue = document.getElementById('hw-activity-filter');
+        if (!dot || !menue) return;
+        const ids = ['activity-severity', 'activity-action', 'activity-status',
+                     'activity-endpoint', 'activity-board'];
+        const zeigen = () => {
+            dot.hidden = !ids.some(id => {
+                const el = document.getElementById(id);
+                return el && el.value;
+            });
+        };
+        menue.addEventListener('change', zeigen);
+        zeigen();
+    })();
+</script>
+
 {% endblock %}
