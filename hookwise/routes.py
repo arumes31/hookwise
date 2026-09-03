@@ -8,8 +8,18 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_from_directory, session, url_for
-from sqlalchemy import case, func
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
+from sqlalchemy import func
 
 from .extensions import db
 from .models import WebhookConfig, WebhookLog
@@ -327,7 +337,7 @@ def webhook_detail_json(config_id: str) -> Any:
         },
         "latenzen": [
             {"ms": m, "ok": log.status not in ("failed", "dlq")}
-            for m, log in zip(ms, logs)
+            for m, log in zip(ms, logs, strict=True)
         ],
         "deliveries": [
             {

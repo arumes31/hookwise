@@ -11,8 +11,8 @@ der Autogenerate-Fassung fuer eine einzelne nullable Spalte.
 Revision ID: 9a4b7c1d2e3f
 Revises: c8e3f1a2b5d6
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "9a4b7c1d2e3f"
 down_revision = "c8e3f1a2b5d6"

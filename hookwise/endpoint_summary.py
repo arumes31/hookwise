@@ -200,7 +200,10 @@ def _register() -> None:
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "endpoints": _build_summaries(configs),
                 "token_matches": matches,
-                "token_search_hint": "Use token: followed by at least the last 4 token characters (a full token works too).",
+                "token_search_hint": (
+                    "Use token: followed by at least the last 4 token characters "
+                    "(a full token works too)."
+                ),
             }
         )
 

@@ -121,7 +121,10 @@ def _register_crud_routes(main_bp: Any) -> None:
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
                 timeout_hours=_get_int_form_value("timeout_hours", 24),
-                notify_failure_threshold=_get_int_form_value("notify_failure_threshold", 0, min_val=0, max_val=1000) or None,
+                notify_failure_threshold=_get_int_form_value(
+                    "notify_failure_threshold", 0, min_val=0, max_val=1000
+                )
+                or None,
                 notify_window_minutes=max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440)),
                 rate_limit_per_minute=_get_int_form_value("rate_limit_per_minute", 60, 1, 10000),
                 retry_enabled=request.form.get("retry_enabled", "true") == "true",
@@ -199,7 +202,9 @@ def _register_crud_routes(main_bp: Any) -> None:
             config.ai_prompt_template = request.form.get("ai_prompt_template")
             config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
             config.timeout_hours = _get_int_form_value("timeout_hours", 24)
-            config.notify_failure_threshold = _get_int_form_value("notify_failure_threshold", 0, min_val=0, max_val=1000) or None
+            config.notify_failure_threshold = (
+                _get_int_form_value("notify_failure_threshold", 0, min_val=0, max_val=1000) or None
+            )
             config.notify_window_minutes = max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440))
             config.rate_limit_per_minute = _get_int_form_value("rate_limit_per_minute", 60, 1, 10000)
             config.retry_enabled = request.form.get("retry_enabled", "true") == "true"
