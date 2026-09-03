@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hookwise"
-version = "2.3.2"
+version = "2.4.0"
 description = "Enterprise webhook router and ConnectWise Manage bridge"
 authors = [{name = "HookWise Team"}]
 license = "MIT"
