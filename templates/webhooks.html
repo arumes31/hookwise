@@ -61,11 +61,11 @@
         <button id="refresh-endpoints" type="button" class="btn btn-outline-info" aria-label="Refresh endpoint telemetry">Refresh</button>
         {# Nr. 13: Import aus einer Export-Datei; das Dateifeld bleibt
            unsichtbar, der Knopf oeffnet den Dateidialog. #}
-        <button type="button" id="hw-import-knopf" class="btn btn-outline-secondary"
+        <button type="button" id="hw-import-knopf" class="btn btn-outline-secondary" data-braucht="endpoint:write"
                 aria-label="Import endpoint from JSON file">Import</button>
         <input type="file" id="hw-import-datei" accept=".json,application/json" hidden
                aria-label="Choose a HookWise endpoint file">
-        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center">
+        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center" data-braucht="endpoint:write">
             <svg class="hw-icon me-2" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>
             Create New
         </a>
@@ -92,11 +92,11 @@
         <datalist id="hw-boards"></datalist>
         <input id="hw-bulk-prio" class="form-control form-control-sm bg-dark border-secondary text-white"
                style="width:130px" placeholder="Priority&hellip;" aria-label="Set priority for selected endpoints">
-        <button class="btn btn-sm btn-outline-primary" onclick="bulkFieldUpdate()">Apply</button>
+        <button class="btn btn-sm btn-outline-primary" data-braucht="endpoint:write" onclick="bulkFieldUpdate()">Apply</button>
         <span class="vr opacity-25"></span>
-        <button class="btn btn-sm btn-outline-warning" onclick="bulkArchive()">Archive Selected</button>
-        <button class="btn btn-sm btn-outline-warning" onclick="bulkPause()">Pause Selected</button>
-        <button class="btn btn-sm btn-outline-success" onclick="bulkResume()">Resume Selected</button>
+        <button class="btn btn-sm btn-outline-warning" data-braucht="endpoint:archive" onclick="bulkArchive()">Archive Selected</button>
+        <button class="btn btn-sm btn-outline-warning" data-braucht="endpoint:write" onclick="bulkPause()">Pause Selected</button>
+        <button class="btn btn-sm btn-outline-success" data-braucht="endpoint:write" onclick="bulkResume()">Resume Selected</button>
         <button class="btn btn-sm btn-outline-info" onclick="bulkExport()">Export Selected</button>
     </div>
 </div>
@@ -136,7 +136,7 @@
             </div>
         </div>
 
-        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary btn-lg mt-5 px-5">Create First Endpoint</a>
+        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary btn-lg mt-5 px-5" data-braucht="endpoint:write">Create First Endpoint</a>
     </div>
 </div>
 {% else %}
@@ -221,12 +221,12 @@
                        Token-Rotation wandern ins Overflow-Menue: Rotation macht den
                        Sender-Token sofort ungueltig und gehoert nicht einen Klick weit
                        weg. Alle onclick-Handler und aria-labels sind unveraendert. #}
-                    <button onclick="toggleEndpoint('{{ config.id }}')"
+                    <button data-braucht="endpoint:write" onclick="toggleEndpoint('{{ config.id }}')"
                         class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
                         data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}" aria-label="{{ 'Resume' if not config.is_enabled else 'Pause' }} endpoint">
                         {% if config.is_enabled %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pause-circle"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-play-circle"></use></svg>{% endif %}
                     </button>
-                    <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}"
+                    <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}" data-braucht="endpoint:write"
                         class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings" aria-label="Edit endpoint settings">
                         <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-gear-fill"></use></svg>
                     </a>
@@ -238,7 +238,7 @@
                             </svg>
                         </summary>
                         <div class="hw-more-menu">
-                        <span class="hw-more-row">
+                        <span class="hw-more-row" data-braucht="endpoint:write">
                         <button onclick="togglePin('{{ config.id }}')"
                             class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
                             data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
@@ -261,28 +261,28 @@
                         </a>
                             <span class="hw-more-text">Export as JSON</span>
                         </span>
-                        <span class="hw-more-row">
+                        <span class="hw-more-row" data-braucht="endpoint:archive">
                         <button onclick="archiveEndpoint('{{ config.id }}')"
                             class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Archive endpoint" aria-label="Archive endpoint">
                             <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>
                         </button>
                             <span class="hw-more-text">Archive</span>
                         </span>
-                        <span class="hw-more-row">
+                        <span class="hw-more-row" data-braucht="endpoint:write">
                         <button onclick="cloneEndpoint('{{ config.id }}')"
                             class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Duplicate endpoint" aria-label="Duplicate endpoint">
                             <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg>
                         </button>
                             <span class="hw-more-text">Duplicate</span>
                         </span>
-                        <span class="hw-more-row">
+                        <span class="hw-more-row" data-braucht="endpoint:test">
                         <button onclick="testEndpoint('{{ config.id }}')"
                             class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook" aria-label="Test webhook">
                             <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-play-fill"></use></svg>
                         </button>
                             <span class="hw-more-text">Send test webhook</span>
                         </span>
-                        <span class="hw-more-row">
+                        <span class="hw-more-row" data-braucht="secret:rotate" data-braucht-modus="sperren">
                         <button onclick="confirmRotate('{{ config.id }}', {{ config.name | tojson }})"
                             class="btn btn-sm btn-link p-0 text-secondary hover-warning" data-tooltip="Rotate Token" aria-label="Rotate endpoint token">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" /></svg>
@@ -450,7 +450,7 @@
                     <span class="hw-draftpille">DRAFT</span>
                 </div>
                 <div class="small text-secondary">Not live yet &mdash; finish it via Edit.</div>
-                <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}"
+                <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}" data-braucht="endpoint:write"
                    class="btn btn-sm btn-outline-secondary mt-3">Edit</a>
             </div>
         </div>
@@ -477,7 +477,7 @@
                     <span class="text-secondary hw-t-xs">archived {{ config.archived_at.strftime('%d.%m.%Y') }}</span>
                     <form method="POST" action="{{ url_for('main.restore_endpoint', config_id=config.id) }}" class="ms-auto">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">Restore</button>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary" data-braucht="endpoint:archive">Restore</button>
                     </form>
                 </div>
                 {% endfor %}
@@ -514,11 +514,12 @@
     <div class="hw-feldlabel">Signing secret</div>
     <div class="hw-drawer-feld">
         <code id="hw-drawer-secret" class="flex-grow-1">whsec_................</code>
-        <button id="hw-drawer-auge" class="btn btn-sm btn-link p-0 text-secondary" aria-label="Reveal secret">
+        <button id="hw-drawer-auge" class="btn btn-sm btn-link p-0 text-secondary" data-braucht="secret:reveal"
+            data-braucht-modus="sperren" aria-label="Reveal secret">
             <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-eye"></use></svg>
         </button>
     </div>
-    <button id="hw-drawer-rotate"
+    <button id="hw-drawer-rotate" data-braucht="secret:rotate" data-braucht-modus="sperren"
         class="btn btn-sm btn-link p-0 mt-2 mb-3 text-warning fw-bold text-decoration-none hw-t-xs text-uppercase ls-1">
         <svg class="hw-icon me-1" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg><span>Rotate secret</span>
     </button>
@@ -537,8 +538,8 @@
     <div id="hw-drawer-rows" class="mb-3"></div>
 
     <div class="d-flex gap-2">
-        <button id="hw-drawer-test" class="btn btn-primary flex-grow-1 fw-bold hw-t-sm text-uppercase">Test webhook</button>
-        <a id="hw-drawer-edit" href="#" class="btn btn-outline-secondary hw-t-sm">Edit</a>
+        <button id="hw-drawer-test" class="btn btn-primary flex-grow-1 fw-bold hw-t-sm text-uppercase" data-braucht="endpoint:test">Test webhook</button>
+        <a id="hw-drawer-edit" href="#" class="btn btn-outline-secondary hw-t-sm" data-braucht="endpoint:write">Edit</a>
         <a id="hw-drawer-history" href="#" class="btn btn-outline-secondary hw-t-sm">History</a>
     </div>
 </aside>
@@ -618,7 +619,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
             </div>
             <div class="modal-body text-center py-5">
-                <img src="{{ url_for('static', filename='img/logo.png', v='20260909d') }}" alt="HookWise" height="80" class="mb-4">
+                <img src="{{ url_for('static', filename='img/logo.png', v='20260909e') }}" alt="HookWise" height="80" class="mb-4">
                 <h3 class="fw-bold">Let's get you set up.</h3>
                 <p class="text-secondary mb-5">HookWise bridges your monitoring tools to ConnectWise Manage tickets.</p>
 
@@ -709,8 +710,8 @@
 
 <meta name="hookwise-cw-url" content="{{ cw_url }}">
 
-<script src="{{ url_for('static', filename='js/dashboard.js', v='20260909d') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260909d') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js', v='20260909e') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260909e') }}"></script>
 
 <script>
     // Endpoint-Detail-Drawer: ersetzt die fruehere Detailseite.

@@ -54,10 +54,18 @@ def _register_rbac(app: Flask) -> None:
 
     @app.context_processor
     def _rbac_kontext() -> dict:
-        # Fuer Templates: Navigation zeigt nur, was die Sitzung auch darf.
-        from .rbac.resolver import has_permission
+        # Fuer Templates: Navigation und Aktionen zeigen nur, was die Sitzung
+        # auch darf. hw_rechte speist die <meta name="hw-perms"> fuer ux.js;
+        # der Server bleibt die einzige Autoritaet, die UI ist Kosmetik.
+        from .rbac.catalog import ALL_PERMISSIONS
+        from .rbac.resolver import current_permissions, has_permission
 
-        return {"hw_kann": has_permission}
+        def hw_rechte() -> str:
+            if app.config.get("RBAC_ENFORCE", "log") == "off":
+                return " ".join(sorted(ALL_PERMISSIONS))
+            return " ".join(sorted(current_permissions()))
+
+        return {"hw_kann": has_permission, "hw_rechte": hw_rechte}
 
 
 def _configure_app(app: Flask) -> None:

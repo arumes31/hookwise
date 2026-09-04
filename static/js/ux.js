@@ -1161,3 +1161,63 @@ document.addEventListener('keydown', (e) => {
         });
     }
 });
+
+// ---------------------------------------------------------------------------
+// Rechte-abhaengige Oberflaeche (data-braucht)
+// Regel: Ausblenden ist der Standard, Sperren mit Hinweis die Ausnahme
+// (data-braucht-modus="sperren", z. B. Secrets). Nur Anzeige-Logik -- der
+// Server prueft jede Aktion selbst.
+// ---------------------------------------------------------------------------
+(function () {
+    const meta = document.querySelector('meta[name="hw-perms"]');
+    const rechte = meta ? new Set(meta.content.split(' ').filter(Boolean)) : null;
+
+    window.hwDarf = (recht) => !rechte || rechte.has(recht);
+
+    window.hwRechteAnwenden = (wurzel) => {
+        if (!rechte) return;
+        const bereich = wurzel && wurzel.querySelectorAll ? wurzel : document;
+        const ziele = [...bereich.querySelectorAll('[data-braucht]:not([data-braucht-fertig])')];
+        if (bereich.matches && bereich.matches('[data-braucht]:not([data-braucht-fertig])')) ziele.push(bereich);
+        ziele.forEach(el => {
+            el.setAttribute('data-braucht-fertig', '1');
+            if (window.hwDarf(el.dataset.braucht)) return;
+            if (el.dataset.brauchtModus === 'sperren') {
+                const hinweis = 'Requires ' + el.dataset.braucht;
+                el.classList.add('hw-gesperrt');
+                el.setAttribute('aria-disabled', 'true');
+                if (el.hasAttribute('data-tooltip')) el.setAttribute('data-tooltip', hinweis);
+                else el.title = hinweis;
+                el.querySelectorAll('button, input, select, textarea').forEach(k => { k.disabled = true; });
+                if (el.matches('button, input, select, textarea')) el.disabled = true;
+            } else {
+                // Klasse zusaetzlich zu hidden: Seiten-JS, das Elemente ueber
+                // .hidden wieder einblendet (z. B. der DLQ-Replay-Knopf),
+                // kann die Rechte-Entscheidung nicht aufheben.
+                el.hidden = true;
+                el.classList.add('hw-verboten');
+            }
+        });
+    };
+
+    // Gesperrte Elemente schlucken jeden Klick, bevor onclick-Attribute feuern.
+    document.addEventListener('click', (ev) => {
+        if (ev.target.closest && ev.target.closest('.hw-gesperrt')) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        }
+    }, true);
+
+    // Deckt HTMX-Swaps und alle JS-Renderer ab, ohne jeden einzeln anzufassen.
+    const beobachter = new MutationObserver(muts => {
+        for (const m of muts) {
+            m.addedNodes.forEach(k => { if (k.nodeType === 1) window.hwRechteAnwenden(k); });
+        }
+    });
+    const start = () => {
+        window.hwRechteAnwenden(document);
+        beobachter.observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+})();

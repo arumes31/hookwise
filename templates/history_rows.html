@@ -99,12 +99,12 @@
                 <button class="hw-more-row history-diagnostics" type="button" data-log-id="{{ log.id }}"><span
                         class="hw-more-text">Diagnose</span></button>
                 {% if log.status in ['failed', 'dlq', 'retrying'] %}
-                <button class="hw-more-row history-retry" type="button" data-log-id="{{ log.id }}"><span
+                <button class="hw-more-row history-retry" type="button" data-braucht="history:retry" data-log-id="{{ log.id }}"><span
                         class="hw-more-text">Retry now</span></button>
                 {% endif %}
-                <button class="hw-more-row" onclick="replayWebhook('{{ log.id }}')"><span
+                <button class="hw-more-row" data-braucht="history:retry" onclick="replayWebhook('{{ log.id }}')"><span
                         class="hw-more-text">Resend</span></button>
-                <button class="hw-more-row hw-more-danger" onclick="deleteHistory('{{ log.id }}')"><span
+                <button class="hw-more-row hw-more-danger" data-braucht="history:delete" onclick="deleteHistory('{{ log.id }}')"><span
                         class="hw-more-text">Delete</span></button>
             </div>
         </details>

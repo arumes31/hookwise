@@ -47,7 +47,7 @@
                 <option value="entra">Entra ID</option>
             </select>
             <span id="user-zaehler" class="text-secondary small ms-auto"></span>
-            <button class="btn btn-primary fw-bold" id="user-neu-btn">
+            <button class="btn btn-primary fw-bold" id="user-neu-btn" data-braucht="user:manage">
                 <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>New user
             </button>
         </div>
@@ -111,7 +111,7 @@
                 <h2 class="h6 fw-bold text-light mb-1">Provisioning</h2>
                 <p class="small text-secondary mb-3">Switchable at runtime &mdash; no restart required.</p>
 
-                <div class="hw-prov-wahl">
+                <div class="hw-prov-wahl" data-braucht="user:manage" data-braucht-modus="sperren">
                     <button type="button" class="hw-prov-karte{% if not auto_provision %} an{% endif %}"
                         data-modus="vorab" aria-pressed="{{ 'false' if auto_provision else 'true' }}">
                         <span class="hw-prov-punkt"></span>
@@ -132,7 +132,8 @@
                     </button>
                 </div>
 
-                <div id="auto-block" class="mt-3 pt-3 border-top border-secondary border-opacity-10"
+                <div id="auto-block" data-braucht="user:manage" data-braucht-modus="sperren"
+                    class="mt-3 pt-3 border-top border-secondary border-opacity-10"
                     {% if not auto_provision %}hidden{% endif %}>
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -155,7 +156,8 @@
                 </div>
 
                 <div class="d-flex gap-2 mt-3">
-                    <button class="btn btn-primary fw-bold" id="prov-speichern">Save provisioning</button>
+                    <button class="btn btn-primary fw-bold" id="prov-speichern" data-braucht="user:manage"
+                        data-braucht-modus="sperren">Save provisioning</button>
                     <span id="prov-status" class="align-self-center small text-secondary"></span>
                 </div>
             </div>
@@ -174,7 +176,7 @@
                         <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
                             <h2 class="h6 fw-bold text-light mb-0" id="matrix-titel">&mdash;</h2>
                             <span class="small text-secondary" id="matrix-sub"></span>
-                            <button class="btn btn-sm btn-primary fw-bold ms-auto" id="rolle-speichern" hidden>Save role</button>
+                            <button class="btn btn-sm btn-primary fw-bold ms-auto" id="rolle-speichern" data-braucht="user:manage" hidden>Save role</button>
                         </div>
                         <div id="matrix"></div>
                     </div>
@@ -342,10 +344,10 @@
                   <td><span class="badge ${u.is_active ? 'bg-success' : 'bg-secondary'}">${u.is_active ? 'ACTIVE' : 'DISABLED'}</span></td>
                   <td class="small text-secondary">${u.last_login_at ? esc(u.last_login_at.slice(0, 16).replace('T', ' ')) : 'never'}</td>
                   <td class="pe-4 text-end text-nowrap">
-                    <button class="btn btn-sm btn-outline-secondary" data-rollen="${esc(u.id)}">Roles</button>
-                    <button class="btn btn-sm btn-outline-warning" data-aktiv="${esc(u.id)}">${u.is_active ? 'Disable' : 'Enable'}</button>
+                    <button class="btn btn-sm btn-outline-secondary" data-braucht="user:manage" data-rollen="${esc(u.id)}">Roles</button>
+                    <button class="btn btn-sm btn-outline-warning" data-braucht="user:manage" data-aktiv="${esc(u.id)}">${u.is_active ? 'Disable' : 'Enable'}</button>
                     <button class="btn btn-sm ${offenDetail === u.id ? 'btn-secondary' : 'btn-outline-secondary'}"
-                      data-detail="${esc(u.id)}" aria-expanded="${offenDetail === u.id}">Manage</button>
+                      data-braucht="user:manage" data-detail="${esc(u.id)}" aria-expanded="${offenDetail === u.id}">Manage</button>
                   </td>
                 </tr>${offenDetail === u.id ? detailHtml(u) : ''}`).join('')
                 || '<tr><td colspan="6" class="text-center text-secondary py-4">No users match.</td></tr>';
@@ -590,7 +592,7 @@
                     <span><code class="text-info">${esc(p.key)}</code>
                       <span class="text-secondary small"> &mdash; ${esc(p.text)}</span></span>
                     <input class="form-check-input" type="checkbox" data-perm="${esc(p.key)}"
-                      ${gesetzt.has(p.key) ? 'checked' : ''} ${rolle.is_builtin ? 'disabled' : ''}
+                      ${gesetzt.has(p.key) ? 'checked' : ''} ${rolle.is_builtin || !window.hwDarf('user:manage') ? 'disabled' : ''}
                       aria-label="${esc(p.key)}">
                   </div>`).join('')}`).join('');
         }

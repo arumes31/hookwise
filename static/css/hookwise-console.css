@@ -2101,6 +2101,11 @@ input[type="password"]::-ms-clear { display:none; }
 }
 .hw-prov-karte.an { border-color:var(--accent); background:var(--accent-soft); }
 .hw-prov-karte[disabled] { opacity:.55; cursor:not-allowed; }
+/* Aktionen, die der Sitzung fehlen: versteckt (Standard) oder gesperrt (Secrets u. ae.) */
+.hw-verboten { display:none !important; }
+.hw-gesperrt, .hw-gesperrt * { cursor:not-allowed !important; }
+.hw-gesperrt { opacity:.45; }
+.hw-gesperrt a { pointer-events:none; }
 .hw-nutzer-detail > td {
     background:var(--bg-sunken);
     border-top:1px dashed var(--line-2);

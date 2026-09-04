@@ -30,15 +30,18 @@
     {# Favicon = die geroutete Hook-Marke (templates/_brand.html), nicht mehr
        das alte Logo. SVG zuerst (scharf in jeder Groesse), PNG als Fallback
        fuer Altbrowser, Apple-Touch fuer Homescreen-Verknuepfungen. #}
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ url_for('static', filename='img/favicon-hook.svg', v='20260909d') }}">
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ url_for('static', filename='img/favicon-hook-light.svg', v='20260909d') }}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-hook-32.png', v='20260909d') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-hook.png', v='20260909d') }}">
-    <link href="{{ url_for('static', filename='css/bootstrap.min.css', v='20260909d') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/prism.css', v='20260909d') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css', v='20260909d') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/hookwise-console.css', v='20260909d') }}" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ url_for('static', filename='img/favicon-hook.svg', v='20260909e') }}">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ url_for('static', filename='img/favicon-hook-light.svg', v='20260909e') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-hook-32.png', v='20260909e') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-hook.png', v='20260909e') }}">
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css', v='20260909e') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/prism.css', v='20260909e') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css', v='20260909e') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/hookwise-console.css', v='20260909e') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {# Rechte der Sitzung fuer ux.js (data-braucht). Nur Anzeige-Logik --
+       durchgesetzt wird serverseitig. #}
+    <meta name="hw-perms" content="{{ hw_rechte() }}">
     {# Theme is applied before first paint so an explicit choice never flashes. #}
     <script>
         (function () {
@@ -51,16 +54,16 @@
             } catch (e) { /* private mode: keep the default */ }
         })();
     </script>
-    <script src="{{ url_for('static', filename='js/http.js', v='20260909d') }}"></script>
-    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/socket.io.min.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/prism.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mini-charts.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/htmx.min.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/ux.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/activity.js', v='20260909d') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/history-operations.js', v='20260909d') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/http.js', v='20260909e') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/socket.io.min.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/prism.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mini-charts.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/htmx.min.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/ux.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/activity.js', v='20260909e') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/history-operations.js', v='20260909e') }}" defer></script>
 </head>
 
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
@@ -197,10 +200,12 @@
                 <a class="nav-link" href="#" data-bs-toggle="offcanvas" data-bs-target="#docsSidebar">
                     {{ nav_icon('docs') }}<span>Docs</span>
                 </a>
+                {% if hw_kann('endpoint:write') %}
                 <a class="nav-link nav-link-action{% if request.endpoint == 'main.new_endpoint' %} active{% endif %}"
                     href="{{ url_for('main.new_endpoint') }}"{% if request.endpoint == 'main.new_endpoint' %} aria-current="page"{% endif %}>
                     {{ nav_icon('new') }}<span>New Endpoint</span>
                 </a>
+                {% endif %}
             </div>
             </div>
         </div>

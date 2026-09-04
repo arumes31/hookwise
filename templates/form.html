@@ -776,8 +776,8 @@
 {% endif %}
 <meta name="hookwise-base-url" content="{{ base_url }}">
 <script id="endpoint-template-data" type="application/json">{{ endpoint_templates|default({})|tojson }}</script>
-<script src="{{ url_for('static', filename='js/endpoint-form-fields.js', v='20260909d') }}"></script>
-<script src="{{ url_for('static', filename='js/endpoint-form-actions.js', v='20260909d') }}"></script>
+<script src="{{ url_for('static', filename='js/endpoint-form-fields.js', v='20260909e') }}"></script>
+<script src="{{ url_for('static', filename='js/endpoint-form-actions.js', v='20260909e') }}"></script>
 <script>
     /* Stepper: General -> Routing -> Security -> Delivery. "Next" blaettert,
        der Absende-Knopf erscheint erst im letzten Schritt. Die Schritte oben
@@ -831,6 +831,6 @@
         })();
     }
 </script>
-<script src="{{ url_for('static', filename='js/endpoint-form.js', v='20260909d') }}"></script>
+<script src="{{ url_for('static', filename='js/endpoint-form.js', v='20260909e') }}"></script>
 {% include 'dry_run_modal.html' %}
 {% endblock %}
