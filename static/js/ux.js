@@ -53,6 +53,9 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
 });
 
 function reinitApp(container) {
+    // Start autosave first. Its readiness event must not depend on any unrelated
+    // page initializer succeeding (browser storage may be denied, for example).
+    initAutoSave(container);
     initSearch(container);
     initBulkActions(container);
     initServiceHealth(container);
@@ -60,7 +63,6 @@ function reinitApp(container) {
     initTransitions(container);
     initDragAndDrop(container);
     initContextMenu(container);
-    initAutoSave(container);
     initFeedback(container);
     initPullToRefresh(container);
     initOnboarding(container);
@@ -366,12 +368,12 @@ function initServiceHealth(container = document) {
     const faviconBilder = { dark: new Image(), light: new Image() };
     // Quellen aus den <link>-Tags uebernehmen: die tragen den ?v=-Parameter,
     // sonst liefert der Browser-Cache ein veraltetes SVG in den Canvas.
-    const faviconQuelle = (schema, fallback) => {
+    const faviconQuelle = (schema) => {
         const link = document.querySelector('link[rel="icon"][media*="' + schema + '"]');
-        return link ? link.href : fallback;
+        return link ? link.href : '';
     };
-    faviconBilder.dark.src = faviconQuelle('dark', '/static/img/favicon-hook.svg');
-    faviconBilder.light.src = faviconQuelle('light', '/static/img/favicon-hook-light.svg');
+    faviconBilder.dark.src = faviconQuelle('dark');
+    faviconBilder.light.src = faviconQuelle('light');
     let faviconStatus = 'up';
     const schemaHell = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
     const updateFavicon = (status) => {
@@ -926,53 +928,146 @@ if (!window.originalFetch) {
     };
 }
 
+function endpointAutosaveFields(form) {
+    const skippedTypes = new Set(['button', 'file', 'hidden', 'reset', 'submit']);
+    return Array.from(form.elements).filter((field) =>
+        field.name
+        && field.dataset.autosave !== 'ignore'
+        && !field.disabled
+        && !skippedTypes.has(field.type));
+}
+
+function endpointAutosaveState(form) {
+    const data = {};
+    endpointAutosaveFields(form).forEach((field) => {
+        if (field.type === 'checkbox') {
+            data[field.name] = field.checked;
+        } else if (field.type !== 'radio' || field.checked) {
+            data[field.name] = field.value;
+        }
+    });
+    return data;
+}
+
+function sanitizeEndpointAutosave(form, data) {
+    const allowedNames = new Set(endpointAutosaveFields(form).map((field) => field.name));
+    Object.keys(data).forEach((key) => {
+        if (!allowedNames.has(key)) delete data[key];
+    });
+    return data;
+}
+
+function restoreEndpointAutosave(form, data) {
+    endpointAutosaveFields(form).forEach((field) => {
+        if (!Object.prototype.hasOwnProperty.call(data, field.name)) return;
+        const value = data[field.name];
+        if (field.type === 'checkbox') {
+            field.checked = value === true || value === 'true' || value === 'on';
+        } else if (field.type === 'radio') {
+            field.checked = field.value === value;
+        } else {
+            if (field.tagName === 'SELECT') field.dataset.autosaveRestored = 'true';
+            if (
+                field.tagName === 'SELECT'
+                && value
+                && !Array.from(field.options).some(option => option.value === value)
+            ) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = `${value} (restored draft)`;
+                option.selected = true;
+                field.appendChild(option);
+            }
+            field.value = value;
+        }
+    });
+}
+
 async function initAutoSave() {
     const form = document.getElementById('endpoint-form');
-    if (!form) return;
+    if (!form || ['loading', 'true'].includes(form.dataset.autosaveInitialized)) return;
+    form.dataset.autosaveInitialized = 'loading';
 
     const formId = window.location.pathname;
-    const saved = localStorage.getItem('autosave_' + formId);
-    if (saved) {
-        const data = JSON.parse(saved);
-        const isEditPage = window.location.pathname.includes('/endpoint/edit/');
+    const storageKey = 'autosave_' + formId;
+    try {
+        let saved = null;
+        try {
+            saved = localStorage.getItem(storageKey);
+        } catch (error) {
+            console.warn('Endpoint autosave storage is unavailable', error);
+        }
+        if (saved) {
+            let parsed;
+            try {
+                parsed = JSON.parse(saved);
+            } catch (error) {
+                console.warn('Discarding malformed endpoint autosave data', error);
+                try {
+                    localStorage.removeItem(storageKey);
+                } catch (_storageError) {
+                    // Storage failures must not block ConnectWise field initialization.
+                }
+            }
 
-        const proceed = isEditPage || await hwConfirm('Restore unsaved changes?', {
-            title: 'Unsaved Changes',
-            okText: 'Restore',
-            cancelText: 'Discard'
-        });
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                const data = sanitizeEndpointAutosave(form, parsed);
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(data));
+                } catch (_storageError) {
+                    // Restoring the in-memory form is still safe without persistence.
+                }
+                const isEditPage = window.location.pathname.includes('/endpoint/edit/');
+                const proceed = isEditPage || await hwConfirm('Restore unsaved changes?', {
+                    title: 'Unsaved Changes',
+                    okText: 'Restore',
+                    cancelText: 'Discard'
+                });
 
-        if (proceed) {
-            Object.keys(data).forEach(key => {
-                const el = form.elements[key];
-                if (el) {
-                    if (el.type === 'checkbox' || el.type === 'radio') {
-                        el.checked = (data[key] === 'true' || data[key] === 'on' || data[key] === true);
-                    } else {
-                        el.value = data[key];
+                if (proceed) {
+                    restoreEndpointAutosave(form, data);
+                    if (window.updatePreview) window.updatePreview();
+                    if (window.toggleBearerMgmt) window.toggleBearerMgmt();
+                    if (window.toggleAdvanced) window.toggleAdvanced();
+                    if (window.toggleAI) window.toggleAI();
+
+                    if (isEditPage) showToast('Auto-restored unsaved changes', 'info');
+                } else {
+                    try {
+                        localStorage.removeItem(storageKey);
+                    } catch (_storageError) {
+                        // A denied storage write does not affect the live form.
                     }
                 }
-            });
-            if (window.updatePreview) window.updatePreview();
-            if (window.toggleBearerMgmt) window.toggleBearerMgmt();
-            if (window.toggleAdvanced) window.toggleAdvanced();
-            if (window.toggleAI) window.toggleAI();
-
-            if (isEditPage) showToast('Auto-restored unsaved changes', 'info');
-        } else {
-            localStorage.removeItem('autosave_' + formId);
+            }
         }
+
+        const persistEndpointAutosave = () => {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(endpointAutosaveState(form)));
+            } catch (_storageError) {
+                // Autosave is optional when browser storage is unavailable.
+            }
+        };
+        form.addEventListener('input', persistEndpointAutosave);
+        // Select controls reliably emit change. For board changes this bubbles
+        // after the endpoint handler has synchronously cleared old dependents.
+        form.addEventListener('change', persistEndpointAutosave);
+
+        form.addEventListener('submit', () => {
+            try {
+                localStorage.removeItem(storageKey);
+            } catch (_storageError) {
+                // Submission must continue even when browser storage is unavailable.
+            }
+        });
+    } catch (error) {
+        console.error('Error initializing endpoint autosave', error);
+    } finally {
+        form.dataset.autosaveInitialized = 'true';
+        form.dataset.autosaveReady = 'true';
+        form.dispatchEvent(new CustomEvent('hookwise:autosave-ready', { bubbles: true }));
     }
-
-    form.addEventListener('input', () => {
-        const data = {};
-        new FormData(form).forEach((value, key) => data[key] = value);
-        localStorage.setItem('autosave_' + formId, JSON.stringify(data));
-    });
-
-    form.addEventListener('submit', () => {
-        localStorage.removeItem('autosave_' + formId);
-    });
 }
 
 function initFeedback() {
@@ -1134,10 +1229,10 @@ function initNotifications() {
 
 window.notifyFailure = function (data) {
     if (data.level === 'danger' && 'Notification' in window && Notification.permission === 'granted') {
-        new Notification('HookWise Alert: ' + data.config_name, {
-            body: data.message,
-            icon: '/static/img/logo.png'
-        });
+        const options = { body: data.message };
+        const logoUrl = document.querySelector('meta[name="hookwise-logo-url"]')?.content;
+        if (logoUrl) options.icon = logoUrl;
+        new Notification('HookWise Alert: ' + data.config_name, options);
     }
 };
 

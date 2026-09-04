@@ -52,8 +52,9 @@
                 </div>
             </div>
             <div class="card-body p-4">
-                <form method="POST" id="endpoint-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <form method="POST" id="endpoint-form" hx-boost="false">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"
+                        data-autosave="ignore" />
 
                     {# Live-Vorschau klebt oben im Viewport, damit Aenderungen an
                        Name/Prefix aus jedem Tab sofort sichtbar sind. Undo/Redo
@@ -159,6 +160,9 @@
                                         name="board"
                                         data-tooltip="The ConnectWise Service Board where tickets will be created.">
                                         <option value="">Loading...</option>
+                                        {% if config and config.board %}
+                                        <option value="{{ config.board }}" selected>{{ config.board }} (current value)</option>
+                                        {% endif %}
                                     </select>
                                     <input type="hidden" id="board_hidden" value="{{ config.board if config else '' }}">
                                 </div>
@@ -167,6 +171,9 @@
                                     <select class="form-select bg-dark border-secondary text-light" id="priority"
                                         name="priority" data-tooltip="The priority name to set on new tickets.">
                                         <option value="">Loading...</option>
+                                        {% if config and config.priority %}
+                                        <option value="{{ config.priority }}" selected>{{ config.priority }} (current value)</option>
+                                        {% endif %}
                                     </select>
                                     <input type="hidden" id="priority_hidden"
                                         value="{{ config.priority if config else '' }}">
@@ -186,6 +193,9 @@
                                     <select class="form-select bg-dark border-secondary text-light" id="status"
                                         name="status" data-tooltip="The status to set on new tickets.">
                                         <option value="">-- Select Board First --</option>
+                                        {% if config and config.status %}
+                                        <option value="{{ config.status }}" selected>{{ config.status }} (current value)</option>
+                                        {% endif %}
                                     </select>
                                     <input type="hidden" id="status_hidden"
                                         value="{{ config.status if config else '' }}">
@@ -196,6 +206,9 @@
                                         name="close_status"
                                         data-tooltip="The status to set when closing tickets (e.g., 'Completed' or 'Closed').">
                                         <option value="">-- Select Board First --</option>
+                                        {% if config and config.close_status %}
+                                        <option value="{{ config.close_status }}" selected>{{ config.close_status }} (current value)</option>
+                                        {% endif %}
                                     </select>
                                     <input type="hidden" id="close_status_hidden"
                                         value="{{ config.close_status if config else '' }}">
@@ -206,6 +219,14 @@
                                         id="ticket_prefix" name="ticket_prefix" placeholder="e.g. Alert:"
                                         value="{{ config.ticket_prefix if config else '' }}"
                                         data-tooltip="Text to prepend to the ConnectWise ticket title.">
+                                </div>
+                                <div class="col-12 d-none" id="connectwise-load-error" role="alert">
+                                    <div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 mb-0">
+                                        <span>Some ConnectWise lists could not be loaded.</span>
+                                        <button type="button" class="btn btn-sm btn-outline-warning" id="connectwise-retry">
+                                            Retry ConnectWise data
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-12">
                                     <div class="form-check form-switch">
@@ -242,6 +263,9 @@
                                                 <select class="form-select form-select-sm bg-dark border-secondary text-light"
                                                     id="ticket_type" name="ticket_type">
                                                     <option value="">-- Select Board --</option>
+                                                    {% if config and config.ticket_type %}
+                                                    <option value="{{ config.ticket_type }}" selected>{{ config.ticket_type }} (current value)</option>
+                                                    {% endif %}
                                                 </select>
                                                 <input type="hidden" id="type_hidden"
                                                     value="{{ config.ticket_type if config else '' }}">
@@ -251,6 +275,9 @@
                                                 <select class="form-select form-select-sm bg-dark border-secondary text-light"
                                                     id="subtype" name="subtype">
                                                     <option value="">-- Select Board --</option>
+                                                    {% if config and config.subtype %}
+                                                    <option value="{{ config.subtype }}" selected>{{ config.subtype }} (current value)</option>
+                                                    {% endif %}
                                                 </select>
                                                 <input type="hidden" id="subtype_hidden"
                                                     value="{{ config.subtype if config else '' }}">
@@ -260,6 +287,9 @@
                                                 <select class="form-select form-select-sm bg-dark border-secondary text-light"
                                                     id="item" name="item">
                                                     <option value="">-- Select Board --</option>
+                                                    {% if config and config.item %}
+                                                    <option value="{{ config.item }}" selected>{{ config.item }} (current value)</option>
+                                                    {% endif %}
                                                 </select>
                                                 <input type="hidden" id="item_hidden"
                                                     value="{{ config.item if config else '' }}">
@@ -444,7 +474,7 @@
                                                 <svg class="hw-icon" width="13" height="13" aria-hidden="true" focusable="false"><use href="#i-info-circle-fill"></use></svg>
                                             </button></span>
                                         <button type="button" class="btn btn-sm btn-outline-info"
-                                            onclick="addRoutingRule()">
+                                            id="add-routing-rule" onclick="addRoutingRule()" disabled>
                                             <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>Add Rule
                                         </button>
                                     </div>
@@ -559,7 +589,7 @@
                                     <input type="text"
                                         class="form-control font-monospace bg-dark border-secondary text-warning small"
                                         id="hmac_secret" name="hmac_secret" placeholder="Optional shared secret"
-                                        value=""
+                                        value="" data-autosave="ignore"
                                         data-tooltip="If set, incoming webhooks must include timestamped, nonce-protected HMAC headers.">
                                     {% if config and config.hmac_secret %}<div class="form-text">An encrypted secret is configured. Leave blank to keep it.</div>{% endif %}
                                 </div>
@@ -800,8 +830,8 @@
 {% endif %}
 <meta name="hookwise-base-url" content="{{ base_url }}">
 <script id="endpoint-template-data" type="application/json">{{ endpoint_templates|default({})|tojson }}</script>
-<script src="{{ url_for('static', filename='js/endpoint-form-fields.js', v='20260909e') }}"></script>
-<script src="{{ url_for('static', filename='js/endpoint-form-actions.js', v='20260909e') }}"></script>
+<script src="{{ static_asset('js/endpoint-form-fields.js') }}"></script>
+<script src="{{ static_asset('js/endpoint-form-actions.js') }}"></script>
 <script>
     /* Stepper: General -> Routing -> Security -> Delivery. "Next" blaettert,
        der Absende-Knopf erscheint erst im letzten Schritt. Die Schritte oben
@@ -855,6 +885,6 @@
         })();
     }
 </script>
-<script src="{{ url_for('static', filename='js/endpoint-form.js', v='20260909e') }}"></script>
+<script src="{{ static_asset('js/endpoint-form.js') }}"></script>
 {% include 'dry_run_modal.html' %}
 {% endblock %}
