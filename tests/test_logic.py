@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from hookwise import create_app
-from hookwise.client import TicketCreationOutcomeUnknown, TicketCreationRejected
+from hookwise.client import ConfigurationRequestError, TicketCreationOutcomeUnknown, TicketCreationRejected
 from hookwise.extensions import db
 from hookwise.models import TicketOperation, WebhookConfig, WebhookLog
 from hookwise.services.ticket_operations import TicketOperationInProgress
@@ -53,6 +53,469 @@ def test_resolve_jsonpath():
     assert resolve_jsonpath(data, "$.monitor.name") == "Test Server"
     assert resolve_jsonpath(data, "$.details[0].msg") == "Error"
     assert resolve_jsonpath(data, "$.invalid") is None
+
+
+GREENBONE_DESCRIPTION = """Site2Nite Boat Classifieds Multiple SQLi Vulnerabilities - Active Check
+
+Evidence
+Vulnerable URL: http://10.70.10.20:7090/products/boat-webdesign/www/detail.asp?ID=999999
+
+Greenbone context
+Customer: eworxRO
+Asset: 10.70.10.20:7090/tcp
+"""
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_matches_greenbone_ip_with_port(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {
+        "id": 42,
+        "company": {"id": 321, "identifier": "EWORXRO"},
+    }
+    mock_cw.find_matching_configurations.return_value = [
+        {
+            "id": 137,
+            "name": "DEXTER",
+            "activeFlag": True,
+            "company": {"id": 321},
+            "ipAddress": "10.70.10.20",
+        }
+    ]
+    mock_cw.is_configuration_attached.return_value = False
+    mock_cw.attach_configuration.return_value = {"id": 137}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Greenbone",
+            json_mapping=json.dumps({"summary": "$.title", "description": "$.summary"}),
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(
+            config.id,
+            {
+                "title": "Alert: CVE-2010-2687 on 10.70.10.20:7090/tcp [v1:9e2e50a7a]",
+                "summary": GREENBONE_DESCRIPTION,
+            },
+            "req-greenbone-asset",
+        )
+
+        mock_cw.find_matching_configurations.assert_called_once_with(321, [("ipAddress", "10.70.10.20")])
+        mock_cw.attach_configuration.assert_called_once_with(42, 137)
+        log_entry = WebhookLog.query.filter_by(request_id="req-greenbone-asset").one()
+        assert log_entry.status == "processed"
+        assert log_entry.configuration_link_status == "attached"
+        assert log_entry.configuration_id == 137
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_queries_common_mac_address_formats(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 42, "company": {"id": 321}}
+    configuration = {
+        "id": 137,
+        "name": "DEXTER",
+        "activeFlag": True,
+        "company": {"id": 321},
+        "macAddress": "00-15-5D-65-66-88",
+    }
+    mock_cw.find_matching_configurations.return_value = [configuration]
+    mock_cw.is_configuration_attached.return_value = False
+    mock_cw.attach_configuration.return_value = {"id": 137}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="MAC linking",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"mac_address": "00:15:5D:65:66:88"}, "req-link-mac")
+
+        mock_cw.find_matching_configurations.assert_called_once()
+        queried_values = {value for _field, value in mock_cw.find_matching_configurations.call_args.args[1]}
+        assert "00155d656688" in queried_values
+        assert "00-15-5d-65-66-88" in queried_values
+        mock_cw.attach_configuration.assert_called_once_with(42, 137)
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_is_disabled_by_default(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {
+        "id": 42,
+        "company": {"id": 321, "identifier": "EWORXRO"},
+    }
+
+    with app.app_context():
+        config = WebhookConfig(name="Disabled linking", board="Test Board", customer_id_default="EWORXRO")
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"asset": "10.70.10.20:7090/tcp"}, "req-link-disabled")
+
+        mock_cw.find_matching_configurations.assert_not_called()
+        mock_cw.attach_configuration.assert_not_called()
+        log_entry = WebhookLog.query.filter_by(request_id="req-link-disabled").one()
+        assert log_entry.configuration_link_status == "disabled"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_open_ticket_deduplication_is_scoped_to_resolved_company(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 45, "company": {"id": 321}}
+
+    with app.app_context():
+        config = WebhookConfig(name="Company scoped", board="Test Board", customer_id_default="EWORXRO")
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"monitor": {"name": "Scoped alert"}}, "req-company-scope")
+
+        mock_cw.find_open_ticket.assert_called_once_with(
+            "Alert: Scoped alert", close_status=None, company_identifier="EWORXRO"
+        )
+
+
+@patch.dict(os.environ, {"CW_DEFAULT_COMPANY_ID": ""})
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_remote_ticket_deduplication_is_skipped_without_resolved_company(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = {"id": 999, "company": {"id": 999}}
+    mock_cw.create_ticket.return_value = {"id": 45, "company": {"id": 321}}
+
+    with app.app_context():
+        config = WebhookConfig(name="No company", board="Test Board")
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"monitor": {"name": "Unscoped alert"}}, "req-no-company-scope")
+
+        mock_cw.find_open_ticket.assert_not_called()
+        mock_cw.create_ticket.assert_called_once()
+
+
+@patch.dict(os.environ, {"CW_DEFAULT_COMPANY_ID": ""})
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_remote_ticket_close_lookup_is_skipped_without_resolved_company(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="No company close",
+            trigger_field="status",
+            open_value="down",
+            close_value="up",
+            board="Test Board",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"status": "up"}, "req-no-company-close")
+
+        mock_cw.find_open_ticket.assert_not_called()
+        mock_cw.close_ticket.assert_not_called()
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_ticket_cache_does_not_collide_for_distinct_company_identifiers(mock_cw, mock_redis, app):
+    cache: dict[str, bytes] = {}
+    mock_redis.get.side_effect = cache.get
+    mock_redis.set.side_effect = lambda key, value, **_kwargs: cache.__setitem__(key, str(value).encode())
+    mock_redis.delete.side_effect = lambda key: cache.pop(key, None)
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.side_effect = [
+        {"id": 42, "company": {"id": 1, "identifier": "ACME/US"}},
+        {"id": 43, "company": {"id": 2, "identifier": "ACME_US"}},
+    ]
+    mock_cw.get_ticket.return_value = {
+        "id": 42,
+        "closedFlag": False,
+        "status": {"name": "New"},
+        "company": {"id": 1, "identifier": "ACME/US"},
+    }
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Multi-company routing",
+            json_mapping=json.dumps({"summary": "$.title", "customer_id": "$.company"}),
+            board="Test Board",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"title": "Same alert", "company": "ACME/US"}, "req-company-a")
+        handle_webhook_logic(config.id, {"title": "Same alert", "company": "ACME_US"}, "req-company-b")
+
+        assert mock_cw.create_ticket.call_count == 2
+        assert [call.kwargs["company_id"] for call in mock_cw.create_ticket.call_args_list] == [
+            "ACME/US",
+            "ACME_US",
+        ]
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_skips_ambiguous_ip(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 43, "company": {"id": 321}}
+    mock_cw.find_matching_configurations.return_value = [
+        {"id": 137, "name": "DEXTER", "activeFlag": True, "company": {"id": 321}, "ipAddress": "10.70.10.20"},
+        {"id": 138, "name": "OTHER", "activeFlag": True, "company": {"id": 321}, "ipAddress": "10.70.10.20"},
+    ]
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Ambiguous asset",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"asset": "10.70.10.20:7090/tcp"}, "req-link-ambiguous")
+
+        mock_cw.attach_configuration.assert_not_called()
+        log_entry = WebhookLog.query.filter_by(request_id="req-link-ambiguous").one()
+        assert log_entry.status == "processed"
+        assert log_entry.configuration_link_status == "ambiguous"
+        assert log_entry.configuration_id is None
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_enriches_company_scoped_cached_ticket(mock_cw, mock_redis, app):
+    def redis_get(key):
+        if str(key).endswith(":viable"):
+            return None
+        if str(key).startswith("hookwise_ticket:"):
+            return b"99"
+        return None
+
+    mock_redis.get.side_effect = redis_get
+    mock_cw.get_ticket.return_value = {
+        "id": 99,
+        "closedFlag": False,
+        "status": {"name": "New"},
+        "company": {"id": 321, "identifier": "EWORXRO"},
+    }
+    mock_cw.find_matching_configurations.return_value = [
+        {"id": 137, "name": "DEXTER", "activeFlag": True, "company": {"id": 321}, "ipAddress": "10.70.10.20"}
+    ]
+    mock_cw.is_configuration_attached.return_value = False
+    mock_cw.attach_configuration.return_value = {"id": 137}
+    mock_cw.add_ticket_note.return_value = True
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Cached Greenbone",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"asset": "10.70.10.20:7090/tcp"}, "req-link-cached")
+
+        ticket_cache_keys = [
+            str(call.args[0])
+            for call in mock_redis.get.call_args_list
+            if call.args
+            and str(call.args[0]).startswith("hookwise_ticket:")
+            and not str(call.args[0]).endswith(":viable")
+        ]
+        assert ticket_cache_keys
+        company_tokens = {key.split(":", 3)[2] for key in ticket_cache_keys}
+        assert len(company_tokens) == 1
+        assert all(len(token) == 64 and set(token) <= set("0123456789abcdef") for token in company_tokens)
+        mock_cw.create_ticket.assert_not_called()
+        mock_cw.attach_configuration.assert_called_once_with(99, 137)
+        log_entry = WebhookLog.query.filter_by(request_id="req-link-cached").one()
+        assert log_entry.action == "update"
+        assert log_entry.configuration_link_status == "attached"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_uses_rendered_description_for_reused_ticket(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = {"id": 42, "company": {"id": 321}}
+    mock_cw.find_matching_configurations.return_value = [
+        {
+            "id": 137,
+            "name": "DEXTER",
+            "activeFlag": True,
+            "company": {"id": 321},
+            "ipAddress": "10.70.10.20",
+        }
+    ]
+    mock_cw.is_configuration_attached.return_value = False
+    mock_cw.attach_configuration.return_value = {"id": 137}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Description matching",
+            description_template="Asset endpoint: {$.details.address}",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(
+            config.id,
+            {
+                "heartbeat": {"status": "0"},
+                "monitor": {"name": "Template-only alert"},
+                "details": {"address": "10.70.10.20:7090/tcp"},
+            },
+            "req-link-rendered-description",
+        )
+
+        mock_cw.find_matching_configurations.assert_called_once_with(321, [("ipAddress", "10.70.10.20")])
+        mock_cw.attach_configuration.assert_called_once_with(42, 137)
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_configuration_attach_failure_does_not_fail_created_ticket(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 44, "company": {"id": 321}}
+    mock_cw.find_matching_configurations.return_value = [
+        {"id": 137, "name": "DEXTER", "activeFlag": True, "company": {"id": 321}, "ipAddress": "10.70.10.20"}
+    ]
+    mock_cw.is_configuration_attached.return_value = False
+    mock_cw.attach_configuration.side_effect = RuntimeError("association unavailable")
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Best effort linking",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"asset": "10.70.10.20:7090/tcp"}, "req-link-error")
+
+        log_entry = WebhookLog.query.filter_by(request_id="req-link-error").one()
+        assert log_entry.status == "processed"
+        assert log_entry.ticket_id == 44
+        assert log_entry.configuration_link_status == "attach_error"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_webhook_transport_source_ip_is_never_an_asset_candidate(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 46, "company": {"id": 321}}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Transport IP",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"message": "No asset supplied"}, "req-source-ip", source_ip="10.70.10.20")
+
+        mock_cw.find_matching_configurations.assert_not_called()
+        log_entry = WebhookLog.query.filter_by(request_id="req-source-ip").one()
+        assert log_entry.configuration_link_status == "no_identifiers"
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_auto_link_configuration_does_not_post_existing_association(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 47, "company": {"id": 321}}
+    mock_cw.find_matching_configurations.return_value = [
+        {"id": 137, "name": "DEXTER", "activeFlag": True, "company": {"id": 321}, "ipAddress": "10.70.10.20"}
+    ]
+    mock_cw.is_configuration_attached.return_value = True
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Existing association",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"asset": "10.70.10.20:7090/tcp"}, "req-link-existing")
+
+        mock_cw.attach_configuration.assert_not_called()
+        log_entry = WebhookLog.query.filter_by(request_id="req-link-existing").one()
+        assert log_entry.configuration_link_status == "already_attached"
+        assert log_entry.configuration_id == 137
+
+
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_unknown_attach_outcome_is_reconciled_by_readback(mock_cw, mock_redis, app):
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 48, "company": {"id": 321}}
+    mock_cw.find_matching_configurations.return_value = [
+        {"id": 137, "name": "DEXTER", "activeFlag": True, "company": {"id": 321}, "ipAddress": "10.70.10.20"}
+    ]
+    mock_cw.is_configuration_attached.side_effect = [False, True]
+    mock_cw.attach_configuration.side_effect = ConfigurationRequestError(
+        "association outcome unknown",
+        operation="attach",
+        retryable=True,
+        outcome_unknown=True,
+    )
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="Unknown association outcome",
+            board="Test Board",
+            customer_id_default="EWORXRO",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        handle_webhook_logic(config.id, {"asset": "10.70.10.20:7090/tcp"}, "req-link-unknown")
+
+        assert mock_cw.is_configuration_attached.call_count == 2
+        log_entry = WebhookLog.query.filter_by(request_id="req-link-unknown").one()
+        assert log_entry.status == "processed"
+        assert log_entry.configuration_link_status == "attached"
+        assert log_entry.configuration_id == 137
 
 
 @patch("hookwise.tasks.redis_client")

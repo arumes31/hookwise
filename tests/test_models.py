@@ -64,6 +64,7 @@ def test_webhook_config_creation(db_session):
     assert config.is_enabled is True
     assert config.is_pinned is False
     assert config.ai_rca_enabled is False
+    assert config.auto_link_configuration_enabled is False
     assert isinstance(config.created_at, datetime)
 
 
@@ -75,6 +76,7 @@ def test_webhook_config_to_dict(db_session):
     d = config.to_dict()
     assert d["id"] == config.id
     assert d["name"] == "Test Config"
+    assert d["auto_link_configuration_enabled"] is False
     assert "bearer_token" not in d
 
     d_with_token = config.to_dict(include_token=True)
@@ -120,6 +122,27 @@ def test_webhook_log_to_dict(db_session):
     assert d["config_id"] == config.id
     assert d["config_name"] == "Test Config"
     assert d["payload"] == '{"test": "data"}'
+
+
+def test_webhook_log_configuration_link_result_to_dict(db_session):
+    config = WebhookConfig(name="Test Config")
+    db_session.add(config)
+    db_session.commit()
+
+    log = WebhookLog(
+        config_id=config.id,
+        request_id="req-configuration-link",
+        payload="{}",
+        status="processed",
+        configuration_link_status="attached",
+        configuration_id=137,
+    )
+    db_session.add(log)
+    db_session.commit()
+
+    d = log.to_dict()
+    assert d["configuration_link_status"] == "attached"
+    assert d["configuration_id"] == 137
 
 
 def test_audit_log_creation(db_session):

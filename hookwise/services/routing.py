@@ -23,6 +23,13 @@ _OVERRIDABLE_FIELDS = (
     "status",
     "severity",
     "impact",
+    "configuration_id",
+    "configuration_device_id",
+    "configuration_serial",
+    "configuration_mac",
+    "configuration_tag",
+    "configuration_ip",
+    "configuration_name",
 )
 
 

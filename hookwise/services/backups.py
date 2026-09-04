@@ -52,8 +52,21 @@ CONFIG_FIELDS = {
     "ai_rca_enabled",
     "ai_prompt_template",
     "global_routing_enabled",
+    "auto_link_configuration_enabled",
     "timeout_alerts_enabled",
     "timeout_hours",
+}
+BOOLEAN_FIELDS = {
+    "bearer_auth_enabled",
+    "allow_unauthenticated",
+    "retry_enabled",
+    "is_enabled",
+    "is_pinned",
+    "is_draft",
+    "ai_rca_enabled",
+    "global_routing_enabled",
+    "auto_link_configuration_enabled",
+    "timeout_alerts_enabled",
 }
 INT_BOUNDS = {
     "rate_limit_per_minute": (1, 10_000),
@@ -154,6 +167,8 @@ def restore_backup(document: dict[str, Any]) -> int:
             raise BackupValidationError("Configuration contains unsupported fields")
         if not isinstance(record.get("name"), str) or not 1 <= len(record["name"]) <= 100:
             raise BackupValidationError("Every configuration requires a valid name")
+        if any(field in record and not isinstance(record[field], bool) for field in BOOLEAN_FIELDS):
+            raise BackupValidationError("Configuration boolean fields must contain JSON booleans")
         ids.append(record["id"])
     if len(ids) != len(set(ids)):
         raise BackupValidationError("Backup contains duplicate configuration ids")
@@ -164,6 +179,9 @@ def restore_backup(document: dict[str, Any]) -> int:
         if config is None:
             config = WebhookConfig(id=record["id"], name=record["name"])
             db.session.add(config)
+        # Backups created before configuration auto-linking existed must not
+        # leave an already-enabled endpoint opted in after a restore.
+        config.auto_link_configuration_enabled = record.get("auto_link_configuration_enabled", False)
         for field in CONFIG_FIELDS:
             if field not in record:
                 continue
