@@ -52,6 +52,13 @@ def _register_rbac(app: Flask) -> None:
     install_guard(app)
     verify_route_coverage(app, streng=bool(app.config.get("RBAC_STRICT_ROUTES")))
 
+    @app.context_processor
+    def _rbac_kontext() -> dict:
+        # Fuer Templates: Navigation zeigt nur, was die Sitzung auch darf.
+        from .rbac.resolver import has_permission
+
+        return {"hw_kann": has_permission}
+
 
 def _configure_app(app: Flask) -> None:
     """Configure the application with environment variables and defaults."""

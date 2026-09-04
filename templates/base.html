@@ -172,14 +172,18 @@
                     href="{{ url_for('main.history') }}"{% if request.endpoint == 'main.history' %} aria-current="page"{% endif %}>
                     {{ nav_icon('history') }}<span>History</span>
                 </a>
+                {% if hw_kann('audit:read') %}
                 <a class="nav-link{% if request.endpoint == 'main.audit_logs' %} active{% endif %}"
                     href="{{ url_for('main.audit_logs') }}"{% if request.endpoint == 'main.audit_logs' %} aria-current="page"{% endif %}>
                     {{ nav_icon('audit') }}<span>Audit</span>
                 </a>
+                {% endif %}
+                {% if hw_kann('user:read') %}
                 <a class="nav-link{% if request.endpoint == 'main.identity_settings' %} active{% endif %}"
                     href="{{ url_for('main.identity_settings') }}"{% if request.endpoint == 'main.identity_settings' %} aria-current="page"{% endif %}>
                     {{ nav_icon('users') }}<span>Identity</span>
                 </a>
+                {% endif %}
                 <a class="nav-link{% if request.endpoint in ['main.settings', 'main.setup_2fa', 'main.admin_maintenance'] %} active{% endif %}"
                     href="{{ url_for('main.settings') }}"{% if request.endpoint in ['main.settings', 'main.setup_2fa', 'main.admin_maintenance'] %} aria-current="page"{% endif %}>
                     {{ nav_icon('settings') }}<span>Settings</span>

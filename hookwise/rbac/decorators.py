@@ -34,6 +34,20 @@ def public_endpoint(f: Callable[..., Any]) -> Callable[..., Any]:
     return f
 
 
+def routen_recht_fehlt() -> str | None:
+    """Harter Eigen-Check fuer Routen, die ihre Grenze schon immer selbst
+    durchgesetzt haben (Secrets, Replay): prueft das Registry-Recht der
+    laufenden Route gegen die echten Rechte -- bewusst unabhaengig vom
+    ``RBAC_ENFORCE``-Modus, damit diese Routen auch in der Rollout-Phase
+    nie offener sind als vor der RBAC-Einfuehrung."""
+    from .routes import ENDPUNKT_RECHTE
+
+    noetig = ENDPUNKT_RECHTE.get(request.endpoint or "")
+    if noetig and noetig not in current_permissions():
+        return noetig
+    return None
+
+
 def _verweigern(permission: str) -> Any:
     """Antwort auf eine fehlende Berechtigung, passend zum Client."""
     from ..utils import log_audit

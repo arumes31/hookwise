@@ -4,7 +4,7 @@ from io import BytesIO
 import pytest
 
 from hookwise.extensions import db
-from hookwise.models import WebhookConfig
+from hookwise.models import User, WebhookConfig
 
 
 @pytest.fixture
@@ -50,9 +50,13 @@ def test_restore_config_functionality(client, app):
 
         data = BytesIO(json.dumps(restore_data).encode("utf-8"))
 
-        # Bypass auth
+        # Echtes Admin-Konto: seit RBAC_ENFORCE=on braucht die Sitzung einen
+        # aufloesbaren Nutzer, eine Phantom-ID faellt auf leere Rechte zurueck.
+        admin = User(username="admin", password_hash="x", role="admin")
+        db.session.add(admin)
+        db.session.commit()
         with client.session_transaction() as sess:
-            sess["user_id"] = "admin"
+            sess["user_id"] = admin.id
 
         response = client.post(
             "/admin/restore", data={"backup_file": (data, "backup.json")}, content_type="multipart/form-data"

@@ -19,6 +19,9 @@ _logger = logging.getLogger(__name__)
 
 SESSION_PERMS = "perms"
 SESSION_EPOCH = "perms_epoch"
+# Der Cache gilt nur fuer den Nutzer, fuer den er geschrieben wurde -- wechselt
+# die user_id in einer bestehenden Session, wird neu aufgeloest.
+SESSION_UID = "perms_uid"
 
 # Der Epoch wird pro Request gelesen; ein kurzer Prozess-Cache haelt die Last
 # von der Datenbank fern, ohne dass ein Entzug spuerbar verzoegert wirkt.
@@ -135,6 +138,7 @@ def sitzung_setzen(user: Any) -> FrozenSet[str]:
     rechte = resolve_permissions(user)
     session[SESSION_PERMS] = sorted(rechte)
     session[SESSION_EPOCH] = aktueller_epoch(frisch=True)
+    session[SESSION_UID] = getattr(user, "id", None)
     return rechte
 
 
@@ -156,7 +160,12 @@ def current_permissions() -> FrozenSet[str]:
         return frozenset()
 
     stand = session.get(SESSION_EPOCH)
-    if stand is not None and stand == aktueller_epoch() and SESSION_PERMS in session:
+    if (
+        stand is not None
+        and stand == aktueller_epoch()
+        and SESSION_PERMS in session
+        and session.get(SESSION_UID) == session.get("user_id")
+    ):
         return frozenset(session[SESSION_PERMS])
 
     nutzer = _aktueller_nutzer()

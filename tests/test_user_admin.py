@@ -20,6 +20,8 @@ def _app():
     app.config["TESTING"] = True
     app.config["WTF_CSRF_ENABLED"] = False
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    # Fest verdrahtet, damit die Erwartungen nicht vom Umgebungs-Default abhaengen.
+    app.config["RBAC_ENFORCE"] = "on"
     return app
 
 
@@ -197,14 +199,17 @@ def test_eigenes_konto_nicht_loeschbar():
 
 
 def test_letzter_verwalter_nicht_loeschbar():
-    """Auch ein zweiter Admin darf den letzten user:manage-Halter nicht tilgen."""
+    """Zwei Schichten: ohne ``user:manage`` blockt schon der Guard (403);
+    die Aussperr-Invariante selbst greift beim Selbst-Loeschen (409, oben).
+    Sobald ein zweiter Verwalter existiert, ist das Loeschen erlaubt."""
     app = _app()
     with app.app_context():
         chef = _vorbereiten(app)
         beobachter = _nutzer("beobachter", "viewer")
         client = app.test_client()
         _anmelden(client, beobachter)
-        assert client.delete(f"/api/users/{chef.id}").status_code == 409
+        assert client.delete(f"/api/users/{chef.id}").status_code == 403
+        assert User.query.get(chef.id) is not None
 
         # Mit einem zweiten Verwalter geht es dann.
         zweiter = _nutzer("vize", "admin")

@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db
 from .models import EndpointTag, WebhookConfig
@@ -17,8 +17,12 @@ _TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
 
 
 def _operator_denied() -> Any:
-    if session.get("role") not in {"admin", "operator"}:
-        return jsonify({"error": "An operator role is required for this action."}), 403
+    # Frueher ein Blick auf die alte Ein-Rollen-Spalte; jetzt zaehlt das echte
+    # Recht der Route (secret:reveal bzw. secret:rotate aus der Registry).
+    from .rbac.decorators import routen_recht_fehlt
+
+    if fehlt := routen_recht_fehlt():
+        return jsonify({"error": f"Missing permission: {fehlt}", "required": fehlt}), 403
     return None
 
 

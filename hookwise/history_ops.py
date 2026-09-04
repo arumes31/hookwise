@@ -36,8 +36,11 @@ _MAX_REPLAY_BYTES = 256 * 1024
 
 
 def _operator_required() -> Any:
-    if session.get("role") not in {"admin", "operator"}:
-        return jsonify({"error": "An operator role is required for this action."}), 403
+    # Frueher die alte Ein-Rollen-Spalte; jetzt das Registry-Recht der Route.
+    from .rbac.decorators import routen_recht_fehlt
+
+    if fehlt := routen_recht_fehlt():
+        return jsonify({"error": f"Missing permission: {fehlt}", "required": fehlt}), 403
     return None
 
 

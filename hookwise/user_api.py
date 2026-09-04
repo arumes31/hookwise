@@ -94,6 +94,15 @@ def _nutzer_mit(permission: str) -> List[str]:
     return [u.id for u in User.query.filter(User.id.in_(ids)) if u.aktiv]
 
 
+def _legacy_rolle(rollen_keys: List[str]) -> str:
+    """Haelt die alte Ein-Rollen-Spalte im Gleichschritt mit den Zuweisungen:
+    die staerkste eingebaute Rolle gewinnt, ohne Zuweisung bleibt nur Lesen."""
+    for schluessel in ("admin", "operator", "viewer"):
+        if schluessel in rollen_keys:
+            return schluessel
+    return "viewer" if not rollen_keys else "user"
+
+
 def _wuerde_aussperren(user_id: str, neue_rollen: List[str] | None = None, deaktivieren: bool = False) -> bool:
     """Bleibt nach der Aenderung noch jemand mit ``user:manage`` uebrig?"""
     halter = set(_nutzer_mit("user:manage"))
@@ -184,7 +193,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         nutzer = User(
             username=username,
             password_hash=generate_password_hash(passwort),
-            role=daten.get("role") or "user",
+            role=daten.get("role") or _legacy_rolle(daten.get("roles") or []),
             auth_source=quelle,
             upn=upn,
             is_active=True,
@@ -326,6 +335,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
                 409,
             )
         _rollen_setzen(user_id, gewuenscht)
+        nutzer.role = _legacy_rolle(gewuenscht)
         db.session.commit()
         log_audit("role_grant", None, f"{nutzer.username} -> {', '.join(sorted(gewuenscht)) or 'none'}")
         bump_epoch()

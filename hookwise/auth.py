@@ -36,7 +36,8 @@ def _register_login_routes(bp: Any) -> None:
         if request.method == "POST":
             # Case 1: Submitting OTP (User is in pending state)
             if pending_user_id and "otp" in request.form:
-                otp = request.form.get("otp")
+                # Authenticator-Apps zeigen "123 456" -- Leerraum ist kein Fehler.
+                otp = (request.form.get("otp") or "").strip().replace(" ", "")
                 user = User.query.get(pending_user_id)
                 secret_unavailable = bool(user and not user.otp_secret)
 
@@ -50,7 +51,9 @@ def _register_login_routes(bp: Any) -> None:
                         user.id if user else "unknown",
                     )
 
-                if user and otp_secret and pyotp.TOTP(otp_secret).verify(cast(str, otp)):
+                # valid_window=1 laesst den direkt vorherigen/naechsten Code zu --
+                # die Toleranz fuer Tipp-Zeit und leichte Uhrenabweichung.
+                if user and otp_secret and otp and pyotp.TOTP(otp_secret).verify(otp, valid_window=1):
                     # Success
                     session["user_id"] = user.id
                     session["username"] = user.username
@@ -112,9 +115,9 @@ def _register_2fa_routes(bp: Any) -> None:
             return redirect(url_for("main.settings"))
 
         if request.method == "POST":
-            otp = request.form.get("otp")
+            otp = (request.form.get("otp") or "").strip().replace(" ", "")
             secret = session.get("pending_otp_secret")
-            if secret and pyotp.TOTP(cast(str, secret)).verify(cast(str, otp)):
+            if secret and otp and pyotp.TOTP(cast(str, secret)).verify(otp, valid_window=1):
                 user.otp_secret = encrypt_string(secret)
                 user.is_2fa_enabled = True
                 db.session.commit()
@@ -124,8 +127,11 @@ def _register_2fa_routes(bp: Any) -> None:
                 return redirect(url_for("main.settings"))
             flash("Invalid 2FA code", "danger")
 
-        # GET: Generate secret and QR code
-        secret = pyotp.random_base32()
+        # Das pending-Secret ueberlebt Fehlversuche und Seiten-Reloads: die
+        # Authenticator-App haelt das zuerst gescannte Secret, also muss die
+        # Seite dasselbe weiterzeigen. Vorher rotierte es bei jedem Rendern --
+        # nach dem ersten Fehlversuch konnte das Setup nie mehr gelingen.
+        secret = session.get("pending_otp_secret") or pyotp.random_base32()
         session["pending_otp_secret"] = secret
         totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user.username, issuer_name="HookWise")
 
