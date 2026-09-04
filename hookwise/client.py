@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+from math import isfinite
 from typing import Any, Dict, List, Optional, cast
 
 import requests
@@ -8,6 +9,12 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+_QUOTA_HEADER_ALIASES = {
+    "limit": ("x-ratelimit-limit", "ratelimit-limit", "x-rate-limit-limit", "x-quota-limit"),
+    "remaining": ("x-ratelimit-remaining", "ratelimit-remaining", "x-rate-limit-remaining", "x-quota-remaining"),
+    "reset": ("x-ratelimit-reset", "ratelimit-reset", "x-rate-limit-reset", "x-quota-reset"),
+}
 
 
 class ConnectWiseError(Exception):
@@ -22,6 +29,20 @@ class TicketRequestError(ConnectWiseError):
     pass
 
 
+class TicketCreationRejected(TicketRequestError):
+    """ConnectWise definitively rejected a ticket create request."""
+
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+class TicketCreationOutcomeUnknown(TicketRequestError):
+    """The ticket request may have reached ConnectWise without a response."""
+
+    retry_after_seconds = 600.0
+
+
 class ConnectWiseClient:
     def __init__(self) -> None:
         self.base_url: str = os.getenv("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0")
@@ -33,6 +54,10 @@ class ConnectWiseClient:
         self.service_board_name: str = os.getenv("CW_SERVICE_BOARD", "Service Board")
         self.status_new: str = os.getenv("CW_STATUS_NEW", "New")
         self.status_closed: str = os.getenv("CW_STATUS_CLOSED", "Closed")
+        self.timeout = (
+            max(1.0, float(os.getenv("CW_CONNECT_TIMEOUT", "5"))),
+            max(1.0, float(os.getenv("CW_READ_TIMEOUT", "30"))),
+        )
 
         if not all([self.base_url, self.company, self.public_key, self.private_key, self.client_id]):
             logger.warning("ConnectWise credentials (including CW_CLIENT_ID) are missing. API calls will fail.")
@@ -58,12 +83,44 @@ class ConnectWiseClient:
             backoff_factor=2,  # Exponential backoff: 2, 4, 8, 16, 32 seconds
             backoff_jitter=0.1,  # Added jitter to prevent thundering herd
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PATCH", "DELETE"],
+            allowed_methods=["HEAD", "GET", "OPTIONS"],
+            respect_retry_after_header=True,
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
+        session.hooks["response"].append(self._capture_quota_headers)
         return session
+
+    @staticmethod
+    def _numeric_header(headers: Any, aliases: tuple[str, ...]) -> Optional[str]:
+        """Return a finite numeric quota header, never a raw provider value."""
+        lowered = {str(key).lower(): value for key, value in headers.items()}
+        for header in aliases:
+            value = lowered.get(header)
+            if value is None:
+                continue
+            try:
+                parsed = float(value)
+            except TypeError, ValueError:
+                continue
+            if isfinite(parsed):
+                return str(int(parsed)) if parsed.is_integer() else str(parsed)
+        return None
+
+    def _capture_quota_headers(self, response: requests.Response, *args: Any, **kwargs: Any) -> requests.Response:
+        """Cache only numeric API quota/rate-limit telemetry for operational views."""
+        try:
+            from .extensions import redis_client
+
+            for metric, aliases in _QUOTA_HEADER_ALIASES.items():
+                value = self._numeric_header(response.headers, aliases)
+                if value is not None:
+                    redis_client.setex(f"hookwise:cw:quota:{metric}", 3600, value)
+        except Exception:
+            # Provider telemetry must never affect a ConnectWise request result.
+            pass
+        return response
 
     def find_open_ticket(self, summary_contains: str, close_status: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:
@@ -71,12 +128,12 @@ class ConnectWiseClient:
             excluded_statuses = [self.status_closed, "Cancelled", "Completed"]
             if close_status:
                 excluded_statuses.append(close_status)
-            status_clauses = " AND ".join([f"status/name != '{s}'" for s in excluded_statuses])
+            status_clauses = " AND ".join([f"status/name != '{s.replace("'", "''")}'" for s in excluded_statuses])
 
             conditions = f"closedFlag=false AND {status_clauses} AND summary contains '{safe_summary}'"
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(
-                f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=30
+                f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=self.timeout
             )
             response.raise_for_status()
             data = response.json()
@@ -85,12 +142,12 @@ class ConnectWiseClient:
             return None
         except requests.exceptions.RequestException as e:
             logger.error(f"Error finding ticket: {e}")
-            return None
+            raise TicketRequestError("Unable to determine whether an open ticket exists") from e
 
     def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, timeout=30
+                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, timeout=self.timeout
             )
             if response.status_code == 404:
                 raise TicketNotFoundError(f"Ticket {ticket_id} not found")
@@ -173,7 +230,7 @@ class ConnectWiseClient:
             )
 
             response = self.session.post(
-                f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=30
+                f"{self.base_url}/service/tickets", headers=self.headers, json=payload, timeout=self.timeout
             )
             response.raise_for_status()
             ticket = response.json()
@@ -184,14 +241,45 @@ class ConnectWiseClient:
             if e.response is not None:
                 error_msg += f" | Response: {e.response.text}"
             logger.error(error_msg)
-            return None
+            if e.response is not None:
+                status_code = int(e.response.status_code)
+                detail = ""
+                try:
+                    response_data = e.response.json()
+                    errors = response_data.get("errors", []) if isinstance(response_data, dict) else []
+                    if isinstance(errors, list):
+                        messages = [
+                            str(item["message"])[:300]
+                            for item in errors
+                            if isinstance(item, dict) and item.get("message")
+                        ]
+                        detail = "; ".join(messages[:3])
+                    if not detail and isinstance(response_data, dict) and response_data.get("message"):
+                        detail = str(response_data["message"])[:500]
+                except TypeError, ValueError:
+                    pass
+                message = f"ConnectWise rejected ticket creation (HTTP {status_code})"
+                if detail:
+                    message += f": {detail}"
+                if status_code in {408, 409} or status_code >= 500:
+                    raise TicketCreationOutcomeUnknown(
+                        message.replace("rejected", "returned an ambiguous response for")
+                    ) from e
+                retryable = status_code in {425, 429}
+                raise TicketCreationRejected(message, retryable=retryable) from e
+            raise TicketCreationOutcomeUnknown(
+                "ConnectWise ticket creation outcome is unknown because no response was received"
+            ) from e
 
     def close_ticket(self, ticket_id: int, resolution: str, status_name: Optional[str] = None) -> bool:
         target_status = status_name or self.status_closed
         patch_payload = [{"op": "replace", "path": "/status/name", "value": target_status}]
         try:
             response = self.session.patch(
-                f"{self.base_url}/service/tickets/{ticket_id}", headers=self.headers, json=patch_payload, timeout=30
+                f"{self.base_url}/service/tickets/{ticket_id}",
+                headers=self.headers,
+                json=patch_payload,
+                timeout=self.timeout,
             )
             if response.status_code == 404:
                 raise TicketNotFoundError(f"Ticket {ticket_id} not found")
@@ -221,7 +309,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/tickets/{ticket_id}/notes",
                 headers=self.headers,
                 json=note_payload,
-                timeout=30,
+                timeout=self.timeout,
             )
             if note_response.status_code not in [200, 201]:
                 logger.error(
@@ -248,7 +336,7 @@ class ConnectWiseClient:
                 f"{self.base_url}/service/tickets/{ticket_id}/notes",
                 headers=self.headers,
                 json=note_payload,
-                timeout=30,
+                timeout=self.timeout,
             )
             if response.status_code not in [200, 201]:
                 logger.error(f"Error adding note to ticket #{ticket_id}: {response.status_code} - {response.text}")
@@ -262,7 +350,7 @@ class ConnectWiseClient:
 
     def get_boards(self) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=30)
+            response = self.session.get(f"{self.base_url}/service/boards", headers=self.headers, timeout=self.timeout)
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
@@ -271,7 +359,9 @@ class ConnectWiseClient:
 
     def get_priorities(self) -> List[Dict[str, Any]]:
         try:
-            response = self.session.get(f"{self.base_url}/service/priorities", headers=self.headers, timeout=30)
+            response = self.session.get(
+                f"{self.base_url}/service/priorities", headers=self.headers, timeout=self.timeout
+            )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
         except requests.exceptions.RequestException as e:
@@ -281,7 +371,7 @@ class ConnectWiseClient:
     def get_board_statuses(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/statuses", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -292,7 +382,7 @@ class ConnectWiseClient:
     def get_board_types(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/types", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -303,7 +393,7 @@ class ConnectWiseClient:
     def get_board_subtypes(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/subtypes", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -314,7 +404,7 @@ class ConnectWiseClient:
     def get_board_items(self, board_id: int) -> List[Dict[str, Any]]:
         try:
             response = self.session.get(
-                f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=30
+                f"{self.base_url}/service/boards/{board_id}/items", headers=self.headers, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())
@@ -328,7 +418,7 @@ class ConnectWiseClient:
             if search:
                 params["conditions"] = f"identifier contains '{search}' OR name contains '{search}'"
             response = self.session.get(
-                f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=30
+                f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=self.timeout
             )
             response.raise_for_status()
             return cast(List[Dict[str, Any]], response.json())

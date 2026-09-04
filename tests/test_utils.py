@@ -14,8 +14,11 @@ from hookwise.utils import (
     check_auth,
     decrypt_string,
     encrypt_string,
+    filter_cipp_app_certificate_expiry_results,
+    format_cipp_results,
     log_audit,
     mask_secrets,
+    parse_cipp_app_certificate_exclude_patterns,
     resolve_jsonpath,
 )
 
@@ -47,11 +50,12 @@ def test_encrypt_decrypt_roundtrip(app):
         assert decrypt_string(encrypted) == plaintext
 
 
-def test_decrypt_unencrypted_returns_input(app):
-    """decrypt_string should return the original input if decryption fails."""
+def test_decrypt_unencrypted_fails_closed(app):
+    """Plaintext must never be accepted as a successfully decrypted secret."""
     with app.app_context():
         raw = "not-encrypted-at-all"
-        assert decrypt_string(raw) == raw
+        with pytest.raises(ValueError, match="could not be decrypted"):
+            decrypt_string(raw)
 
 
 def test_encrypt_decrypt_empty_string(app):
@@ -73,15 +77,16 @@ def test_encrypt_decrypt_unicode(app):
 
 
 def test_decrypt_invalid_token(app):
-    """Invalid tokens (malformed Fernet) should return the original input."""
+    """Invalid Fernet-looking tokens must fail closed."""
     with app.app_context():
         # Looks like Fernet but is invalid/corrupted
         invalid_token = "gAAAAABl-ThisIsInvalidTokenValue-xyz="
-        assert decrypt_string(invalid_token) == invalid_token
+        with pytest.raises(ValueError, match="could not be decrypted"):
+            decrypt_string(invalid_token)
 
 
 def test_decrypt_with_different_key(app):
-    """Decryption with a different key should return the original input."""
+    """Decryption with a different key must fail closed."""
     from cryptography.fernet import Fernet
 
     with app.app_context():
@@ -90,8 +95,8 @@ def test_decrypt_with_different_key(app):
         plaintext = "secret-info"
         encrypted_with_other = other_f.encrypt(plaintext.encode()).decode()
 
-        # Should fail to decrypt with app's key and return the cipher_text
-        assert decrypt_string(encrypted_with_other) == encrypted_with_other
+        with pytest.raises(ValueError, match="could not be decrypted"):
+            decrypt_string(encrypted_with_other)
 
 
 # --- JSONPath ---
@@ -166,6 +171,160 @@ def test_mask_secrets_list():
     assert masked[1]["name"] == "n"
 
 
+# --- CIPP result formatting ---
+
+
+def test_format_cipp_defender_results():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertDefenderAlerts"},
+        "Results": [
+            {
+                "Title": '"MalUri" malware was prevented',
+                "Severity": "informational",
+                "Category": "Malware",
+                "ProductName": "Microsoft Defender for Endpoint",
+                "DetectionSource": "antivirus",
+                "Description": "First line\\nSecond line",
+                "RecommendedActions": "\\tCollect artifacts\\n\\tReview the machine timeline",
+                "CreatedAt": "2026-03-10T10:29:52Z",
+                "EmptyField": None,
+            },
+            {"Title": "Suspicious activity", "Severity": "high"},
+        ],
+    }
+
+    result = format_cipp_results(data)
+
+    assert "ALERT 1" in result
+    assert "ALERT 2" in result
+    assert 'Title: "MalUri" malware was prevented' in result
+    assert "Product: Microsoft Defender for Endpoint" in result
+    assert "First line\nSecond line" in result
+    assert "- Collect artifacts\n- Review the machine timeline" in result
+    assert "Empty Field" not in result
+    assert "None" not in result
+
+
+def test_format_cipp_secret_expiry_masks_and_renders_all_results():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppSecretExpiry"},
+        "Results": [
+            {
+                "AppName": "Firestart Cloud",
+                "AppId": "app-1",
+                "SecretName": "Firestart",
+                "SecretID": "secret-1",
+                "Expires": "2026-09-08T06:45:22.969Z",
+                "Tenant": "example.com",
+            },
+            {"AppName": "Second App", "AppId": "app-2", "Expires": "2026-10-01T00:00:00Z"},
+        ],
+    }
+
+    result = format_cipp_results(mask_secrets(data))
+
+    assert "APPLICATION 1" in result
+    assert "APPLICATION 2" in result
+    assert "Application Name: Firestart Cloud" in result
+    assert "Application Name: Second App" in result
+    assert "Secret Name: ***" in result
+    assert "Secret ID: ***" in result
+
+
+def test_format_cipp_certificate_expiry():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppCertificateExpiry"},
+        "Results": [
+            {
+                "DisplayName": "SAML Application",
+                "AppId": "app-1",
+                "Type": "SamlServicePrincipal",
+                "ServicePrincipalId": "sp-1",
+                "Expires": "2026-09-08T06:45:22.969Z",
+            }
+        ],
+    }
+
+    result = format_cipp_results(data)
+
+    assert "APPLICATION 1" in result
+    assert "Application Name: SAML Application" in result
+    assert "Application Type: SamlServicePrincipal" in result
+    assert "Service Principal ID: sp-1" in result
+
+
+def test_filter_cipp_certificate_expiry_results_by_exact_name_and_glob():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppCertificateExpiry"},
+        "Results": [
+            {"DisplayName": "ConnectSyncProvisioning_ANAP02_363a343699fd", "AppId": "app-1"},
+            {"DisplayName": "hornetsecurity 365 permission manager application", "AppId": "app-2"},
+            {"DisplayName": "Keep Me", "AppId": "app-3"},
+        ],
+    }
+
+    patterns = parse_cipp_app_certificate_exclude_patterns(
+        "ConnectSyncProvisioning_*\nHornetsecurity 365 Permission Manager Application"
+    )
+    filtered, excluded_names = filter_cipp_app_certificate_expiry_results(data, patterns)
+
+    assert excluded_names == [
+        "ConnectSyncProvisioning_ANAP02_363a343699fd",
+        "hornetsecurity 365 permission manager application",
+    ]
+    assert filtered["Results"] == [{"DisplayName": "Keep Me", "AppId": "app-3"}]
+    assert len(data["Results"]) == 3
+
+
+def test_filter_cipp_application_names_only_applies_to_certificate_expiry_command():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertAppSecretExpiry"},
+        "Results": [{"DisplayName": "SAML Application"}],
+    }
+
+    filtered, excluded_names = filter_cipp_app_certificate_expiry_results(data, ("SAML Application",))
+
+    assert filtered is data
+    assert excluded_names == []
+
+
+def test_parse_cipp_certificate_exclusions_normalizes_gui_lines():
+    raw_patterns = "  App One  \r\nconnectsync_*\nAPP ONE\n\n"
+
+    assert parse_cipp_app_certificate_exclude_patterns(raw_patterns) == ("App One", "connectsync_*")
+
+
+def test_format_cipp_unknown_result_fields_use_generic_fallback():
+    data = {
+        "TaskInfo": {"Command": "Get-CIPPAlertFutureAlert"},
+        "Results": [{"PolicyDisplayName": "Future Policy", "NestedData": {"state": "warning"}}],
+    }
+
+    result = format_cipp_results(data)
+
+    assert "RESULT 1" in result
+    assert "Policy Display Name: Future Policy" in result
+    assert 'Nested Data:\n{\n  "state": "warning"\n}' in result
+
+
+def test_format_cipp_empty_results():
+    assert format_cipp_results({"Results": []}) == "No alert results were returned."
+    assert format_cipp_results({}) == "No alert results were returned."
+
+
+def test_format_cipp_recursively_empty_values():
+    empty_results = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
+    assert format_cipp_results(empty_results) == "No alert results were returned."
+
+    populated_results = {"Results": [{"Whitespace": "   ", "EmptyContainer": [None, {}], "Count": 0, "Enabled": False}]}
+    result = format_cipp_results(populated_results)
+
+    assert "Whitespace" not in result
+    assert "Empty Container" not in result
+    assert "Count: 0" in result
+    assert "Enabled: False" in result
+
+
 # --- Auth ---
 
 
@@ -218,6 +377,7 @@ def test_check_auth_fails_empty_password():
 # --- LLM ---
 
 
+@patch.dict(os.environ, {}, clear=True)
 @patch("hookwise.utils.requests.post")
 def test_call_llm_success(mock_post):
     """Test successful LLM call."""
@@ -231,8 +391,45 @@ def test_call_llm_success(mock_post):
     assert result == "Hello from LLM"
     mock_post.assert_called_once()
     args, kwargs = mock_post.call_args
+    assert kwargs["json"]["model"] == "qwen3.5:4b"
     assert kwargs["json"]["prompt"] == "test prompt"
     assert "You are a helpful assistant" in kwargs["json"]["system"]
+    assert kwargs["json"]["think"] is False
+    assert kwargs["json"]["options"] == {"num_ctx": 4096, "num_predict": 512, "temperature": 0.1}
+
+
+@patch.dict(os.environ, {"AI_MODEL": "llama3.2"})
+@patch("hookwise.utils.requests.post")
+def test_call_llm_uses_configured_model(mock_post):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": "ok"}
+    mock_post.return_value = mock_response
+
+    assert call_llm("test prompt") == "ok"
+    assert mock_post.call_args.kwargs["json"]["model"] == "llama3.2"
+    assert "think" not in mock_post.call_args.kwargs["json"]
+
+
+@patch.dict(
+    os.environ,
+    {
+        "AI_MODEL": "qwen3.5:9b",
+        "LLM_CONTEXT_LENGTH": "8192",
+        "LLM_MAX_TOKENS": "256",
+        "LLM_THINK": "true",
+    },
+)
+@patch("hookwise.utils.requests.post")
+def test_call_llm_configures_qwen35_thinking_and_limits(mock_post):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"response": "ok"}
+    mock_post.return_value = mock_response
+
+    assert call_llm("test prompt") == "ok"
+    request_body = mock_post.call_args.kwargs["json"]
+    assert request_body["think"] is True
+    assert request_body["options"]["num_ctx"] == 8192
+    assert request_body["options"]["num_predict"] == 256
 
 
 @patch("hookwise.utils.requests.post")
@@ -303,6 +500,7 @@ def test_log_audit_session_user(app):
     """log_audit with session username should use that user."""
     with app.test_request_context():
         from flask import session
+
         session["username"] = "session_user"
         log_audit("session_action")
 
@@ -332,6 +530,7 @@ def test_log_audit_custom_session_no_commit(app):
     """log_audit with custom session and commit=False should not commit."""
     with app.app_context():
         from unittest.mock import MagicMock
+
         mock_session = MagicMock()
         log_audit("no_commit", commit=False, db_session=mock_session)
 
@@ -347,13 +546,16 @@ def test_get_fernet_missing_key():
     with patch("hookwise.utils._fernet_instance", None):
         with patch.dict(os.environ, {}, clear=True):
             from hookwise.utils import get_fernet
+
             with pytest.raises(RuntimeError, match="ENCRYPTION_KEY environment variable is not set"):
                 get_fernet()
+
 
 def test_get_fernet_invalid_key():
     """get_fernet should raise RuntimeError if ENCRYPTION_KEY is invalid."""
     with patch("hookwise.utils._fernet_instance", None):
         with patch.dict(os.environ, {"ENCRYPTION_KEY": "invalid-key-not-base64"}, clear=True):
             from hookwise.utils import get_fernet
+
             with pytest.raises(RuntimeError, match="Invalid ENCRYPTION_KEY"):
                 get_fernet()

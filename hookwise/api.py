@@ -1,4 +1,4 @@
-"""API, stats, health, admin, history, settings, debug, and metrics routes."""
+"""History, statistics, endpoint diagnostics, and metrics handlers."""
 
 import json
 import os
@@ -15,11 +15,47 @@ from sqlalchemy.orm import joinedload
 
 from .extensions import csrf, db, limiter
 from .models import AuditLog, User, WebhookConfig, WebhookLog
+from .services.delivery_queue import commit_and_dispatch, stage_delivery
+from .services.routing import routing_regex_matches
 from .tasks import celery, cw_client, process_webhook_task, redis_client
-from .utils import auth_required, log_audit, log_to_web, resolve_jsonpath, resolve_monitor_name
+from .utils import (
+    CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
+    auth_required,
+    log_audit,
+    log_to_web,
+    mask_secrets,
+    parse_cipp_app_certificate_exclude_patterns,
+    resolve_jsonpath,
+    resolve_monitor_name,
+)
+
+_DELIVERY_CONTROL_BOUNDS = {
+    "rate_limit_per_minute": (60, 1, 10_000),
+    "retry_max_attempts": (5, 0, 20),
+    "retry_base_delay_seconds": (1, 1, 3_600),
+    "retry_max_delay_seconds": (300, 1, 86_400),
+}
+_DELIVERY_CONTROL_FIELDS = frozenset({*_DELIVERY_CONTROL_BOUNDS, "retry_enabled"})
+
+
+def _restore_delivery_control(field: str, value: Any) -> bool | int:
+    """Normalize restored delivery controls with the endpoint form bounds."""
+    if field == "retry_enabled":
+        return value if isinstance(value, bool) else True
+    default, minimum, maximum = _DELIVERY_CONTROL_BOUNDS[field]
+    try:
+        parsed = int(value) if not isinstance(value, bool) else default
+    except TypeError, ValueError:
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _routing_regex_matches(pattern: str, value: str) -> bool:
+    """Compatibility wrapper for callers importing the legacy API helper."""
+    return routing_regex_matches(pattern, value)
+
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
-
 
 
 def _parse_row_date(row_date: Any) -> date | None:
@@ -33,6 +69,7 @@ def _parse_row_date(row_date: Any) -> date | None:
             return datetime.strptime(str(row_date).split(" ")[0], "%Y-%m-%d").date()
         except ValueError as e:
             import logging
+
             logging.error(f"Failed to parse date '{row_date}': {e}")
             return None
 
@@ -54,6 +91,7 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
     now: date = datetime.now(timezone.utc).date()
 
     if period == "weekly":
+
         def generate_weeks(start_date: date, count: int):
             seen: set[tuple[int, int]] = set()
             for j in range(60):
@@ -105,6 +143,8 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
                 }
             )
     return history_data
+
+
 def _register() -> None:
     from .routes import main_bp
 
@@ -154,8 +194,8 @@ def _register() -> None:
             payload_data = {"raw": log.payload}
             if log.payload and log.payload.startswith(("{", "[")):
                 try:
-                    payload_data = json.loads(log.payload)
-                except (json.JSONDecodeError, TypeError):
+                    payload_data = mask_secrets(json.loads(log.payload))
+                except json.JSONDecodeError, TypeError:
                     pass
 
             history.append(
@@ -181,9 +221,9 @@ def _register() -> None:
             return jsonify(
                 {"status": "success", "message": "Manual timeout check triggered in background.", "task_id": task.id}
             )
-        except Exception as e:
-            current_app.logger.error(f"Failed to enqueue timeout check: {e}")
-            return jsonify({"status": "error", "message": "Failed to enqueue timeout check", "details": str(e)}), 503
+        except Exception:
+            current_app.logger.exception("Failed to enqueue timeout check")
+            return jsonify({"status": "error", "message": "Failed to enqueue timeout check"}), 503
 
     @main_bp.route("/history")
     @auth_required
@@ -197,38 +237,16 @@ def _register() -> None:
         source_ip = request.args.get("source_ip", "")
         per_page = 25
 
-        query = WebhookLog.query
-        if search:
-            if search.startswith("#"):
-                search_id = search[1:]
-                if search_id.isdigit():
-                    query = query.filter(WebhookLog.ticket_id == int(search_id))
-            elif search.isdigit():
-                query = query.filter(WebhookLog.ticket_id == int(search))
-            else:
-                query = query.filter(
-                    (WebhookLog.request_id.ilike(f"%{search}%"))
-                    | (WebhookLog.payload.ilike(f"%{search}%"))
-                    | (WebhookLog.error_message.ilike(f"%{search}%"))
-                )
+        from .history_ops import _filter_logs
 
-        if endpoint_id:
-            query = query.filter(WebhookLog.config_id == endpoint_id)
-
-        if status:
-            query = query.filter(WebhookLog.status == status)
+        try:
+            query = _filter_logs(request.args)
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            query = WebhookLog.query.filter(db.false())
 
         if source_ip:
             query = query.filter(WebhookLog.source_ip.ilike(f"%{source_ip}%"))
-
-        if date_from:
-            from datetime import datetime
-
-            query = query.filter(WebhookLog.created_at >= datetime.fromisoformat(date_from))
-        if date_to:
-            from datetime import datetime, timedelta
-
-            query = query.filter(WebhookLog.created_at <= datetime.fromisoformat(date_to) + timedelta(days=1))
 
         pagination = query.order_by(WebhookLog.created_at.desc()).paginate(
             page=page, per_page=per_page, error_out=False
@@ -270,22 +288,38 @@ def _register() -> None:
     @main_bp.route("/history/replay/<log_id>", methods=["POST"])
     @auth_required
     def replay_webhook(log_id: str) -> Any:
+        if session.get("role") not in {"admin", "operator"}:
+            return jsonify({"error": "An operator role is required for this action."}), 403
         log_entry = WebhookLog.query.get_or_404(log_id)
         try:
             data = json.loads(log_entry.payload)
-            request_id = f"replay_{int(time.time())}_{log_entry.request_id[:8]}"
-            process_webhook_task.delay(log_entry.config_id, data, request_id)
+            request_id = f"replay_{int(time.time())}_{secrets.token_hex(4)}_{log_entry.request_id[:8]}"[:100]
+            now = datetime.now(timezone.utc)
+            replay_log = WebhookLog(
+                config_id=log_entry.config_id,
+                request_id=request_id,
+                correlation_id=log_entry.correlation_id or log_entry.request_id[:100],
+                payload=json.dumps(data),
+                status="pending_enqueue",
+                received_at=now,
+                queued_at=now,
+                replay_of_log_id=log_entry.id,
+            )
+            outbox = stage_delivery(replay_log, data)
+            if not commit_and_dispatch(outbox, process_webhook_task):
+                return jsonify({"status": "enqueue_failed", "message": "Replay retained for retry"}), 503
             log_to_web(
                 f"REPLAY started (Original: {log_entry.request_id[:8]})", "info", log_entry.config.name, data=data
             )
             return jsonify({"status": "success", "message": "Replay queued", "request_id": request_id})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to replay webhook")
+            return jsonify({"status": "error", "message": "Replay failed"}), 500
 
-    @main_bp.route("/history/delete/<id>", methods=["POST"])
+    @main_bp.route("/history/delete/<log_id>", methods=["POST"])
     @auth_required
-    def delete_log(id: str) -> Any:
-        log_entry = WebhookLog.query.get_or_404(id)
+    def delete_log(log_id: str) -> Any:
+        log_entry = WebhookLog.query.get_or_404(log_id)
         db.session.delete(log_entry)
         db.session.commit()
         return jsonify({"status": "success"})
@@ -306,179 +340,6 @@ def _register() -> None:
         WebhookLog.query.filter(WebhookLog.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"status": "success"})
-
-    # --- Endpoint Testing ---
-
-    @main_bp.route("/endpoint/test/<id>", methods=["POST"])
-    @auth_required
-    def test_endpoint(id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(id)
-        request_id = f"test_{int(time.time())}"
-        data = {
-            "monitor": {"name": f"Test Monitor for {config.name}"},
-            "status": "0",
-            "msg": "Common test message for webhook verification",
-            "heartbeat": {"status": "0"},
-            "title": "Manual Test Trigger",
-            "message": "This is a simulated webhook payload.",
-        }
-        process_webhook_task.delay(id, data, request_id)
-        log_to_web(f"Manual test triggered for {config.name} (ID: {request_id})", "info", config.name, data=data)
-        return jsonify({"status": "success", "message": "Test webhook queued", "request_id": request_id})
-
-    @main_bp.route("/endpoint/dry-run/<id>", methods=["POST"])
-    @auth_required
-    def dry_run_endpoint(id: str) -> Any:
-        """Simulate webhook processing without calling ConnectWise or Redis."""
-        config = WebhookConfig.query.get_or_404(id)
-        try:
-            data = request.get_json(force=True, silent=True) or {}
-        except Exception:
-            return jsonify({"status": "error", "message": "Invalid JSON body"}), 400
-
-        from .tasks import is_in_maintenance
-        from .utils import resolve_jsonpath
-
-        steps = []
-        result: dict[str, Any] = {}
-
-        # Step 1: Maintenance window
-        maintenance_active = is_in_maintenance(config)
-        steps.append(
-            {
-                "step": "Maintenance Window",
-                "active": maintenance_active,
-                "result": "skipped" if maintenance_active else "ok",
-            }
-        )
-        if maintenance_active:
-            return jsonify({"action": "skip", "reason": "maintenance_window", "steps": steps})
-
-        # Step 2: JSON mapping
-        json_mapping: dict[str, str] = {}
-        if config.json_mapping:
-            try:
-                json_mapping = json.loads(config.json_mapping)
-            except Exception:
-                pass
-
-
-        mapped_vals: dict[str, str] = {}
-        overridable = [
-            "summary",
-            "description",
-            "customer_id",
-            "ticket_type",
-            "subtype",
-            "item",
-            "priority",
-            "board",
-            "status",
-        ]
-        for field in overridable:
-            if field in json_mapping:
-                mapping_val = json_mapping[field]
-                if isinstance(mapping_val, str) and " " in mapping_val:
-                    token_re = re.compile(r"(\$\S+|[^\s]+)")
-                    tokens = token_re.findall(mapping_val)
-                    resolved: list[tuple[str, bool]] = []
-                    any_resolved = False
-                    for tok in tokens:
-                        if tok.startswith("$"):
-                            r_val = resolve_jsonpath(data, tok)
-                            if r_val is not None and str(r_val).strip():
-                                resolved.append((str(r_val).strip(), True))
-                                any_resolved = True
-                            else:
-                                resolved.append(("", True))
-                        else:
-                            resolved.append((tok, False))
-                    if any_resolved:
-                        output_parts = []
-                        for i, (v, is_var) in enumerate(resolved):
-                            if is_var:
-                                if v:
-                                    output_parts.append(v)
-                            else:
-                                left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
-                                right_ok = any(resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved)))
-                                if left_ok or right_ok:
-                                    output_parts.append(v)
-                        if output_parts:
-                            mapped_vals[field] = " ".join(output_parts)
-                else:
-                    r = resolve_jsonpath(data, mapping_val)
-                    if r is not None:
-                        mapped_vals[field] = str(r)
-        steps.append({"step": "JSONPath Mapping", "resolved": mapped_vals})
-
-        # Step 3: Routing rules
-        routing_rules: list[dict[str, Any]] = []
-        if config.routing_rules:
-            try:
-                routing_rules = json.loads(config.routing_rules)
-            except Exception:
-                pass
-        matched_rules = []
-        for rule in routing_rules:
-            rule_path = rule.get("path")
-            rule_regex = rule.get("regex")
-            if rule_path and rule_regex:
-                val = str(resolve_jsonpath(data, rule_path))
-                if re.search(rule_regex, val, re.IGNORECASE):
-                    matched_rules.append(
-                        {
-                            "regex": rule_regex,
-                            "path": rule_path,
-                            "overrides": rule.get("overrides", {}),
-                        }
-                    )
-        steps.append({"step": "Routing Rules", "matched": matched_rules})
-
-        # Step 4: Trigger field evaluation
-        trigger_field = config.trigger_field or ""
-        open_value = config.open_value or ""
-        close_value = config.close_value or ""
-        actual_val = str(resolve_jsonpath(data, trigger_field)) if trigger_field else ""
-        open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
-        close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
-        if actual_val in open_triggers:
-            alert_type = "DOWN"
-        elif actual_val in close_triggers:
-            alert_type = "UP"
-        else:
-            alert_type = "GENERIC"
-
-        steps.append(
-            {
-                "step": "Trigger Evaluation",
-                "trigger_field": trigger_field,
-                "actual_value": actual_val,
-                "alert_type": alert_type,
-            }
-        )
-
-        # Step 5: Predicted action
-        prefix = config.ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-        mapped_summary = mapped_vals.get("summary")
-        monitor_name = resolve_monitor_name(data)
-        ticket_summary = f"{prefix} {mapped_summary}" if mapped_summary else f"{prefix} {monitor_name}"
-        predicted_action = (
-            "create_ticket" if alert_type == "DOWN" else "close_ticket" if alert_type == "UP" else "add_note_or_skip"
-        )
-
-        result = {
-            "action": predicted_action,
-            "alert_type": alert_type,
-            "ticket_summary": ticket_summary,
-            "description": mapped_vals.get("description") or data.get("msg", ""),
-            "company_id": mapped_vals.get("customer_id", config.customer_id_default or ""),
-            "board": (matched_rules[0] if matched_rules else {})
-            .get("overrides", {})
-            .get("board", mapped_vals.get("board", config.board or "")),
-            "steps": steps,
-        }
-        return jsonify(result)
 
     # --- LLM Health ---
 
@@ -510,26 +371,24 @@ def _register() -> None:
                 "response_ms": round((_time.monotonic() - t0) * 1000),
             }
 
-    @main_bp.route("/health/llm")
     @auth_required
     def health_llm() -> Any:
         return jsonify(_get_llm_health())
 
-    @main_bp.route("/api/health/llm")
     @auth_required
     def api_health_llm() -> Any:
         return jsonify(_get_llm_health())
 
-    @main_bp.route("/endpoint/dry-run-llm/<id>", methods=["POST"])
+    @main_bp.route("/endpoint/dry-run-llm/<config_id>", methods=["POST"])
     @auth_required
-    def dry_run_llm(id: str) -> Any:
+    def dry_run_llm(config_id: str) -> Any:
         """Enqueue an LLM RCA task and return the task_id immediately — avoids proxy timeouts."""
         try:
-            config = WebhookConfig.query.get_or_404(id)
+            config = WebhookConfig.query.get_or_404(config_id)
             data = request.get_json(force=True, silent=True) or {}
             from .tasks import run_llm_rca
 
-            task = run_llm_rca.delay(id, data, config.ai_prompt_template)
+            task = run_llm_rca.delay(config_id, data, config.ai_prompt_template)
             return jsonify({"task_id": task.id})
         except Exception as e:
             import logging as _logging
@@ -704,7 +563,6 @@ def _register() -> None:
 
     # --- ConnectWise Proxy ---
 
-    @main_bp.route("/api/cw/boards")
     @auth_required
     def get_cw_boards() -> Any:
         cache_key = "hookwise_cw_boards"
@@ -716,7 +574,6 @@ def _register() -> None:
             redis_client.set(cache_key, json.dumps(boards), ex=3600)
         return jsonify(boards)
 
-    @main_bp.route("/api/cw/priorities")
     @auth_required
     def get_cw_priorities() -> Any:
         cache_key = "hookwise_cw_priorities"
@@ -728,7 +585,6 @@ def _register() -> None:
             redis_client.set(cache_key, json.dumps(priorities), ex=86400)
         return jsonify(priorities)
 
-    @main_bp.route("/api/cw/statuses/<board_id>")
     @auth_required
     def get_cw_statuses(board_id: str) -> Any:
         cache_key = f"hookwise_cw_statuses_{board_id}"
@@ -739,7 +595,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(statuses), ex=3600)
         return jsonify(statuses)
 
-    @main_bp.route("/api/cw/types/<board_id>")
     @auth_required
     def get_cw_types(board_id: str) -> Any:
         cache_key = f"hookwise_cw_types_{board_id}"
@@ -750,7 +605,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(types), ex=3600)
         return jsonify(types)
 
-    @main_bp.route("/api/cw/subtypes/<board_id>")
     @auth_required
     def get_cw_subtypes(board_id: str) -> Any:
         cache_key = f"hookwise_cw_subtypes_{board_id}"
@@ -761,7 +615,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(subtypes), ex=3600)
         return jsonify(subtypes)
 
-    @main_bp.route("/api/cw/items/<board_id>")
     @auth_required
     def get_cw_items(board_id: str) -> Any:
         cache_key = f"hookwise_cw_items_{board_id}"
@@ -772,7 +625,6 @@ def _register() -> None:
         redis_client.set(cache_key, json.dumps(items), ex=3600)
         return jsonify(items)
 
-    @main_bp.route("/api/cw/companies")
     @auth_required
     def get_cw_companies() -> Any:
         search = request.args.get("search")
@@ -788,7 +640,6 @@ def _register() -> None:
 
     # --- Health & Infrastructure ---
 
-    @main_bp.route("/readyz", methods=["GET"])
     def readyz() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
@@ -800,10 +651,10 @@ def _register() -> None:
         try:
             redis_client.ping()
             return jsonify({"status": "ready"}), 200
-        except Exception as e:
-            return jsonify({"status": "not ready", "reason": str(e)}), 503
+        except Exception:
+            current_app.logger.exception("Redis readiness check failed")
+            return jsonify({"status": "not ready", "reason": "Redis error"}), 503
 
-    @main_bp.route("/health", methods=["GET"])
     def health() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
@@ -818,7 +669,6 @@ def _register() -> None:
         except Exception:
             return jsonify({"status": "error", "message": "Service unreachable"}), 503
 
-    @main_bp.route("/health/services", methods=["GET"])
     @limiter.exempt
     def health_services() -> Tuple[Response, int]:
         health_data = {"redis": "down", "database": "down", "celery": "down", "timestamp": time.time()}
@@ -854,7 +704,6 @@ def _register() -> None:
 
     # --- Admin ---
 
-    @main_bp.route("/admin/maintenance", methods=["GET", "POST"])
     @auth_required
     def maintenance_mode() -> Response:
         if request.method == "POST":
@@ -866,13 +715,16 @@ def _register() -> None:
         mode = redis_client.get("hookwise_maintenance_mode")
         return jsonify({"maintenance_mode": mode and cast(bytes, mode).decode() == "true"})
 
-    @main_bp.route("/settings")
     @auth_required
     def settings() -> Any:
         retention = redis_client.get("hookwise_log_retention_days")
         retention = cast(bytes, retention).decode() if retention else os.environ.get("LOG_RETENTION_DAYS", "30")
         health_webhook = redis_client.get("hookwise_health_webhook")
         health_webhook = cast(bytes, health_webhook).decode() if health_webhook else ""
+        cipp_app_certificate_exclude_names = redis_client.get(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY)
+        cipp_app_certificate_exclude_names = (
+            cast(bytes, cipp_app_certificate_exclude_names).decode() if cipp_app_certificate_exclude_names else ""
+        )
         api_key = redis_client.get("hookwise_master_api_key")
         api_key = cast(bytes, api_key).decode() if api_key else "Not Generated"
         user = User.query.get(session["user_id"])
@@ -881,22 +733,24 @@ def _register() -> None:
             log_retention_days=retention,
             master_api_key=api_key,
             health_webhook=health_webhook,
+            cipp_app_certificate_exclude_names=cipp_app_certificate_exclude_names,
             user_2fa_enabled=user.is_2fa_enabled,
         )
 
-    @main_bp.route("/settings/update", methods=["POST"])
     @auth_required
     def update_settings() -> Any:
         retention = request.form.get("log_retention_days")
         health_webhook = request.form.get("health_webhook")
+        cipp_app_certificate_exclude_names = request.form.get("cipp_app_certificate_exclude_names", "")
         if retention:
             redis_client.set("hookwise_log_retention_days", retention)
         if health_webhook:
             redis_client.set("hookwise_health_webhook", health_webhook)
+        exclude_patterns = parse_cipp_app_certificate_exclude_patterns(cipp_app_certificate_exclude_names)
+        redis_client.set(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY, "\n".join(exclude_patterns))
         flash("Settings updated successfully!")
         return redirect(url_for("main.settings"))
 
-    @main_bp.route("/admin/clear-cache", methods=["POST"])
     @auth_required
     def clear_cache() -> Any:
         count = 0
@@ -906,10 +760,10 @@ def _register() -> None:
                 count += 1
             log_audit("clear_cache", None, f"Cleared {count} ConnectWise API cache keys")
             return jsonify({"status": "success", "count": count})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        except Exception:
+            current_app.logger.exception("Failed to clear ConnectWise cache")
+            return jsonify({"status": "error", "message": "Failed to clear cache"}), 500
 
-    @main_bp.route("/admin/generate-api-key", methods=["POST"])
     @auth_required
     def generate_api_key() -> Any:
         new_key = secrets.token_urlsafe(64)
@@ -917,11 +771,8 @@ def _register() -> None:
         log_audit("generate_master_api_key", None, "New master API key generated")
         return jsonify({"status": "success", "api_key": new_key})
 
-    @main_bp.route("/admin/llm-test", methods=["POST"])
     @auth_required
     def llm_test() -> Any:
-        from .utils import call_llm
-
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({"status": "error", "message": "JSON body as dictionary is required"}), 400
@@ -930,76 +781,41 @@ def _register() -> None:
         if not prompt:
             return jsonify({"status": "error", "message": "Prompt is required"}), 400
 
-        result = call_llm(prompt)
-        if result:
-            return jsonify({"status": "success", "result": result})
-        return jsonify({"status": "error", "message": "LLM call failed or returned empty result"}), 500
+        from .tasks import LLM_TASK_TIME_LIMIT, run_llm_test
 
-    @main_bp.route("/admin/backup", methods=["GET"])
-    @auth_required
-    def backup_config() -> Any:
-        configs = WebhookConfig.query.all()
-        data = [c.to_dict(include_token=True) for c in configs]
-        return Response(
-            json.dumps(data, indent=2),
-            mimetype="application/json",
-            headers={"Content-Disposition": "attachment;filename=hookwise_backup.json"},
+        try:
+            task = run_llm_test.delay(prompt)
+        except Exception:
+            current_app.logger.exception("Failed to enqueue LLM diagnostic")
+            return jsonify({"status": "error", "message": "Failed to enqueue LLM diagnostic"}), 503
+
+        return (
+            jsonify(
+                {
+                    "status": "pending",
+                    "task_id": task.id,
+                    "poll_after_ms": 2000,
+                    "timeout_seconds": LLM_TASK_TIME_LIMIT + 30,
+                }
+            ),
+            202,
         )
 
-    @main_bp.route("/admin/restore", methods=["POST"])
     @auth_required
-    def restore_config() -> Any:
-        file = request.files.get("backup_file")
-        if not file:
-            return jsonify({"status": "error", "message": "No file"}), 400
-        try:
-            data = json.load(file)
-            ids = [c["id"] for c in data if "id" in c]
-            existing_configs = {cfg.id: cfg for cfg in WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()}
+    def llm_test_status(task_id: str) -> Any:
+        from celery.result import AsyncResult
 
-            for c in data:
-                config_id = c.get("id")
-                if not config_id:
-                    continue
-                config = existing_configs.get(config_id)
-                if not config:
-                    config = WebhookConfig(id=config_id)
-                    db.session.add(config)
-                fields = [
-                    "name",
-                    "customer_id_default",
-                    "board",
-                    "status",
-                    "ticket_type",
-                    "subtype",
-                    "item",
-                    "priority",
-                    "trigger_field",
-                    "open_value",
-                    "close_value",
-                    "ticket_prefix",
-                    "json_mapping",
-                    "routing_rules",
-                    "maintenance_windows",
-                    "trusted_ips",
-                    "is_enabled",
-                    "is_pinned",
-                    "is_draft",
-                    "ai_rca_enabled",
-                    "ai_prompt_template",
-                    "bearer_token",
-                    "description_template",
-                    "hmac_secret",
-                ]
-                for f in fields:
-                    if f in c:
-                        setattr(config, f, c[f])
-            db.session.commit()
-            return jsonify({"status": "success"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
+        from .tasks import celery
 
-    @main_bp.route("/api/feedback", methods=["POST"])
+        result = AsyncResult(task_id, app=celery)
+        if result.state in {"PENDING", "RECEIVED", "STARTED", "RETRY"}:
+            return jsonify({"status": "pending", "state": result.state.lower()})
+        if result.state == "SUCCESS":
+            if isinstance(result.result, dict):
+                return jsonify(result.result)
+            return jsonify({"status": "error", "message": "LLM diagnostic returned an invalid result"}), 500
+        return jsonify({"status": "error", "message": f"LLM diagnostic failed: {result.state}"}), 500
+
     @auth_required
     def submit_feedback() -> Any:
         data = request.json
@@ -1037,8 +853,9 @@ def _register() -> None:
                     if val is not None:
                         results[field] = str(val)
                         steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
-            except Exception as e:
-                steps.append(f"Error parsing JSON Mapping: {e}")
+            except Exception:
+                current_app.logger.exception("Failed to parse debug JSON mapping")
+                steps.append("Error parsing JSON Mapping")
 
     def _apply_routing_rules(
         data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
@@ -1052,7 +869,7 @@ def _register() -> None:
                     regex = rule.get("regex")
                     if path and regex:
                         val = str(resolve_jsonpath(data, path))
-                        if re.search(regex, val, re.IGNORECASE):
+                        if _routing_regex_matches(str(regex), val):
                             steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
                             overrides = rule.get("overrides", {})
                             for k, v in overrides.items():
@@ -1060,8 +877,9 @@ def _register() -> None:
                                 steps.append(f"Override applied: {k} -> {v}")
                         else:
                             steps.append(f"Rule {i + 1} did NOT match: '{regex}' on '{path}'")
-            except Exception as e:
-                steps.append(f"Error parsing Routing Rules: {e}")
+            except Exception:
+                current_app.logger.exception("Failed to parse debug routing rules")
+                steps.append("Error parsing Routing Rules")
 
     def _resolve_summary_and_company(
         data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
@@ -1121,6 +939,19 @@ def _register() -> None:
         except Exception:
             pass
         return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
+    from .admin_api import register_admin_routes
+    from .backup_api import register_backup_routes
+    from .connectwise_api import register_connectwise_routes
+    from .delivery_api import register_delivery_routes
+    from .health_api import register_health_routes
+
+    handlers = locals()
+    register_health_routes(main_bp, handlers)
+    register_connectwise_routes(main_bp, handlers)
+    register_admin_routes(main_bp, handlers)
+    register_backup_routes(main_bp, handlers)
+    register_delivery_routes(main_bp)
 
 
 _register()

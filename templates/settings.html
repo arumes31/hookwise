@@ -3,7 +3,7 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-10 col-xl-8">
-        <h1 class="accent-gradient fw-bold mb-5 text-center">System Settings</h1>
+        <h1 class="accent-gradient fw-bold mb-4">System Settings</h1>
 
         <!-- General Configuration -->
         <div class="glass-card mb-5 anime-slide-up" style="animation-delay: 0.1s;">
@@ -11,13 +11,9 @@
                 <div class="d-flex align-items-center">
                     <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 rounded-circle me-3"
                         style="width: 48px; height: 48px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                            class="bi bi-sliders text-primary" viewBox="0 0 16 16">
-                            <path fill-rule="evenodd"
-                                d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3h9.05zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8h2.05zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1h9.05z" />
-                        </svg>
+                        <svg class="hw-icon text-primary" width="24" height="24" aria-hidden="true" focusable="false"><use href="#i-sliders"></use></svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">General Configuration</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">General Configuration</h2>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -42,7 +38,7 @@
                             Alerts</label>
                         <div class="input-group">
                             <span class="input-group-text bg-dark border-secondary text-secondary">
-                                <i class="fab fa-discord"></i>
+                                Discord
                             </span>
                             <input type="url" class="form-control bg-dark border-secondary text-light"
                                 id="health_webhook" name="health_webhook" value="{{ health_webhook }}"
@@ -53,10 +49,26 @@
                     </div>
 
                     <div class="mb-4">
+                        <label for="cipp_app_certificate_exclude_names"
+                            class="form-label text-secondary fw-bold text-uppercase small ls-1">CIPP Certificate
+                            Expiry Exclusions</label>
+                        <textarea class="form-control bg-dark border-secondary text-light font-monospace"
+                            id="cipp_app_certificate_exclude_names" name="cipp_app_certificate_exclude_names"
+                            rows="6"
+                            placeholder="ConnectSyncProvisioning_*&#10;Hornetsecurity 365 Permission Manager Application">{{ cipp_app_certificate_exclude_names }}</textarea>
+                        <div class="form-text text-light opacity-50">
+                            One enterprise application name or pattern per line. Matching is case-insensitive;
+                            <code>*</code> and <code>?</code> wildcards are supported. Applies globally to
+                            <code>Get-CIPPAlertAppCertificateExpiry</code>. If every result is excluded, no ticket is
+                            created or updated.
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
                         <label class="form-label text-secondary fw-bold text-uppercase small ls-1">Maintenance</label>
                         <div>
                             <button type="button" class="btn btn-outline-warning btn-sm" onclick="clearCache()">
-                                <i class="fas fa-broom me-2"></i>Clear ConnectWise Cache
+                                Clear ConnectWise Cache
                             </button>
                             <span class="ms-2 lightgrey small">Forces a refresh of Boards, Priorities, and Companies
                                 from ConnectWise.</span>
@@ -65,7 +77,7 @@
 
                     <div class="d-flex justify-content-end pt-3">
                         <button type="submit" class="btn btn-primary px-4 py-2 fw-bold shadow-lg">
-                            <i class="fas fa-save me-2"></i>Save Changes
+                            Save Changes
                         </button>
                     </div>
                 </form>
@@ -78,14 +90,9 @@
                 <div class="d-flex align-items-center">
                     <div class="d-inline-flex align-items-center justify-content-center bg-warning bg-opacity-10 rounded-circle me-3"
                         style="width: 48px; height: 48px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                            class="bi bi-key text-warning" viewBox="0 0 16 16">
-                            <path
-                                d="M0 8a4 4 0 0 1 7.465-2H14a.5.5 0 0 1 .354.146l1.5 1.5a.5.5 0 0 1 0 .708l-1.5 1.5a.5.5 0 0 1-.708 0L13 9.207l-.646.647a.5.5 0 0 1-.708 0L11 9.207l-.646.647a.5.5 0 0 1-.708 0L9 9.207l-.646.647A.5.5 0 0 1 8 10h-.535A4 4 0 0 1 0 8zm4-3a3 3 0 1 0 2.712 4.285A.5.5 0 0 1 7.163 9h.63l.853-.854a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.646-.647a.5.5 0 0 1 .708 0l.646.647.793-.793-1-1h-6.63a.5.5 0 0 1-.451-.285A3 3 0 0 0 4 5z" />
-                            <path d="M4 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0z" />
-                        </svg>
+                        <svg class="hw-icon text-warning" width="24" height="24" aria-hidden="true" focusable="false"><use href="#i-key"></use></svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">API Management</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">API Management</h2>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -93,22 +100,22 @@
                 </p>
 
                 <div class="bg-dark bg-opacity-50 p-4 rounded-3 border border-secondary border-opacity-25 mb-3">
-                    <label class="form-label text-secondary fw-bold text-uppercase small ls-1 mb-2">Master API
+                    <label for="master-api-key" class="form-label text-secondary fw-bold text-uppercase small ls-1 mb-2">Master API
                         Key</label>
                     <div class="input-group">
                         <input type="text" id="master-api-key"
                             class="form-control bg-dark border-secondary text-warning font-monospace"
                             value="{{ master_api_key }}" readonly>
                         <button class="btn btn-outline-warning" onclick="generateApiKey()">
-                            <i class="fas fa-sync-alt me-1"></i> Regenerate
+                            <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg> Regenerate
                         </button>
                         <button class="btn btn-primary"
                             onclick="copyToClipboard(document.getElementById('master-api-key').value)">
-                            <i class="fas fa-copy me-1"></i> Copy
+                            <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg> Copy
                         </button>
                     </div>
                     <div class="d-flex align-items-center mt-2 text-danger small">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-exclamation-triangle-fill"></use></svg>
                         <span>Regenerating will immediately invalidate existing keys.</span>
                     </div>
                 </div>
@@ -121,34 +128,30 @@
                 <div class="d-flex align-items-center">
                     <div class="d-inline-flex align-items-center justify-content-center bg-info bg-opacity-10 rounded-circle me-3"
                         style="width: 48px; height: 48px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor"
-                            class="bi bi-hdd-network text-info" viewBox="0 0 16 16">
-                            <path d="M4.5 5a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1zM3 4.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z" />
-                            <path
-                                d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2H8.5v3a1.5 1.5 0 0 1 1.5 1.5h5.5a.5.5 0 0 1 0 1H10A1.5 1.5 0 0 1 8.5 14h-1A1.5 1.5 0 0 1 6 12.5H.5a.5.5 0 0 1 0-1H6A1.5 1.5 0 0 1 7.5 10V7H2a2 2 0 0 1-2-2V4zm1 0v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1zm6 7.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5z" />
-                        </svg>
+                        <svg class="hw-icon text-info" width="24" height="24" aria-hidden="true" focusable="false"><use href="#i-hdd-network"></use></svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">Backup & Restore</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">Backup & Restore</h2>
                 </div>
             </div>
             <div class="card-body p-4">
                 <div class="row g-4">
                     <div class="col-md-6 border-end border-secondary border-opacity-25">
-                        <h6 class="text-light fw-bold mb-3">Export Configuration</h6>
+                        <h3 class="h6 text-light fw-bold mb-3">Export Configuration</h3>
                         <p class="text-secondary small mb-3">Download your full system configuration as a specific JSON
                             file.</p>
                         <a href="{{ url_for('main.backup_config') }}" class="btn btn-outline-info w-100">
-                            <i class="fas fa-download me-2"></i>Download Backup
+                            <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>Download Backup
                         </a>
                     </div>
                     <div class="col-md-6 ps-md-4">
-                        <h6 class="text-light fw-bold mb-3">Restore Configuration</h6>
+                        <h3 class="h6 text-light fw-bold mb-3">Restore Configuration</h3>
                         <p class="text-secondary small mb-3">Restore settings from a previously backup file.</p>
                         <div class="input-group">
                             <input type="file" id="backup-file" class="form-control bg-dark border-secondary text-light"
+                                aria-label="Choose configuration backup file"
                                 accept=".json">
                             <button class="btn btn-primary" onclick="restoreConfig()">
-                                <i class="fas fa-upload me-2"></i>Restore
+                                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-up"></use></svg>Restore
                             </button>
                         </div>
                     </div>
@@ -161,10 +164,10 @@
             <div class="card-header border-bottom border-secondary border-opacity-25 py-4 px-4 bg-transparent">
                 <div class="d-flex align-items-center">
                     <div class="d-inline-flex align-items-center justify-content-center bg-purple bg-opacity-10 rounded-circle me-3"
-                        style="width: 48px; height: 48px; background-color: rgba(111, 66, 193, 0.1);">
-                        <i class="fas fa-brain text-purple" style="color: #6f42c1;"></i>
+                        style="width: 48px; height: 48px; background-color: var(--accent-soft);">
+                        <svg class="hw-icon" width="20" height="20" aria-hidden="true" focusable="false" style="color:var(--accent)"><use href="#i-tools"></use></svg>
                     </div>
-                    <h4 class="mb-0 fw-bold text-light">LLM Diagnostic</h4>
+                    <h2 class="h4 mb-0 fw-bold text-light">LLM Diagnostic</h2>
                 </div>
             </div>
             <div class="card-body p-4">
@@ -176,7 +179,7 @@
                 </div>
                 <div class="d-flex justify-content-end mb-4">
                     <button class="btn btn-primary px-4 py-2 fw-bold shadow-lg" id="llm-test-btn" onclick="testLLM()">
-                        <i class="fas fa-microchip me-2"></i>Test LLM
+                        Test LLM
                     </button>
                 </div>
                 <div id="llm-result-container" class="d-none">
@@ -197,9 +200,9 @@
                         <div>
                             <div class="d-flex align-items-center mb-3">
                                 <div class="bg-success bg-opacity-10 rounded p-2 me-3">
-                                    <i class="fas fa-shield-alt text-success fa-lg"></i>
+                                    <svg class="hw-icon text-success fa-lg" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>
                                 </div>
-                                <h5 class="fw-bold text-light mb-0">Two-Factor Auth</h5>
+                                <h3 class="h5 fw-bold text-light mb-0">Two-Factor Auth</h3>
                             </div>
                             <p class="text-secondary small">Status:
                                 {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
@@ -207,7 +210,7 @@
                                     class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-25">ENABLED</span>
                                 {% else %}
                                 <span
-                                    class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-25">DISABLED</span>
+                                    class="badge bg-secondary bg-opacity-20 text-white border border-secondary border-opacity-25">DISABLED</span>
                                 {% endif %}
                             </p>
                         </div>
@@ -231,9 +234,9 @@
                         <div>
                             <div class="d-flex align-items-center mb-3">
                                 <div class="bg-primary bg-opacity-10 rounded p-2 me-3">
-                                    <i class="fas fa-user-shield text-primary fa-lg"></i>
+                                    <svg class="hw-icon text-primary fa-lg" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>
                                 </div>
-                                <h5 class="fw-bold text-light mb-0">Active Session</h5>
+                                <h3 class="h5 fw-bold text-light mb-0">Active Session</h3>
                             </div>
                             <div
                                 class="d-flex align-items-center justify-content-between bg-dark bg-opacity-50 p-2 rounded">
@@ -244,7 +247,7 @@
                         <div class="mt-3">
                             <a href="{{ url_for('main.logout') }}"
                                 class="btn btn-outline-secondary w-100 text-light border-secondary">
-                                <i class="fas fa-sign-out-alt me-2"></i>Sign Out
+                                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>Sign Out
                             </a>
                         </div>
                     </div>
@@ -256,12 +259,12 @@
         <div class="glass-card border-danger border-opacity-25 anime-slide-up" style="animation-delay: 0.6s;">
             <div class="card-body p-4 d-flex align-items-center justify-content-between">
                 <div>
-                    <h5 class="fw-bold text-danger mb-1">Danger Zone</h5>
+                    <h3 class="h5 fw-bold text-danger mb-1">Danger Zone</h3>
                     <p class="text-secondary small mb-0">Irreversible actions. Tread lightly.</p>
                 </div>
                 <button class="btn btn-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"
                     onclick="deleteAllLogs()">
-                    <i class="fas fa-trash-alt me-2"></i>Purge All Logs
+                    <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-trash-fill"></use></svg>Purge All Logs
                 </button>
             </div>
         </div>
@@ -356,7 +359,7 @@
     }
 
     async function testLLM() {
-        const query = document.getElementById('llm-query').value;
+        const query = document.getElementById('llm-query').value.trim();
         if (!query) return showToast('Please enter a query', 'danger');
 
         const btn = document.getElementById('llm-test-btn');
@@ -364,11 +367,11 @@
         const resultArea = document.getElementById('llm-result');
 
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
         container.classList.add('d-none');
 
         try {
-            const res = await fetch('/admin/llm-test', {
+            const enqueueResponse = await fetch('/admin/llm-test', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -376,20 +379,44 @@
                 },
                 body: JSON.stringify({ prompt: query })
             });
-            if (!res.ok) throw new Error(`Server error ${res.status}`);
-            const data = await res.json();
-            if (data.status === 'success') {
-                resultArea.textContent = data.result;
+
+            const enqueueData = await enqueueResponse.json();
+            if (!enqueueResponse.ok || !enqueueData.task_id) {
+                throw new Error(enqueueData.message || `Server error ${enqueueResponse.status}`);
+            }
+
+            const startedAt = Date.now();
+            const pollAfterMs = enqueueData.poll_after_ms || 2000;
+            const deadline = startedAt + (enqueueData.timeout_seconds || 960) * 1000;
+
+            while (Date.now() < deadline) {
+                const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+                btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Testing... ${elapsedSeconds}s`;
+                await new Promise(resolve => setTimeout(resolve, pollAfterMs));
+
+                const statusResponse = await fetch(`/admin/llm-test/status/${encodeURIComponent(enqueueData.task_id)}`, {
+                    headers: { 'X-CSRFToken': CSRF_TOKEN },
+                    cache: 'no-store',
+                });
+                const statusData = await statusResponse.json();
+
+                if (statusData.status === 'pending') continue;
+                if (!statusResponse.ok || statusData.status !== 'success') {
+                    throw new Error(statusData.message || statusData.error || 'Unknown LLM error');
+                }
+
+                resultArea.textContent = statusData.result;
                 container.classList.remove('d-none');
                 showToast('LLM response received', 'success');
-            } else {
-                showToast('LLM test failed: ' + (data.message || data.error || 'Unknown error'), 'danger');
+                return;
             }
+
+            throw new Error('LLM diagnostic exceeded its server-side time limit');
         } catch (e) {
             showToast('Error calling LLM: ' + e.message, 'danger');
         } finally {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-microchip me-2"></i>Test LLM';
+            btn.innerHTML = 'Test LLM';
         }
     }
 </script>

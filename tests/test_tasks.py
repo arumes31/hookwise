@@ -4,11 +4,18 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from celery.exceptions import Retry as CeleryRetry
 
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import WebhookConfig, WebhookLog
-from hookwise.tasks import cleanup_logs, process_webhook_task, run_llm_rca
+from hookwise.tasks import (
+    ContextTask,
+    cleanup_logs,
+    process_webhook_task,
+    run_llm_rca,
+    run_llm_test,
+)
 
 
 @pytest.fixture
@@ -159,6 +166,45 @@ def test_run_llm_rca_exception():
         assert "LLM error: Exception" in result["rca"]
 
 
+def test_run_llm_test_success():
+    with patch("hookwise.utils.call_llm") as mock_call:
+        mock_call.return_value = "Diagnostic response"
+
+        result = run_llm_test("hello")
+
+        assert result == {"status": "success", "result": "Diagnostic response"}
+        mock_call.assert_called_once_with("hello")
+
+
+def test_run_llm_test_no_response():
+    with patch("hookwise.utils.call_llm", return_value=None):
+        result = run_llm_test("hello")
+
+    assert result["status"] == "error"
+    assert "empty result" in result["message"]
+
+
+def test_run_llm_test_exception():
+    with patch("hookwise.utils.call_llm", side_effect=RuntimeError("failed")):
+        result = run_llm_test("hello")
+
+    assert result == {"status": "error", "message": "LLM error: RuntimeError"}
+
+
+def test_context_task_does_not_log_expected_retry_as_failure(app):
+    task = ContextTask()
+    task.run = MagicMock(side_effect=CeleryRetry("scheduled"))
+
+    with (
+        patch("hookwise.tasks._app", app),
+        patch("hookwise.tasks.logger.exception") as mock_exception,
+        pytest.raises(CeleryRetry),
+    ):
+        task()
+
+    mock_exception.assert_not_called()
+
+
 @patch("hookwise.tasks.handle_webhook_logic")
 def test_process_webhook_task_dlq(mock_handle, app):
     """Test that task moves log to DLQ when max retries are exceeded."""
@@ -209,3 +255,43 @@ def test_process_webhook_task_retry(mock_handle, app):
         mock_self.retry.assert_called_once()
         _, kwargs = mock_self.retry.call_args
         assert "exc" in kwargs
+
+
+@patch("hookwise.tasks.handle_webhook_logic")
+def test_process_webhook_task_refreshes_endpoint_settings_for_dlq_replay(mock_handle, app):
+    """A worker must see endpoint edits committed by the web process before replaying."""
+    with app.app_context():
+        config = WebhookConfig(
+            id="refreshed-replay-endpoint",
+            name="Refreshed endpoint",
+            allow_unauthenticated=False,
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        cached_config = db.session.get(WebhookConfig, config.id)
+        assert cached_config is not None
+        assert cached_config.allow_unauthenticated is False
+
+        # Simulate Portainer's web process saving the endpoint while this worker
+        # retains the old ORM object in its identity map.
+        with db.engine.begin() as connection:
+            connection.execute(
+                db.update(WebhookConfig).where(WebhookConfig.id == config.id).values(allow_unauthenticated=True)
+            )
+        assert cached_config.allow_unauthenticated is False
+
+        mock_self = MagicMock()
+        mock_self.request.retries = 0
+        mock_self.max_retries = 5
+        process_webhook_task.run.__func__(
+            mock_self,
+            config.id,
+            {"event": "down"},
+            "replay-current-settings",
+        )
+
+        refreshed_config = db.session.get(WebhookConfig, config.id)
+        assert refreshed_config is cached_config
+        assert refreshed_config.allow_unauthenticated is True
+        mock_handle.assert_called_once()

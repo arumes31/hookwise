@@ -1,0 +1,1281 @@
+{% extends 'base.html' %}
+
+{% block main_content_class %}container-fluid dashboard-content{% endblock %}
+
+{% block content %}
+{# Webhooks: Verwalten. Liste, Filter, Massenaktionen und die
+   zugehoerigen Dialoge. Die Ueberwachung liegt unter "/".
+   Markup und IDs sind unveraendert aus index.html uebernommen,
+   damit alle Skripte und Tests weiter greifen. #}
+<div id="endpoint-dashboard">
+<div id="endpoint-list" class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4 scroll-target">
+    <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
+    {% if debug_mode %}
+    <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2 endpoint-toolbar">
+        <select id="board-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+            style="width: 150px;" aria-label="Filter endpoints by board">
+            <option value="">All Boards</option>
+        </select>
+        <select id="status-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+            style="width: 150px;" aria-label="Filter endpoints by status">
+            <option value="">All Statuses</option>
+            <option value="enabled">Enabled</option>
+            <option value="paused">Paused</option>
+        </select>
+        <select id="endpoint-quick-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
+            style="width: 200px;" aria-label="Quick endpoint filters">
+            <option value="">All endpoint health</option>
+            <option value="recent_failures">Recent failures</option>
+            <option value="stale">Stale endpoints</option>
+            <option value="unhealthy">Unhealthy services</option>
+            <option value="high_latency">High latency</option>
+            <option value="drafts">Draft endpoints</option>
+            <option value="pinned">Pinned endpoints</option>
+            <option value="inactive">No activity</option>
+        </select>
+        <div class="input-group input-group-sm" style="width: 250px;">
+            <span class="input-group-text bg-dark border-secondary text-secondary">
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg>
+            </span>
+            <input type="text" id="endpoint-search" class="form-control bg-dark border-secondary text-white"
+                placeholder="Search endpoints"
+                aria-label="Search endpoints by URL, board, company or token"
+                title="Tip: token:abc4 matches by token ending (full token works too). Also searches URL, board and company.">
+        </div>
+        <button id="clear-endpoint-filters" type="button" class="btn btn-outline-secondary" aria-label="Clear all endpoint filters">Clear</button>
+        <span id="hw-token-hinweis" class="hw-token-hinweis">Tip: token:abc4 matches by token ending (full token works too)</span>
+        {# Nr. 2: Sortierung als Ansicht. "Eigene Reihenfolge" ist die per
+           Drag gepflegte Server-Reihenfolge; alles andere sortiert nur die
+           Darstellung und wird je Browser gemerkt. #}
+        <select id="hw-sortierung" class="form-select form-select-sm bg-dark border-secondary text-white"
+                style="width: 190px;" aria-label="Sort endpoints">
+            <option value="">Custom order</option>
+            <option value="name">Name A&ndash;Z</option>
+            <option value="rate">Failure rate 24h &darr;</option>
+            <option value="lastseen">Last seen &darr;</option>
+            <option value="board">Board A&ndash;Z</option>
+            <option value="boardgruppen">Grouped by board</option>
+        </select>
+        <button id="refresh-endpoints" type="button" class="btn btn-outline-info" aria-label="Refresh endpoint telemetry">Refresh</button>
+        {# Nr. 13: Import aus einer Export-Datei; das Dateifeld bleibt
+           unsichtbar, der Knopf oeffnet den Dateidialog. #}
+        <button type="button" id="hw-import-knopf" class="btn btn-outline-secondary"
+                aria-label="Import endpoint from JSON file">Import</button>
+        <input type="file" id="hw-import-datei" accept=".json,application/json" hidden
+               aria-label="Choose a HookWise endpoint file">
+        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center">
+            <svg class="hw-icon me-2" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>
+            Create New
+        </a>
+    </div>
+</div>
+
+<div class="endpoint-filter-status mb-3" aria-live="polite">
+    <span id="endpoint-result-count" class="text-secondary small">Loading endpoints…</span>
+    <div id="endpoint-filter-chips" class="filter-chips" role="region" aria-label="Active endpoint filters"></div>
+</div>
+<div id="endpoint-summary-error" class="alert alert-warning py-2" hidden role="status"></div>
+<div id="endpoint-filter-empty" class="endpoint-filter-empty" hidden>
+    <strong>No endpoints match these filters.</strong> Adjust or clear a filter to see your configured endpoints.
+</div>
+
+<div id="bulk-controls"
+    class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
+    <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
+    <div class="d-flex gap-2">
+        {# Nr. 11: Board/Prioritaet fuer die Auswahl setzen. Die Datalist wird
+           beim Laden aus den vorhandenen Karten gefuellt. #}
+        <input list="hw-boards" id="hw-bulk-board" class="form-control form-control-sm bg-dark border-secondary text-white"
+               style="width:150px" placeholder="Set board&hellip;" aria-label="Set board for selected endpoints">
+        <datalist id="hw-boards"></datalist>
+        <input id="hw-bulk-prio" class="form-control form-control-sm bg-dark border-secondary text-white"
+               style="width:130px" placeholder="Priority&hellip;" aria-label="Set priority for selected endpoints">
+        <button class="btn btn-sm btn-outline-primary" onclick="bulkFieldUpdate()">Apply</button>
+        <span class="vr opacity-25"></span>
+        <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">Delete Selected</button>
+        <button class="btn btn-sm btn-outline-warning" onclick="bulkPause()">Pause Selected</button>
+        <button class="btn btn-sm btn-outline-success" onclick="bulkResume()">Resume Selected</button>
+        <button class="btn btn-sm btn-outline-info" onclick="bulkExport()">Export Selected</button>
+    </div>
+</div>
+
+{% if not configs %}
+<div class="row justify-content-center py-5">
+    <div class="col-md-8 text-center">
+        <h2 class="h3 text-secondary">Ready to start routing?</h2>
+        <p class="lightgrey mb-5">Create your first webhook endpoint to bridge monitoring alerts to ConnectWise Manage.
+        </p>
+
+        <div class="row g-4 text-start">
+            <div class="col-md-4">
+                <div class="card h-100 bg-dark border-secondary border-opacity-25 shadow-sm">
+                    <div class="card-body p-3">
+                        <div class="h5 text-primary mb-2">1. Create</div>
+                        <p class="small text-secondary mb-0">Define an endpoint name and target service board.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 bg-dark border-secondary border-opacity-25 shadow-sm">
+                    <div class="card-body p-3">
+                        <div class="h5 text-primary mb-2">2. Configure</div>
+                        <p class="small text-secondary mb-0">Copy the unique URL and Bearer Token to your alert source.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 bg-dark border-secondary border-opacity-25 shadow-sm">
+                    <div class="card-body p-3">
+                        <div class="h5 text-primary mb-2">3. Automate</div>
+                        <p class="small text-secondary mb-0">Watch as HookWise creates and manages tickets for you.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary btn-lg mt-5 px-5">Create First Endpoint</a>
+    </div>
+</div>
+{% else %}
+<script>
+    /* Muss synchron VOR Grid und Tabelle laufen: entscheidet vor dem ersten
+       Paint, welche Ansicht sichtbar wird -- sonst blitzen die Kacheln beim
+       Neuladen kurz auf, bevor das Skript am Seitenende zur Liste wechselt. */
+    try {
+        var hwAnsicht = localStorage.getItem('endpoint-view') || 'list';
+        document.documentElement.classList.toggle('hw-listenstart', hwAnsicht === 'list');
+    } catch (e) {}
+</script>
+
+<div id="endpoint-skeleton" class="row d-none">
+    {% for i in range(4) %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 skeleton-card skeleton" style="height: 250px;"></div>
+    </div>
+    {% endfor %}
+
+</div>
+
+
+<div class="mb-3 d-flex justify-content-between align-items-center">
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="check-all">
+        <label class="form-check-label small text-secondary fw-bold" for="check-all">SELECT ALL</label>
+    </div>
+    <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-secondary" onclick="toggleView('grid')" aria-label="Grid view">
+            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-grid-fill"></use></svg>
+        </button>
+        <button class="btn btn-outline-secondary active" onclick="toggleView('list')" aria-label="List view">
+            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-list-task"></use></svg>
+        </button>
+    </div>
+</div>
+
+{# Nr. 1: Listenansicht als echte Tabelle. Wird клientseitig aus den
+   Kartendaten gefuellt, sobald die Listenansicht gewaehlt ist; die Karten
+   bleiben die einzige Datenquelle. #}
+<div id="hw-endpoint-tabelle" class="card bg-dark border-0 shadow-lg overflow-hidden mb-4" hidden>
+    <div class="table-responsive">
+        <table class="table table-dark table-hover mb-0 align-middle small">
+            <thead class="bg-black bg-opacity-50 text-secondary"><tr>
+                <th class="ps-4 py-2">NAME</th>
+                <th class="py-2"><span class="visually-hidden">7-day trend</span></th>
+                <th class="py-2">BOARD</th>
+                <th class="py-2">STATUS</th>
+                <th class="py-2 text-end" title="Successful deliveries in the last 24 hours">OK 24H</th>
+                <th class="py-2 text-end" title="Failed deliveries in the last 24 hours">FAILED 24H</th>
+                <th class="py-2 text-end" title="Skipped deliveries in the last 24 hours">SKIPPED 24H</th>
+                <th class="py-2 text-end" title="Failure rate over the last 24 hours &ndash; the detail page shows 30 days">RATE 24H</th>
+                <th class="py-2">LAST SEEN</th>
+                <th class="pe-4 py-2 text-end"><span class="visually-hidden">Actions</span></th>
+            </tr></thead>
+            <tbody id="hw-endpoint-tabelle-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="row" id="endpoint-grid">
+    {# Nr. 7: erst die Live-Endpoints, Entwuerfe gesammelt am Ende mit
+       eigener Gruppenzeile -- sie mischen sich nicht mehr dazwischen. #}
+    {% set live_configs = configs | rejectattr('is_draft') | list %}
+    {% set draft_configs = configs | selectattr('is_draft') | list %}
+    {% for config in live_configs %}
+    <div class="col-xxl-4 col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
+        {% set z24k = counts.get(config.id, {}) %}
+        {% set summe24k = z24k.get('processed', 0) + z24k.get('failed', 0) + z24k.get('skipped', 0) %}
+        <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
+            data-rate24="{{ (z24k.get('failed', 0) / summe24k * 100) | round(1) if summe24k else 0 }}"
+            data-p24="{{ z24k.get('processed', 0) }}" data-f24="{{ z24k.get('failed', 0) }}" data-s24="{{ z24k.get('skipped', 0) }}"
+            data-lastseen="{{ config.last_seen_at.isoformat() if config.last_seen_at else '' }}"
+            data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
+            data-company="{{ config.customer_id_default or '' }}" data-tags="" data-health="{{ config.config_health_status or 'OK' }}" data-pinned="{{ 'true' if config.is_pinned else 'false' }}"
+            data-status="{{ 'enabled' if config.is_enabled else 'paused' }}">
+            <div class="card-body p-4">
+                <!-- Action Toolbar Overlay -->
+                <div class="endpoint-actions">
+                    {# Zwei primaere Aktionen bleiben sichtbar. Pin, Test und
+                       Token-Rotation wandern ins Overflow-Menue: Rotation macht den
+                       Sender-Token sofort ungueltig und gehoert nicht einen Klick weit
+                       weg. Alle onclick-Handler und aria-labels sind unveraendert. #}
+                    <button onclick="toggleEndpoint('{{ config.id }}')"
+                        class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
+                        data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}" aria-label="{{ 'Resume' if not config.is_enabled else 'Pause' }} endpoint">
+                        {% if config.is_enabled %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pause-circle"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-play-circle"></use></svg>{% endif %}
+                    </button>
+                    <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}"
+                        class="btn btn-sm btn-link p-0 text-secondary hover-primary" data-tooltip="Settings" aria-label="Edit endpoint settings">
+                        <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-gear-fill"></use></svg>
+                    </a>
+                    <details class="hw-more">
+                        <summary class="hw-more-toggle" aria-label="More actions"
+                                 data-tooltip="More actions">
+                            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+                                <circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+                            </svg>
+                        </summary>
+                        <div class="hw-more-menu">
+                        <span class="hw-more-row">
+                        <button onclick="togglePin('{{ config.id }}')"
+                            class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
+                            data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
+                            {% if config.is_pinned %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pin-fill"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pin"></use></svg>{% endif %}
+                        </button>
+                            <span class="hw-more-text">{{ 'Unpin' if config.is_pinned else 'Pin' }}</span>
+                        </span>
+                        <span class="hw-more-row">
+                        <button onclick="openEndpointDetail('{{ config.id }}')"
+                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Open details" aria-label="Open details">
+                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
+                        </button>
+                            <span class="hw-more-text">Open details</span>
+                        </span>
+                        <span class="hw-more-row">
+                        <a href="{{ url_for('main.export_endpoint', config_id=config.id) }}"
+                            hx-boost="false" download
+                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Export as JSON" aria-label="Export endpoint as JSON">
+                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>
+                        </a>
+                            <span class="hw-more-text">Export as JSON</span>
+                        </span>
+                        <span class="hw-more-row">
+                        <button onclick="archiveEndpoint('{{ config.id }}')"
+                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Archive endpoint" aria-label="Archive endpoint">
+                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>
+                        </button>
+                            <span class="hw-more-text">Archive</span>
+                        </span>
+                        <span class="hw-more-row">
+                        <button onclick="cloneEndpoint('{{ config.id }}')"
+                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Duplicate endpoint" aria-label="Duplicate endpoint">
+                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg>
+                        </button>
+                            <span class="hw-more-text">Duplicate</span>
+                        </span>
+                        <span class="hw-more-row">
+                        <button onclick="testEndpoint('{{ config.id }}')"
+                            class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook" aria-label="Test webhook">
+                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-play-fill"></use></svg>
+                        </button>
+                            <span class="hw-more-text">Send test webhook</span>
+                        </span>
+                        <span class="hw-more-row">
+                        <button onclick="confirmRotate('{{ config.id }}', {{ config.name | tojson }})"
+                            class="btn btn-sm btn-link p-0 text-secondary hover-warning" data-tooltip="Rotate Token" aria-label="Rotate endpoint token">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" /></svg>
+                        </button>
+                            <span class="hw-more-text">Rotate token</span>
+                        </span>
+                        </div>
+                    </details>
+                </div>
+
+                <!-- Header: Name & Sparkline -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div class="d-flex align-items-center">
+                        <input type="checkbox" class="endpoint-check form-check-input me-3" data-id="{{ config.id }}"
+                            aria-label="Select endpoint {{ config.name }}">
+                        <div>
+                            <h4 class="mb-1 text-white fw-bold hw-name" data-id="{{ config.id }}"
+                                title="Double-click to rename">{{ config.name }}</h4>
+                            <div class="d-flex gap-2">
+                                {# Der Ausloeser sass als position-absolute in der
+                                   Kartenecke und lag dort ueber dem Auswahl-Kaestchen:
+                                   17x17px Ueberlappung, der Klick traf je nach
+                                   Stapelreihenfolge das falsche Bedienelement. Als
+                                   Statusanzeige gehoert er neben die uebrigen. #}
+                    {% if config.is_pinned %}
+                    <span class="hw-pinflagge" data-tooltip="Pinned" aria-label="Pinned">
+                        <svg class="hw-icon" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-pin-fill"></use></svg>
+                    </span>
+                    {% endif %}
+                    <button
+                        class="btn btn-sm btn-link p-0 text-{{ 'success' if config.config_health_status == 'OK' else 'danger' if config.config_health_status == 'ERROR' else 'warning' }} opacity-50 hover-opacity-100"
+                        data-id="{{ config.id }}" data-status="{{ config.config_health_status }}"
+                        data-message="{{ config.config_health_message or '' }}" data-ip="{{ config.last_ip or '' }}"
+                        data-rotated="{{ config.last_rotated_at or '' }}"
+                        onclick="showSecurityHud(this.dataset.id, this.dataset.status, this.dataset.message, this.dataset.ip, this.dataset.rotated)"
+                        data-tooltip="Security & Health: {{ config.config_health_status }}" aria-label="View endpoint security and health">
+                        <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>
+                    </button>
+                                {# Das PAUSED-Band sass absolut in der Kartenecke und lag dort auf dem
+                                   Titel. Es ist ausserdem die dritte Anzeige desselben Zustands
+                                   (Wasserzeichen und Ausgrauen zeigen ihn schon) -- in der
+                                   Statuszeile ergaenzt es die anderen, statt Inhalt zu verdecken. #}
+                                <span class="paused-badge">PAUSED</span>
+                                <span
+                                    class="heartbeat-dot {{ 'pulse-success' if config.is_enabled else '' }} {{ 'status-paused' if not config.is_enabled else 'status-processed' if last_statuses.get(config.id) == 'processed' else 'status-failed' if last_statuses.get(config.id) == 'failed' else 'status-skipped' if last_statuses.get(config.id) == 'skipped' else 'status-default' }}"></span>
+
+                                <small class="text-secondary opacity-75 font-monospace hw-t-xs">UID:
+                                    {{ config.id[:16] }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% set sw = sparklines.get(config.id, [0, 0, 0, 0, 0, 0, 0]) %}
+                    {% set smax = sw | max if sw | max > 0 else 1 %}
+                    {# Nr. 4: vorher ein dekorativer Canvas ohne Achse und
+                       Zeitbezug. Jetzt die echten 7 Tageswerte mit Tooltip je
+                       Tag; der Endpunkt ist betont. #}
+                    <svg class="hw-cardspark" viewBox="0 0 120 34" preserveAspectRatio="none"
+                         role="img" aria-label="Events in the last 7 days">
+                        <path d="M{% for v in sw %}{{ (loop.index0 * 20) }},{{ (30 - (v / smax * 26)) | round(1) }}{% if not loop.last %} L{% endif %}{% endfor %}
+ L120,34 L0,34 Z"
+                              fill="var(--accent)" fill-opacity=".10"/>
+                        <path d="M{% for v in sw %}{{ (loop.index0 * 20) }},{{ (30 - (v / smax * 26)) | round(1) }}{% if not loop.last %} L{% endif %}{% endfor %}"
+                              fill="none" stroke="var(--accent)" stroke-width="1.6"
+                              stroke-linejoin="round" stroke-linecap="round"/>
+                        {% for v in sw %}
+                        <circle cx="{{ loop.index0 * 20 }}" cy="{{ (30 - (v / smax * 26)) | round(1) }}"
+                                r="{{ 2.6 if loop.last else 5 }}" fill="{{ 'var(--accent)' if loop.last else 'transparent' }}">
+                            <title>{% if loop.last %}today{% elif loop.index0 == 5 %}yesterday{% else %}{{ 6 - loop.index0 }} days ago{% endif %}: {{ v }} events</title>
+                        </circle>
+                        {% endfor %}
+                    </svg>
+                </div>
+
+
+                <!-- Technical Fields -->
+                <div class="mb-3">
+                    <div class="tech-label">Endpoint URL</div>
+                    <div class="copyable-field">
+                        {% set voll_url = base_url ~ '/w/' ~ config.id %}
+                        <code class="flex-grow-1" title="{{ voll_url }}">{{ voll_url[:26] }}&hellip;{{ voll_url[-10:] }}</code>
+                        <button class="btn btn-sm btn-link text-primary p-0"
+                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL" aria-label="Copy endpoint URL">
+                            <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clipboard"></use></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Simplified Activity Stats -->
+                <div class="tech-grid mb-4">
+                    <div class="tech-item">
+                        <div class="tech-label text-success">SUCCESS</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('processed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('processed', 0) }}</span></div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1 hw-t-xs">
+                            24H / Total</div>
+                    </div>
+                    <div class="tech-item">
+                        {% set z24 = counts.get(config.id, {}) %}
+                        {% set summe24 = z24.get('processed', 0) + z24.get('failed', 0) + z24.get('skipped', 0) %}
+                        {% set rate24 = (z24.get('failed', 0) / summe24 * 100) | round(1) if summe24 else 0 %}
+                        <div class="tech-label text-danger">FAILED
+                            {# Die Rate macht Endpoints mit verschiedenem Volumen
+                               vergleichbar; "0/10" sagt weniger als "0 %". #}
+                            <span class="hw-rate {{ 'hw-rate--crit' if rate24 > 0 else '' }}">{{ rate24 }}%</span>
+                        </div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('failed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('failed', 0) }}</span></div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1 hw-t-xs">
+                            24H / Total</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-label text-warning">SKIPPED</div>
+                        <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('skipped', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('skipped', 0) }}</span></div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1 hw-t-xs">
+                            24H / Total</div>
+                    </div>
+                    <div class="tech-item">
+                        <div class="tech-label text-primary">LAST SEEN</div>
+                        <div class="small fw-bold text-white text-truncate hw-t-xs">
+                            {# Relativ lesen, absolut im Tooltip -- ein Skript unten
+                               rechnet um; ohne JS bleibt der Absolutwert stehen. #}
+                            {% if config.last_seen_at %}
+                            <span class="hw-relzeit" data-ts="{{ config.last_seen_at.isoformat() }}Z"
+                                  title="{{ config.last_seen_at.strftime('%d.%m.%Y %H:%M') }} UTC">{{ config.last_seen_at.strftime('%H:%M %m/%d') }}</span>
+                            {% else %}NEVER{% endif %}
+                        </div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1 {{ 'mb-2' if config.timeout_alerts_enabled else 'mb-1' }} hw-t-xs">UTC
+                            Time</div>
+                        
+                        {% if config.timeout_alerts_enabled and next_stale_times.get(config.id) %}
+                        <div class="tech-label text-warning mt-1 hw-t-xs">NEXT STALE</div>
+                        <div class="small fw-bold text-warning opacity-75 text-truncate hw-t-xs hw-nextstale">
+                            {{ next_stale_times[config.id].strftime('%H:%M %m/%d') }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <details class="endpoint-details mt-3">
+                    <summary>Delivery telemetry</summary>
+                    <div class="endpoint-summary-grid mt-2">
+                        <span>Token age <strong data-summary="token-age">Loading…</strong></span>
+                        <span>Uptime <strong data-summary="uptime">—</strong></span>
+                        <span>Last success <strong data-summary="last-success">Loading…</strong></span>
+                        <span>Last failure <strong data-summary="last-failure">Loading…</strong></span>
+                        <span>Response time <strong data-summary="latency">—</strong></span>
+                        <span>Queue depth <strong data-summary="queue">—</strong></span>
+                        <span>Retries <strong data-summary="retries">—</strong></span>
+                    </div>
+                    <div class="endpoint-tags mt-2" data-summary="tags">Loading tags…</div>
+                    <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('main.history') }}?endpoint_id={{ config.id }}">View logs</a>
+                </details>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% if draft_configs %}
+    <div class="col-12 hw-draftkopf">Drafts <span>({{ draft_configs | length }})</span></div>
+    {% for config in draft_configs %}
+    <div class="col-xxl-4 col-xl-6 col-lg-12 mb-4 draggable-card hw-draftkarte" draggable="true" data-id="{{ config.id }}">
+        <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
+            data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
+            data-company="{{ config.customer_id_default or '' }}" data-tags="" data-health="{{ config.config_health_status or 'OK' }}" data-pinned="{{ 'true' if config.is_pinned else 'false' }}"
+            data-status="{{ 'enabled' if config.is_enabled else 'paused' }}" data-rate24="0" data-lastseen="">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <h4 class="mb-0 text-white fw-bold hw-name">{{ config.name }}</h4>
+                    <span class="hw-draftpille">DRAFT</span>
+                </div>
+                <div class="small text-secondary">Not live yet &mdash; finish it via Edit.</div>
+                <a href="{{ url_for('main.edit_endpoint', config_id=config.id) }}"
+                   class="btn btn-sm btn-outline-secondary mt-3">Edit</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% if archived_configs %}
+    {# Nr. 12: Archiv am Listenende -- zugeklappt, mit Wiederherstellen. #}
+    <div class="col-12">
+        <details class="hw-archiv">
+            <summary class="hw-draftkopf" style="cursor:pointer">Archive <span>({{ archived_configs | length }})</span></summary>
+            <div class="hw-archivliste">
+                {% for config in archived_configs %}
+                <div class="hw-archivzeile">
+                    <span class="fw-bold">{{ config.name }}</span>
+                    <span class="text-secondary hw-t-xs">archived {{ config.archived_at.strftime('%d.%m.%Y') }}</span>
+                    <form method="POST" action="{{ url_for('main.restore_endpoint', config_id=config.id) }}" class="ms-auto">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Restore</button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+</div>
+
+{# Endpoint-Detail-Drawer: ersetzt die fruehere eigene Detailseite.
+   Gefuellt aus /api/webhooks/<id>/detail; Deep-Links auf /webhooks/<id>
+   leiten hierher (?detail=...) und oeffnen automatisch. #}
+<div id="hw-drawer-schleier" class="hw-drawer-schleier" hidden onclick="closeEndpointDetail()"></div>
+<aside id="hw-drawer" class="hw-drawer" hidden role="dialog" aria-modal="true" aria-labelledby="hw-drawer-titel">
+    <div class="d-flex align-items-center gap-2 mb-2">
+        <svg class="hw-icon text-primary" width="18" height="18" aria-hidden="true" focusable="false"><use href="#i-bezier2"></use></svg>
+        <h2 id="hw-drawer-titel" class="h5 fw-bold mb-0 text-truncate" style="font-family:var(--font-head)"></h2>
+        <button id="hw-drawer-schliessen" onclick="closeEndpointDetail()" aria-label="Close details"
+            class="btn btn-sm btn-link p-1 text-secondary ms-auto">
+            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-x-lg"></use></svg>
+        </button>
+    </div>
+    <div id="hw-drawer-chips" class="d-flex gap-2 flex-wrap mb-3"></div>
+
+    <div class="hw-feldlabel">Delivery URL</div>
+    <div class="hw-drawer-feld mb-3">
+        <code id="hw-drawer-url" class="flex-grow-1"></code>
+        <button id="hw-drawer-kopieren" class="btn btn-sm btn-link p-0 text-secondary" aria-label="Copy URL">
+            <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clipboard"></use></svg>
+        </button>
+    </div>
+
+    <div class="hw-feldlabel">Signing secret</div>
+    <div class="hw-drawer-feld">
+        <code id="hw-drawer-secret" class="flex-grow-1">whsec_................</code>
+        <button id="hw-drawer-auge" class="btn btn-sm btn-link p-0 text-secondary" aria-label="Reveal secret">
+            <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-eye"></use></svg>
+        </button>
+    </div>
+    <button id="hw-drawer-rotate"
+        class="btn btn-sm btn-link p-0 mt-2 mb-3 text-warning fw-bold text-decoration-none hw-t-xs text-uppercase ls-1">
+        <svg class="hw-icon me-1" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg><span>Rotate secret</span>
+    </button>
+
+    <div class="hw-drawer-statgrid mb-4">
+        <div class="hw-drawer-stat"><b id="hw-drawer-events">0</b><span>events</span></div>
+        <div class="hw-drawer-stat"><b id="hw-drawer-failed">0</b><span>failed</span></div>
+        <div class="hw-drawer-stat"><b id="hw-drawer-avg">0ms</b><span>avg</span></div>
+        <div class="hw-drawer-stat"><b id="hw-drawer-p95">0ms</b><span>p95</span></div>
+    </div>
+
+    <div class="hw-feldlabel">Latency &middot; this endpoint</div>
+    <div id="hw-drawer-chart" class="mb-4"></div>
+
+    <div class="hw-feldlabel">Recent deliveries</div>
+    <div id="hw-drawer-rows" class="mb-3"></div>
+
+    <div class="d-flex gap-2">
+        <button id="hw-drawer-test" class="btn btn-primary flex-grow-1 fw-bold hw-t-sm text-uppercase">Test webhook</button>
+        <a id="hw-drawer-edit" href="#" class="btn btn-outline-secondary hw-t-sm">Edit</a>
+        <a id="hw-drawer-history" href="#" class="btn btn-outline-secondary hw-t-sm">History</a>
+    </div>
+</aside>
+
+<!-- Payload Modal -->
+<div class="modal fade" id="payloadModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Webhook Payload</h5>
+                <div class="ms-auto me-2">
+                    <button id="pretty-toggle" class="btn btn-sm btn-outline-info me-2">Minified</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close payload details"></button>
+            </div>
+            <div class="modal-body">
+                <pre
+                    class="bg-black p-0 rounded"><code id="payload-display" class="language-json hw-t-md" style="max-height: 500px; overflow: auto; display: block;"></code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rotate Token Modal -->
+<div class="modal fade" id="rotateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark border-warning">
+            <div class="modal-header border-warning border-opacity-25">
+                <h5 class="modal-title text-warning">Rotate Bearer Token</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close token rotation dialog"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to rotate the token for <strong id="rotate-endpoint-name"></strong>?</p>
+                <p class="text-danger small"><strong>Warning:</strong> Any source currently using the old token will
+                    immediately fail until updated.</p>
+            </div>
+            <div class="modal-footer border-warning border-opacity-25">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="rotate-form" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-warning text-dark fw-bold">Rotate Token</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu" class="dropdown-menu shadow-lg border border-secondary border-opacity-25"
+    style="display: none; position: absolute; z-index: 10000; min-width: 180px;">
+    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-edit">
+        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-pencil-square"></use></svg>
+        Edit Endpoint
+    </a>
+    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-test">
+        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-play-fill"></use></svg>
+        Test Webhook
+    </a>
+    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-clone">
+        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg>
+        Clone Configuration
+    </a>
+    <div class="dropdown-divider border-secondary border-opacity-10"></div>
+    <a class="dropdown-item d-flex align-items-center text-danger" href="#" id="ctx-delete">
+        <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-trash3-fill"></use></svg>
+        Delete Endpoint
+    </a>
+</div>
+
+<!-- Onboarding Modal -->
+<div class="modal fade" id="onboardingModal" tabindex="-1" aria-labelledby="onboarding-title">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark border-primary">
+            <div class="modal-header border-primary border-opacity-25">
+                <h2 id="onboarding-title" class="h5 modal-title text-primary">Welcome to HookWise!</h2>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
+            </div>
+            <div class="modal-body text-center py-5">
+                <img src="{{ url_for('static', filename='img/logo.png', v='20260907f') }}" alt="HookWise" height="80" class="mb-4">
+                <h3 class="fw-bold">Let's get you set up.</h3>
+                <p class="text-secondary mb-5">HookWise bridges your monitoring tools to ConnectWise Manage tickets.</p>
+
+                <div class="row g-4 text-start">
+                    <div class="col-md-4">
+                        <div class="card h-100 bg-black bg-opacity-25 border-0">
+                            <div class="card-body">
+                                <div class="h6 text-info">1. API Keys</div>
+                                <p class="small lightgrey">Ensure your ConnectWise API keys are set in your
+                                    <code>.env</code> file.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card h-100 bg-black bg-opacity-25 border-0">
+                            <div class="card-body">
+                                <div class="h6 text-info">2. Endpoint</div>
+                                <p class="small lightgrey">Create an endpoint for each tool (e.g. Uptime Kuma,
+                                    Grafana).</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card h-100 bg-black bg-opacity-25 border-0">
+                            <div class="card-body">
+                                <div class="h6 text-info">3. Webhooks</div>
+                                <p class="small lightgrey">Copy your endpoint URL to your monitoring tool's webhook
+                                    settings.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-primary border-opacity-25">
+                <button type="button" class="btn btn-primary px-5" data-bs-dismiss="modal">I'm ready!</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Security HUD Modal -->
+<div class="modal fade" id="securityHudModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-card border-0">
+            <div class="modal-header border-bottom border-light border-opacity-10">
+                <h5 class="modal-title text-white"><svg class="hw-icon me-2 text-info" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>Security & Health
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close security details"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <div id="hud-status-icon" class="display-4 mb-2"></div>
+                    <h4 id="hud-status-text" class="fw-bold"></h4>
+                    <p id="hud-message" class="text-secondary small"></p>
+                </div>
+
+                <div class="bg-black bg-opacity-25 rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary small">Last IP Address</span>
+                        <span id="hud-last-ip" class="font-monospace text-info small"></span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-secondary small">Token Age</span>
+                        <span id="hud-token-age" class="font-monospace text-warning small"></span>
+                    </div>
+                </div>
+
+                <div class="bg-black bg-opacity-25 rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-secondary small">LLM (Ollama)</span>
+                        <span id="hud-llm-status" class="font-monospace small text-secondary">—</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1" id="hud-llm-model-row"
+                        style="display:none!important;">
+                        <span class="text-secondary small">Active Model</span>
+                        <span id="hud-llm-model" class="font-monospace text-info small"></span>
+                    </div>
+                </div>
+
+                <div class="d-grid">
+                    <button class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<meta name="hookwise-cw-url" content="{{ cw_url }}">
+
+<script src="{{ url_for('static', filename='js/dashboard.js', v='20260907f') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260907f') }}"></script>
+
+<script>
+    // Endpoint-Detail-Drawer: ersetzt die fruehere Detailseite.
+    (function () {
+        const schleier = document.getElementById('hw-drawer-schleier');
+        const lade = document.getElementById('hw-drawer');
+        if (!lade) return;
+        let aktuelleId = null;
+        const escD = s => String(s).replace(/[&<>"']/g, ch =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        const chipHtml = (text, art) => {
+            const map = {
+                ok: 'bg-success bg-opacity-10 text-success border border-success border-opacity-25',
+                warn: 'bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25',
+                crit: 'bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25',
+                grau: 'bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-25',
+            };
+            return '<span class="badge ' + map[art] + '">' + escD(text) + '</span>';
+        };
+        const statusArt = s => (s === 'processed' || s === 'queued') ? 'ok'
+            : (s === 'skipped') ? 'warn' : (s === 'failed' || s === 'dlq') ? 'crit' : 'grau';
+
+        const chartBauen = (latenzen) => {
+            const halter = document.getElementById('hw-drawer-chart');
+            if (!latenzen.length) { halter.innerHTML = '<div class="text-secondary hw-t-sm font-monospace">no deliveries yet</div>'; return; }
+            const W = 400, H = 110, P = 6;
+            const max = Math.max(50, ...latenzen.map(l => l.ms));
+            const x = i => P + i * (W - 2 * P) / Math.max(1, latenzen.length - 1);
+            const y = v => H - P - (v / max) * (H - 2 * P - 10);
+            let d = 'M' + x(0) + ',' + y(latenzen[0].ms);
+            for (let i = 1; i < latenzen.length; i++) {
+                const cx = (x(i - 1) + x(i)) / 2;
+                d += ' C' + cx + ',' + y(latenzen[i - 1].ms) + ' ' + cx + ',' + y(latenzen[i].ms)
+                    + ' ' + x(i) + ',' + y(latenzen[i].ms);
+            }
+            const flaeche = d + ' L' + x(latenzen.length - 1) + ',' + (H - P) + ' L' + x(0) + ',' + (H - P) + ' Z';
+            let punkte = '';
+            latenzen.forEach((l, i) => {
+                if (!l.ok) punkte += '<circle cx="' + x(i) + '" cy="' + y(l.ms) + '" r="3.2" '
+                    + 'fill="var(--crit-soft)" stroke="var(--crit)" stroke-width="1.4"><title>'
+                    + l.ms + 'ms - failed</title></circle>';
+            });
+            const lx = x(latenzen.length - 1), ly = y(latenzen[latenzen.length - 1].ms);
+            halter.innerHTML =
+                '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%" role="img" aria-label="Latency of the last ' + latenzen.length + ' deliveries">'
+                + '<defs><linearGradient id="hw-drawer-grad" x1="0" y1="0" x2="0" y2="1">'
+                + '<stop offset="0%" stop-color="var(--accent)" stop-opacity=".22"/>'
+                + '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>'
+                + '<line x1="' + P + '" x2="' + (W - P) + '" y1="' + y(max) + '" y2="' + y(max) + '" stroke="var(--line-2)" stroke-dasharray="2 6"/>'
+                + '<text x="' + (P + 2) + '" y="' + (y(max) - 3) + '" fill="var(--text-faint)" font-size="9" font-family="var(--font-mono)">' + max + 'ms</text>'
+                + '<path d="' + flaeche + '" fill="url(#hw-drawer-grad)"/>'
+                + '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>'
+                + punkte
+                + '<circle class="hw-chart-puls" cx="' + lx + '" cy="' + ly + '" r="3.6" fill="var(--accent)"/>'
+                + '</svg>';
+        };
+
+        window.closeEndpointDetail = () => {
+            schleier.hidden = true; lade.hidden = true; aktuelleId = null;
+        };
+        document.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape' && !lade.hidden) window.closeEndpointDetail();
+        });
+
+        window.openEndpointDetail = async (id) => {
+            try {
+                const r = await fetch('/api/webhooks/' + encodeURIComponent(id) + '/detail',
+                    { credentials: 'same-origin' });
+                if (!r.ok) throw new Error('Could not load endpoint details');
+                const dt = await r.json();
+                aktuelleId = dt.id;
+                document.getElementById('hw-drawer-titel').textContent = dt.name;
+                document.getElementById('hw-drawer-chips').innerHTML =
+                    chipHtml(dt.archived ? 'ARCHIVED' : dt.is_enabled ? 'ACTIVE' : 'PAUSED',
+                        dt.archived ? 'grau' : dt.is_enabled ? 'ok' : 'warn')
+                    + chipHtml(dt.board, 'grau')
+                    + (dt.is_pinned ? chipHtml('PINNED', 'warn') : '');
+                const urlEl = document.getElementById('hw-drawer-url');
+                urlEl.textContent = dt.url; urlEl.title = dt.url;
+                document.getElementById('hw-drawer-kopieren').onclick = () =>
+                    window.copyToClipboard?.(dt.url);
+                document.getElementById('hw-drawer-secret').textContent = 'whsec_................';
+                document.getElementById('hw-drawer-events').textContent = dt.stats.events24;
+                const fEl = document.getElementById('hw-drawer-failed');
+                fEl.textContent = dt.stats.failed24;
+                fEl.classList.toggle('text-danger', dt.stats.failed24 > 0);
+                document.getElementById('hw-drawer-avg').textContent = dt.stats.avg_ms + 'ms';
+                document.getElementById('hw-drawer-p95').textContent = dt.stats.p95_ms + 'ms';
+                chartBauen(dt.latenzen);
+                document.getElementById('hw-drawer-rows').innerHTML = dt.deliveries.length
+                    ? dt.deliveries.map(z => {
+                        const zeit = new Date(z.ts).toLocaleTimeString('en-GB', { hour12: false });
+                        return '<div class="hw-drawer-zeile">'
+                            + '<span class="text-secondary">' + zeit + '</span>'
+                            + chipHtml(z.status.toUpperCase(), statusArt(z.status))
+                            + '<span class="ms-auto text-secondary">' + z.ms + 'ms</span>'
+                            + '<span class="text-secondary opacity-50 hw-t-xs">' + escD(z.request_id || '') + '</span>'
+                            + '</div>';
+                    }).join('')
+                    : '<div class="text-secondary hw-t-sm font-monospace">no deliveries yet</div>';
+                document.getElementById('hw-drawer-edit').href = '/endpoint/edit/' + encodeURIComponent(dt.id);
+                document.getElementById('hw-drawer-history').href = '/history?endpoint_id=' + encodeURIComponent(dt.id);
+                schleier.hidden = false; lade.hidden = false;
+                document.getElementById('hw-drawer-schliessen').focus();
+            } catch (err) {
+                window.showToast?.(err.message || 'Could not load endpoint details', 'danger');
+            }
+        };
+
+        document.getElementById('hw-drawer-auge').addEventListener('click', async () => {
+            if (!aktuelleId) return;
+            try {
+                const r = await fetch('/endpoint/token/' + encodeURIComponent(aktuelleId),
+                    { credentials: 'same-origin' });
+                const dt = await r.json();
+                document.getElementById('hw-drawer-secret').textContent = dt.token || 'unavailable';
+            } catch (e) { window.showToast?.('Could not reveal the secret', 'danger'); }
+        });
+        document.getElementById('hw-drawer-rotate').addEventListener('click', () => {
+            if (aktuelleId && window.confirmRotate) {
+                window.confirmRotate(aktuelleId,
+                    document.getElementById('hw-drawer-titel').textContent);
+            }
+        });
+        document.getElementById('hw-drawer-test').addEventListener('click', () => {
+            if (aktuelleId && window.testEndpoint) window.testEndpoint(aktuelleId);
+        });
+
+        // Deep-Link der alten Detailseite: /webhooks/<id> -> ?detail=<id>
+        try {
+            const param = new URLSearchParams(window.location.search).get('detail');
+            if (param) window.openEndpointDetail(param);
+        } catch (e) {}
+    })();
+
+    // Nr. 20: die Suffix-Suche token:... existiert, stand aber nur im Tooltip.
+    // Der Chip macht sie sichtbar und meldet, sobald sie aktiv ist.
+    (function () {
+        const feld = document.getElementById('endpoint-search');
+        const chip = document.getElementById('hw-token-hinweis');
+        if (!feld || !chip) return;
+        feld.addEventListener('input', () => {
+            const aktiv = feld.value.trim().toLowerCase().startsWith('token:');
+            chip.classList.toggle('hw-token-hinweis--aktiv', aktiv);
+            chip.textContent = aktiv
+                ? 'Suffix search active: ' + feld.value.trim()
+                : 'Tip: token:abc4 matches by token ending (full token works too)';
+        });
+    })();
+
+    // Nr. 2 + 3: Sortierung und Board-Gruppen als Ansicht. Entwuerfe bleiben
+    // gesammelt am Ende und werden nie mitsortiert; die Server-Reihenfolge
+    // (Drag) kommt mit "Eigene Reihenfolge" zurueck.
+    (function () {
+        const wahl = document.getElementById('hw-sortierung');
+        const grid = document.getElementById('endpoint-grid');
+        if (!wahl || !grid) return;
+        const KEY = 'hookwise.endpoint-sort';
+        // Draft- UND Archiv-Bloecke bleiben unsortiert am Listenende --
+        // der Archiv-Wrapper hat sonst Sortierwert '' und springt nach oben.
+        const istDraftTeil = el => el.classList.contains('hw-draftkarte')
+            || el.classList.contains('hw-draftkopf') || !!el.querySelector('.hw-archiv');
+        const original = [...grid.children].filter(el => !istDraftTeil(el));
+        const draftTeile = [...grid.children].filter(istDraftTeil);
+        const wert = (karte, art) => {
+            const c = karte.querySelector('.endpoint-card');
+            if (!c) return '';
+            if (art === 'name') return (c.dataset.name || '').toLowerCase();
+            if (art === 'board' || art === 'boardgruppen') return (c.dataset.board || '').toLowerCase();
+            if (art === 'rate') return -parseFloat(c.dataset.rate24 || '0');
+            if (art === 'lastseen') return -(Date.parse(c.dataset.lastseen || 0) || 0);
+            return '';
+        };
+        const angeheftet = k =>
+            (k.querySelector('.endpoint-card')?.dataset.pinned === 'true') ? 0 : 1;
+        const anwenden = () => {
+            const art = wahl.value;
+            grid.querySelectorAll('.hw-boardkopf').forEach(k => k.remove());
+            const karten = art ? [...original].sort((a, b) => {
+                if (art !== 'board' && art !== 'boardgruppen') {
+                    const p = angeheftet(a) - angeheftet(b);
+                    if (p) return p;
+                }
+                const x = wert(a, art), y = wert(b, art);
+                return x < y ? -1 : x > y ? 1 : 0;
+            }) : original;
+            karten.forEach(k => { k.hidden = false; grid.appendChild(k); });
+            if (art === 'boardgruppen') {
+                let letztes = null;
+                karten.forEach(k => {
+                    const board = k.querySelector('.endpoint-card')?.dataset.board || 'No board';
+                    if (board !== letztes) {
+                        letztes = board;
+                        const anzahl = karten.filter(x =>
+                            (x.querySelector('.endpoint-card')?.dataset.board || 'No board') === board).length;
+                        const kopf = document.createElement('button');
+                        kopf.type = 'button';
+                        kopf.className = 'col-12 hw-boardkopf';
+                        kopf.setAttribute('aria-expanded', 'true');
+                        // Kein innerHTML mit Nutzdaten: der Board-Name kommt
+                        // aus der DB und waere hier ein Stored-XSS-Vektor.
+                        const pfeil = document.createElement('span');
+                        pfeil.className = 'pfeil';
+                        pfeil.textContent = '\u25be';
+                        const zaehler = document.createElement('span');
+                        zaehler.textContent = '(' + anzahl + ')';
+                        kopf.append(pfeil, ' ' + board + ' ', zaehler);
+                        kopf.addEventListener('click', () => {
+                            const zu = kopf.getAttribute('aria-expanded') === 'true';
+                            kopf.setAttribute('aria-expanded', String(!zu));
+                            kopf.querySelector('.pfeil').textContent = zu ? '\u25b8' : '\u25be';
+                            let n = kopf.nextElementSibling;
+                            while (n && !n.classList.contains('hw-boardkopf') && !istDraftTeil(n)) {
+                                n.hidden = zu; n = n.nextElementSibling;
+                            }
+                        });
+                        grid.insertBefore(kopf, k);
+                    }
+                });
+            }
+            draftTeile.forEach(d => grid.appendChild(d));
+            try { localStorage.setItem(KEY, art); } catch (e) {}
+            // Die Tabellenansicht baut aus der Kartenreihenfolge -- nach dem
+            // Umsortieren neu aufbauen, sonst zeigt die Liste die alte Folge.
+            try {
+                if ((localStorage.getItem('endpoint-view') || 'list') === 'list') {
+                    window.hwTabellenAnsicht?.('list');
+                }
+            } catch (e) {}
+            // Sortieren setzt k.hidden zurueck -- aktive Filter danach neu
+            // anwenden lassen (debounced; baut auch die Tabelle nochmal).
+            document.getElementById('endpoint-search')
+                ?.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        wahl.addEventListener('change', anwenden);
+        try {
+            const gemerkt = localStorage.getItem(KEY);
+            if (gemerkt) { wahl.value = gemerkt; anwenden(); }
+        } catch (e) {}
+    })();
+
+    // Nr. 1: Listenansicht als echte Tabelle -- haengt sich an das
+    // bestehende toggleView (ux.js), der Vertrag grid|list bleibt gleich.
+    // Zwei Fallen aus der ersten Fassung dieses Blocks:
+    //   - hx-boost tauscht nur den Body: DOMContentLoaded feuert bei
+    //     Boost-Navigationen nie wieder, und der in window ueberlebende
+    //     Wrapper hielt tote Knoten des alten Bodys. Der Wrapper wird
+    //     deshalb genau einmal installiert und loest ALLE Elemente erst
+    //     beim Aufruf auf.
+    //   - Beim Erstaufbau laeuft dieses Skript vor dem deferten ux.js,
+    //     dann installiert DOMContentLoaded; bei Boost-Swaps existiert
+    //     toggleView schon und es wird sofort installiert.
+    (function () {
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const bauen = () => {
+            const koerper = document.getElementById('hw-endpoint-tabelle-body');
+            if (!koerper) return;
+            // Weggefilterte Karten (Suche/Chips verstecken die Spalte) bleiben
+            // draussen -- damit wirken Filter auch in der Listenansicht.
+            const karten = [...document.querySelectorAll('.endpoint-card')]
+                .filter(c => { const sp = c.closest('.draggable-card'); return !sp || !sp.hidden; });
+            // Unveraenderter Bestand: nicht neu bauen -- sonst zerstoert jeder
+            // Tastendruck in der Suche offene Zeilen-Menues und Detailzeilen.
+            const signatur = karten.map(c => {
+                const d = c.dataset;
+                return [d.id, d.name, d.board, d.status, d.health, d.pinned,
+                    d.p24, d.f24, d.s24, d.rate24, d.lastseen].join('\u0001');
+            }).join('\u0002');
+            if (koerper.dataset.signatur === signatur) return;
+            koerper.dataset.signatur = signatur;
+            const chevron = '<svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true" focusable="false"><path d="M2.5 0.5 L8 5 L2.5 9.5 Z"/></svg>';
+            const pinsvg = '<svg class="hw-icon hw-tabpin" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-pin-fill"></use></svg>';
+            koerper.innerHTML = karten.map((c, i) => {
+                const d = c.dataset;
+                const relzeit = c.querySelector('.hw-relzeit');
+                const nstale = (c.querySelector('.hw-nextstale')?.textContent || '').trim();
+                const spalte = c.closest('.draggable-card');
+                const istEntwurf = d.draft === 'true' || (spalte && spalte.classList.contains('hw-draftkarte'));
+                const status = istEntwurf
+                    ? '<span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-25">DRAFT</span>'
+                    : (d.status === 'enabled'
+                        ? '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ACTIVE</span>'
+                        : '<span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">PAUSED</span>');
+                const gesund = d.health === 'OK' ? 'ok' : (d.health === 'ERROR' ? 'crit' : 'warn');
+                const rate = parseFloat(d.rate24 || '0');
+                const kartencheck = c.querySelector('.endpoint-check');
+                return '<tr class="hw-tabzeile">' +
+                    '<td class="ps-4 py-2 fw-bold">' +
+                    '<input type="checkbox" class="form-check-input hw-zeilencheck me-2" data-id="' + esc(d.id) + '"' +
+                    (kartencheck && kartencheck.checked ? ' checked' : '') +
+                    ' aria-label="Select endpoint ' + esc(d.name || '') + '">' +
+                    '<button type="button" class="hw-rowtoggle" data-kid="' + esc(d.id) + '" aria-expanded="false" ' +
+                    'aria-label="Show URL and telemetry for ' + esc(d.name || '') + '">' + chevron + '</button>' +
+                    (d.pinned === 'true' ? pinsvg : '') +
+                    '<a class="text-decoration-none text-reset" href="#" ' +
+                    'data-detail="' + esc(d.id) + '">' + esc(d.name || '') + '</a></td>' +
+                    '<td class="py-2 hw-sparkzelle"></td>' +
+                    '<td class="py-2 text-secondary">' + esc(d.board || '-') + '</td>' +
+                    '<td class="py-2">' + status +
+                    '<span class="hw-punkt hw-punkt--' + gesund + '" title="Health: ' + esc(d.health || 'unknown') + '"></span></td>' +
+                    '<td class="py-2 text-end font-monospace">' + esc(d.p24 || '0') + '</td>' +
+                    '<td class="py-2 text-end font-monospace">' + esc(d.f24 || '0') + '</td>' +
+                    '<td class="py-2 text-end font-monospace">' + esc(d.s24 || '0') + '</td>' +
+                    '<td class="py-2 text-end"><span class="hw-rate ' + (rate > 0 ? 'hw-rate--crit' : '') + '">' + rate + '%</span></td>' +
+                    '<td class="py-2 text-secondary hw-t-xs"' +
+                    (relzeit && relzeit.title ? ' title="' + esc(relzeit.title) + '"' : '') + '>' +
+                    (relzeit ? esc(relzeit.textContent.trim()) : '-') +
+                    (nstale ? '<span class="d-block text-warning opacity-75" ' +
+                        'title="Timeout monitor: next stale threshold">next stale ' + esc(nstale) + '</span>' : '') +
+                    '</td>' +
+                    '<td class="pe-4 py-2 text-end hw-tabellenaktionen"></td>' +
+                    '</tr>';
+            }).join('');
+            // Je Zeile: Klon der Kartenaktionen (die onclick-Handler tragen
+            // ihre IDs als Literale) und die 7-Tage-Kurve der Karte als
+            // kompakter Graph in der Trend-Spalte -- samt Tages-Tooltips.
+            [...koerper.rows].forEach((zeile, i) => {
+                const karte = karten[i];
+                if (!karte) return;
+                const aktionen = karte.querySelector('.endpoint-actions');
+                if (aktionen) zeile.cells[zeile.cells.length - 1].appendChild(aktionen.cloneNode(true));
+                const spark = karte.querySelector('.hw-cardspark');
+                if (spark) {
+                    const kurve = spark.cloneNode(true);
+                    kurve.setAttribute('class', 'hw-zeilenspark');
+                    zeile.cells[1].appendChild(kurve);
+                }
+            });
+            // Aufklappbare Detailzeile: URL-Kopierfeld + Delivery-Telemetrie
+            // als Klone der Kartenbausteine. Delegiert, einmal je Tabellenkoerper.
+            if (!koerper.dataset.aufklappInit) {
+                koerper.dataset.aufklappInit = '1';
+                koerper.addEventListener('change', (ev) => {
+                    const zk = ev.target.closest('.hw-zeilencheck');
+                    if (!zk) return;
+                    const kcheck = document.querySelector('.endpoint-card[data-id="'
+                        + CSS.escape(zk.dataset.id || '') + '"] .endpoint-check');
+                    if (kcheck) {
+                        kcheck.checked = zk.checked;
+                        kcheck.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                koerper.addEventListener('click', (ev) => {
+                    const detailLink = ev.target.closest('[data-detail]');
+                    if (detailLink) {
+                        ev.preventDefault();
+                        window.openEndpointDetail?.(detailLink.dataset.detail);
+                        return;
+                    }
+                    const knopf = ev.target.closest('.hw-rowtoggle');
+                    if (!knopf) return;
+                    const zeile = knopf.closest('tr');
+                    if (knopf.getAttribute('aria-expanded') === 'true') {
+                        knopf.setAttribute('aria-expanded', 'false');
+                        const alteZeile = zeile.nextElementSibling;
+                        if (alteZeile && alteZeile.classList.contains('hw-tabdetail')) alteZeile.remove();
+                        return;
+                    }
+                    knopf.setAttribute('aria-expanded', 'true');
+                    const karte = document.querySelector(
+                        '.endpoint-card[data-id="' + CSS.escape(knopf.dataset.kid || '') + '"]');
+                    const det = document.createElement('tr');
+                    det.className = 'hw-tabdetail';
+                    const zelle = document.createElement('td');
+                    zelle.colSpan = zeile.cells.length;
+                    const innen = document.createElement('div');
+                    innen.className = 'hw-tabdetail-inner';
+                    if (karte) {
+                        const url = karte.querySelector('.copyable-field');
+                        if (url) innen.appendChild(url.cloneNode(true));
+                        const tele = karte.querySelector('.endpoint-summary-grid');
+                        if (tele) innen.appendChild(tele.cloneNode(true));
+                    }
+                    zelle.appendChild(innen);
+                    det.appendChild(zelle);
+                    zeile.after(det);
+                });
+            }
+        };
+        const anwenden = (view) => {
+            const tabelle = document.getElementById('hw-endpoint-tabelle');
+            const grid = document.getElementById('endpoint-grid');
+            if (!tabelle || !grid) return;
+            const liste = view === 'list';
+            if (liste) bauen();
+            tabelle.hidden = !liste;
+            grid.style.display = liste ? 'none' : '';
+            document.documentElement.classList.toggle('hw-listenstart', liste);
+        };
+        const einhaengen = () => {
+            if (!window.toggleView) {
+                // ux.js fehlt (blockiert/defekt): lieber die Kacheln zeigen
+                // als eine leere Seite hinter hw-listenstart.
+                document.documentElement.classList.remove('hw-listenstart');
+                return;
+            }
+            if (!window.hwTabellenAnsicht) {
+                const original = window.toggleView;
+                window.toggleView = function (view) {
+                    original(view);
+                    if (window.hwTabellenAnsicht) window.hwTabellenAnsicht(view);
+                };
+            }
+            window.hwTabellenAnsicht = anwenden;
+            try {
+                window.toggleView(localStorage.getItem('endpoint-view') || 'list');
+            } catch (e) {}
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', einhaengen);
+        } else {
+            einhaengen();
+        }
+        // SELECT ALL setzt die Karten-Checkboxen (ux.js) -- die sichtbaren
+        // Zeilen-Checkboxen muessen mitziehen.
+        document.getElementById('check-all')?.addEventListener('change', function () {
+            document.querySelectorAll('.hw-zeilencheck').forEach(k => { k.checked = this.checked; });
+        });
+    })();
+
+    // Nr. 11: Board/Prioritaet fuer die Auswahl setzen. Nutzt die neue
+    // bulk/update-Route; leere Felder werden uebersprungen.
+    (function () {
+        const boards = new Set();
+        document.querySelectorAll('.endpoint-card').forEach(c => {
+            if (c.dataset.board) boards.add(c.dataset.board);
+        });
+        const liste = document.getElementById('hw-boards');
+        if (liste) boards.forEach(b => {
+            const o = document.createElement('option'); o.value = b; liste.appendChild(o);
+        });
+        window.bulkFieldUpdate = async function () {
+            const ids = [...document.querySelectorAll('.endpoint-check:checked')].map(c => c.dataset.id);
+            if (!ids.length) { window.showToast?.('No endpoints selected', 'warning'); return; }
+            const auftraege = [];
+            const board = document.getElementById('hw-bulk-board')?.value.trim();
+            const prio = document.getElementById('hw-bulk-prio')?.value.trim();
+            if (board) auftraege.push(['board', board]);
+            if (prio) auftraege.push(['priority', prio]);
+            if (!auftraege.length) { window.showToast?.('Enter a board or priority', 'warning'); return; }
+            try {
+                for (const [field, value] of auftraege) {
+                    const r = await fetch('/endpoint/bulk/update', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json',
+                            'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ ids, field, value }),
+                    });
+                    if (!r.ok) throw new Error((await r.json()).message || 'Update failed');
+                }
+                window.showToast?.(ids.length + ' endpoints updated', 'success');
+                setTimeout(() => window.hwReloadInPlace(), 800);
+            } catch (err) {
+                window.showToast?.(err.message, 'danger');
+            }
+        };
+    })();
+
+    // Nr. 13: Import -- Datei lesen, an /endpoint/import senden, neu laden.
+    (function () {
+        const knopf = document.getElementById('hw-import-knopf');
+        const datei = document.getElementById('hw-import-datei');
+        if (!knopf || !datei) return;
+        knopf.addEventListener('click', () => datei.click());
+        datei.addEventListener('change', async () => {
+            const f = datei.files && datei.files[0];
+            if (!f) return;
+            try {
+                const inhalt = JSON.parse(await f.text());
+                const r = await fetch('/endpoint/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json',
+                        'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(inhalt),
+                });
+                const antwort = await r.json();
+                if (!r.ok) throw new Error(antwort.message || 'Import failed');
+                window.showToast?.('Imported: "' + antwort.name + '" (paused)', 'success');
+                setTimeout(() => window.hwReloadInPlace(), 900);
+            } catch (err) {
+                window.showToast?.(err.message || 'Import failed', 'danger');
+            } finally {
+                datei.value = '';
+            }
+        });
+    })();
+
+    // Nr. 10: Aufklappzustand der Telemetrie je Endpoint merken.
+    (function () {
+        const KEY = 'hookwise.telemetrie-offen';
+        let offen = {};
+        try { offen = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+        document.querySelectorAll('.endpoint-card').forEach(karte => {
+            const id = karte.dataset.id;
+            const det = karte.querySelector('details:not(.hw-more)');
+            if (!det || !id) return;
+            if (offen[id]) det.open = true;
+            det.addEventListener('toggle', () => {
+                offen[id] = det.open;
+                try { localStorage.setItem(KEY, JSON.stringify(offen)); } catch (e) {}
+            });
+        });
+    })();
+
+    // Nr. 15: Umbenennen per Doppelklick. Enter speichert ueber die
+    // Quick-Update-Route, Esc verwirft.
+    (function () {
+        if (window.hwRenameDelegat) return;
+        window.hwRenameDelegat = true;
+        document.addEventListener('dblclick', ev => {
+            const h = ev.target.closest('.hw-name[data-id]');
+            if (!h || h.querySelector('input')) return;
+            const alt = h.textContent.trim();
+            const feld = document.createElement('input');
+            feld.className = 'form-control form-control-sm bg-dark border-secondary text-white';
+            feld.value = alt;
+            feld.setAttribute('aria-label', 'Edit endpoint name');
+            h.textContent = '';
+            h.appendChild(feld);
+            feld.focus();
+            feld.select();
+            const fertig = txt => { h.textContent = txt; };
+            feld.addEventListener('keydown', async e => {
+                if (e.key === 'Escape') { fertig(alt); return; }
+                if (e.key !== 'Enter') return;
+                const neu = feld.value.trim();
+                if (!neu || neu === alt) { fertig(alt); return; }
+                try {
+                    const r = await fetch('/endpoint/quick-update/' + h.dataset.id, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json',
+                            'X-CSRFToken': (document.querySelector('meta[name="csrf-token"]') || {}).content || '' },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ field: 'name', value: neu }),
+                    });
+                    if (!r.ok) throw new Error('Save failed');
+                    fertig(neu);
+                    const karte = h.closest('.endpoint-card');
+                    if (karte) karte.dataset.name = neu;
+                    window.showToast?.('Renamed to "' + neu + '"', 'success');
+                } catch (err) {
+                    fertig(alt);
+                    window.showToast?.(err.message, 'danger');
+                }
+            });
+            feld.addEventListener('blur', () => { if (h.querySelector('input')) fertig(alt); });
+        });
+    })();
+
+    // Nr. 6: Zeitstempel relativ anzeigen; der Absolutwert steht im title.
+    (function () {
+        const relativ = (iso) => {
+            const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+            if (!isFinite(diff) || diff < 0) return null;
+            if (diff < 90) return 'just now';
+            if (diff < 5400) return Math.round(diff / 60) + ' min ago';
+            if (diff < 129600) return Math.round(diff / 3600) + ' h ago';
+            return Math.round(diff / 86400) + ' days ago';
+        };
+        const alle = () => document.querySelectorAll('.hw-relzeit[data-ts]').forEach(el => {
+            const r = relativ(el.dataset.ts);
+            if (r) el.textContent = r;
+        });
+        alle();
+        // hx-boost fuehrt dieses Skript bei jedem Swap erneut aus -- der
+        // Ticker darf sich nicht stapeln.
+        if (!window.hwRelzeitTicker) window.hwRelzeitTicker = setInterval(alle, 60000);
+    })();
+</script>
+
+
+
+{% endblock %}

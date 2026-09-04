@@ -1,0 +1,2206 @@
+/* ---- Selbst gehostete Schriften (Variable Fonts, Latin) ----
+   Die CSP erlaubt nur 'self'; Google Fonts war dadurch blockiert und die
+   Typografie hing von lokal installierten Schriften ab. */
+@font-face {
+    font-family: 'Geist';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('../fonts/geist-latin.woff2') format('woff2');
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url('../fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
+
+/* ==========================================================================
+   HookWise Console
+   Loads after style.css. Additive only: it redefines tokens and restyles
+   existing class names. No selector depends on markup that does not already
+   exist, apart from the shell wrappers added to base.html.
+
+   Structure
+     1  Tokens. Dark is :root because dark is what ships today, so nothing
+        regresses. Light is opt-in via [data-theme="light"].
+     2  Bootstrap bridge. Bootstrap 5.3 carries 1715 !important utilities as
+        rgba(var(--bs-*-rgb), ...). !important reverses @layer order, so
+        layering cannot win. Redefining what they READ retargets all of them.
+     3  Legacy aliases so style.css keeps resolving.
+     4  Shell. The navbar becomes a fixed rail at >=992px using CSS only, so
+        Bootstrap's collapse behaviour below that width is untouched.
+     5  Components.
+     6  Motion, gated last so it wins on order.
+   ========================================================================== */
+
+/* ---------------- 1. Tokens ---------------- */
+:root {
+    color-scheme: dark;
+
+    /* Cybernetic-Velocity-Palette (Stitch DESIGN.md): Obsidian-Stufen,
+       Neon-Gruen als Health/Action, Signalrot/-gelb aus derselben Vorlage. */
+    --bg-canvas:#101414; --bg-surface:#181c1c; --bg-raised:#272b2b; --bg-sunken:#0b0f0f;
+    --line:#232828; --line-2:#3b4a3f;
+    --text:#e0e3e2; --text-muted:#b9cbbc; --text-faint:#849587;
+
+    --accent:#00e38b; --accent-hover:#56ffa8; --accent-soft:#00391f; --on-accent:#00391f;
+    --ok:#00e38b;   --ok-soft:#0e3423;
+    --warn:#ffdd65; --warn-soft:#3b2f00;
+    --crit:#ffb3ae; --crit-soft:#5c1013;
+
+    --radius-sm:4px; --radius-md:8px; --radius-lg:12px; --radius-pill:999px;
+    --font-mono:'JetBrains Mono','Cascadia Code',Consolas,ui-monospace,SFMono-Regular,monospace;
+    --font-head:'Geist','Inter','Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;
+    --rail-w:68px; --topbar-h:52px;
+
+    --focus-color:var(--accent); --focus-width:2px;
+    --dur-1:90ms; --dur-2:160ms; --ease:cubic-bezier(.2,0,0,1);
+
+    /* Foreground for anything filled with a semantic token: those tokens are
+       light in dark mode, so text on top of them must be dark, and vice versa. */
+    --on-semantic:#00391f;
+    --shadow-1:0 1px 2px rgba(0,0,0,.45);
+    --shadow-2:0 6px 20px rgba(0,0,0,.5);
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg-canvas:#F6F8FA; --bg-surface:#FFFFFF; --bg-raised:#FFFFFF; --bg-sunken:#EEF1F5;
+    --line:#E3E8EE; --line-2:#CBD5E0;
+    --text:#0C1319; --text-muted:#4E5D6C; --text-faint:#758798;
+    /* #0A6E99 rather than a lighter sky: at 0.65rem the .tech-label size, the
+       lighter value measured 3.96:1 on the sunken stat-box fill. This clears
+       4.5:1 there and still gives 5.7:1 for white button text. */
+    --accent:#00713F; --accent-hover:#00522F; --accent-soft:#DCF6EA; --on-accent:#FFFFFF;
+    --ok:#0C7A4B;   --ok-soft:#E2F4EC;
+    --warn:#7A5C00; --warn-soft:#FAF0D0;
+    --crit:#A90219; --crit-soft:#FBDDDD;
+    --on-semantic:#FFFFFF;
+    --shadow-1:0 1px 2px rgba(15,23,42,.07);
+    --shadow-2:0 6px 20px rgba(15,23,42,.10);
+}
+
+/* ---------------- 2. Bootstrap bridge ----------------
+   Bootstrap 5.3 carries 1715 !important utilities shaped as
+   rgba(var(--bs-*-rgb), ...). Redefining what they READ retargets all of them.
+
+   The semantic fills are Bootstrap's own values in BOTH themes, deliberately.
+   An earlier pass inverted them to the light tokens for dark mode, which broke
+   every badge the templates pair with a hardcoded .text-dark or .text-white.
+   Only primary moves, to the brand accent darkened enough that white text on it
+   clears AA (5.75:1). Text colour is handled by the .text-* overrides further
+   down, which do use the accessible tokens. */
+:root {
+    --bs-body-bg:var(--bg-canvas);
+    --bs-body-color:var(--text);
+    --bs-border-color:var(--line);
+    --bs-link-color:var(--accent);
+    --bs-link-hover-color:var(--accent-hover);
+    --bs-primary-rgb:0,227,139;
+    --bs-secondary-rgb:132,149,135;
+    --bs-success-rgb:0,227,139;
+    --bs-danger-rgb:169,2,25;
+    --bs-warning-rgb:255,221,101;
+    --bs-info-rgb:0,227,139;
+}
+/* Helles Theme: die soliden Fuellungen (badge bg-*) muessen gedunkelt sein,
+   damit der weisse Badge-Text AA erreicht. */
+:root[data-theme="light"] {
+    --bs-primary-rgb:0,113,67;
+    --bs-success-rgb:12,122,75;
+    --bs-info-rgb:0,113,67;
+    --bs-danger-rgb:169,2,25;
+    --bs-warning-rgb:122,92,0;
+}
+/* Dunkles Theme: Neon-Fuellung verlangt dunkle Schrift (invertierte Chips
+   der Stitch-Vorlage). */
+:root:not([data-theme="light"]) .badge.bg-primary:not([class*="bg-opacity"]),
+:root:not([data-theme="light"]) .badge.bg-success:not([class*="bg-opacity"]),
+:root:not([data-theme="light"]) .badge.bg-info:not([class*="bg-opacity"]) {
+    color:var(--on-accent) !important;
+}
+:root:not([data-theme="light"]) .badge.bg-warning:not([class*="bg-opacity"]) {
+    color:#3b2f00 !important;
+}
+/* Helles Theme: solide Fuellungen sind dunkel -- ein mitgegebenes text-dark
+   (z. B. Avatar-Badge) wuerde darauf versinken. */
+:root[data-theme="light"] .badge.bg-primary:not([class*="bg-opacity"]),
+:root[data-theme="light"] .badge.bg-success:not([class*="bg-opacity"]),
+:root[data-theme="light"] .badge.bg-info:not([class*="bg-opacity"]),
+:root[data-theme="light"] .badge.bg-warning:not([class*="bg-opacity"]),
+:root[data-theme="light"] .badge.bg-danger:not([class*="bg-opacity"]) {
+    color:#FFFFFF !important;
+}
+
+/* ---------------- 3. Legacy aliases ----------------
+   Every token style.css consumes. --primary-glow and --success-glow are
+   deliberately absent: the three rules that read them lose their outer glow,
+   which is the intent. */
+:root {
+    --bg-main:var(--bg-canvas);
+    --bg-dark:var(--bg-sunken);
+    --bg-card:var(--bg-surface);
+    --bg-nav:var(--bg-sunken);
+    --primary:var(--accent);
+    --text-primary:var(--text);
+    --text-secondary:var(--text-muted);
+    --success:var(--ok);
+    --danger:var(--crit);
+    --warning:var(--warn);
+    --border:var(--line);
+    --border-hover:var(--line-2);
+    --glass-bg:var(--bg-surface);
+    --glass-border:var(--line);
+    --shadow-premium:var(--shadow-2);
+    --retro-cyan:var(--accent);
+    --retro-white:var(--text);
+    --retro-magenta:var(--accent);
+    --retro-yellow:var(--warn);
+}
+
+/* ---------------- 4. Shell ---------------- */
+body {
+    background-color: var(--bg-canvas) !important;
+    background-image: none;
+    color: var(--text);
+    /* style.css setzt Outfit -- zu breit und schlecht lesbar in Titeln.
+       Inter falls installiert, sonst die saubere System-Sans. */
+    /* Wie in der Velocity-Vorlage: der Body laeuft in JetBrains Mono
+       (Terminal-Charakter), Geist traegt nur Ueberschriften und Metriken. */
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    /* Sticky Footer: das mt-auto am footer greift nur in einer Flex-Spalte.
+       Auf kurzen Seiten hing die Copyright-Zeile sonst mitten im Viewport. */
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+}
+#main-content { flex: 1 0 auto; }
+
+/* Size comes from the macro's inline style. */
+.hw-brand { display:block; color:var(--text); }
+/* The container was built for the pixel-art wordmark: it pixelates its contents
+   and runs a 5Hz CRT flicker on an infinite loop with no reduced-motion guard.
+   Neither belongs on a vector mark, and the flicker was an accessibility
+   problem regardless. */
+.hw-logo-container {
+    image-rendering:auto !important;
+    animation:none !important;
+    overflow:visible;
+    padding:0;
+}
+/* One lockup per breakpoint: mark alone in the rail, mark plus wordmark in the
+   mobile bar. Swapping whole SVGs beats hiding the wordmark group, because the
+   viewBox would otherwise leave 280 units of empty space in a 68px rail. */
+.hw-brand-slot--mark { display:none; }
+.hw-brand-slot--full { display:block; }
+@media (min-width: 992px) {
+    .hw-brand-slot--mark { display:block; }
+    .hw-brand-slot--full { display:none; }
+}
+/* Marke: Ink-Haken folgen dem Text, der Akzent-Haken der Akzentfarbe --
+   exakt die Rollen aus dem Hook-Triad-Artifact. */
+.hw-brand-mark { color: var(--text); }
+.hw-brand-mark .hw-knoten-akzent { color: var(--accent); }
+.hw-brand-mark.is-mono, .hw-brand .hw-brand-mark.is-mono,
+.hw-brand-mark.is-mono .hw-knoten-akzent { color: inherit; }
+
+/* Context bar. Carries the page title the rail no longer shows. */
+.hw-topbar {
+    display:none;
+    height:var(--topbar-h);
+    align-items:center;
+    gap:14px;
+    padding:0 20px;
+    background:var(--bg-surface);
+    border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:1030;
+}
+.hw-topbar-title { font-size:var(--t-md); font-weight:600; letter-spacing:-.01em; color:var(--text); }
+.hw-topbar-user { margin-left:auto; display:flex; align-items:center; gap:9px;
+                  font-size:12.5px; color:var(--text-muted); }
+.hw-theme-toggle {
+    border:1px solid var(--line-2); background:transparent; color:var(--text-muted);
+    border-radius:var(--radius-sm); padding:4px 10px;
+    font:500 11.5px/1.4 inherit; cursor:pointer;
+}
+.hw-theme-toggle:hover { color:var(--text); border-color:var(--accent); }
+.hw-topbar-avatar { width:26px; height:26px; border-radius:var(--radius-pill);
+                    background:var(--accent-soft); color:var(--accent);
+                    display:grid; place-items:center;
+                    font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; }
+
+@media (min-width: 992px) {
+    body { padding-left: var(--rail-w); }
+    .hw-topbar { display:flex; }
+
+    /* The navbar becomes the rail. Markup is unchanged; only layout moves. */
+    .navbar {
+        position:fixed !important; inset:0 auto 0 0;
+        width:var(--rail-w); height:100vh;
+        flex-direction:column; padding:12px 0 !important;
+        background:var(--bg-sunken) !important;
+        border-right:1px solid var(--line); border-bottom:0;
+        z-index:1035; overflow:visible;
+    }
+    .navbar > .container {
+        flex-direction:column; align-items:center;
+        width:100%; max-width:none; height:100%; padding:0; gap:6px; flex-wrap:nowrap;
+    }
+    .navbar-brand { margin:0 0 10px !important; padding:0 !important; }
+    .navbar-page-title { display:none !important; }
+
+    .navbar-collapse { flex:1; width:100%; display:flex !important; }
+    .navbar-nav {
+        flex-direction:column !important; align-items:center;
+        width:100%; height:100%; gap:3px; margin:0 !important;
+    }
+
+    /* Icon-only. Labels stay in the DOM for screen readers. */
+    .navbar-nav .nav-link {
+        width:42px; height:42px; padding:0 !important;
+        display:grid !important; place-items:center;
+        /* --text-muted rather than --text-faint: at rest the rail icons are the
+           only wayfinding on the page, and faint measured 3.27:1 in light. */
+        border-radius:var(--radius-md); color:var(--text-muted);
+        position:relative;
+    }
+    .navbar-nav .nav-link > span:not(.notification-count) {
+        position:absolute; width:1px; height:1px; margin:-1px;
+        overflow:hidden; clip-path:inset(50%); white-space:nowrap;
+    }
+    .navbar-nav .nav-link:hover { color:var(--text); background:var(--bg-raised); }
+    .navbar-nav .nav-link.active {
+        color:var(--accent); background:var(--accent-soft);
+    }
+    .navbar-nav .nav-link.active::before {
+        content:""; position:absolute; left:-13px; top:9px; bottom:9px;
+        width:2px; border-radius:2px; background:var(--accent);
+    }
+    .navbar-nav .nav-link-action { color:var(--accent); }
+    .navbar-nav .nav-link-action:hover { background:var(--accent-soft); }
+
+    /* Reorder without touching markup. Attribute selectors are stable because
+       they key off url_for output, not position. */
+    .navbar-nav > [href="/"]                       { order:1; }
+    .navbar-nav > [href*="webhooks"]               { order:2; }
+    .navbar-nav > [href*="tenantmap"]              { order:3; }
+    .navbar-nav > [href*="history"]                { order:4; }
+    .navbar-nav > [href*="audit"]                  { order:5; }
+    .navbar-nav > .nav-link-action                 { order:5; }
+    /* The greeting moves to the context bar. !important is required because
+       .navbar-nav .nav-link above sets display:grid !important. */
+    .navbar-nav > .lightgrey                       { display:none !important; }
+    .navbar-nav > .notification-center             { order:20; margin-top:auto; }
+    .navbar-nav > [data-bs-target="#docsSidebar"]  { order:21; }
+    .navbar-nav > [href*="settings"]               { order:22; }
+    .navbar-nav > [href*="logout"]                 { order:23; }
+
+    .notification-center .nav-link { width:42px; height:42px; }
+    /* Popper positions this relative to the toggle; in a 68px rail the default
+       right-alignment would run off-screen. */
+    .notification-menu {
+        left:56px !important; right:auto !important; top:auto !important;
+        bottom:8px !important; transform:none !important;
+        max-height:70vh; overflow-y:auto;
+    }
+}
+
+/* Below lg the navbar keeps Bootstrap's collapse behaviour untouched. */
+@media (max-width: 991.98px) {
+    .navbar { background:var(--bg-sunken) !important; border-bottom:1px solid var(--line); }
+}
+
+/* ---------------- 5. Components ---------------- */
+.navbar .nav-link { border-radius:var(--radius-md); }
+
+.glass-card, .card.glass-card, .card {
+    background:var(--bg-surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-1);
+    backdrop-filter:none; -webkit-backdrop-filter:none;
+}
+
+.btn, .btn-sm, .form-control, .form-select, .input-group-text,
+.alert, .dropdown-menu, .modal-content, .list-group-item {
+    border-radius:var(--radius-md);
+}
+.badge, .filter-chip, .endpoint-tag { border-radius:var(--radius-pill); }
+
+.form-control, .form-select {
+    background-color:var(--bg-surface) !important;
+    border-color:var(--line-2) !important;
+    color:var(--text) !important;
+}
+.form-control::placeholder { color:var(--text-faint); opacity:1; }
+
+.btn-primary {
+    /* Bootstrap 5.3 zieht active/focus aus --bs-btn-* -- die Zustaende muessen
+       auf VARIABLEN-Ebene umgezogen werden, sonst blitzt beim Druecken das
+       Bootstrap-Blau durch. */
+    --bs-btn-bg:var(--accent); --bs-btn-border-color:var(--accent);
+    --bs-btn-color:var(--on-accent);
+    --bs-btn-hover-bg:var(--accent-hover); --bs-btn-hover-border-color:var(--accent-hover);
+    --bs-btn-hover-color:var(--on-accent);
+    --bs-btn-active-bg:var(--accent-hover); --bs-btn-active-border-color:var(--accent-hover);
+    --bs-btn-active-color:var(--on-accent);
+    --bs-btn-disabled-bg:var(--accent); --bs-btn-disabled-border-color:var(--accent);
+    --bs-btn-disabled-color:var(--on-accent);
+    --bs-btn-focus-shadow-rgb:0,227,139;
+    background-color:var(--accent); border-color:var(--accent); color:var(--on-accent);
+    /* style.css legt einen blauen Verlaufs-Hintergrund als background-image
+       darueber -- der muss explizit weg, sonst gewinnt er ueber die Farbe. */
+    background-image:none;
+    font-weight:600;
+}
+.btn-primary:hover {
+    background-color:var(--accent-hover); border-color:var(--accent-hover);
+    color:var(--on-accent); background-image:none; box-shadow:var(--shadow-1);
+}
+.btn-info, .btn-success {
+    --bs-btn-bg:var(--accent); --bs-btn-border-color:var(--accent); --bs-btn-color:var(--on-accent);
+    --bs-btn-hover-bg:var(--accent-hover); --bs-btn-hover-border-color:var(--accent-hover);
+    --bs-btn-hover-color:var(--on-accent);
+    --bs-btn-active-bg:var(--accent-hover); --bs-btn-active-border-color:var(--accent-hover);
+    --bs-btn-active-color:var(--on-accent);
+}
+.btn-warning {
+    --bs-btn-bg:var(--warn); --bs-btn-border-color:var(--warn); --bs-btn-color:var(--on-semantic);
+    --bs-btn-hover-bg:var(--warn); --bs-btn-hover-border-color:var(--warn); --bs-btn-hover-color:var(--on-semantic);
+    --bs-btn-active-bg:var(--warn); --bs-btn-active-border-color:var(--warn); --bs-btn-active-color:var(--on-semantic);
+}
+.btn-danger {
+    --bs-btn-bg:var(--crit-soft); --bs-btn-border-color:var(--crit); --bs-btn-color:var(--crit);
+    --bs-btn-hover-bg:var(--crit); --bs-btn-hover-border-color:var(--crit); --bs-btn-hover-color:var(--on-semantic);
+    --bs-btn-active-bg:var(--crit); --bs-btn-active-border-color:var(--crit); --bs-btn-active-color:var(--on-semantic);
+}
+.btn-outline-primary, .btn-outline-info, .btn-outline-success {
+    --bs-btn-active-bg:var(--accent); --bs-btn-active-border-color:var(--accent);
+    --bs-btn-active-color:var(--on-accent);
+    --bs-btn-hover-bg:var(--accent-soft); --bs-btn-hover-color:var(--accent-hover);
+    --bs-btn-hover-border-color:var(--accent);
+}
+.btn-outline-warning {
+    --bs-btn-active-bg:var(--warn); --bs-btn-active-color:var(--on-semantic);
+    --bs-btn-active-border-color:var(--warn);
+}
+.btn-outline-danger {
+    --bs-btn-active-bg:var(--crit); --bs-btn-active-color:var(--on-semantic);
+    --bs-btn-active-border-color:var(--crit);
+}
+.btn:active { transform:translateY(1px); }
+
+/* Focus. style.css:1059 set outline:0 on .dashboard-kpi and relied on a border
+   tint that does not reach the 3:1 WCAG 2.4.11 requires. */
+:where(a,button,input,select,textarea,summary,[tabindex]):focus-visible {
+    outline:var(--focus-width) solid var(--focus-color);
+    outline-offset:2px; border-radius:var(--radius-sm);
+}
+.dashboard-kpi:focus-visible {
+    outline:var(--focus-width) solid var(--focus-color) !important; outline-offset:2px;
+}
+:focus:not(:focus-visible) { box-shadow:none !important; }
+
+/* Data */
+.dashboard-kpi {
+    background:var(--bg-surface); border:1px solid var(--line);
+    min-height:auto; box-shadow:none;
+}
+.dashboard-kpi:hover { border-color:var(--line-2); }
+.dashboard-kpi-label { color:var(--text-muted); }
+.dashboard-kpi-value { color:var(--text); font-variant-numeric:tabular-nums; }
+.dashboard-kpi-detail, .dashboard-kpi-delta { color:var(--text-faint); }
+
+/* Numerals in the endpoint cards were rendering near-invisible against the
+   card fill. They are the reason the card exists. */
+.endpoint-details [data-summary], .kpi-card .kpi-value, .stat-value {
+    color:var(--text); font-variant-numeric:tabular-nums;
+}
+
+table.table { --bs-table-bg:transparent; color:var(--text); }
+table.table > :not(caption) > * > * { border-color:var(--line); }
+.table-dark {
+    --bs-table-bg:transparent; --bs-table-color:var(--text);
+    --bs-table-border-color:var(--line);
+    --bs-table-hover-bg:var(--bg-raised); --bs-table-hover-color:var(--text);
+    --bs-table-striped-bg:var(--bg-raised); --bs-table-striped-color:var(--text);
+}
+thead.bg-black, .table-dark thead { background:var(--bg-sunken) !important; color:var(--text-muted) !important; }
+
+/* style.css:144-150 hardcodes .text-success:#34d399 and .text-danger:#fb7185
+   with !important, so neither followed a theme. Same specificity here, and
+   this file loads later, so the token wins. */
+.text-success { color:var(--ok) !important; }
+.text-danger  { color:var(--crit) !important; }
+.text-warning { color:var(--warn) !important; }
+.text-info    { color:var(--accent) !important; }
+
+/* Outline buttons. Bootstrap 5.3 sets --bs-btn-color per variant to a literal
+   (.btn-outline-secondary is #6c757d), so the --bs-*-rgb bridge never reaches
+   them and they measured as low as 1.84:1 on a light ground. These are the
+   supported per-button custom properties, so no !important is needed. */
+.btn-outline-secondary {
+    --bs-btn-color:var(--text-muted); --bs-btn-border-color:var(--line-2);
+    --bs-btn-hover-bg:var(--bg-raised); --bs-btn-hover-color:var(--text);
+    --bs-btn-hover-border-color:var(--line-2);
+    --bs-btn-active-bg:var(--bg-raised); --bs-btn-active-color:var(--text);
+}
+.btn-outline-primary, .btn-outline-info {
+    --bs-btn-color:var(--accent); --bs-btn-border-color:var(--accent);
+    --bs-btn-hover-bg:var(--accent); --bs-btn-hover-color:var(--on-accent);
+    --bs-btn-hover-border-color:var(--accent);
+    --bs-btn-active-bg:var(--accent); --bs-btn-active-color:var(--on-accent);
+}
+.btn-outline-danger {
+    --bs-btn-color:var(--crit); --bs-btn-border-color:var(--crit);
+    --bs-btn-hover-bg:var(--crit); --bs-btn-hover-color:var(--on-semantic);
+    --bs-btn-hover-border-color:var(--crit);
+}
+.btn-outline-warning {
+    --bs-btn-color:var(--warn); --bs-btn-border-color:var(--warn);
+    --bs-btn-hover-bg:var(--warn); --bs-btn-hover-color:var(--on-semantic);
+    --bs-btn-hover-border-color:var(--warn);
+}
+.btn-outline-success {
+    --bs-btn-color:var(--ok); --bs-btn-border-color:var(--ok);
+    --bs-btn-hover-bg:var(--ok); --bs-btn-hover-color:var(--on-semantic);
+    --bs-btn-hover-border-color:var(--ok);
+}
+
+/* Badges.
+   The fills above are Bootstrap's, so solid badges take white text. Warning and
+   info are light fills and the templates already pair them with .text-dark, so
+   they are excluded rather than overridden.
+
+   Solid fills only: the history status badges are .bg-*.bg-opacity-10 with a
+   .text-* class, so their background is nearly transparent. Forcing a foreground
+   on those put PROCESSED, FAILED and DLQ at 1.2:1. The :not() leaves them on
+   their own .text-* colour, which the overrides below make accessible. */
+.badge.bg-primary:not([class*="bg-opacity"]),
+.badge.bg-success:not([class*="bg-opacity"]),
+.badge.bg-danger:not([class*="bg-opacity"]),
+.badge.bg-secondary:not([class*="bg-opacity"]) {
+    color:#fff !important;
+}
+
+/* Links inside alerts kept Bootstrap's default #0d6efd at 3.86:1 on the alert
+   fill. The accent is the wrong answer here: .alert-info paints a LIGHT cyan
+   background in both themes, so the accent measured 1.84:1 on it. Bootstrap
+   already computes a per-variant link colour for exactly this. */
+.alert a:not(.btn), .alert .alert-link {
+    color:var(--bs-alert-link-color, var(--bs-alert-color)) !important;
+}
+
+/* State reads as state, never as decoration. */
+.status-dot { box-shadow:none !important; }
+.status-dot.ok, .status-dot.success { background:var(--ok); }
+.status-dot.error, .status-dot.danger { background:var(--crit); }
+.status-dot.warning { background:var(--warn); }
+
+/* Light-mode bridge. The templates carry 244 hardcoded dark utilities, so an
+   explicit light choice has to retarget them or the text disappears. This is a
+   preview aid, not a substitute for updating the templates. */
+:root[data-theme="light"] .text-light,
+:root[data-theme="light"] .text-white,
+:root[data-theme="light"] h1, :root[data-theme="light"] h2,
+:root[data-theme="light"] h3, :root[data-theme="light"] h4,
+:root[data-theme="light"] h5, :root[data-theme="light"] h6 { color:var(--text) !important; }
+/* Frueher blieben Dialoge und das Doku-Panel im hellen Theme bewusst dunkel.
+   Seit die Dialogflaechen tokenisiert sind (Abschnitt 19), gilt das nicht
+   mehr -- die frueheren text-white-Ausnahmen dafuer erzeugten weiss auf
+   weiss und sind entfernt. */
+:root[data-theme="light"] :is(.bg-dark,.bg-black) {
+    background-color:var(--bg-surface) !important;
+}
+:root[data-theme="light"] .text-secondary { color:var(--text-muted) !important; }
+:root[data-theme="light"] .border-secondary { border-color:var(--line) !important; }
+:root[data-theme="light"] #activity-controls,
+:root[data-theme="light"] #log-container,
+:root[data-theme="light"] .bg-dark.bg-opacity-25,
+:root[data-theme="light"] .bg-dark.bg-opacity-50,
+:root[data-theme="light"] .bg-black.bg-opacity-50 {
+    background-color:var(--bg-sunken) !important; color:var(--text);
+}
+
+/* ---- Headings ----
+   style.css:214 fills every h1-h4 with a hardcoded white gradient via
+   background-clip:text and -webkit-text-fill-color:transparent. Two problems:
+   the fade to rgba(255,255,255,.5) costs contrast at the lower right of every
+   heading, and in light mode white-on-white makes headings disappear entirely
+   (a plain `color` override cannot fix it, because text-fill-color wins).
+   Headings become solid in both themes. .accent-gradient stays as the one
+   deliberate gradient, and its stops are theme-aware tokens. */
+:is(h1,h2,h3,h4,.h1,.h2,.h3,.h4):not(.accent-gradient) {
+    background:none !important;
+    -webkit-text-fill-color:currentColor !important;
+    color:var(--text);
+}
+.endpoint-card h4, .endpoint-card .h4 { font-weight:700; letter-spacing:-.015em; }
+
+/* Stat boxes were a hardcoded rgba(0,0,0,.2), which reads as muddy grey on a
+   light ground. */
+.tech-item { background:var(--bg-raised) !important; border:1px solid var(--line); }
+:root[data-theme="light"] .tech-item { background:var(--bg-sunken) !important; }
+
+/* ---- Dashboard: three figures that can demand action, then a context strip.
+   DOM order is 3 primary then 8 quiet, so one grid with explicit column spans
+   gives the two-tier layout without splitting the live region the JS fills. ---- */
+.hw-kpi-primary {
+    display:grid !important;
+    grid-template-columns:repeat(12, 1fr);
+    gap:10px;
+}
+.hw-kpi { min-height:auto !important; padding:14px 16px !important; }
+.hw-kpi .dashboard-kpi-label { font-size:.68rem; letter-spacing:.09em; color:var(--text-muted); }
+.hw-kpi .dashboard-kpi-value { font-size:var(--t-2xl); line-height:1.15; font-weight:700; letter-spacing:-.02em; }
+.hw-kpi .dashboard-kpi-detail { color:var(--text-faint); }
+
+.hw-kpi--crit, .hw-kpi--warn, .hw-kpi--ok { grid-column:span 4; }
+.hw-kpi--crit { border-left:3px solid var(--crit); }
+.hw-kpi--warn { border-left:3px solid var(--warn); }
+.hw-kpi--ok   { border-left:3px solid var(--ok); }
+.hw-kpi--crit .dashboard-kpi-value { color:var(--crit); }
+.hw-kpi--warn .dashboard-kpi-value { color:var(--warn); }
+.hw-kpi--ok   .dashboard-kpi-value { color:var(--ok); }
+
+.hw-kpi--quiet {
+    grid-column:span 3; padding:10px 13px !important;
+    background:transparent; border-color:var(--line);
+}
+.hw-kpi--quiet .dashboard-kpi-value { font-size:var(--t-xl); font-weight:600; }
+.hw-kpi--quiet .dashboard-kpi-detail { display:none; }
+@media (max-width:1200px) {
+    .hw-kpi--crit, .hw-kpi--warn, .hw-kpi--ok, .hw-kpi--quiet { grid-column:span 6; }
+}
+@media (max-width:700px) {
+    .hw-kpi--crit, .hw-kpi--warn, .hw-kpi--ok, .hw-kpi--quiet { grid-column:span 12; }
+}
+
+/* ---- Endpoint cards: one column of compact rows instead of a three-across
+   wall. CSS only, so every pin, pause, drag and bulk-select handler in the
+   existing markup keeps working. ---- */
+@media (min-width: 992px) {
+    #endpoint-grid > .draggable-card {
+        width:100%; max-width:none; flex:0 0 100%; margin-bottom:8px !important;
+    }
+    #endpoint-grid .endpoint-card { box-shadow:none; }
+
+    /* Two columns: identity and URL on the left, the four metrics on the right.
+       .endpoint-actions and the health dot are position:absolute in style.css,
+       so they stay out of flow and need no grid placement. */
+    #endpoint-grid .endpoint-card .card-body {
+        padding:14px 18px !important;
+        display:grid;
+        grid-template-columns:minmax(300px,1fr) minmax(430px,1.15fr);
+        column-gap:22px; row-gap:4px; align-items:start;
+    }
+    #endpoint-grid .endpoint-card .card-body > .d-flex { grid-column:1; grid-row:1; margin-bottom:6px !important; }
+    #endpoint-grid .endpoint-card .card-body > .mb-3   { grid-column:1; grid-row:2; margin-bottom:0 !important; }
+    #endpoint-grid .endpoint-card .card-body > .tech-grid {
+        grid-column:2; grid-row:1 / span 2; margin-bottom:0 !important;
+        /* Four across in one row rather than wrapping to 2x2, which is what
+           made the full-width card taller than the three-across card. */
+        grid-template-columns:repeat(4, 1fr) !important;
+        gap:8px !important;
+    }
+    #endpoint-grid .endpoint-card .card-body > .endpoint-details { grid-column:1 / -1; grid-row:3; }
+    #endpoint-grid .tech-item { padding:8px 10px !important; }
+    #endpoint-grid .tech-item .h5 { font-size:1.05rem !important; }
+}
+
+
+/* --------------------------------------------------------------------------
+   Kaskadierende em-Groessen stoppen.
+   Bootstrap setzt small/.small auf 0.875em, .badge auf 0.75em und code auf
+   0.875em -- alles relativ zum Elternteil. Verschachtelt multiplizieren sie
+   sich: ein Badge in einem <small> in einer bereits auf .72rem gesetzten
+   Karte landet bei 7.8px. Gemessen wurden so 8.4px, 7.8px und 12.25px, dazu
+   54 Elemente zwischen 8px und 9.6px -- unterhalb jeder Lesbarkeitsschwelle
+   und damit reines Rauschen. Absolute Werte brechen die Kette bei der ersten
+   Stufe, egal wie tief verschachtelt wird.
+   -------------------------------------------------------------------------- */
+small, .small { font-size:var(--t-sm); }
+.badge { font-size:var(--t-xs); }
+code, kbd, samp { font-size:var(--t-sm); }
+
+/* --------------------------------------------------------------------------
+   Korrektur: die .dashboard-kpi-*-Regeln liegen zwar im legacy-dashboard-
+   Block, werden aber sichtbar gerendert -- sie oben auszunehmen war falsch.
+   Sie tragen 25 Elemente in vier eigenen Groessen (12.16 / 12 / 18.4 / 30.4).
+   -------------------------------------------------------------------------- */
+.dashboard-kpi-label { font-size:var(--t-xs); }
+.dashboard-kpi-delta,
+.dashboard-kpi-detail,
+.dashboard-endpoint-summary { font-size:var(--t-sm); }
+.dashboard-kpi-value { font-size:var(--t-2xl); line-height:1.15; }
+
+
+/* --------------------------------------------------------------------------
+   Token-Klassen als Ersatz fuer Inline-Groessen.
+   index.html trug 22 style="font-size:..."-Attribute (5x .5rem, 14x .65rem,
+   je 1x .7/.8/.85rem). Inline schlaegt jede Regel ausser !important, diese
+   Stellen standen also ausserhalb der Skala. Die Attribute sind entfernt und
+   durch diese drei Klassen ersetzt.
+   -------------------------------------------------------------------------- */
+.hw-t-xs  { font-size:var(--t-xs); }
+.hw-t-sm  { font-size:var(--t-sm); }
+.hw-t-md  { font-size:var(--t-md); }
+.hw-t-lg  { font-size:var(--t-lg); }
+.hw-t-xl  { font-size:var(--t-xl); }
+.hw-t-2xl { font-size:var(--t-2xl); }
+
+/* --------------------------------------------------------------------------
+   Restliche Farbstreuung.
+   .text-light (#F8F9FA) und der Fliesstext-Token (#E8EEF4) unterscheiden sich
+   um 16/16/16 -- als zweite "helle Schrift" nicht wahrnehmbar, aber sie zaehlt
+   und muss gepflegt werden. Das Pink aus style.css:153 fuer <code> ist eine
+   sechste Akzentfarbe ohne Bedeutung; Inline-Code ist kein eigener Status.
+   Die semantischen Toene (ok / warn / crit / accent) bleiben unangetastet --
+   in einer Ops-Konsole tragen sie Information, ihr Kollaps waere Datenverlust.
+   -------------------------------------------------------------------------- */
+.text-light { color:var(--text) !important; }
+code { color:var(--accent); }
+
+/* Bootstraps Close-Button faellt mit 6px aus der Radius-Skala. */
+.btn-close { border-radius:var(--radius-sm); }
+
+
+/* --------------------------------------------------------------------------
+   Outline-Buttons auf die semantischen Tokens.
+   Bootstrap faerbt sie mit seinen Rohwerten -- .btn-outline-danger traegt
+   #dc3545, gemessen 3.94:1 auf der Kartenflaeche und damit unter den nach
+   WCAG 2.2 SC 1.4.3 geforderten 4.5:1. Die Tokens sind fuer beide Themes
+   geprueft (dunkel #FF6B70, hell #C0294F), die Rohwerte sind es nicht.
+   Nur die Ruhefarbe wird gesetzt; Hover- und Disabled-Zustand bleiben
+   unveraendert, damit sich das Verhalten der Buttons nicht aendert.
+   -------------------------------------------------------------------------- */
+.btn-outline-danger  { --bs-btn-color:var(--crit); }
+.btn-outline-success { --bs-btn-color:var(--ok); }
+.btn-outline-warning { --bs-btn-color:var(--warn); }
+.btn-outline-info    { --bs-btn-color:var(--accent); }
+
+/* --------------------------------------------------------------------------
+   .bg-opacity-20 existiert in Bootstrap nicht -- die Skala kennt nur 10, 25,
+   50, 75 und 100. settings.html nutzt die Klasse zweimal, sie verpufft, und
+   das Badge rendert volldeckend #6c757d statt der gemeinten 20-%-Flaeche.
+   Weisse Schrift darauf ergibt 3.99:1. Statt die Templates umzuschreiben
+   wird die fehlende Stufe ergaenzt: das stellt die beabsichtigte Optik her
+   und hebt den Kontrast in beiden Themes deutlich ueber die Schwelle.
+   -------------------------------------------------------------------------- */
+.bg-opacity-20 { --bs-bg-opacity:.2; }
+
+
+/* --------------------------------------------------------------------------
+   Kopfzeile der Endpoint-Liste.
+   Die Zeile ist als flex-column flex-xl-row angelegt, aber die Ueberschrift
+   hat keine Breitenreservierung: die Toolbar nimmt sich den Platz, "Webhook
+   Endpoints" bricht auf zwei Zeilen und der Kopfbereich waechst um rund 60px,
+   ohne dass Information hinzukommt. Titel und Zaehler bekommen daher eine
+   feste Spur, die Toolbar den Rest -- und der Zaehler wandert neben den
+   Titel, statt eine eigene Zeile zu belegen.
+   Reine Layoutkorrektur, das Markup bleibt unveraendert.
+   -------------------------------------------------------------------------- */
+@media (min-width: 1200px) {
+    #endpoint-list {
+        flex-wrap:nowrap;
+        gap:var(--s-3) !important;
+        margin-bottom:var(--s-3) !important;
+    }
+    #endpoint-list > .hw-section-title { white-space:nowrap; flex:0 0 auto; }
+    #endpoint-list > .endpoint-toolbar {
+        margin-left:auto; flex:1 1 auto; justify-content:flex-end;
+    }
+}
+
+/* Zaehler und Auswahlzeile zusammenruecken: zwei Zeilen a 8pt statt zwei
+   Bloecke mit je 16px Aussenabstand. */
+#endpoint-dashboard > .mb-3:has(#check-all) { margin-bottom:var(--s-2) !important; }
+#endpoint-count, .endpoint-count { margin-bottom:var(--s-1) !important; }
+
+
+
+
+/* --------------------------------------------------------------------------
+   Seitentitel vereinheitlichen.
+   Die sechs Seiten trugen vier verschiedene Titelgroessen (h1 mit .h3, mit .h4
+   und zweimal ohne Groessenklasse), eine davon zentriert. Fuer Nutzende sah
+   dadurch jede Seite nach einer anderen Ebene aus. Die Groessenklassen auf dem
+   h1 werden hier neutralisiert -- h1.h3 (0,1,1) schlaegt .h3 (0,1,0), das
+   Markup bleibt also unangetastet.
+   -------------------------------------------------------------------------- */
+h1, h1.h3, h1.h4, h1.h2 {
+    font-size:var(--t-2xl); font-weight:700; letter-spacing:-.02em;
+    line-height:1.15;
+}
+
+
+
+/* --------------------------------------------------------------------------
+   Icon-Aktionen: eine Groesse statt sechs.
+   Gemessen wurden 71 reine Icon-Schaltflaechen in den Groessen 14x14, 15x17,
+   16x16, 12x17 und 18x22 -- dieselbe Art Bedienelement, sechsmal anders gross.
+   Sie tragen alle p-0 mit !important, deshalb geht der Weg ueber width/height
+   statt ueber Innenabstand.
+   24x24 ist kein Zufallswert: das ist die Mindestgroesse aus WCAG 2.2
+   SC 2.5.8. Der Hintergrund beim Ueberfahren macht die Flaeche sichtbar --
+   vorher war nicht erkennbar, wo genau man treffen muss.
+   :only-child grenzt auf die reinen Icon-Knoepfe ein; Schaltflaechen mit
+   Beschriftung daneben bleiben unberuehrt.
+   -------------------------------------------------------------------------- */
+.btn-link:has(> .hw-icon:only-child),
+.btn-link:has(> svg:only-child) {
+    width:24px; height:24px; min-height:24px;
+    display:inline-flex; align-items:center; justify-content:center;
+    border-radius:var(--radius-sm);
+    transition:background-color .12s ease, color .12s ease;
+}
+.btn-link:has(> .hw-icon:only-child):hover,
+.btn-link:has(> svg:only-child):hover {
+    background:var(--bg-raised);
+}
+@media (prefers-reduced-motion: reduce) {
+    .btn-link:has(> .hw-icon:only-child),
+    .btn-link:has(> svg:only-child) { transition:none; }
+}
+
+
+/* --------------------------------------------------------------------------
+   Formular "Neuer Webhook": angeheftete Aktionsleiste.
+   Gemessen: 22 sichtbare Felder und 7 Kontrollkaestchen, davon 5 Pflicht --
+   und die lagen bei 353, 403, 403, 466 und 1091px. Das letzte Pflichtfeld
+   (timeout_hours) sitzt hinter "Show Advanced Fields", der Absenden-Knopf bei
+   1760px. Wer absenden wollte, scrollte durch das ganze Formular und erfuhr
+   erst dort, dass noch etwas fehlt.
+   Die Leiste bleibt am unteren Rand stehen und nennt den Stand.
+   -------------------------------------------------------------------------- */
+.hw-formbar {
+    position:sticky; bottom:0; z-index:30;
+    margin:var(--s-4) calc(-1 * var(--s-5)) calc(-1 * var(--s-5));
+    padding:var(--s-3) var(--s-5);
+    background:var(--bg-surface);
+    border-top:1px solid var(--line);
+    box-shadow:0 -8px 20px -12px rgba(0,0,0,.55);
+}
+/* Der Zaehler steht links, die Schaltflaechen bleiben rechts. */
+.hw-formbar > div:last-child { margin-left:auto; }
+.hw-req-state {
+    margin-right:auto; font-size:var(--t-sm); color:var(--text-muted);
+    display:inline-flex; align-items:center; gap:var(--s-2);
+}
+.hw-req-state[data-state="offen"] { color:var(--warn); }
+.hw-req-state[data-state="fertig"] { color:var(--ok); }
+.hw-req-state::before {
+    content:""; width:8px; height:8px; border-radius:var(--radius-pill);
+    background:currentColor; flex-shrink:0;
+}
+
+/* Ein Pflichtfeld, das hinter einer Aufklappung liegt, ist sonst unauffindbar:
+   der Browser meldet "nicht ausgefuellt" fuer ein Feld, das niemand sieht. */
+.hw-req-hidden {
+    border-left:3px solid var(--warn); padding-left:var(--s-2);
+}
+
+
+/* --------------------------------------------------------------------------
+   Bootstrap-Standardfarben, die nie auf dunklen Grund umgestellt wurden.
+   .form-text traegt rgba(33,37,41,.75) -- Bootstraps Koerpertextfarbe des
+   hellen Themes, also Fast-Schwarz mit 75 % Deckkraft. Auf der dunklen Karte
+   ergibt das etwa 1.1:1: die Hilfetexte unter den Eingabefeldern waren
+   praktisch unsichtbar. Betrifft sieben Stellen in drei Templates.
+   Der Kontrastpruefer hatte diese Klasse nicht abgetastet; er tut es jetzt.
+   -------------------------------------------------------------------------- */
+.form-text { color:var(--text-muted); }
+.form-label { color:var(--text); }
+.form-check-label { color:var(--text); }
+
+
+/* --------------------------------------------------------------------------
+   Meldungsflaechen (.alert) auf das Theme ziehen.
+   Bootstrap gibt jeder Alarmvariante eine helle Flaeche ueber --bs-alert-bg.
+   Auf dunklem Grund bleibt sie hell, und die Templates setzen darin
+   .text-info, .text-warning und so weiter -- also den hellen Akzentton auf
+   heller Flaeche. Gemessen: 1.84:1 im Doku-Panel.
+   bg-opacity-10, das die Templates danebenschreiben, wirkt bei .alert nicht:
+   Alarme lesen --bs-alert-bg, nicht --bs-bg-opacity.
+   Die Variante bleibt unterscheidbar -- ueber einen Streifen an der Kante
+   statt ueber die Flaechenfarbe. Das traegt in beiden Themes.
+   -------------------------------------------------------------------------- */
+.alert {
+    --bs-alert-bg:var(--bg-raised);
+    --bs-alert-border-color:var(--line-2);
+    --bs-alert-color:var(--text);
+    --bs-alert-link-color:var(--accent);
+    border-left-width:3px;
+}
+.alert-info,    .alert-primary { border-left-color:var(--accent); }
+.alert-success                 { border-left-color:var(--ok); }
+.alert-warning                 { border-left-color:var(--warn); }
+.alert-danger                  { border-left-color:var(--crit); }
+.alert-secondary, .alert-dark, .alert-light { border-left-color:var(--line-2); }
+
+
+/* --------------------------------------------------------------------------
+   Eine Bedienelementhoehe fuer Eingaben und Schaltflaechen.
+   Gemessen in den Einstellungen: "Download Backup" 35px direkt neben
+   "Restore" 42px. Der zweite steht in einer input-group und wird auf die Hoehe
+   des Dateifeldes gestreckt -- Bootstrap macht das absichtlich, damit Feld und
+   Knopf in der Gruppe buendig sind. Der Fehler liegt eine Ebene tiefer: Felder
+   und Schaltflaechen hatten nie dieselbe Grundhoehe.
+   34 / 28 / 42 fuer Standard, klein und gross -- fuer beide Bauteilfamilien.
+   -------------------------------------------------------------------------- */
+.form-control, .form-select, .input-group-text {
+    min-height:34px;
+}
+.form-control-sm, .form-select-sm, .input-group-sm > .form-control,
+.input-group-sm > .form-select, .input-group-sm > .input-group-text,
+.input-group-sm > .btn {
+    min-height:28px;
+}
+.form-control-lg, .form-select-lg { min-height:42px; }
+
+/* Dateifelder tragen die Browse-Schaltflaeche im Inneren. Sie stand auf 16px
+   Schriftgroesse, waehrend alle anderen Bedienelemente auf 12.5px liegen --
+   daher die 42px, die die ganze input-group und den Knopf daneben mitzogen.
+   Bootstrap zieht die eingebettete Schaltflaeche mit negativen Aussenabstaenden
+   in den Innenabstand des Feldes; beides muss zusammen gesetzt werden. */
+.form-control[type="file"] {
+    height:34px; font-size:var(--t-sm); padding:0 12px; line-height:32px;
+}
+.form-control[type="file"]::file-selector-button {
+    height:32px; padding:0 12px; margin:0 12px 0 -12px;
+    font-size:var(--t-sm); line-height:32px;
+}
+
+/* Mehrzeilige Felder duerfen wachsen, aber nicht unter die Grundhoehe fallen. */
+textarea.form-control { min-height:68px; }
+
+
+/* In Tabellenzeilen steht das Ueberlaufmenue neben btn-sm-Elementen (etwa dem
+   Ticket-Verweis). 24px neben 28px liest sich als Versatz, obwohl beides
+   Bedienelemente derselben Zeile sind. */
+.hw-actioncell .hw-more > summary { width:28px; height:28px; }
+/* Auch die uebrigen Icon-Knoepfe der Zeile: in Tabellen ist 28px die Hoehe
+   der Bedienelemente (btn-sm), 24px daneben liest sich als Versatz. */
+tbody .btn-link:has(> .hw-icon:only-child),
+tbody .btn-link:has(> svg:only-child) { width:28px; height:28px; }
+
+
+/* --------------------------------------------------------------------------
+   PAUSED-Band: aus der Kartenecke in die Statuszeile.
+   style.css setzt es absolut auf top:0/left:0 -- exakt auf den Kartentitel.
+   Es ist zudem die dritte Anzeige desselben Zustands (Wasserzeichen und
+   Ausgrauen der Karte bestehen weiter). In der Statuszeile neben dem
+   Herzschlag-Punkt informiert es, ohne etwas zu verdecken.
+   -------------------------------------------------------------------------- */
+.paused-badge {
+    position:static;
+    display:none;
+    padding:1px 8px;
+    border-radius:var(--radius-pill);
+    background:transparent;
+    border:1px solid var(--warn);
+    color:var(--warn);
+    box-shadow:none;
+    letter-spacing:.08em;
+}
+.endpoint-card[data-status="paused"] .paused-badge { display:inline-block; }
+
+
+
+
+/* Theme-Umschalter: vorher ein Textknopf "Theme" -- als einziges Element der
+   Kopfleiste mit Wortmarke statt Symbol. Jetzt das uebliche Halbkreis-Glyph,
+   28x28 wie die uebrigen Leisten-Icons, Name fuer Screenreader am Knopf. */
+.hw-theme-toggle--icon {
+    width:28px; height:28px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+}
+
+
+
+/* Abschnittstitel einheitlich: "Event analytics" trug h2.h5 (16px), der
+   Feed-Kopf Sperrschrift, die Listen-Kopfzeile 20px. Ein h2 auf Abschnitts-
+   ebene ist immer --t-xl -- die Groessenklassen dagegen gewinnen sonst. */
+h2.h5, h2.h6 { font-size:var(--t-xl); font-weight:600; }
+
+
+/* Systemstatus in der Kopfleiste: kompakt, blasse Beschriftung, die Punkte
+   tragen den Zustand. Kommt aus der Fusszeile, wo ihn niemand sah. */
+.hw-topbar-health { display:inline-flex; align-items:center; gap:var(--s-3); margin-right:var(--s-2); }
+.hw-health-item {
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:var(--t-xs); color:var(--text-faint);
+}
+@media (max-width: 767.98px) { .hw-topbar-health { display:none; } }
+
+
+/* ==========================================================================
+   22. FEINSCHLIFF-RUNDE: MENUEZEILEN, STATUSPUNKT, KOPFZEILE, KACHELN
+   Vier Befunde aus Screenshots des Nutzers, je mit Ursache:
+   - Menuezeilen als graue Kaesten: .hw-more-row setzte weder background:none
+     noch border:0 -- <button> behielt seine Browser-Umrandung, <a> den
+     Unterstrich.
+   - Statuspuls unsichtbar: 10px-Punkt, 0.5px-Transform, Leuchtring in der
+     alten Gruen-Palette.
+   - Kopfzeilen-Bedienelemente: Auswahlfelder und Schaltflaechen mit leicht
+     verschiedenen Hoehen nebeneinander.
+   - Kacheln: Karte-in-Karte-Optik mit doppelten Raendern und der Textzeile
+     "No prior comparison" auf fast jeder Kachel.
+   ========================================================================== */
+
+/* ---- Menuezeilen: Browser-Standard von button/a zuruecksetzen ------------ */
+.hw-more-row,
+a.hw-more-row, button.hw-more-row {
+    background:none; border:0; width:100%; text-align:left;
+    font:inherit; cursor:pointer; text-decoration:none;
+}
+a.hw-more-row:hover, a.hw-more-row:focus { text-decoration:none; color:var(--text); }
+.hw-more-row:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+
+/* ---- Sammel-Statuspunkt mit Flyout --------------------------------------- */
+.hw-health {
+    position:relative; display:inline-flex; align-items:center;
+    padding:6px; margin-right:var(--s-1); border-radius:var(--radius-pill);
+    cursor:default;
+}
+.hw-health:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hw-health-flyout {
+    display:none; position:absolute; top:calc(100% + 6px); right:0; z-index:60;
+    flex-direction:column; gap:var(--s-2); min-width:132px;
+    padding:var(--s-2) var(--s-3);
+    background:var(--bg-surface); border:1px solid var(--line-2);
+    border-radius:var(--radius-md); box-shadow:var(--shadow-2);
+}
+.hw-health:hover .hw-health-flyout,
+.hw-health:focus .hw-health-flyout,
+.hw-health:focus-within .hw-health-flyout { display:flex; }
+.hw-health-item {
+    display:inline-flex; align-items:center; gap:7px;
+    font-size:var(--t-xs); color:var(--text-muted); white-space:nowrap;
+}
+
+/* Puls neu: sichtbarer Ring aus den Tokens statt 0.5px-Transform in der
+   Altpalette. Nur die pulsierenden Zustaende animieren; Warnung steht still. */
+#hw-health-summary { width:11px; height:11px; }
+@keyframes hw-puls-ok {
+    0%   { box-shadow:0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }
+    70%  { box-shadow:0 0 0 7px transparent; }
+    100% { box-shadow:0 0 0 0 transparent; }
+}
+@keyframes hw-puls-crit {
+    0%   { box-shadow:0 0 0 0 color-mix(in srgb, var(--crit) 60%, transparent); }
+    70%  { box-shadow:0 0 0 8px transparent; }
+    100% { box-shadow:0 0 0 0 transparent; }
+}
+.hw-health .heartbeat-up {
+    background:var(--ok); animation:hw-puls-ok 2.2s infinite;
+}
+.hw-health .heartbeat-warning { background:var(--warn); animation:none; }
+.hw-health .heartbeat-down, .hw-health .heartbeat-error {
+    background:var(--crit); animation:hw-puls-crit 1.2s infinite;
+}
+
+/* ---- Kopfzeilen-Bedienelemente: eine Hoehe ------------------------------- */
+.dashboard-controls .form-select,
+.dashboard-controls .btn {
+    min-height:34px; font-size:var(--t-sm);
+}
+/* Die Auswahlfelder dehnten sich trotzdem auf 42px (Innenabstand + Zeilen-
+   hoehe); neben 34px-Schaltflaechen wirkt das als Versatz. Feste Hoehe. */
+.dashboard-controls .form-select { height:34px; padding-top:2px; padding-bottom:2px; }
+
+/* ---- Kennzahl-Kacheln: flach statt Karte-in-Karte ------------------------ */
+.hw-kpi {
+    background:var(--bg-surface) !important;
+    border:1px solid var(--line) !important;
+    border-radius:var(--radius-md) !important;
+    box-shadow:none !important;
+    backdrop-filter:none !important;
+    padding:var(--s-3) var(--s-3) !important;
+    text-align:left;
+}
+.hw-kpi:hover { border-color:var(--line-2) !important; background:var(--bg-raised) !important; }
+.hw-kpi--crit { border-left:3px solid var(--crit) !important; }
+.hw-kpi--warn { border-left:3px solid var(--warn) !important; }
+.hw-kpi--ok   { border-left:3px solid var(--ok) !important; }
+.hw-kpi .dashboard-kpi-label {
+    /* muted statt faint: faint mass auf der Kachelflaeche 3.70:1. */
+    font-size:10px; letter-spacing:.08em; color:var(--text-muted);
+}
+.hw-kpi .dashboard-kpi-delta { font-size:var(--t-xs); }
+.hw-kpi .dashboard-kpi-detail { font-size:var(--t-xs); color:var(--text-faint); }
+/* "No prior comparison" stand auf fast jeder Kachel -- eine Zeile, die nur
+   sagt, dass es nichts zu sagen gibt. dashboard.js blendet sie jetzt aus;
+   der Platz bleibt buendig. */
+.hw-kpi .dashboard-kpi-delta[hidden] { display:none; }
+
+/* ---- Feed-Werkzeuge: neutral in Ruhe, Farbe erst beim Ueberfahren -------- */
+#btn-trigger-timeout { color:var(--text-muted) !important; }
+#btn-trigger-timeout:hover { color:var(--warn) !important; }
+#btn-clear-stream:hover { color:var(--crit) !important; }
+/* Pin in Ruhe neutral; nur ein gesetzter Pin traegt die Warnfarbe.
+   activity.js schaltet die Klasse is-pinned. */
+.activity-entry-controls .btn-link { color:var(--text-faint) !important; }
+.activity-entry-controls .btn-link:hover { color:var(--text) !important; }
+.activity-entry-controls .btn-link.is-pinned { color:var(--warn) !important; }
+
+/* ==========================================================================
+   21. LIVE-FEED: STRUKTURIERTE ZEILEN
+   Vorher: die komplette Nachricht in Statusfarbe (der Stream las sich als
+   rot-gruenes Flackern), dazu je Zeile eine Icon-Kette, deren erster Schritt
+   konstant gruen war und deren dritter das Ticket-Badge doppelte. Neu ist
+   eine feste Spaltenfolge: Zeit, Schweregrad-Pille, Endpoint, Nachricht,
+   Ticket, Aktionen. Farbe traegt nur noch die Pille.
+   ========================================================================== */
+.hw-act-row {
+    display:flex; align-items:center; gap:var(--s-2);
+    padding:var(--s-1) var(--s-2);
+    border-bottom:1px solid var(--line);
+    font-family:"IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    font-size:var(--t-sm); color:var(--text);
+}
+.hw-act-row:hover { background:var(--bg-raised); }
+.hw-act-time {
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:var(--t-xs); color:var(--text-faint);
+    flex:0 0 auto; font-variant-numeric:tabular-nums;
+}
+.hw-act-sev {
+    flex:0 0 auto; width:44px; text-align:center;
+    font-size:10px; font-weight:700; letter-spacing:.06em;
+    padding:1px 0; border-radius:var(--radius-pill); border:1px solid;
+}
+.hw-act-sev--ok   { color:var(--ok);   border-color:color-mix(in srgb, var(--ok) 40%, transparent);   background:color-mix(in srgb, var(--ok) 10%, transparent); }
+.hw-act-sev--warn { color:var(--warn); border-color:color-mix(in srgb, var(--warn) 40%, transparent); background:color-mix(in srgb, var(--warn) 10%, transparent); }
+.hw-act-sev--crit { color:var(--crit); border-color:color-mix(in srgb, var(--crit) 40%, transparent); background:color-mix(in srgb, var(--crit) 12%, transparent); }
+.hw-act-name { flex:0 0 auto; font-weight:600; max-width:220px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hw-act-msg { flex:1 1 auto; min-width:0; color:var(--text-muted);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Ticket-Verweis in der Feed-Zeile: 19px hoch neben 24px-Knoepfen fiel
+   unter die Mindest-Klickflaeche (SC 2.5.8). */
+.hw-act-row .badge {
+    min-height:24px; display:inline-flex; align-items:center;
+}
+
+/* Pin/Notiz-Steuerungen, die activity.js anhaengt, ruecken ans Zeilenende. */
+.hw-act-row .activity-entry-controls { flex:0 0 auto; margin-left:0; }
+/* Angeheftete Zeilen: Markierung an der Kante statt Sonderflaeche. */
+.hw-act-row.activity-pinned { border-left:3px solid var(--warn); background:var(--bg-surface); }
+
+/* ==========================================================================
+   20. DRY-RUN-DIALOG UND RESTLICHE BOOTSTRAP-BAUTEILE
+   Der Simulations-Dialog war vollstaendig inline gestylt und referenzierte
+   Tokens, die es nie gab -- var(--surface,#1e1e2e): der Fallback griff immer,
+   samt eigener Lila-Palette. Dazu die noch untokenisieren Bootstrap-Bauteile:
+   Seitennummern, Brotkrumen, Offcanvas, Toasts, Tooltips, Spinner und die
+   Namensfarbe lightgrey aus style.css.
+   ========================================================================== */
+
+/* ---- Dry-Run-Dialog ------------------------------------------------------ */
+.hw-dry-backdrop {
+    position:fixed; inset:0; z-index:1100;
+    background:rgba(0,0,0,.6);
+    align-items:center; justify-content:center;
+    /* display:flex kommt vom Skript (style.display='flex') -- hier nichts
+       setzen, sonst ist der Dialog beim Laden offen. */
+}
+.hw-dry-panel {
+    background:var(--bg-raised); color:var(--text);
+    border:1px solid var(--line-2); border-top:3px solid var(--accent);
+    border-radius:var(--radius-lg); box-shadow:var(--shadow-2);
+    width:min(700px, 95vw); max-height:90vh;
+    display:flex; flex-direction:column; overflow:hidden;
+}
+.hw-dry-head {
+    padding:var(--s-3) var(--s-4); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between;
+}
+.hw-dry-head h5 { margin:0; font-weight:600; }
+.hw-dry-close {
+    width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center;
+    background:none; border:0; border-radius:var(--radius-sm);
+    color:var(--text-muted); cursor:pointer;
+}
+.hw-dry-close:hover { background:var(--bg-surface); color:var(--text); }
+.hw-dry-close:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hw-dry-body {
+    padding:var(--s-3) var(--s-4); flex:1; overflow-y:auto;
+    display:flex; flex-direction:column; gap:var(--s-3);
+}
+.hw-dry-row { display:flex; gap:var(--s-2); align-items:center; }
+.hw-dry-muted { color:var(--text-muted); }
+.hw-dry-sub { margin:var(--s-2) 0 var(--s-1); font-weight:600; }
+.hw-dry-hr { border:0; border-top:1px solid var(--line); margin:var(--s-1) 0; }
+.hw-dry-err { color:var(--crit); }
+textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
+.hw-dry-code {
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+    background:var(--bg-sunken); color:var(--text);
+    border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:var(--s-2) var(--s-3); white-space:pre-wrap; overflow-x:auto;
+}
+.hw-dry-run {
+    display:inline-flex; align-items:center; gap:6px;
+    min-height:34px; padding:6px 16px;
+    border:0; border-radius:var(--radius-md); cursor:pointer;
+    background:var(--accent); color:var(--on-accent);
+    font-weight:600; font-size:var(--t-sm);
+}
+.hw-dry-run:hover { background:var(--accent-hover); }
+.hw-dry-run:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hw-dry-run:disabled { opacity:.55; cursor:default; }
+.hw-dry-run--secondary {
+    background:transparent; color:var(--accent);
+    border:1px solid var(--accent);
+}
+.hw-dry-run--secondary:hover { background:var(--accent-soft); }
+.hw-dry-badge {
+    display:inline-block; padding:3px 12px; border-radius:var(--radius-pill);
+    font-weight:700; border:1px solid;
+}
+.hw-dry-badge--ok     { color:var(--ok);   border-color:color-mix(in srgb, var(--ok) 40%, transparent);   background:color-mix(in srgb, var(--ok) 12%, transparent); }
+.hw-dry-badge--accent { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+.hw-dry-badge--warn   { color:var(--warn); border-color:color-mix(in srgb, var(--warn) 40%, transparent); background:color-mix(in srgb, var(--warn) 12%, transparent); }
+.hw-dry-badge--muted  { color:var(--text-muted); border-color:var(--line-2); background:var(--bg-sunken); }
+.hw-dry-details { display:flex; flex-direction:column; gap:6px; }
+
+/* ---- lightgrey ----------------------------------------------------------- */
+/* style.css setzt die CSS-Namensfarbe lightgrey (#D3D3D3) mit !important --
+   im hellen Theme praktisch unsichtbar. Gleiche Wichtigkeit, spaetere Datei. */
+.lightgrey { color:var(--text-muted) !important; }
+
+/* ---- Seitennummern (History, Audit) -------------------------------------- */
+.pagination {
+    --bs-pagination-bg:var(--bg-surface);
+    --bs-pagination-border-color:var(--line-2);
+    --bs-pagination-color:var(--text-muted);
+    --bs-pagination-hover-bg:var(--bg-raised);
+    --bs-pagination-hover-color:var(--text);
+    --bs-pagination-hover-border-color:var(--line-2);
+    --bs-pagination-active-bg:var(--accent);
+    --bs-pagination-active-border-color:var(--accent);
+    --bs-pagination-active-color:var(--on-accent);
+    --bs-pagination-disabled-bg:var(--bg-sunken);
+    --bs-pagination-disabled-color:var(--text-faint);
+    --bs-pagination-disabled-border-color:var(--line);
+    --bs-pagination-focus-box-shadow:none;
+}
+.page-link:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Die Templates haerten bg-dark/border-secondary auf die Links -- neutralisieren. */
+.page-link.bg-dark { background-color:var(--bg-surface) !important; }
+.page-link.border-secondary { border-color:var(--line-2) !important; }
+
+/* ---- Brotkrumen ---------------------------------------------------------- */
+.breadcrumb { --bs-breadcrumb-divider-color:var(--text-faint); margin-bottom:var(--s-3); }
+.breadcrumb-item a { color:var(--accent); text-decoration:none; }
+.breadcrumb-item.active { color:var(--text-muted); }
+
+/* ---- Offcanvas (Doku-Panel) ---------------------------------------------- */
+.offcanvas {
+    --bs-offcanvas-bg:var(--bg-surface);
+    --bs-offcanvas-color:var(--text);
+    --bs-offcanvas-border-color:var(--line-2);
+}
+/* Das Markup haertet bg-dark auf das Panel -- die Utility schlaegt die
+   Variable, deshalb hier gleichrangig zurueck auf das Token. */
+.offcanvas.bg-dark { background-color:var(--bg-surface) !important; }
+.offcanvas .border-secondary { border-color:var(--line) !important; }
+
+/* ---- Toasts -------------------------------------------------------------- */
+.toast {
+    --bs-toast-bg:var(--bg-raised);
+    --bs-toast-color:var(--text);
+    --bs-toast-border-color:var(--line-2);
+    --bs-toast-header-bg:var(--bg-raised);
+    --bs-toast-header-color:var(--text);
+    --bs-toast-header-border-color:var(--line);
+    box-shadow:var(--shadow-2);
+}
+
+/* ---- Tooltips ------------------------------------------------------------ */
+.tooltip {
+    --bs-tooltip-bg:var(--bg-sunken);
+    --bs-tooltip-color:var(--text);
+    --bs-tooltip-opacity:1;
+}
+.tooltip-inner { border:1px solid var(--line-2); font-size:var(--t-xs); }
+
+/* ---- Spinner ------------------------------------------------------------- */
+.spinner-border, .spinner-grow { color:var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+    /* Ein eingefrorener Kreis sieht kaputt aus -- Text sagt es besser. Die
+       Stellen tragen Ladetext daneben; der Spinner verschwindet. */
+    .spinner-border, .spinner-grow { display:none; }
+}
+
+/* ==========================================================================
+   19. DIALOGE
+   22 Modale in fuenf Templates trugen sechs verschiedene Behandlungen
+   derselben Komponente: bg-dark mit border-secondary, glass-card,
+   bg-transparent, farbige Vollrahmen in warning und primary. Ein Dialog ist
+   aber immer dasselbe Bauteil -- eine erhabene Flaeche ueber der Seite.
+   Hier bekommt er eine Form; die semantische Farbe (Warnung, Bestaetigung)
+   bleibt als Streifen an der Oberkante erhalten, wie bei den Meldungsflaechen
+   an der Seitenkante. Additiv ueber Bootstraps eigene Variablen.
+   ========================================================================== */
+.modal-content {
+    --bs-modal-bg:var(--bg-raised);
+    --bs-modal-border-color:var(--line-2);
+    --bs-modal-border-radius:var(--radius-lg);
+    --bs-modal-border-width:1px;
+    /* glass-card u.a. setzen eigene Radien -- der Dialog behaelt seinen. */
+    border-radius:var(--radius-lg) !important;
+    color:var(--text);
+    box-shadow:var(--shadow-2);
+    overflow:hidden;                 /* der Kantenstreifen folgt dem Radius */
+}
+/* Hell/Dunkel-Utilities auf dem Dialog neutralisieren: die Flaeche kommt aus
+   dem Token, nicht aus bg-dark oder bg-transparent der Einzelstelle. */
+.modal-content.bg-dark, .modal-content.bg-transparent,
+.modal-content.glass-card {
+    background-color:var(--bg-raised) !important;
+}
+/* Farbige Vollrahmen -> Kantenstreifen. Die Absicht (Warnung, Bestaetigung)
+   bleibt sichtbar, ohne dass jeder Dialog anders aussieht. */
+.modal-content.border-warning { border-color:var(--line-2) !important; border-top:3px solid var(--warn) !important; }
+.modal-content.border-primary { border-color:var(--line-2) !important; border-top:3px solid var(--accent) !important; }
+.modal-content.border-danger  { border-color:var(--line-2) !important; border-top:3px solid var(--crit) !important; }
+
+.modal-header {
+    --bs-modal-header-border-color:var(--line);
+    padding:var(--s-3) var(--s-4);
+}
+.modal-header .modal-title { font-size:var(--t-lg); font-weight:600; color:var(--text); }
+.modal-body { padding:var(--s-4); }
+.modal-footer {
+    --bs-modal-footer-border-color:var(--line);
+    padding:var(--s-3) var(--s-4);
+}
+/* Kopf- und Fusszeilen-Rahmen der Einzelstellen vereinheitlichen. */
+.modal-header.border-warning, .modal-header.border-primary,
+.modal-footer.border-warning, .modal-footer.border-primary {
+    border-color:var(--line) !important;
+}
+/* Abdunkelung dahinter: etwas kraeftiger, damit der Dialog klar vorn liegt. */
+.modal-backdrop { --bs-backdrop-opacity:.6; }
+
+/* ==========================================================================
+   12. GEMESSENE DESIGNFEHLER
+   Alle Punkte hier stammen aus einem Pruef­lauf ueber die sechs Seiten, nicht
+   aus Geschmack: waagerechter Ueberlauf, Klickflaechen unter 24px, ungleiche
+   Buttonhoehen in einer Zeile, Abstaende neben dem Raster.
+   ========================================================================== */
+
+/* ---- Buttons werden in Flex-Zeilen gestreckt -----------------------------
+   Gemessen: "Refresh all" ist ein .btn-sm mit min-height 28px, rendert aber
+   42px, weil die Werkzeugleiste align-items:stretch verwendet und der Button
+   auf die Hoehe des hoechsten Geschwisters waechst. Nebeneinander standen so
+   28px-, 34px-, 36px- und 42px-Buttons.
+   Nur waagerechte Flex-Container: in einer Spalte wuerde align-self:center
+   die Breite einer vollbreiten Schaltflaeche zusammenziehen. */
+.dashboard-controls, .btn-toolbar,
+.history-toolbar, .endpoint-toolbar, .activity-controls {
+    align-items:center;
+}
+.d-flex:not(.flex-column):not(.flex-column-reverse) > .btn,
+.dashboard-controls > .btn, .btn-toolbar > .btn,
+.hw-hist-head > .btn {
+    align-self:center;
+}
+
+/* ---- Klickflaechen ------------------------------------------------------
+   WCAG 2.2 SC 2.5.8 fordert 24x24 CSS-Pixel. 72 .btn-link auf dem Dashboard
+   lagen bei 14 bis 22px, weil sie padding:0 tragen. Die Flaeche wird ueber ein
+   unsichtbares Pseudo-Element vergroessert statt ueber Innenabstand: das
+   Layout einer dichten Konsole bleibt damit unveraendert, die Trefferflaeche
+   erfuellt trotzdem die Vorgabe. */
+/* Kontrollkaestchen von 16 auf 20px: das ist die groesste Stufe, die die
+   Zeilenhoehe der Endpoint-Karten und Tabellenzeilen nicht veraendert. */
+.form-check-input { width:20px; height:20px; margin-top:.1em; }
+
+/* ---- Abstaende auf das Raster -------------------------------------------
+   Gemessen waren 18 verschiedene Abstandswerte, nur 76 % davon auf dem
+   4px-Raster. Die krummen Werte (8.8px, 5.6px, 3.85px, 3.2px) stammen aus
+   Bootstraps rem-basierten Button- und Badge-Innenabstaenden. */
+.btn        { --bs-btn-padding-y:6px;  --bs-btn-padding-x:14px; }
+.btn-sm     { --bs-btn-padding-y:4px;  --bs-btn-padding-x:12px; }
+.btn-lg     { --bs-btn-padding-y:8px;  --bs-btn-padding-x:20px; }
+.badge      { --bs-badge-padding-y:4px; --bs-badge-padding-x:8px; }
+.form-control, .form-select { --bs-body-font-size:var(--t-sm); }
+.card > .card-body { padding:var(--s-4); }
+.card > .card-header, .card > .card-footer { padding:var(--s-3) var(--s-4); }
+
+/* ---- Benachrichtigungsmenue laeuft 3px ueber ----------------------------
+   Das geschlossene .dropdown-menu positioniert sich gegen einen Vorfahren
+   ausserhalb des Rail-Elements und dehnt dessen Scrollbreite von 42 auf 45px.
+   Ohne sichtbare Folge, aber es ist ein echter Ueberlauf. Der eigene
+   Positionierungskontext bindet es ein. */
+.navbar-nav .nav-item.dropdown { position:relative; }
+
+/* ==========================================================================
+   10. IKONOGRAFIE UND SCHALTFLAECHEN (seitenweit)
+   36 Icons lagen als vollstaendige Pfaddaten im Markup, teils vierfach
+   dupliziert und in einem Fall (clipboard in index.html) mit einem defekten,
+   doppelt eingefuegten Pfadsegment. Sie liegen jetzt als 31 Symbole in einem
+   Sprite; das Markup referenziert nur noch.
+   ========================================================================== */
+
+/* Das Sprite darf nicht display:none sein -- einige Engines loesen <use> dann
+   nicht mehr auf. Nullflaeche mit overflow:hidden ist der sichere Weg. */
+.hw-sprite {
+    position:absolute; width:0; height:0; overflow:hidden;
+}
+.hw-icon {
+    display:inline-block; vertical-align:-.125em;
+    fill:currentColor; flex-shrink:0;
+}
+
+/* ---- Schaltflaechen vereinheitlichen ------------------------------------
+   Bootstrap liefert je Variante eigene Hoehen, weil Randbreite und Zeilenhoehe
+   sich unterscheiden; nebeneinander stehende Buttons standen dadurch um ein
+   bis zwei Pixel versetzt. Eine gemeinsame Mindesthoehe je Groesse ruecht sie
+   auf eine Linie, ohne eine einzige Variante zu entfernen. */
+.btn {
+    --hw-btn-h:34px;
+    min-height:var(--hw-btn-h);
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    font-size:var(--t-sm); font-weight:500; line-height:1.2;
+    border-radius:var(--radius-md);
+    transition:background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+.btn-sm { --hw-btn-h:28px; padding-inline:10px; }
+.btn-lg { --hw-btn-h:42px; font-size:var(--t-md); }
+/* Ausnahmen: Buttons, die bewusst keine Schaltflaechenoptik haben. */
+.btn-link, .btn-close { min-height:0; }
+.btn-link { gap:0; }
+
+/* Sichtbarer Fokus auf jeder Schaltflaeche -- Bootstrap setzt hier einen
+   Schatten, der auf dunklem Grund kaum wahrnehmbar ist. */
+.btn:focus-visible {
+    outline:2px solid var(--accent); outline-offset:2px; box-shadow:none;
+}
+/* Taktile Rueckmeldung beim Druecken. */
+.btn:active:not(:disabled) { transform:translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+    .btn { transition:none; }
+    .btn:active:not(:disabled) { transform:none; }
+}
+
+/* ==========================================================================
+   9. HISTORY: KOPFZEILE, TABELLE, DETAILZEILE
+   Die Seite trug 239 Bedienelemente, 197 davon (82 %) in den Tabellenzeilen:
+   sechs Aktions-Buttons mal 25 Zeilen. Drei der neun Spalten waren in jeder
+   Zeile leer. Beides ist hier zusammengefasst statt aufgereiht.
+   ========================================================================== */
+
+/* ---- Kopfzeile: eine Bank statt drei ------------------------------------- */
+.hw-hist-head {
+    display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-3);
+}
+.hw-hist-head h1 { margin-right:auto; }
+/* Ohne flex-shrink:0 quetscht die Zeile die beiden Menueknoepfe zusammen, bis
+   ihr Pfeil unter die Beschriftung umbricht -- die Suchleiste gibt eher nach. */
+.hw-hist-head > details { flex:0 0 auto; }
+.hw-hist-search { flex:0 1 320px; min-width:200px; }
+
+/* Summary als Schaltflaeche. Der Marker muss explizit weg -- Chrome und
+   Firefox zeichnen sonst zusaetzlich ihr eigenes Dreieck. */
+.hw-more > summary.hw-menu-summary {
+    width:auto; height:auto;
+    list-style:none; cursor:pointer; user-select:none;
+    display:inline-flex; align-items:center; gap:6px;
+    padding:5px 12px; border:1px solid var(--line-2); border-radius:var(--radius-md);
+    background:var(--bg-raised); color:var(--text); font-size:var(--t-sm); font-weight:500;
+}
+.hw-more > summary.hw-menu-summary::-webkit-details-marker { display:none; }
+.hw-more > summary.hw-menu-summary::marker { content:""; }
+.hw-more > summary.hw-menu-summary::after {
+    content:""; width:0; height:0; margin-left:2px;
+    border-left:4px solid transparent; border-right:4px solid transparent;
+    border-top:5px solid currentColor; opacity:.6;
+}
+.hw-more > summary.hw-menu-summary:hover { border-color:var(--accent); color:var(--accent); }
+.hw-more > summary.hw-menu-summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hw-more[open] > summary.hw-menu-summary { border-color:var(--accent); color:var(--accent); }
+
+/* Feld-Zeile im Filtermenue: Beschriftung links, Eingabe rechts. */
+.hw-menu-wide .hw-more-menu { min-width:290px; padding:var(--s-2); }
+.hw-field {
+    display:grid; grid-template-columns:74px 1fr; align-items:center;
+    gap:var(--s-2); padding:3px var(--s-1);
+}
+.hw-field > span { font-size:var(--t-xs); color:var(--text-muted); }
+.hw-field .form-control, .hw-field .form-select { width:100%; }
+
+/* Punkt am Filter-Knopf, sobald ein Filter gesetzt ist. */
+.hw-filter-dot {
+    width:6px; height:6px; border-radius:var(--radius-pill);
+    background:var(--accent); display:inline-block;
+}
+
+/* ---- Tabelle ------------------------------------------------------------- */
+/* Das Ueberlaufmenue ist absolut positioniert und wuerde am overflow des
+   Scroll-Containers abgeschnitten. Ab 992px passen die sechs Spalten ohne
+   Scrollen, dort darf der Container also ueberstehen lassen. Darunter bleibt
+   das Scrollen erhalten und das Menue oeffnet innerhalb. */
+@media (min-width: 992px) {
+    .table-responsive:has(.hw-row) { overflow:visible; }
+}
+.hw-actioncell { position:relative; }
+.hw-actioncell .hw-more-menu { top:auto; }
+
+/* Aufklapp-Schalter am Zeitstempel: kein eigener Spaltenplatz fuer ein Dreieck. */
+.hw-rowtoggle {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:16px; height:16px; margin-right:6px; padding:0;
+    border:0; background:transparent; color:var(--text-faint);
+    border-radius:var(--radius-sm); cursor:pointer; vertical-align:-2px;
+    transition:transform .12s ease, color .12s ease;
+}
+.hw-rowtoggle:hover { color:var(--accent); }
+.hw-rowtoggle:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.hw-rowtoggle[aria-expanded="true"] { transform:rotate(90deg); color:var(--accent); }
+
+/* Wiederholungen haengen am Status statt in einer eigenen Spalte, die in
+   87 % der Zeilen nur einen Strich zeigte. */
+.hw-retry {
+    display:inline-block; margin-left:6px; padding:1px 6px;
+    border-radius:var(--radius-pill); background:var(--bg-sunken);
+    border:1px solid var(--line-2); color:var(--warn);
+    font-size:var(--t-xs); font-weight:600; font-variant-numeric:tabular-nums;
+}
+
+/* ---- Detailzeile --------------------------------------------------------- */
+.hw-detail > td {
+    padding:0 !important; border-bottom:1px solid var(--line) !important;
+    background:var(--bg-sunken);
+}
+.hw-detail-grid {
+    display:grid; grid-template-columns:auto 1fr; gap:var(--s-1) var(--s-4);
+    margin:0; padding:var(--s-3) var(--s-3) var(--s-3) 46px;
+}
+.hw-detail-grid dt {
+    font-size:var(--t-xs); font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--text-faint); white-space:nowrap;
+}
+.hw-detail-grid dd {
+    margin:0; font-size:var(--t-sm); color:var(--text);
+    font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap:anywhere;
+}
+.hw-detail-empty { color:var(--text-faint); font-style:italic; font-family:inherit; }
+
+/* ---- Operationskarte: standardmaessig zugeklappt -------------------------- */
+.history-operations > .card-body > details > summary { cursor:pointer; }
+
+/* ==========================================================================
+   8. SKALEN-NORMALISIERUNG (Typo / Farbe / Radius)
+   Der Audit hat drei Long-Tails gemessen: 22 Schriftgroessen, 15 Textfarben,
+   8 Radien. Keiner davon ist gewollt -- sie entstehen dadurch, dass style.css
+   29 handgewaehlte rem-Werte fuehrt (.62 .65 .68 .7 .72 .74 .75 .76 .78 .8
+   .82 .85 .88 ...) statt einer Skala. Hier werden diese Werte auf die sechs
+   Stufen aus Abschnitt 7 zurueckgefuehrt: jeder Wert landet in der Stufe, der
+   er ohnehin am naechsten liegt, damit die Hierarchie bleibt und nur die
+   Streuung verschwindet.
+   Additiv: style.css bleibt unberuehrt, diese Datei laedt spaeter und gewinnt
+   bei gleicher Spezifitaet.
+   Ausgenommen: .dashboard-*-Regeln (liegen im per style.css:1079
+   ausgeblendeten legacy-dashboard-Block) und Werte in @media-Bloecken, die
+   bewusst responsiv verkleinern.
+   ========================================================================== */
+
+/* 11px -- Meta, Chips, Zaehler, Zeitstempel */
+.tech-label,
+.paused-badge,
+.notification-count,
+.notification-time,
+.kpi-detail,
+.filter-chip, .endpoint-tag,
+.activity-controls .form-select { font-size:var(--t-xs); }
+
+/* 12.5px -- sekundaerer Text, Navigation, Feldwerte */
+.kpi-label,
+.copyable-field code,
+.endpoint-details,
+.navbar .nav-link,
+.navbar-page-title,
+.notification-message,
+.save-indicator { font-size:var(--t-sm); }
+
+/* 14px -- Fliesstext */
+.diagnostic-list,
+.notification-title,
+.save-indicator i { font-size:var(--t-md); }
+
+/* --------------------------------------------------------------------------
+   Farb-Kollaps.
+   style.css fuehrt #a8b4c5 als gedaempftes Grau, die Tokens fuehren #A6B6C6.
+   Zwei Graus mit einem Delta von 2/2/1 pro Kanal -- am Bildschirm nicht
+   unterscheidbar, aber sie zaehlen als zwei Farben und mussten bisher beide
+   gepflegt werden. Bisher war der Ausgleich auf das helle Theme beschraenkt;
+   ab hier gilt er in beiden, damit es nur noch einen gedaempften Ton gibt.
+   -------------------------------------------------------------------------- */
+.text-secondary { color:var(--text-muted) !important; }
+.input-group-text,
+.page-item.disabled .page-link { color:var(--text-muted); }
+.btn-outline-secondary { --bs-btn-color:var(--text-muted); }
+
+/* --------------------------------------------------------------------------
+   Radius-Kollaps ueber Bootstraps eigene Variablen statt ueber Einzelregeln.
+   Bootstrap liefert 0.375rem (6px) als Standard und 50rem (800px) als Pill --
+   daher die gemessenen 6px- und 800px-Ecken. Auf die Skala gezogen bleiben
+   4 / 8 / 12 / 999. 50% bleibt erhalten, wo eine Form wirklich kreisrund ist
+   (Avatare, Status-Punkte): das ist eine Bedeutung, keine Streuung.
+   -------------------------------------------------------------------------- */
+:root {
+    --bs-border-radius-sm:var(--radius-sm);
+    --bs-border-radius:var(--radius-md);
+    --bs-border-radius-lg:var(--radius-lg);
+    --bs-border-radius-xl:var(--radius-lg);
+    --bs-border-radius-2xl:var(--radius-lg);
+    --bs-border-radius-pill:var(--radius-pill);
+}
+
+
+/* ==========================================================================
+   7. Decluttering
+   Measured before: 567 sichtbare Controls, 292 Container, 29 Schriftgroessen,
+   19 Textfarben, 13 Radien, 3 h1, Primaerliste erst bei 930px.
+   ========================================================================== */
+
+/* ---- 8pt-Raster. Eine Skala statt gemischter Bootstrap-Utilities. ---- */
+:root {
+    --s-1:4px; --s-2:8px; --s-3:16px; --s-4:24px; --s-5:32px; --s-6:48px;
+    /* Sechs Stufen statt 29. */
+    --t-xs:11px; --t-sm:12.5px; --t-md:14px; --t-lg:16px; --t-xl:20px; --t-2xl:28px;
+}
+
+/* ---- Typografie: gleiche Bedeutung, gleiche Groesse ---- */
+.hw-section-title {
+    font-size:var(--t-xl); font-weight:600; letter-spacing:-.02em;
+    color:var(--text); background:none; -webkit-text-fill-color:currentColor;
+}
+#operations-dashboard-title { font-size:var(--t-2xl); letter-spacing:-.025em; }
+.tech-label, .dashboard-kpi-label {
+    font-size:var(--t-xs) !important; letter-spacing:.09em; font-weight:600;
+}
+.endpoint-card h4, .endpoint-card .h4 { font-size:var(--t-lg) !important; }
+.tech-item .h5 { font-size:var(--t-lg) !important; }
+
+/* ---- Container-Rauschen: eine Karte nur, wo Elevation Hierarchie ausdrueckt.
+   Verschachtelte Kaesten in Kaesten werden zu Feldern mit einer Trennlinie. ---- */
+#endpoint-grid .tech-item {
+    background:transparent !important; border:0;
+    border-left:1px solid var(--line); border-radius:0;
+    padding:2px 0 2px var(--s-3) !important;
+}
+#endpoint-grid .tech-item:first-child { border-left:0; padding-left:0 !important; }
+.copyable-field { background:transparent !important; border:1px solid var(--line); }
+
+/* ---- Activity-Stream: Verweis auf den Verlauf statt 120 Eintraege ---- */
+.hw-activity-more {
+    border-top:1px solid var(--line); padding:var(--s-2) var(--s-3);
+    font-size:var(--t-sm);
+}
+.hw-activity-more a { color:var(--accent); text-decoration:none; }
+.hw-activity-more a:hover { text-decoration:underline; }
+
+/* ---- Overflow-Menue der Kartenaktionen ---- */
+.hw-more { position:relative; display:inline-block; }
+.hw-more > summary {
+    list-style:none; cursor:pointer; display:grid; place-items:center;
+    width:22px; height:22px; border-radius:var(--radius-sm); color:var(--text-muted);
+}
+.hw-more > summary::-webkit-details-marker { display:none; }
+.hw-more > summary:hover { color:var(--text); background:var(--bg-raised); }
+.hw-more > summary:focus-visible { outline:var(--focus-width) solid var(--focus-color); outline-offset:2px; }
+.hw-more[open] > summary { color:var(--accent); background:var(--accent-soft); }
+/* display MUSS an den offenen Zustand gebunden sein. Ein unbedingtes
+   display:grid ueberschreibt die Browser-Regel, die Inhalte geschlossener
+   <details> verbirgt -- die Menuepunkte blieben dann im Tab-Fokus und fuer
+   Screenreader sichtbar, obwohl das Menue zu ist. */
+.hw-more-menu {
+    display:none;
+    position:absolute; right:0; top:26px; z-index:40; min-width:196px;
+    background:var(--bg-surface); border:1px solid var(--line-2);
+    border-radius:var(--radius-md); box-shadow:var(--shadow-2);
+    padding:var(--s-1); gap:2px;
+}
+.hw-more[open] > .hw-more-menu { display:grid; }
+.hw-more-row {
+    display:flex; align-items:center; gap:var(--s-2);
+    padding:var(--s-1) var(--s-2); border-radius:var(--radius-sm);
+    font-size:var(--t-md); color:var(--text); white-space:nowrap;
+    cursor:pointer;
+}
+.hw-more-row:hover { background:var(--bg-raised); }
+.hw-more-row .btn { width:22px; height:22px; display:grid; place-items:center; flex:none; }
+.hw-more-text { color:var(--text); }
+
+/* ---- Offene Kartenmenues: Beschnitt, Stapelung, Aufklapprichtung ----
+   .endpoint-card (style.css, overflow:hidden) und die overflow-hidden-
+   Utility der Tabellenkarten kappten das absolut positionierte Menue am
+   Rand; Nachbarkarten malten sich darueber. Alle Regeln greifen nur,
+   solange ein Menue offen ist -- danach gilt der alte Beschnitt wieder.
+   .hw-more-menu--oben setzt ux.js beim Oeffnen, wenn das Menue unten aus
+   dem Viewport laufen wuerde. */
+.card:has(details.hw-more[open]) { overflow:visible !important; }
+.table-responsive:has(details.hw-more[open]) { overflow:visible; }
+.draggable-card:has(details.hw-more[open]) { position:relative; z-index:60; }
+.hw-more-menu--oben { top:auto; bottom:calc(100% + 4px); }
+
+/* ---- Toasts: fest im Viewport statt im Dokumentfluss ----
+   #toast-container hatte keinerlei Positionierung -- Meldungen landeten im
+   Seitenfluss und waren nach dem Scrollen unsichtbar. Jetzt unten rechts,
+   ueber allem (Bestaetigungsmodal nutzt 9999). */
+#toast-container {
+    position:fixed; right:var(--s-3); bottom:var(--s-3); z-index:10000;
+    display:flex; flex-direction:column; align-items:flex-end; gap:var(--s-1);
+    max-width:min(420px, calc(100vw - 32px)); pointer-events:none;
+}
+#toast-container .alert {
+    pointer-events:auto; margin:0;
+    animation:hw-toast-ein .18s ease-out;
+}
+@keyframes hw-toast-ein {
+    from { transform:translateY(8px); opacity:0; }
+    to   { transform:none; opacity:1; }
+}
+@media (max-width: 576px) {
+    #toast-container { left:var(--s-3); align-items:stretch; }
+}
+
+/* ---- Geklonte Kartenaktionen in der Tabellenzeile ----
+   Der Klon bringt position:absolute aus der Kartenecke mit -- ohne
+   Neutralisierung stapelten sich alle Klone am Tabellenrand uebereinander
+   und die Zeilen blieben leer. */
+.hw-tabellenaktionen .endpoint-actions {
+    position:static; display:inline-flex; justify-content:flex-end;
+    align-items:center; gap:var(--s-2); opacity:1;
+}
+
+/* ---- Tabellenansicht: Trend-Spalte, Health-Punkt, Detailzeile ----
+   Die 7-Tage-Kurve der Karte sitzt als kompakter Graph in einer eigenen
+   Spalte hinter dem Namen -- ueber die ganze Zeile gestreckt wirkte sie
+   wie ein Renderfehler. Die Detailzeile klappt per hw-rowtoggle auf und
+   zeigt URL-Kopierfeld und Delivery-Telemetrie -- dieselben Bausteine
+   wie die Karte. */
+/* Anti-Flackern: das synchrone Skript vor den Containern setzt die Klasse
+   aus localStorage, bevor der Browser das Grid je malt. toggleView pflegt
+   sie danach weiter. */
+.hw-listenstart #endpoint-grid { display:none; }
+
+.hw-sparkzelle { width:130px; }
+.hw-zeilenspark { width:110px; height:26px; display:block; opacity:.85; }
+.hw-punkt {
+    width:8px; height:8px; border-radius:var(--radius-pill);
+    display:inline-block; margin-left:6px; vertical-align:1px;
+}
+.hw-punkt--ok { background:var(--ok); }
+.hw-punkt--warn { background:var(--warn); }
+.hw-punkt--crit { background:var(--crit); }
+.hw-tabpin { color:var(--warn); margin-right:4px; vertical-align:-1px; }
+.hw-zeilencheck { vertical-align:-2px; margin-top:0; }
+.hw-pinflagge { color:var(--warn); display:inline-flex; align-items:center; }
+.hw-tabdetail > td {
+    background:var(--bg-raised);
+    padding:var(--s-2) var(--s-3) var(--s-2) 44px;
+    border-left:2px solid var(--accent);
+}
+.hw-tabdetail-inner {
+    display:flex; flex-wrap:wrap; align-items:flex-start; gap:var(--s-3);
+}
+.hw-tabdetail-inner .copyable-field { flex:1 1 340px; margin:0; }
+.hw-tabdetail-inner .endpoint-summary-grid { flex:2 1 380px; margin:0; }
+
+/* ---- Endpoint-Formular: Tabs, Sticky-Vorschau, Editor, Skeleton ----
+   Das 1800px lange Zwei-Spalten-Formular ist in vier Tabs aufgeteilt;
+   inaktive Panes sind nur display:none -- alle Felder bleiben Teil des
+   <form> und werden mitgesendet. Pflichtfelder in inaktiven Tabs faengt
+   der invalid-Handler in endpoint-form-actions.js ab. */
+.hw-formtabs { gap: 4px; }
+.hw-formtabs .nav-link {
+    color: var(--text-muted); border: 1px solid transparent;
+    padding: 6px 16px; font-weight: 600; font-size: var(--t-md);
+    border-radius: var(--radius-md); background: transparent;
+}
+.hw-formtabs .nav-link:hover { color: var(--text); background: var(--bg-raised); }
+.hw-formtabs .nav-link.active {
+    background: var(--accent-soft); color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.hw-formtabs .nav-link:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.hw-formtab-inhalt > .tab-pane { display: none; }
+.hw-formtab-inhalt > .tab-pane.active { display: block; }
+
+.hw-form-klebrig { position: sticky; top: 70px; z-index: 30; }
+.hw-vorschau {
+    background: var(--bg-surface);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: var(--shadow-1);
+}
+
+/* Kontrast der Hilfetexte (WCAG): text-secondary war auf den dunklen
+   Flaechen zu schwach. Nur im Formular angehoben. */
+#endpoint-form .form-text,
+#endpoint-form .small.text-secondary { color: var(--text-muted) !important; }
+#endpoint-form .form-control:focus,
+#endpoint-form .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+#endpoint-form .form-check-input:focus-visible {
+    outline: 2px solid var(--focus-color); outline-offset: 2px;
+}
+#endpoint-form .form-switch .form-check-input { width: 2.1em; height: 1.15em; margin-top: .2em; }
+.hw-schaltkarte { transition: border-color .12s ease; }
+.hw-schaltkarte:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important; }
+
+/* Info-Punkt: lange Hilfetexte wohnen im data-tooltip. */
+.hw-infoi {
+    border: 0; background: transparent; padding: 0 2px; margin-left: 4px;
+    color: var(--text-faint); vertical-align: -1px; cursor: help;
+}
+.hw-infoi:hover, .hw-infoi:focus-visible { color: var(--accent); }
+.hw-infoi:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; border-radius: 2px; }
+
+/* JSON-Status neben dem Field-Mapping-Label */
+.hw-jsonstatus {
+    font-size: var(--t-xs); font-weight: 600; padding: 1px 8px;
+    border-radius: var(--radius-pill); vertical-align: 1px; margin-left: 6px;
+}
+.hw-jsonstatus[data-zustand="ok"] { color: var(--ok); background: var(--ok-soft); }
+.hw-jsonstatus[data-zustand="crit"] { color: var(--crit); background: var(--crit-soft); }
+
+/* Overlay-Editor: <pre> und Textarea muessen deckungsgleich sein --
+   identische Schrift, Groesse, Zeilenhoehe, Innenabstand. prism.css setzt
+   auf code[class*=language-] Consolas/1em, darum hier beidseitig fixiert. */
+.hw-code { position: relative; }
+.hw-code-glanz {
+    position: absolute; inset: 0; margin: 0; pointer-events: none;
+    overflow: hidden; border-radius: var(--radius-md);
+    background: var(--bg-surface); border: 1px solid transparent;
+    padding: .5rem .75rem;
+}
+.hw-code-glanz code[class*=language-],
+.hw-code textarea.hw-code-feld {
+    font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace !important;
+    font-size: var(--t-sm) !important; line-height: 1.5 !important;
+    white-space: pre; tab-size: 4;
+}
+.hw-code textarea.hw-code-feld {
+    position: relative; background: transparent !important;
+    color: transparent !important; -webkit-text-fill-color: transparent;
+    caret-color: var(--text);
+    padding: .5rem .75rem; min-height: 140px; overflow: auto; resize: vertical;
+}
+.hw-code textarea.hw-code-feld::placeholder {
+    color: var(--text-faint) !important; -webkit-text-fill-color: var(--text-faint);
+}
+.hw-code textarea.hw-code-feld::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Skeleton-Schimmer fuer ladende Selects */
+.hw-lade {
+    color: transparent !important;
+    background-image: linear-gradient(90deg,
+        var(--bg-raised) 25%, var(--bg-surface) 37%, var(--bg-raised) 63%) !important;
+    background-size: 400% 100% !important;
+    animation: hw-schimmer 1.2s ease infinite;
+}
+@keyframes hw-schimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+/* ---- Velocity: Monospace-Anwendung + Neon-Glow (Glow nur dunkel) ----
+   Terminal-Aesthetik der Stitch-Vorlage: Datenflaechen in JetBrains Mono,
+   aktive/primaere Elemente mit gruenem Glow statt klassischer Schatten.
+   Im hellen Theme bleibt alles glowfrei -- dort traegt der Kontrast allein. */
+code, pre, .font-monospace, kbd, samp {
+    font-family: var(--font-mono) !important;
+}
+:is(h1,h2,h3,h4,h5,h6,.h1,.h2,.h3,.h4,.h5,.h6),
+.dashboard-kpi-value, .hw-brand-word, .navbar-brand {
+    font-family: var(--font-head);
+}
+.hw-brand-word { color: var(--accent); }
+:root:not([data-theme="light"]) .hw-brand {
+    filter: drop-shadow(0 0 9px rgba(0, 255, 157, .40));
+}
+:root:not([data-theme="light"]) .btn-primary {
+    box-shadow: 0 0 20px -8px rgba(0, 255, 157, .55);
+}
+:root:not([data-theme="light"]) .btn-primary:hover,
+:root:not([data-theme="light"]) .btn-primary:focus-visible {
+    box-shadow: 0 0 26px -6px rgba(0, 255, 157, .70);
+}
+:root:not([data-theme="light"]) .navbar-nav .nav-link.active {
+    box-shadow: inset 0 0 0 1px rgba(0, 255, 157, .45), 0 0 22px -8px rgba(0, 255, 157, .40);
+}
+:root:not([data-theme="light"]) .accent-gradient {
+    filter: drop-shadow(0 0 12px rgba(0, 255, 157, .30));
+}
+:root:not([data-theme="light"]) .dashboard-kpi-value.text-danger,
+:root:not([data-theme="light"]) .hw-kpi--crit .dashboard-kpi-value {
+    text-shadow: 0 0 16px rgba(255, 179, 174, .35);
+}
+
+/* ---- Endpoint-Detail-Drawer (ersetzt die eigene Detailseite) ---- */
+.hw-drawer-schleier {
+    position:fixed; inset:0; z-index:1060; background:rgba(0,0,0,.6);
+}
+.hw-drawer {
+    position:fixed; top:0; right:0; bottom:0; z-index:1061;
+    width:min(440px, 100vw); overflow-y:auto;
+    background:var(--bg-surface); border-left:1px solid var(--line-2);
+    padding:20px; animation:hw-drawer-ein .22s var(--ease);
+}
+@keyframes hw-drawer-ein { from { transform:translateX(40px); opacity:0; } to { transform:none; opacity:1; } }
+.hw-drawer .hw-feldlabel {
+    font-family:var(--font-mono); font-size:11px; font-weight:700;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted);
+    margin-bottom:6px;
+}
+.hw-drawer-feld {
+    display:flex; align-items:center; gap:8px;
+    background:var(--bg-sunken); border:1px solid var(--line-2);
+    border-radius:var(--radius-md); padding:8px 12px;
+    font-family:var(--font-mono); font-size:12px; color:var(--text-muted);
+}
+.hw-drawer-feld code { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.hw-drawer-statgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.hw-drawer-stat {
+    background:var(--bg-sunken); border:1px solid var(--line);
+    border-radius:var(--radius-md); padding:10px 6px; text-align:center;
+}
+.hw-drawer-stat b { display:block; font-family:var(--font-head); font-size:17px; color:var(--text); }
+.hw-drawer-stat span {
+    font-family:var(--font-mono); font-size:9.5px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--text-faint);
+}
+.hw-drawer-zeile {
+    display:flex; align-items:center; gap:10px;
+    background:var(--bg-sunken); border:1px solid var(--line);
+    border-radius:var(--radius-md); padding:7px 12px;
+    font-family:var(--font-mono); font-size:11.5px; margin-bottom:6px;
+}
+.hw-chart-puls { animation:hw-puls-punkt 1.6s ease-in-out infinite; }
+@keyframes hw-puls-punkt { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+
+/* ---- Nachzieher Velocity-Feinschliff ----
+   .nav-icon: style.css setzt fill:currentColor -- die Lucide-Strichpfade
+   der Rail wurden dadurch zu gefuellten Klecksen. */
+.nav-icon {
+    fill:none !important; stroke:currentColor; stroke-width:2;
+    stroke-linecap:round; stroke-linejoin:round;
+    width:18px !important; height:18px !important;
+}
+
+/* Kopierfeld (Karten + aufgeklappte Tabellenzeile): rgba-Schwarz auf
+   Obsidian war fast unsichtbar. */
+.copyable-field {
+    background:var(--bg-sunken) !important;
+    border:1px solid var(--line-2) !important;
+}
+.copyable-field code { color:var(--text); }
+
+/* Drawer: mehr Breite, Rotate bleibt einzeilig. */
+.hw-drawer { width:min(480px, 100vw); }
+#hw-drawer-rotate { white-space:nowrap; }
+
+/* ---- Ausklappbare Rail: Icons + Beschriftung ----
+   Der Griff unten an der Rail schaltet um; die Wahl liegt in localStorage
+   und wird vor dem ersten Paint angewandt (Sync-Skript im Head). */
+.hw-rail-griff { display:none; }
+@media (min-width: 992px) {
+    /* Griff an der Rail-Kante: halb ueberstehend, kollidiert mit keinem
+       Icon und wandert ueber var(--rail-w) automatisch mit. */
+    .hw-rail-griff {
+        display:grid; place-items:center; position:fixed; z-index:2000;
+        left:calc(var(--rail-w) - 13px); top:50%; transform:translateY(-50%);
+        width:26px; height:46px;
+        border:1px solid var(--line-2); border-radius:var(--radius-md);
+        background:var(--bg-surface); color:var(--text-faint); cursor:pointer;
+        box-shadow:var(--shadow-1);
+        transition:color var(--dur-1) var(--ease), left var(--dur-2) var(--ease);
+    }
+    .hw-rail-griff:hover { color:var(--accent); border-color:var(--accent); }
+    .hw-rail-griff svg { transition:transform var(--dur-2) var(--ease); }
+    :root.hw-rail-breit { --rail-w:212px; }
+    :root.hw-rail-breit .hw-rail-griff svg { transform:rotate(180deg); }
+    :root.hw-rail-breit .navbar-nav .nav-link {
+        /* Rail-Basis erzwingt display:grid !important (Icon-only, zentriert)
+           -- im Breit-Modus genauso hart auf Flex-Zeile umstellen. */
+        display:flex !important; flex-direction:row; align-items:center;
+        justify-content:flex-start; gap:10px; width:100%; height:40px;
+        padding-left:14px !important; padding-right:10px !important;
+    }
+    :root.hw-rail-breit .navbar-nav > .notification-center { width:100%; }
+    :root.hw-rail-breit .notification-center .nav-link { width:100%; }
+    :root.hw-rail-breit .navbar-nav .nav-link > span:not(.notification-count) {
+        position:static; width:auto; height:auto; margin:0; overflow:visible;
+        clip-path:none; white-space:nowrap;
+        font-family:var(--font-mono); font-size:12.5px;
+    }
+    :root.hw-rail-breit .navbar-nav .nav-link.active::before { left:-14px; }
+    :root.hw-rail-breit .navbar-nav .notification-toggle > span.d-lg-none {
+        display:inline !important;
+        font-family:var(--font-mono); font-size:12.5px; white-space:nowrap;
+    }
+}
+
+/* KPI-Kacheln sind Spruenge in die gefilterte Sicht -- der Pfeil macht
+   das beim Hover sichtbar. */
+.dashboard-kpi[data-kpi] { cursor:pointer; position:relative; }
+.dashboard-kpi[data-kpi]::after {
+    content:'97'; position:absolute; top:10px; right:12px;
+    font-size:13px; color:var(--accent); opacity:0;
+    transition:opacity var(--dur-1) var(--ease);
+}
+.dashboard-kpi[data-kpi]:hover { border-color:var(--accent); }
+.dashboard-kpi[data-kpi]:hover::after { opacity:.9; }
+
+/* ---- Login "Split Signal": Formular links, synthetischer Delivery-Feed
+   mit Wasserzeichen rechts. Alles token-basiert, traegt beide Themes. ---- */
+.hw-login-main { max-width:none; padding:0 !important; margin:0; }
+.hw-login-main .alert {
+    position:fixed; top:16px; left:50%; transform:translateX(-50%);
+    z-index:20; min-width:min(360px, 92vw);
+}
+.hw-login-split {
+    display:grid; grid-template-columns:1fr 1fr;
+    min-height:100dvh; background:var(--bg-canvas);
+}
+.hw-login-links {
+    padding:56px clamp(28px, 6vw, 90px);
+    display:flex; flex-direction:column;
+}
+.hw-login-wm {
+    display:flex; align-items:center; gap:14px;
+    font-family:var(--font-head); font-weight:700; font-size:27px;
+    letter-spacing:.32em; text-transform:uppercase; color:var(--text);
+}
+.hw-login-wm > svg { color:var(--text); flex:none; }
+.hw-login-wm > svg .hw-knoten-akzent { color:var(--accent); }
+.hw-login-wm i { font-style:normal; color:var(--accent); }
+.hw-login-form { margin:auto 0; max-width:360px; width:100%; }
+.hw-login-titel {
+    font-family:var(--font-head); font-weight:700; font-size:24px;
+    color:var(--text); margin-bottom:4px;
+}
+.hw-login-untertitel {
+    font-size:12.5px; color:var(--text-faint); margin-bottom:26px;
+}
+.hw-login-mikro { font-family:var(--font-mono); font-size:11px; color:var(--text-faint); }
+.hw-login-form .form-control {
+    background:var(--bg-surface); border-color:var(--line-2); color:var(--text);
+}
+.hw-login-form .form-control:focus {
+    background:var(--bg-surface); border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft); color:var(--text);
+}
+.hw-login-form .form-control::placeholder { color:var(--text-faint); }
+.hw-login-form .btn-outline-secondary { border-color:var(--line-2); color:var(--text-faint); }
+/* Insert-Placeholder-Knopf: gleiche Flaeche wie das Apply-Template-Select. */
+.hw-mapwerkzeug {
+    background:var(--bg-surface) !important;
+    border:1px solid var(--line-2) !important;
+    color:var(--accent) !important;
+}
+.hw-mapwerkzeug:hover, .hw-mapwerkzeug:focus { border-color:var(--accent) !important; }
+
+/* Edge blendet ein eigenes Auge ins Passwortfeld ein -- wir haben schon eins. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear { display:none; }
+.hw-login-rechts {
+    position:relative; overflow:hidden;
+    background:var(--bg-sunken); border-left:1px solid var(--line);
+    padding:46px 40px;
+}
+.hw-login-wasser {
+    position:absolute; right:-70px; bottom:-90px;
+    opacity:.14; pointer-events:none;
+    color:var(--text);
+}
+.hw-login-wasser .hw-knoten-akzent { color:var(--accent); }
+.hw-login-term {
+    position:absolute; inset:0; padding:28px 0 26px 40px;
+    display:flex; flex-direction:column; justify-content:flex-end;
+    overflow:hidden;
+    font-family:var(--font-mono); font-size:11.5px; line-height:2.15;
+    color:color-mix(in srgb, var(--accent) 40%, var(--text-faint));
+    white-space:pre;
+    /* Aeltere Zeilen faden nach oben aus. */
+    -webkit-mask-image:linear-gradient(180deg, transparent 0%, #000 34%, #000 100%);
+    mask-image:linear-gradient(180deg, transparent 0%, #000 34%, #000 100%);
+}
+.hw-term-zeile { animation:hw-term-ein .3s var(--ease); }
+@keyframes hw-term-ein { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:none; } }
+.hw-login-term .ok { color:var(--ok); font-weight:700; }
+.hw-login-term .crit { color:var(--crit); font-weight:700; }
+.hw-login-term .warn { color:var(--warn); font-weight:700; }
+@media (max-width: 991.98px) {
+    .hw-login-split { grid-template-columns:1fr; }
+    .hw-login-rechts { display:none; }
+}
+@media (prefers-reduced-motion: reduce) { .hw-term-zeile { animation:none; } }
+
+/* ---- Endpoint-Formular als Stepper: nummerierte Schritte statt stiller
+   Pills, Weiter/Zurueck unten, Absenden erst im letzten Schritt.
+   Die Schritte bleiben direkt anklickbar (Bootstrap-Tabs darunter). ---- */
+.hw-formtabs {
+    background:var(--bg-surface); border:1px solid var(--line-2);
+    border-radius:var(--radius-lg); padding:6px; gap:0;
+    display:flex; flex-wrap:wrap; align-items:center;
+}
+.hw-formtabs .nav-item { display:flex; align-items:center; }
+.hw-formtabs .nav-item + .nav-item::before {
+    content:''; width:16px; height:1px; background:var(--line-2); margin:0 3px;
+}
+.hw-formtabs .nav-link { display:inline-flex; align-items:center; gap:8px; }
+.hw-step-nr {
+    display:inline-grid; place-items:center; width:20px; height:20px;
+    border-radius:50%; border:1px solid var(--line-2);
+    background:var(--bg-sunken); color:var(--text-faint);
+    font-family:var(--font-mono); font-style:normal; font-weight:700; font-size:10.5px;
+}
+.hw-formtabs .nav-link.active .hw-step-nr {
+    background:var(--accent); border-color:var(--accent); color:var(--on-accent);
+}
+.hw-formtabs .nav-link.hw-step-fertig .hw-step-nr {
+    color:var(--ok); border-color:var(--ok); background:var(--ok-soft);
+}
+.hw-formtabs .nav-link.hw-step-fehlt .hw-step-nr {
+    color:var(--crit); border-color:var(--crit); background:var(--crit-soft);
+}
+
+/* Aktionsleiste: beim Umbruch bleiben die Zeilen rechtsbuendig, sonst
+   rutscht der Absende-Knopf links unter die Statusmeldung. */
+.hw-formbar > .d-flex.flex-wrap {
+    justify-content:flex-end; align-items:center; row-gap:10px;
+}
+
+/* ---------------- 6. Motion ----------------
+   style.css shipped eleven animations, several 2s infinite, with zero
+   prefers-reduced-motion rules in 1088 lines. Last block so it wins on order
+   and catches anything added later. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration:1ms !important;
+        animation-iteration-count:1 !important;
+        transition-duration:1ms !important;
+        scroll-behavior:auto !important;
+    }
+    ::view-transition-old(root), ::view-transition-new(root) { animation:none !important; }
+}
+
+/* Hinterlegte Miniverlaeufe auf den Kennzahl-Kacheln: unten angedockt,
+   gedaempft, hinter dem Inhalt -- ein Blick zeigt die Richtung, ohne mit
+   den Zahlen zu konkurrieren. */
+.hw-kpi { position:relative; overflow:hidden; }
+.hw-kpi > :not(.hw-kpi-spark) { position:relative; z-index:1; }
+.hw-kpi-spark {
+    position:absolute; left:0; right:0; bottom:0; height:32px;
+    width:100%; pointer-events:none; z-index:0;
+}
+
+/* Nr. 5: 24h-Fehlerrate an der FAILED-Zelle. */
+.hw-rate {
+    margin-left:6px; padding:0 6px; border-radius:var(--radius-pill);
+    font-size:9px; font-weight:700; letter-spacing:0;
+    border:1px solid var(--line-2); color:var(--text-faint);
+}
+.hw-rate--crit {
+    color:var(--crit);
+    border-color:color-mix(in srgb, var(--crit) 40%, transparent);
+    background:color-mix(in srgb, var(--crit) 10%, transparent);
+}
+
+/* Nr. 20: Hinweis auf die Suffix-Suche; leuchtet auf, sobald sie greift. */
+/* Standardmaessig unsichtbar -- der Tipp haengt als title am Suchfeld.
+   Sichtbar wird der Chip erst als Rueckmeldung, wenn token:... aktiv ist. */
+.hw-token-hinweis {
+    display:none;
+    align-self:center; font-family:ui-monospace, Menlo, monospace;
+    font-size:var(--t-xs); color:var(--text-faint);
+    padding:2px 10px; border-radius:var(--radius-pill);
+    border:1px dashed var(--line-2);
+}
+.hw-token-hinweis--aktiv {
+    display:inline-flex;
+    color:var(--accent); border-style:solid; border-color:var(--accent);
+    background:var(--accent-soft);
+}
+
+/* Nr. 4: Karten-Sparkline (SVG statt dekorativem Canvas). */
+.hw-cardspark { width: 120px; height: 34px; display: block; }
+.hw-cardspark circle { pointer-events: all; }
+
+/* Nr. 7: Entwuerfe-Gruppe am Listenende. */
+.hw-draftkopf {
+    padding: var(--s-2) 2px; margin-top: var(--s-2);
+    border-top: 1px dashed var(--line-2);
+    font-size: var(--t-xs); font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--text-muted);
+}
+.hw-draftkopf span { color: var(--text-faint); }
+.hw-draftkarte .endpoint-card { opacity: .75; }
+.hw-draftpille {
+    padding: 1px 8px; border-radius: var(--radius-pill);
+    border: 1px dashed var(--line-2); color: var(--text-muted);
+    font-size: 9px; font-weight: 700; letter-spacing: .08em;
+}
+
+/* Nr. 9: Leerzustand mit Einstieg. */
+.hw-leerzustand {
+    text-align: center; padding: var(--s-6) var(--s-4);
+    border: 1px dashed var(--line-2); border-radius: var(--radius-lg);
+    background: var(--bg-surface);
+}
+.hw-leerzustand p { max-width: 44ch; margin: var(--s-2) auto var(--s-4); color: var(--text-muted); }
+
+/* Nr. 15: Namensfeld beim Umbenennen buendig zur Ueberschrift. */
+.hw-name input { font-size: var(--t-lg); font-weight: 600; max-width: 300px; display: inline-block; }
+
+/* Nr. 3: Board-Gruppenkoepfe in der Kartenliste. */
+.hw-boardkopf {
+    display:flex; align-items:center; gap:6px;
+    padding:var(--s-2) 2px; margin:0;
+    background:none; border:0; border-top:1px solid var(--line);
+    font-size:var(--t-xs); font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--text-muted);
+    cursor:pointer; text-align:left; width:100%;
+}
+.hw-boardkopf:hover { color:var(--text); }
+.hw-boardkopf:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.hw-boardkopf span:last-child { color:var(--text-faint); }
+
+/* Nr. 12: Archivgruppe am Listenende. */
+.hw-archiv summary::-webkit-details-marker { display:none; }
+.hw-archiv summary::marker { content:""; }
+.hw-archiv summary::before { content:"\25B8  "; }
+.hw-archiv[open] summary::before { content:"\25BE  "; }
+.hw-archivliste { display:flex; flex-direction:column; gap:var(--s-1); padding:var(--s-2) 0; }
+.hw-archivzeile {
+    display:flex; align-items:center; gap:var(--s-3);
+    padding:var(--s-2) var(--s-3);
+    background:var(--bg-surface); border:1px solid var(--line);
+    border-radius:var(--radius-md); opacity:.8;
+}
+
+/* Ausnahme auf ausdruecklichen Nutzerwunsch (zweimal angefragt): der
+   Systemstatus-Puls laeuft auch bei reduzierter Bewegung. Begruendung: ein
+   11px-Ring alle 2.2s ist ein Zustandssignal ("lebt"), keine Zierde -- und
+   auf diesem System steht reduced-motion dauerhaft an (RDP), womit der
+   Indikator sonst nie sichtbar waere. Bewusst eng begrenzt auf .hw-health. */
+@media (prefers-reduced-motion: reduce) {
+    .hw-health .heartbeat-up {
+        animation:hw-puls-ok 2.2s infinite !important;
+    }
+    .hw-health .heartbeat-down, .hw-health .heartbeat-error {
+        animation:hw-puls-crit 1.2s infinite !important;
+    }
+}

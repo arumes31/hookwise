@@ -12,9 +12,11 @@ def app():
     app.config["TESTING"] = True
     return app
 
+
 @pytest.fixture
 def runner(app):
     return app.test_cli_runner()
+
 
 @patch("hookwise.commands.redis_client")
 def test_clear_cw_cache_command_success(mock_redis, runner):
@@ -32,6 +34,7 @@ def test_clear_cw_cache_command_success(mock_redis, runner):
     mock_redis.delete.assert_any_call("hookwise_cw_1")
     mock_redis.delete.assert_any_call("hookwise_cw_2")
 
+
 @patch("hookwise.commands.redis_client")
 def test_clear_cw_cache_command_no_keys(mock_redis, runner):
     """Test execution when no keys match the pattern."""
@@ -43,6 +46,7 @@ def test_clear_cw_cache_command_no_keys(mock_redis, runner):
     assert "Successfully cleared 0 ConnectWise API cache keys." in result.output
     assert mock_redis.delete.call_count == 0
 
+
 @patch("hookwise.commands.redis_client")
 def test_clear_cw_cache_command_error(mock_redis, runner):
     """Test error handling in clear-cw-cache command."""
@@ -50,5 +54,5 @@ def test_clear_cw_cache_command_error(mock_redis, runner):
 
     result = runner.invoke(clear_cw_cache_command)
 
-    assert result.exit_code == 0 # Command catches exception and echoes it
+    assert result.exit_code == 0  # Command catches exception and echoes it
     assert "Error clearing cache: Redis connection failed" in result.output

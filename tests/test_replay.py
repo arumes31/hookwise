@@ -10,11 +10,7 @@ from hookwise.models import WebhookConfig, WebhookLog
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config["TESTING"] = True
-    app.config["WTF_CSRF_ENABLED"] = False
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    return app
+    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
@@ -52,15 +48,16 @@ def test_replay_webhook_success(client, app, sample_config):
             config_id=sample_config,
             request_id="original-req-id",
             payload=json.dumps({"test": "data"}),
-            status="processed"
+            status="processed",
         )
         db.session.add(log)
         db.session.commit()
         log_id = log.id
 
-    with patch("hookwise.api.process_webhook_task.delay") as mock_delay, \
-         patch("hookwise.api.log_to_web") as mock_log_to_web:
-
+    with (
+        patch("hookwise.api.process_webhook_task.delay") as mock_delay,
+        patch("hookwise.api.log_to_web") as mock_log_to_web,
+    ):
         with client.session_transaction() as sess:
             sess["user_id"] = "admin-id"
             sess["username"] = "admin"
@@ -72,7 +69,11 @@ def test_replay_webhook_success(client, app, sample_config):
         assert response.json["status"] == "success"
         assert "replay_" in response.json["request_id"]
 
-        mock_delay.assert_called_once_with(sample_config, {"test": "data"}, ANY)
+        with app.app_context():
+            replay_log = WebhookLog.query.filter_by(replay_of_log_id=log_id).one()
+            replay_log_id = replay_log.id
+
+        mock_delay.assert_called_once_with(sample_config, {"test": "data"}, ANY, log_id=replay_log_id)
         mock_log_to_web.assert_called_once()
 
 
@@ -97,12 +98,7 @@ def test_replay_webhook_unauthorized(client):
 def test_replay_webhook_invalid_payload(client, app, sample_config):
     """Test replaying a log with invalid JSON payload."""
     with app.app_context():
-        log = WebhookLog(
-            config_id=sample_config,
-            request_id="bad-req-id",
-            payload="invalid-json{",
-            status="failed"
-        )
+        log = WebhookLog(config_id=sample_config, request_id="bad-req-id", payload="invalid-json{", status="failed")
         db.session.add(log)
         db.session.commit()
         log_id = log.id
@@ -115,3 +111,5 @@ def test_replay_webhook_invalid_payload(client, app, sample_config):
     response = client.post(f"/api/logs/{log_id}/replay")
     assert response.status_code == 500
     assert response.json["status"] == "error"
+    assert response.json["message"] == "Replay failed"
+    assert b"Expecting value" not in response.data

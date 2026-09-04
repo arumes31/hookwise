@@ -8,13 +8,31 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
 
 from celery import Celery, Task
+from celery.exceptions import Retry as CeleryRetry
 from prometheus_client import Counter, Histogram
 
-from .client import ConnectWiseClient, ConnectWiseError, TicketNotFoundError
+from .client import ConnectWiseClient, ConnectWiseError, TicketCreationRejected, TicketNotFoundError
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
-from .models import GlobalMapping, WebhookConfig, WebhookLog
-from .utils import log_to_web, resolve_jsonpath, resolve_monitor_name
+from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
+from .services.routing import evaluate_routing
+from .services.ticket_operations import (
+    TicketOperationInProgress,
+    complete,
+    may_take_over,
+    release,
+    reserve,
+    seconds_until_takeover,
+)
+from .utils import (
+    CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
+    filter_cipp_app_certificate_expiry_results,
+    format_cipp_results,
+    log_to_web,
+    parse_cipp_app_certificate_exclude_patterns,
+    resolve_jsonpath,
+    resolve_monitor_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +47,146 @@ CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 
-# Regex for token replacement
-TOKEN_RE = re.compile(r"(\$\S+|[^\s]+)")
+_ERROR_SECRET_RE = re.compile(r"(?i)(authorization|token|password|secret|api[-_ ]?key)\s*([:=])\s*[^\s,;]+")
+
+
+def check_failure_threshold(config_id: str) -> None:
+    """Nr. 18: je-Endpoint-Schwelle pruefen und ggf. an den Health-Webhook melden.
+
+    Wird nach jedem als failed/dlq markierten Log gerufen. Nebenbefund beim
+    Bau: der in den Einstellungen hinterlegte Health-Webhook wurde bisher von
+    keiner Stelle beschickt -- dies ist sein erster Konsument.
+    Die Funktion darf die Verarbeitung nie mitreissen: alles gekapselt,
+    Fehler landen nur im Log.
+    """
+    try:
+        config = WebhookConfig.query.get(config_id)
+        if config is None or not config.notify_failure_threshold:
+            return
+        fenster = max(1, int(config.notify_window_minutes or 60))
+        jetzt = datetime.now(timezone.utc)
+        seit = jetzt - timedelta(minutes=fenster)
+        letzte = config.last_threshold_alert_at
+        if letzte is not None:
+            letzte = letzte.replace(tzinfo=timezone.utc) if letzte.tzinfo is None else letzte
+            if letzte > seit:
+                return  # im aktuellen Fenster schon gemeldet
+        anzahl = WebhookLog.query.filter(
+            WebhookLog.config_id == config_id,
+            WebhookLog.status.in_(["failed", "dlq"]),
+            WebhookLog.created_at >= seit,
+        ).count()
+        if anzahl < int(config.notify_failure_threshold):
+            return
+        ziel = redis_client.get("hookwise_health_webhook")
+        ziel = ziel.decode() if isinstance(ziel, bytes) else (ziel or "")
+        if not ziel:
+            # Kein Health-Webhook konfiguriert: NICHT drosseln -- sonst wird
+            # der erste Alarm nach dem Eintragen der URL ein Fenster lang
+            # verschluckt.
+            return
+        # Erst Drossel-Stempel setzen und committen, DANN senden: der Versand
+        # haelt so weder die DB-Transaktion offen, noch kann eine kaputte URL
+        # die Drossel umgehen.
+        config.last_threshold_alert_at = jetzt
+        db.session.commit()
+        try:
+            import requests
+
+            requests.post(
+                ziel,
+                json={
+                    "content": (
+                        f"HookWise: endpoint '{config.name}' reached {anzahl} failures "
+                        f"in {fenster} minutes (threshold {config.notify_failure_threshold})."
+                    )
+                },
+                timeout=5,
+            )
+        except Exception:
+            logger.warning("Threshold alert webhook unreachable (throttled anyway)")
+        logger.info(f"Failure threshold alert for {config.name}: {anzahl} failures in {fenster}m")
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failure-threshold check failed (non-fatal)")
+
+
+def _sanitize_error(error: BaseException | str) -> str:
+    """Bound error text before retaining it in history or a retry attempt."""
+    message = str(error)
+    message = _ERROR_SECRET_RE.sub(r"\1\2***", message)
+    return message[:2000]
+
+
+def _append_error_chain(log_entry: WebhookLog, error: BaseException | str, retry_count: int) -> None:
+    """Append structured, sanitized failure metadata without overwriting evidence."""
+    try:
+        chain = json.loads(log_entry.error_chain or "[]")
+        if not isinstance(chain, list):
+            chain = []
+    except TypeError, ValueError:
+        chain = []
+    chain.append(
+        {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "type": type(error).__name__ if isinstance(error, BaseException) else "Error",
+            "message": _sanitize_error(error),
+            "retry_count": retry_count,
+        }
+    )
+    log_entry.error_chain = json.dumps(chain[-20:])
+    log_entry.error_type = type(error).__name__ if isinstance(error, BaseException) else "Error"
+
+
+def _bounded_retry_policy(config: Optional[WebhookConfig], default_max_retries: int) -> tuple[bool, int, int, int]:
+    """Return a safe retry policy even for legacy or malformed endpoint settings."""
+    if config is None:
+        return True, default_max_retries, 1, 300
+    try:
+        max_attempts = max(0, min(int(config.retry_max_attempts), 20))
+        base_delay = max(1, min(int(config.retry_base_delay_seconds), 3600))
+        max_delay = max(base_delay, min(int(config.retry_max_delay_seconds), 86400))
+    except TypeError, ValueError:
+        return bool(config.retry_enabled), default_max_retries, 1, 300
+    return bool(config.retry_enabled), max_attempts, base_delay, max_delay
+
+
+def _load_current_endpoint(config_id: str) -> Optional[WebhookConfig]:
+    """Load endpoint settings from the database, bypassing the worker identity cache."""
+    statement = db.select(WebhookConfig).where(WebhookConfig.id == config_id).execution_options(populate_existing=True)
+    return db.session.execute(statement).scalar_one_or_none()
+
+
+def _add_ticket_note_once(
+    log_entry: WebhookLog,
+    ticket_id: int,
+    text: str,
+    *,
+    operation_name: str,
+    is_internal: bool = False,
+) -> bool:
+    """Protect ConnectWise note POSTs against worker redelivery."""
+    operation, acquired = reserve(log_entry.id, operation_name)
+    if not acquired and operation.status == "completed":
+        return True
+    if not acquired and not may_take_over(operation):
+        raise TicketOperationInProgress(
+            f"{operation_name} is already owned by another worker",
+            retry_after_seconds=seconds_until_takeover(operation),
+        )
+    result = cw_client.add_ticket_note(ticket_id, text, is_internal=is_internal)
+    if result:
+        complete(operation, ticket_id)
+    else:
+        release(operation)
+    return result
+
 
 cw_client = ConnectWiseClient()
 _cached_mappings = None
 _last_cache_update = 0.0
 CACHE_REFRESH_INTERVAL = 300  # 5 minutes
+
 
 def get_all_global_mappings() -> list[dict[str, Any]]:
     """Retrieve all GlobalMapping records as dicts, cached with TTL to avoid N+1 queries."""
@@ -74,6 +225,10 @@ celery.conf.beat_schedule = {
         "task": "hookwise.check_webhook_timeouts",
         "schedule": 1800.0,  # Every 30 minutes
     },
+    "dispatch-delivery-outbox": {
+        "task": "hookwise.dispatch_delivery_outbox",
+        "schedule": 10.0,
+    },
 }
 
 # Execution guards: a hung ConnectWise/LLM call must not pin a worker forever.
@@ -98,6 +253,15 @@ if _soft_time_limit >= _hard_time_limit:
 celery.conf.task_soft_time_limit = _soft_time_limit
 celery.conf.task_time_limit = _hard_time_limit
 
+# LLM inference on CPU can legitimately run longer than the general task
+# guard, especially while Ollama loads a model for the first request. Keep the
+# request timeout and Celery limits aligned so Celery does not kill a healthy
+# inference before requests has a chance to report its result.
+_raw_llm_timeout = os.environ.get("LLM_TIMEOUT", "900")
+LLM_REQUEST_TIMEOUT = max(1, int(_raw_llm_timeout)) if _raw_llm_timeout.isdigit() else 900
+LLM_TASK_SOFT_TIME_LIMIT = LLM_REQUEST_TIMEOUT + 15
+LLM_TASK_TIME_LIMIT = LLM_TASK_SOFT_TIME_LIMIT + 15
+
 _app = None
 
 
@@ -111,6 +275,11 @@ class ContextTask(Task):  # type: ignore[misc]
         with _app.app_context():
             try:
                 return self.run(*args, **kwargs)
+            except CeleryRetry:
+                # Celery uses this control-flow exception for an expected retry;
+                # the worker will emit the concise retry event itself.
+                db.session.rollback()
+                raise
             except Exception:
                 db.session.rollback()
                 logger.exception("Celery task %s failed", self.name)
@@ -122,7 +291,11 @@ class ContextTask(Task):  # type: ignore[misc]
 celery.Task = ContextTask
 
 
-@celery.task(name="hookwise.run_llm_rca")  # type: ignore[untyped-decorator]
+@celery.task(
+    name="hookwise.run_llm_rca",
+    soft_time_limit=LLM_TASK_SOFT_TIME_LIMIT,
+    time_limit=LLM_TASK_TIME_LIMIT,
+)  # type: ignore[untyped-decorator]
 def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]) -> dict:
     """Run LLM root cause analysis in background so the HTTP request returns immediately."""
     from .utils import call_llm
@@ -143,6 +316,34 @@ def run_llm_rca(config_id: str, payload: dict, ai_prompt_template: Optional[str]
     except Exception as e:
         logger.error("run_llm_rca task error: %s", e)
         return {"status": "error", "rca": f"LLM error: {type(e).__name__}"}
+
+
+@celery.task(
+    name="hookwise.run_llm_test",
+    soft_time_limit=LLM_TASK_SOFT_TIME_LIMIT,
+    time_limit=LLM_TASK_TIME_LIMIT,
+)  # type: ignore[untyped-decorator]
+def run_llm_test(prompt: str) -> dict[str, str]:
+    """Run an administrator diagnostic without holding an HTTP connection open."""
+    from .utils import call_llm
+
+    try:
+        result = call_llm(prompt)
+        if result:
+            return {"status": "success", "result": result}
+        return {"status": "error", "message": "LLM call failed or returned empty result"}
+    except Exception as e:
+        logger.error("run_llm_test task error: %s", e)
+        return {"status": "error", "message": f"LLM error: {type(e).__name__}"}
+
+
+@celery.task(name="hookwise.dispatch_delivery_outbox")  # type: ignore[untyped-decorator]
+def dispatch_delivery_outbox() -> dict[str, int]:
+    """Retry durable task intents that could not reach the broker after commit."""
+    from .services.delivery_queue import dispatch_pending
+
+    dispatched, failed = dispatch_pending()
+    return {"dispatched": dispatched, "failed": failed}
 
 
 @celery.task(name="hookwise.cleanup_logs")  # type: ignore[untyped-decorator]
@@ -203,7 +404,7 @@ def verify_endpoint_health() -> None:
                     try:
                         statuses = json.loads(raw)
                         status_cache[bid] = {s["name"] for s in statuses}
-                    except (json.JSONDecodeError, TypeError):
+                    except json.JSONDecodeError, TypeError:
                         pass
 
                 if bid not in status_cache:
@@ -530,30 +731,109 @@ def process_webhook_task(
     request_id: str,
     source_ip: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
+    log_id: Optional[str] = None,
 ) -> None:
-    """Background task to process webhook logic."""
+    """Process a delivery with endpoint-specific bounded retries and lineage."""
+    retries = int(getattr(self.request, "retries", 0) or 0)
+    log_entry: Optional[WebhookLog] = None
+    attempt: Optional[WebhookRetryAttempt] = None
+    # Workers are long-lived while endpoint edits are committed by a different
+    # web process. Force a round trip so a replay or retry never uses an object
+    # cached before the endpoint's authentication or delivery settings changed.
+    config = _load_current_endpoint(config_id)
+    if log_id:
+        log_entry = WebhookLog.query.get(log_id)
+    if log_entry is None:
+        # Compatibility for queued work created before stable log IDs existed.
+        log_entry = (
+            WebhookLog.query.filter_by(config_id=config_id, request_id=request_id)
+            .order_by(WebhookLog.created_at.desc())
+            .first()
+        )
+
+    if log_entry is not None:
+        now = datetime.now(timezone.utc)
+        if log_entry.processing_started_at is None:
+            log_entry.processing_started_at = now
+        log_entry.status = "processing"
+        attempt = WebhookRetryAttempt(
+            log_id=log_entry.id,
+            attempt_number=retries + 1,
+            started_at=now,
+            status="processing",
+        )
+        db.session.add(attempt)
+        db.session.commit()
+
+    if config is None:
+        now = datetime.now(timezone.utc)
+        if log_entry is not None:
+            log_entry.status = "skipped"
+            log_entry.error_type = "endpoint_deleted"
+            log_entry.error_message = "Endpoint was deleted before the queued delivery was processed."
+            log_entry.completed_at = now
+        if attempt is not None:
+            attempt.status = "skipped"
+            attempt.error_message = "Endpoint was deleted before processing."
+            attempt.completed_at = now
+        db.session.commit()
+        return
+
     try:
         handle_webhook_logic(
-            config_id, data, request_id, source_ip=source_ip, retry_count=self.request.retries, headers=headers
+            config_id,
+            data,
+            request_id,
+            source_ip=source_ip,
+            retry_count=retries,
+            headers=headers,
+            log_id=log_entry.id if log_entry else None,
         )
+        if attempt is not None:
+            attempt.status = "processed"
+            attempt.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
     except Exception as exc:
-        logger.error(f"Task failed (Attempt {self.request.retries}/5): {exc}")
-        if self.request.retries >= self.max_retries:
-            # Final failure, move to DLQ in DB
-            from .extensions import db
-            from .models import WebhookLog
+        enabled, max_attempts, base_delay, max_delay = _bounded_retry_policy(
+            config, int(getattr(self, "max_retries", 5) or 5)
+        )
+        non_retryable = isinstance(exc, TicketCreationRejected) and not exc.retryable
+        exhausted = non_retryable or not enabled or (retries + 1) >= max_attempts
+        safe_error = _sanitize_error(exc)
+        logger.error("Task failed (attempt %s/%s): %s", retries + 1, max_attempts, safe_error)
+        if log_entry is not None:
+            _append_error_chain(log_entry, exc, retries)
+            log_entry.retry_count = retries
+            log_entry.error_message = safe_error
+            log_entry.error_type = type(exc).__name__
+            log_entry.completed_at = datetime.now(timezone.utc) if exhausted else None
+        if attempt is not None:
+            attempt.completed_at = datetime.now(timezone.utc)
+            attempt.error_message = safe_error
 
-            # We need to find the log entry and mark it as failed/dlq
-            # Since we don't have log_id here, we use request_id
-            log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
-            if log_entry:
+        if exhausted:
+            if log_entry is not None:
                 log_entry.status = "dlq"
-                log_entry.error_message = f"Max retries exceeded: {str(exc)}"
-                log_entry.retry_count = self.request.retries
-                db.session.commit()
+                log_entry.retry_exhausted_at = datetime.now(timezone.utc)
+                prefix = "Non-retryable failure" if non_retryable else "Max retries exceeded"
+                log_entry.error_message = f"{prefix}: {safe_error}"
+            if attempt is not None:
+                attempt.status = "dlq"
+            db.session.commit()
+            check_failure_threshold(config_id)
             return
+
         jitter = random.uniform(0.8, 1.2)
-        countdown = (2**self.request.retries) * jitter
+        countdown = min(max_delay, base_delay * (2**retries)) * jitter
+        requested_delay = getattr(exc, "retry_after_seconds", None)
+        if isinstance(requested_delay, (int, float)):
+            countdown = max(countdown, min(max_delay, max(1.0, float(requested_delay))))
+        if log_entry is not None:
+            log_entry.status = "retrying"
+        if attempt is not None:
+            attempt.status = "retry_scheduled"
+            attempt.retry_interval_seconds = countdown
+        db.session.commit()
         raise self.retry(exc=exc, countdown=countdown) from exc
 
 
@@ -595,7 +875,7 @@ def _check_once_window(start_str: str, end_str: str, now: datetime) -> bool:
         start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
         end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         return start <= now <= end
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return False
 
 
@@ -619,7 +899,7 @@ def _check_recurring_window(window: Dict[str, Any], w_type: str, start_str: str,
             return start_time <= now_time <= end_time
         # Overnight range (e.g., 22:00 to 02:00)
         return now_time >= start_time or now_time <= end_time
-    except (ValueError, AttributeError, TypeError):
+    except ValueError, AttributeError, TypeError:
         return False
 
 
@@ -679,6 +959,7 @@ def handle_webhook_logic(
     source_ip: Optional[str] = None,
     retry_count: int = 0,
     headers: Optional[Dict[str, str]] = None,
+    log_id: Optional[str] = None,
 ) -> None:
     """Core logic: process webhook payload and route to ConnectWise."""
     from flask import current_app as app
@@ -687,26 +968,40 @@ def handle_webhook_logic(
     start_time = time.time()
 
     with app.app_context():
-        config = WebhookConfig.query.get(config_id)
+        config = _load_current_endpoint(config_id)
         if not config:
             logger.error(f"Config {config_id} not found", extra=extra)
             return
         # 1. Create or update Webhook History Log
         from .utils import mask_secrets
 
-        log_entry = WebhookLog.query.filter_by(request_id=request_id).first()
+        log_entry = WebhookLog.query.get(log_id) if log_id else None
+        if log_entry is None:
+            log_entry = (
+                WebhookLog.query.filter_by(config_id=config_id, request_id=request_id)
+                .order_by(WebhookLog.created_at.desc())
+                .first()
+            )
         if not log_entry:
+            now = datetime.now(timezone.utc)
             log_entry = WebhookLog(
                 config_id=config_id,
                 request_id=request_id,
-                payload=json.dumps(mask_secrets(data)),
+                payload=json.dumps(data),
                 headers=json.dumps(mask_secrets(headers)) if headers else None,
                 source_ip=source_ip,
                 status="processing",
+                correlation_id=request_id[:100],
+                received_at=now,
+                queued_at=now,
+                processing_started_at=now,
             )
             db.session.add(log_entry)
 
         log_entry.retry_count = retry_count
+        if log_entry.processing_started_at is None:
+            log_entry.processing_started_at = datetime.now(timezone.utc)
+        log_entry.status = "processing"
         if source_ip:
             config.last_ip = source_ip
         db.session.commit()
@@ -725,9 +1020,6 @@ def handle_webhook_logic(
                 return
 
             config_name = config.name
-            trigger_field = config.trigger_field or "heartbeat.status"
-            open_value = config.open_value or "0"
-            close_value = config.close_value or "1"
             ticket_prefix = config.ticket_prefix
             board = config.board
             status = config.status
@@ -737,84 +1029,48 @@ def handle_webhook_logic(
             priority = config.priority
             customer_id_default = config.customer_id_default
             description_template = config.description_template
-            json_mapping_str = config.json_mapping
-            routing_rules_str = config.routing_rules
 
             # Heartbeat update and timeout resolution
             _resolve_timeout_alert(config)
 
-            # Parse JSON mappings and routing rules
-            json_mapping = {}
-            if json_mapping_str:
-                try:
-                    json_mapping = json.loads(json_mapping_str)
-                except Exception as e:
-                    logger.error(f"Failed to parse json_mapping: {e}", extra=extra)
+            raw_task_info = data.get("TaskInfo")
+            task_info = raw_task_info if isinstance(raw_task_info, dict) else {}
+            exclude_patterns: tuple[str, ...] = ()
+            if task_info.get("Command") == "Get-CIPPAlertAppCertificateExpiry":
+                stored_exclude_patterns = redis_client.get(CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY)
+                if isinstance(stored_exclude_patterns, bytes):
+                    exclude_patterns = parse_cipp_app_certificate_exclude_patterns(
+                        stored_exclude_patterns.decode("utf-8")
+                    )
+                elif isinstance(stored_exclude_patterns, str):
+                    exclude_patterns = parse_cipp_app_certificate_exclude_patterns(stored_exclude_patterns)
 
-            routing_rules = []
-            if routing_rules_str:
-                try:
-                    routing_rules = json.loads(routing_rules_str)
-                except Exception as e:
-                    logger.error(f"Failed to parse routing_rules: {e}", extra=extra)
+            data, excluded_cipp_app_names = filter_cipp_app_certificate_expiry_results(data, exclude_patterns)
+            if excluded_cipp_app_names:
+                excluded_names_text = ", ".join(excluded_cipp_app_names)
+                logger.info(
+                    "Excluded %d CIPP application certificate-expiry result(s): %s",
+                    len(excluded_cipp_app_names),
+                    excluded_names_text,
+                    extra=extra,
+                )
+                if not data.get("Results"):
+                    log_entry.status = "skipped"
+                    log_entry.error_message = "Skipped: All CIPP application results were globally excluded"
+                    log_entry.processing_time = time.time() - start_time
+                    db.session.commit()
+                    log_to_web(
+                        f"Webhook skipped (all CIPP applications excluded: {excluded_names_text})",
+                        "info",
+                        config_name,
+                        data=data,
+                    )
+                    return
 
-            # 1. Apply JSONPath Mappings
-            overridable_fields = [
-                "summary",
-                "description",
-                "customer_id",
-                "ticket_type",
-                "subtype",
-                "item",
-                "priority",
-                "board",
-                "status",
-                "severity",
-                "impact",
-            ]
-            mapped_vals = {}
-            for field in overridable_fields:
-                if field in json_mapping:
-                    mapping_val = json_mapping[field]
-                    if isinstance(mapping_val, str) and " " in mapping_val:
-                        # Tokenize: identify $-variable tokens vs literal text tokens
-                        tokens = TOKEN_RE.findall(mapping_val)
-                        # Resolve each token
-                        resolved: list[tuple[str, bool]] = []  # (value, is_variable)
-                        any_jsonpath_resolved = False
-                        for tok in tokens:
-                            if tok.startswith("$"):
-                                r_val = resolve_jsonpath(data, tok)
-                                if r_val is not None and str(r_val).strip():
-                                    resolved.append((str(r_val).strip(), True))
-                                    any_jsonpath_resolved = True
-                                else:
-                                    resolved.append(("", True))  # failed variable
-                            else:
-                                resolved.append((tok, False))  # literal
-                        if any_jsonpath_resolved:
-                            # Drop literals that are only adjacent to failed variables
-                            output_parts = []
-                            for i, (val, is_var) in enumerate(resolved):
-                                if is_var:
-                                    if val:
-                                        output_parts.append(val)
-                                else:
-                                    # Include literal only if a neighbour variable resolved
-                                    left_ok = any(resolved[j][0] and resolved[j][1] for j in range(i - 1, -1, -1))
-                                    right_ok = any(
-                                        resolved[j][0] and resolved[j][1] for j in range(i + 1, len(resolved))
-                                    )
-                                    if left_ok or right_ok:
-                                        output_parts.append(val)
-                            if output_parts:
-                                mapped_vals[field] = " ".join(output_parts)
-                    else:
-                        mapped_raw = resolve_jsonpath(data, mapping_val)
-                        if mapped_raw is not None:
-                            mapped_vals[field] = str(mapped_raw)
-
-            mapped_summary = mapped_vals.get("summary")
+            routing_config = config.to_dict()
+            routing_config["ticket_prefix"] = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
+            decision = evaluate_routing(data, routing_config)
+            mapped_vals = decision.values
             mapped_description = mapped_vals.get("description")
             mapped_customer_id = mapped_vals.get("customer_id")
 
@@ -831,64 +1087,27 @@ def handle_webhook_logic(
             if "status" in mapped_vals:
                 status = mapped_vals["status"]
 
-            # 2. Apply Regex Routing Rules
-            for rule in routing_rules:
-                rule_path = rule.get("path")
-                rule_regex = rule.get("regex")
-                rule_overrides = rule.get("overrides", {})
+            if decision.matched_rules:
+                patterns = [str(rule["regex"]) for rule in decision.matched_rules]
+                log_entry.matched_rule = "Matches: " + ", ".join(patterns)
+                if mapped_vals.get("drop"):
+                    log_entry.status = "skipped"
+                    log_entry.error_message = f"Skipped: Dropped by routing rule ({patterns[-1]})"
+                    log_entry.processing_time = time.time() - start_time
+                    db.session.commit()
+                    log_to_web(
+                        f"Webhook skipped (Dropped by routing rule: {patterns[-1]})",
+                        "warning",
+                        config_name,
+                        data=data,
+                    )
+                    return
 
-                if rule_path and rule_regex:
-                    val = str(resolve_jsonpath(data, rule_path))
-                    if re.search(rule_regex, val, re.IGNORECASE):
-                        logger.info(f"Routing rule matched: {rule_regex} on {rule_path}", extra=extra)
-                        log_entry.matched_rule = f"Match: {rule_regex} on {rule_path}"
-
-                        if rule_overrides.get("drop"):
-                            log_entry.status = "skipped"
-                            log_entry.error_message = f"Skipped: Dropped by routing rule ({rule_regex})"
-                            log_entry.processing_time = time.time() - start_time
-                            db.session.commit()
-                            log_to_web(
-                                f"Webhook skipped (Dropped by routing rule: {rule_regex})",
-                                "warning",
-                                config_name,
-                                data=data,
-                            )
-                            return
-
-                        if "board" in rule_overrides:
-                            board = rule_overrides["board"]
-                        if "status" in rule_overrides:
-                            status = rule_overrides["status"]
-                        if "ticket_type" in rule_overrides:
-                            ticket_type = rule_overrides["ticket_type"]
-                        if "subtype" in rule_overrides:
-                            subtype = rule_overrides["subtype"]
-                        if "item" in rule_overrides:
-                            item = rule_overrides["item"]
-                        if "priority" in rule_overrides:
-                            priority = rule_overrides["priority"]
-
-            actual_val = str(resolve_jsonpath(data, trigger_field))
             monitor_name = resolve_monitor_name(data)
             msg = data.get("msg", data.get("message", "No message"))
-
-            open_triggers = [v.strip() for v in open_value.split(",") if v.strip()]
-            close_triggers = [v.strip() for v in close_value.split(",") if v.strip()]
-
-            if actual_val in open_triggers:
-                alert_type = "DOWN"
-            elif actual_val in close_triggers:
-                alert_type = "UP"
-            else:
-                alert_type = "GENERIC"
-
-            prefix = ticket_prefix or os.environ.get("CW_TICKET_PREFIX", "Alert:")
-
-            if mapped_summary:
-                ticket_summary = f"{prefix} {mapped_summary}" if prefix else mapped_summary
-            else:
-                ticket_summary = f"{prefix} {monitor_name}" if prefix else monitor_name
+            alert_type = decision.alert_type
+            prefix = str(routing_config["ticket_prefix"])
+            ticket_summary = decision.summary
 
             if config.summary_remove_strings:
                 for s in config.summary_remove_strings.split(","):
@@ -903,6 +1122,7 @@ def handle_webhook_logic(
             cache_key = f"{CACHE_PREFIX}{config_id}:{ticket_summary}"
 
             ticket_id = None
+            log_entry.connectwise_started_at = datetime.now(timezone.utc)
             if alert_type == "DOWN" or alert_type == "GENERIC":
                 cached_val = cast(Optional[bytes], redis_client.get(cache_key))
                 if cached_val:
@@ -938,7 +1158,7 @@ def handle_webhook_logic(
                             f"Duplicate {alert_type} alert detected. Updated details:\n"
                             f"Message: {msg}\nRequest ID: {request_id}"
                         )
-                        cw_client.add_ticket_note(ticket_id, note_text)
+                        _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                         log_to_web(
                             f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})",
                             "warning" if alert_type == "DOWN" else "info",
@@ -966,7 +1186,7 @@ def handle_webhook_logic(
                         f"Duplicate {alert_type} alert found in CW. Updated details:\n"
                         f"Message: {msg}\nRequest ID: {request_id}"
                     )
-                    cw_client.add_ticket_note(ticket_id, note_text)
+                    _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                     log_to_web(
                         f"{alert_type} alert: Found and updated open ticket (ID: {ticket_id})",
                         "warning" if alert_type == "DOWN" else "info",
@@ -1035,10 +1255,10 @@ def handle_webhook_logic(
                                 if available_companies:
                                     companies_str = ", ".join(available_companies)
                                     llm_prompt = (
-                                        f"Match this incoming tenant string: \"{tenant_val}\" to the best option "
+                                        f'Match this incoming tenant string: "{tenant_val}" to the best option '
                                         f"from this list of company identifiers from ConnectWise: {companies_str}. "
                                         "Respond with ONLY the exact string from the list that matches best. "
-                                        "If none match reasonably well, reply with exactly \"NONE\"."
+                                        'If none match reasonably well, reply with exactly "NONE".'
                                     )
                                     llm_resp = call_llm(llm_prompt)
                                     if (
@@ -1080,6 +1300,8 @@ def handle_webhook_logic(
                     for p in paths:
                         val = str(resolve_jsonpath(safe_data, p))
                         description = description.replace("{" + p + "}", val)
+                    if "{{ cipp_results }}" in description:
+                        description = description.replace("{{ cipp_results }}", format_cipp_results(safe_data))
                 else:
                     description = (
                         f"Source: {monitor_name}\n"
@@ -1088,24 +1310,53 @@ def handle_webhook_logic(
                         f"Payload: {json.dumps(safe_data)}"
                     )
 
-                new_ticket = cw_client.create_ticket(
-                    summary=ticket_summary,
-                    description=description,
-                    monitor_name=monitor_name,
-                    company_id=company_id,
-                    board=board,
-                    status=status,
-                    ticket_type=ticket_type,
-                    subtype=subtype,
-                    item=item,
-                    priority=priority,
-                    severity=mapped_vals.get("severity"),
-                    impact=mapped_vals.get("impact"),
-                )
-                if not new_ticket:
-                    raise Exception("Failed to create ticket: ConnectWise API returned an error.")
+                operation, acquired = reserve(log_entry.id, "create_ticket")
+                new_ticket: dict[str, Any] | None = None
+                if not acquired and operation.status == "completed" and operation.ticket_id:
+                    new_ticket = {"id": operation.ticket_id}
+                elif not acquired:
+                    recovered = cw_client.find_open_ticket(ticket_summary, close_status=config.close_status)
+                    if recovered:
+                        recovered_id = int(recovered["id"])
+                        complete(operation, recovered_id)
+                        new_ticket = {"id": recovered_id}
+                    elif may_take_over(operation):
+                        acquired = True
+                    else:
+                        raise TicketOperationInProgress(
+                            "Ticket creation is already owned by another worker",
+                            retry_after_seconds=seconds_until_takeover(operation),
+                        )
 
-                ticket_id = new_ticket["id"]
+                if acquired:
+                    try:
+                        new_ticket = cw_client.create_ticket(
+                            summary=ticket_summary,
+                            description=description,
+                            monitor_name=monitor_name,
+                            company_id=company_id,
+                            board=board,
+                            status=status,
+                            ticket_type=ticket_type,
+                            subtype=subtype,
+                            item=item,
+                            priority=priority,
+                            severity=mapped_vals.get("severity"),
+                            impact=mapped_vals.get("impact"),
+                        )
+                    except TicketCreationRejected:
+                        release(operation)
+                        raise
+                if not new_ticket:
+                    release(operation)
+                    raise TicketCreationRejected(
+                        "ConnectWise rejected ticket creation without a ticket response",
+                        retryable=True,
+                    )
+
+                ticket_id = int(new_ticket["id"])
+                if operation.status != "completed":
+                    complete(operation, ticket_id)
                 redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
                 log_to_web(
                     f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})",
@@ -1129,7 +1380,13 @@ def handle_webhook_logic(
                     rca_response = call_llm(rca_prompt)
                     if rca_response:
                         note_text = f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}"
-                        cw_client.add_ticket_note(ticket_id, note_text, is_internal=True)
+                        _add_ticket_note_once(
+                            log_entry,
+                            ticket_id,
+                            note_text,
+                            operation_name="rca_note",
+                            is_internal=True,
+                        )
                         log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
 
             elif alert_type == "UP":
@@ -1144,7 +1401,20 @@ def handle_webhook_logic(
                 if ticket_id:
                     resolution = f"Resource {monitor_name} is back UP.\nMessage: {msg}\nID: {request_id}"
                     try:
-                        success = cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
+                        close_operation, acquired = reserve(log_entry.id, "close_ticket")
+                        if not acquired and close_operation.status == "completed":
+                            success = True
+                        elif not acquired and not may_take_over(close_operation):
+                            raise TicketOperationInProgress(
+                                "Ticket closure is already owned by another worker",
+                                retry_after_seconds=seconds_until_takeover(close_operation),
+                            )
+                        else:
+                            success = cw_client.close_ticket(ticket_id, resolution, status_name=config.close_status)
+                            if success:
+                                complete(close_operation, ticket_id)
+                            else:
+                                release(close_operation)
                         if success:
                             redis_client.delete(cache_key)
                             log_to_web(
@@ -1193,6 +1463,8 @@ def handle_webhook_logic(
             log_entry.status = "processed"
             log_entry.ticket_id = ticket_id
             log_entry.processing_time = time.time() - start_time
+            log_entry.connectwise_responded_at = datetime.now(timezone.utc)
+            log_entry.completed_at = datetime.now(timezone.utc)
             db.session.commit()
 
         except Exception as e:
@@ -1200,16 +1472,29 @@ def handle_webhook_logic(
             log_webhook_processed(config_id=config_id, status="failed")
             log_entry.status = "failed"
 
-            error_msg = str(e)
-            if hasattr(e, "response") and e.response is not None:
-                try:
-                    # Capture response body if available (e.g., from requests)
-                    error_msg += f" | Details: {e.response.text}"
-                except Exception as nested_e:
-                    logger.debug(f"Could not extract response text: {nested_e}")
-
+            error_msg = _sanitize_error(e)
+            _append_error_chain(log_entry, e, retry_count)
             log_entry.error_message = error_msg
+            log_entry.error_type = type(e).__name__
             log_entry.processing_time = time.time() - start_time
             db.session.commit()
             logger.error(f"Error handling webhook: {error_msg}", extra=extra)
+            check_failure_threshold(config_id)
             raise e
+        finally:
+            # Early successful/skipped paths return before the normal finalizer.
+            if log_entry.status in {"processed", "skipped"}:
+                now = datetime.now(timezone.utc)
+                if log_entry.completed_at is None:
+                    log_entry.completed_at = now
+                if log_entry.connectwise_started_at and log_entry.connectwise_responded_at is None:
+                    log_entry.connectwise_responded_at = now
+                if log_entry.connectwise_started_at and log_entry.connectwise_responded_at:
+                    started = log_entry.connectwise_started_at
+                    responded = log_entry.connectwise_responded_at
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    if responded.tzinfo is None:
+                        responded = responded.replace(tzinfo=timezone.utc)
+                    log_entry.connectwise_duration_ms = int((responded - started).total_seconds() * 1000)
+                db.session.commit()

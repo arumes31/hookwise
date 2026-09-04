@@ -4,8 +4,8 @@
 
 # HookWise
 
-[![CI Status](https://github.com/arumes31/hookwise/actions/workflows/ci.yml/badge.svg?branch=v2_test)](https://github.com/arumes31/hookwise/actions/workflows/ci.yml)
-[![Python Version](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/)
+[![CI Status](https://github.com/arumes31/hookwise/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arumes31/hookwise/actions/workflows/ci.yml)
+[![Python Version](https://img.shields.io/badge/python-3.14.6-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg?logo=docker&logoColor=white)](https://www.docker.com/)
@@ -40,7 +40,7 @@ graph TD
     Client[Monitoring Source] -->|HTTPS Webhook| Proxy[Flask / Gevent Proxy]
     Proxy -->|Queue Task| Redis[(Redis Broker)]
     Redis -->|Process| Worker[Celery Worker]
-    Worker -->|Analyze| AI[Ollama / phi3]
+    Worker -->|Analyze| AI[Ollama / Qwen3.5 4B]
     Worker -->|PSA API| CW[ConnectWise Manage]
     Worker -->|Logs| DB[(PostgreSQL)]
     Proxy -->|Live Feed| GUI[Web GUI / Socket.io]
@@ -87,11 +87,11 @@ sequenceDiagram
     participant P as Flask Proxy
     participant R as Redis Broker
     participant W as Celery Worker
-    participant A as Ollama (phi3)
+    participant A as Ollama (Qwen3.5 4B)
     participant C as ConnectWise API
     participant D as PostgreSQL DB
 
-    S->>P: POST /webhook/<id> (Bearer Auth)
+    S->>P: POST /w/<id> (Bearer Auth)
     P->>P: Validate Source & HMAC
     P->>R: Push Task ID
     P-->>S: 202 Accepted (Request ID)
@@ -126,9 +126,9 @@ HookWise can generate automated troubleshoot guides using local LLMs. It analyze
 - Technical summary of the alert.
 
 **Managing the Model:**
-By default, HookWise uses `phi3`. To pull the latest version or update the model manually:
+By default, HookWise uses `qwen3.5:4b`. Pull or update it manually with:
 ```bash
-docker exec -it hookwise-llm ollama pull phi3
+docker exec -it hookwise-llm ollama pull qwen3.5:4b
 ```
 
 ### 📋 Observability
@@ -144,7 +144,7 @@ docker exec -it hookwise-llm ollama pull phi3
 All GUI/Admin endpoints require Session Auth or Basic Auth (if configured). Webhook endpoints require Bearer tokens.
 
 ### Webhook Ingestion
-- `POST /webhook/<endpoint_id>`
+- `POST /w/<endpoint_id>`
   - **Auth**: `Authorization: Bearer <token>`
   - **Returns**: `202 Accepted` with `request_id`.
 
@@ -163,9 +163,9 @@ HMAC (Hash-based Message Authentication Code) provides a way to verify both the 
 
 ### How it Works
 1.  **Shared Secret**: You and HookWise share a secret key (configured per endpoint).
-2.  **Signing**: Your monitor tool calculates a SHA256 hash of the **raw request body** using that secret.
-3.  **Transmission**: The tool sends this hash in the `X-HookWise-Signature` header.
-4.  **Verification**: HookWise recalculates the hash and compares it. If they don't match, the request is rejected.
+2.  **Signing**: Sign `<unix_timestamp>.<unique_nonce>.<raw_request_body>` with HMAC-SHA256.
+3.  **Transmission**: Send the signature, timestamp, and nonce headers.
+4.  **Verification**: HookWise verifies the signature, rejects timestamps outside five minutes, and accepts each nonce once.
 
 ### Implementation Guide (How-to)
 If your monitoring tool supports custom headers and signing scripts, use the following logic:
@@ -174,21 +174,26 @@ If your monitoring tool supports custom headers and signing scripts, use the fol
 ```python
 import hmac
 import hashlib
+import secrets
+import time
 
 secret = "your_hmac_secret_from_gui"
-payload = '{"status": "0", "msg": "Critical Alert"}' # Raw body string
+payload = b'{"status": "0", "msg": "Critical Alert"}'
+timestamp = str(int(time.time()))
+nonce = secrets.token_urlsafe(24)
+signed_payload = timestamp.encode() + b"." + nonce.encode() + b"." + payload
 
 signature = hmac.new(
-    secret.encode(), 
-    payload.encode(), 
+    secret.encode(),
+    signed_payload,
     hashlib.sha256
 ).hexdigest()
-
-print(f"Header Value: {signature}")
 ```
 
 **2. Send the Request**:
 - **Header**: `X-HookWise-Signature: <calculated_signature>`
+- **Header**: `X-HookWise-Timestamp: <unix_timestamp>`
+- **Header**: `X-HookWise-Nonce: <unique_random_value>`
 - **Content-Type**: `application/json`
 
 > [!IMPORTANT]
@@ -201,14 +206,22 @@ print(f"Header Value: {signature}")
 HookWise leverages local LLMs via **Ollama** to provide instant RCA (Root Cause Analysis). This means no data ever leaves your network.
 
 ### Model Customization
-By default, HookWise uses `phi3:latest`. You can swap this for `llama3`, `mistral`, or any other model supported by Ollama:
+By default, HookWise uses `qwen3.5:4b`. You can swap this for `phi4-mini`, `llama3.2`, or another model supported by Ollama:
 
 1. **Pull the model**:
    ```bash
-   docker exec -it hookwise-llm ollama pull llama3
+   docker exec -it hookwise-llm ollama pull phi4-mini
    ```
-2. **Update Configuration**: Set the `AI_MODEL` environment variable to `llama3`.
+2. **Update Configuration**: Set the `AI_MODEL` environment variable to `phi4-mini`.
 3. **Restart Worker**: The Celery worker will now use the new model for all analysis.
+
+`AI_MODEL` is read by every LLM request. Set it on both proxy and worker deployments when they do not share the Compose environment block.
+
+Qwen3.5 uses reasoning mode by default. HookWise sets `LLM_THINK=false` so the configured output-token budget is used for the ticket note rather than an internal reasoning trace. For unusually complex alerts, enable thinking and increase `LLM_MAX_TOKENS` to at least `1536`; expect higher CPU latency. `LLM_CONTEXT_LENGTH` defaults to `4096`, which is sufficient for alert payloads while limiting CPU memory usage.
+
+### Endpoint templates
+
+The new-endpoint page includes presets for Uptime Kuma, Zabbix, Grafana, Datadog, and CIPP. A preset only pre-fills routing defaults; review authentication and ConnectWise fields before saving.
 
 ### The RCA System Prompt
 The analysis is guided by a global system prompt that tells the AI to be concise and focused on remediation. You can customize the **RCA Instructions** per endpoint in the Web GUI, allowing different alerts to receive different styles of analysis (e.g., "Developer-focused" vs "Support-focused").
@@ -250,9 +263,12 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** |
 | `GUI_TRUSTED_IPS`| CIDR list (e.g., `10.0.0.0/24, 192.168.1.5`). |
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
-| `FORCE_HTTPS` | Redirects all traffic to TLS. |
+| `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
+| `HTTPS_ORIGIN` | Trusted public HTTPS origin used for redirects (for example, `https://hookwise.example.com`). |
 | `LLM_MAX_TOKENS` | Max tokens for LLM RCA responses (Default: `512`). Increase if output is truncated. |
-| `LLM_TIMEOUT` | Seconds to wait for the LLM to respond (Default: `180`). Increase on slow/CPU-only hosts. |
+| `LLM_CONTEXT_LENGTH` | Ollama context allocation per request (Default: `4096`). Increase only for unusually large payloads. |
+| `LLM_THINK` | Enable Qwen3.5 reasoning before its response (Default: `false`). Increase the token limit when enabled. |
+| `LLM_TIMEOUT` | Seconds to wait for LLM inference (Default: `900`, or 15 minutes). Background tasks and diagnostics include additional shutdown grace. |
 
 ---
 
@@ -282,7 +298,26 @@ Use these in your "Ticket Description Template":
 - `{{ monitor_name }}`: The alert source name.
 - `{{ msg }}`: The alert message.
 - `{{ request_id }}`: Internal tracking ID.
+- `{{ cipp_results }}`: Readable English rendering of every item in a CIPP `Results` array.
 - `{$..field}`: Any valid JSONPath (e.g., `{$..heartbeat.status}`).
+
+To suppress certificate-expiry tickets for specific enterprise applications globally, open **Settings > General
+Configuration** and enter one exact name or glob pattern per line under **CIPP Certificate Expiry Exclusions**.
+Matching is case-insensitive and supports `*` and `?` wildcards. Excluded items are removed before formatting. A
+webhook containing only excluded applications is recorded as skipped and does not create or update a ConnectWise
+ticket.
+
+Example universal CIPP template:
+```text
+CIPP Alert
+
+Tenant: {$.Tenant}
+Alert: {$.TaskInfo.Name}
+Source: {$.TaskInfo.Command}
+Hookwise Request ID: {{ request_id }}
+
+{{ cipp_results }}
+```
 
 ### Web GUI Shortcuts
 - ` / ` : Focus Search bar.
@@ -411,7 +446,7 @@ HookWise provides a centralized mapping table called **TenantMap** (found in the
 
 **Q: AI RCA is too slow?**
 - LLM inference is CPU-heavy. Ensure the `hookwise-llm` container has at least 4 cores and 8GB RAM assigned.
-- Consider switching to a smaller model (e.g., `phi3:3.8b` instead of larger variants).
+- Consider switching to a smaller model (e.g., `llama3.2:3b` instead of larger variants).
 
 **Q: Getting "400 Bad Request" when creating tickets?**
 - This usually means ConnectWise rejected the payload due to a missing or invalid field.
@@ -425,7 +460,7 @@ HookWise provides a centralized mapping table called **TenantMap** (found in the
 **Q: HMAC verification fails on every request?**
 - Ensure your monitoring tool is sending the payload as raw JSON.
 - If your tool adds extra whitespace or re-orders JSON keys after signing, the signature won't match.
-- Try testing with the `X-HookWise-Signature` header disabled first to verify the basic connectivity.
+- Ensure all three HMAC headers are present, the timestamp is within five minutes, and every request uses a fresh nonce.
 
 ---
 

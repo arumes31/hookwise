@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main, v2_test ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -13,7 +20,7 @@ jobs:
     
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16.14-alpine
         env:
           POSTGRES_DB: hookwise_test
           POSTGRES_USER: hookwise
@@ -27,7 +34,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis:7
+        image: redis:8.10.1-alpine
         ports:
           - 6379:6379
         options: >-
@@ -37,22 +44,34 @@ jobs:
           --health-retries 5
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v6
+    - name: Set up Python 3.14.7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
-        python-version: '3.13'
+        python-version: '3.14.7'
         cache: 'pip'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -e .
+        python -m pip install --require-hashes -r requirements-dev.txt
+        python -m pip install --no-deps -e .
+
+    - name: Restore lint and type-check caches
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          .ruff_cache
+          .mypy_cache
+        key: quality-${{ runner.os }}-py3.14-${{ hashFiles('requirements-dev.txt', 'pyproject.toml', 'mypy.ini') }}
+        restore-keys: quality-${{ runner.os }}-py3.14-
 
     - name: Lint with ruff
       run: ruff check .
+
+    - name: Check formatting with ruff
+      run: ruff format --check .
 
     - name: Type check with mypy
       run: mypy .
@@ -63,21 +82,12 @@ jobs:
         REDIS_URL: redis://localhost:6379/0
         SECRET_KEY: test-secret-key
         TESTING: "true"
-      run: |
-        ls -R
-        pytest tests/ -v
+      run: pytest tests/ -v
 
     - name: Audit dependencies for known vulnerabilities
-      continue-on-error: true  # surface CVEs without blocking merges initially
-      run: |
-        pip install pip-audit
-        pip-audit -r requirements.txt
+      run: python -m pip_audit -r requirements.txt
 
     - name: Check for migration drift
-      # Non-blocking for now: the repo has pre-existing model/migration drift
-      # (user.otp_secret length, webhook_log FK ondelete=CASCADE). Once those are
-      # reconciled with a migration, drop continue-on-error to make this a gate.
-      continue-on-error: true
       env:
         FLASK_APP: hookwise:create_app
         DATABASE_URL: postgresql://hookwise:hookwise_pass@localhost:5432/hookwise_test

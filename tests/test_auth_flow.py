@@ -7,7 +7,7 @@ from werkzeug.security import generate_password_hash
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import User
-from hookwise.utils import encrypt_string
+from hookwise.utils import decrypt_string, encrypt_string
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def test_login_normal(client, sample_users):
     # GET login page
     resp = client.get("/login")
     assert resp.status_code == 200
-    assert b"Login to HookWise" in resp.data
+    assert b"Enter the console" in resp.data
 
     # POST correct credentials
     resp = client.post("/login", data={"username": "user1", "password": "pass1"}, follow_redirects=True)
@@ -67,6 +67,17 @@ def test_login_normal(client, sample_users):
     # Should be on dashboard
     assert b"HookWise" in resp.data
     assert b"Logout" in resp.data
+
+
+def test_login_page_views_do_not_consume_credential_attempt_limit(client, sample_users):
+    """Only submitted credentials should count toward brute-force protection."""
+    for _ in range(6):
+        assert client.get("/login").status_code == 200
+
+    response = client.post("/login", data={"username": "user1", "password": "pass1"})
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
 
 
 def test_login_2fa_flow(client, sample_users):
@@ -115,5 +126,33 @@ def test_login_2fa_back_button(client, sample_users):
     # For now, let's just assert that we can get back to the login form.
 
     resp = client.get("/login")
-    assert b"Login to HookWise" in resp.data
+    assert b"Enter the console" in resp.data
     assert b"USERNAME" in resp.data
+
+
+def test_user_otp_secret_assignment_encrypts_plaintext(app):
+    secret = pyotp.random_base32()
+    with app.app_context():
+        user = User(username="encrypted-otp", password_hash="hash", otp_secret=secret)
+
+        assert user.otp_secret != secret
+        assert decrypt_string(user.otp_secret) == secret
+
+
+def test_login_with_undecryptable_otp_secret_fails_safely(client, app, sample_users):
+    response = client.post("/login", data={"username": "user2", "password": "pass2"})
+    assert response.status_code == 200
+
+    with app.app_context():
+        db.session.execute(
+            db.text('UPDATE "user" SET otp_secret = :secret WHERE username = :username'),
+            {"secret": "gAAAA-invalid-token", "username": "user2"},
+        )
+        db.session.commit()
+
+    response = client.post("/login", data={"otp": "123456"})
+
+    assert response.status_code == 503
+    assert b"Two-factor authentication is unavailable" in response.data
+    with client.session_transaction() as login_session:
+        assert "pending_user_id" not in login_session
