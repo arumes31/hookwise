@@ -184,11 +184,7 @@ timestamp = str(int(time.time()))
 nonce = secrets.token_urlsafe(24)
 signed_payload = timestamp.encode() + b"." + nonce.encode() + b"." + payload
 
-signature = hmac.new(
-    secret.encode(),
-    signed_payload,
-    hashlib.sha256
-).hexdigest()
+signature = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
 ```
 
 **2. Send the Request**:
