@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from hookwise.client import (
+    ConfigurationRequestError,
     ConnectWiseClient,
     TicketCreationOutcomeUnknown,
     TicketCreationRejected,
@@ -87,6 +88,26 @@ def test_find_open_ticket_success(mock_get, client):
 
 
 @patch("requests.Session.get")
+def test_find_open_ticket_scopes_by_escaped_company_identifier(mock_get, client):
+    mock_get.return_value.json.return_value = []
+
+    client.find_open_ticket("Test", company_identifier="O'Malley")
+
+    conditions = mock_get.call_args.kwargs["params"]["conditions"]
+    assert "company/identifier = 'O''Malley'" in conditions
+
+
+@patch("requests.Session.get")
+def test_find_open_ticket_preserves_unscoped_query_by_default(mock_get, client):
+    mock_get.return_value.json.return_value = []
+
+    client.find_open_ticket("Test")
+
+    conditions = mock_get.call_args.kwargs["params"]["conditions"]
+    assert "company/identifier" not in conditions
+
+
+@patch("requests.Session.get")
 def test_find_open_ticket_none_found(mock_get, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -102,6 +123,240 @@ def test_find_open_ticket_error(mock_get, client):
     mock_get.side_effect = requests.exceptions.RequestException("API Error")
     with pytest.raises(TicketRequestError):
         client.find_open_ticket("Test")
+
+
+@patch("requests.Session.get")
+def test_find_configurations_uses_bounded_company_scoped_exact_query(mock_get, client):
+    configurations = [
+        {
+            "id": 137,
+            "name": "DEXTER",
+            "company": {"id": 42},
+            "ipAddress": "10.70.10.20",
+            "activeFlag": True,
+        }
+    ]
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = configurations
+
+    result = client.find_configurations(42, "ipAddress", "10.70.10.20", page_size=500)
+
+    assert result == configurations
+    assert mock_get.call_args.args[0] == "https://api-test.com/company/configurations"
+    params = mock_get.call_args.kwargs["params"]
+    assert params["conditions"] == ("company/id = 42 AND activeFlag = true AND ipAddress = '10.70.10.20'")
+    assert params["pageSize"] == 2
+    assert params["fields"] == (
+        "id,name,company,deviceIdentifier,serialNumber,macAddress,tagNumber,ipAddress,activeFlag"
+    )
+
+
+@patch("requests.Session.get")
+def test_find_configurations_escapes_quoted_values(mock_get, client):
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = []
+
+    client.find_configurations(42, "name", "O'Malley")
+
+    conditions = mock_get.call_args.kwargs["params"]["conditions"]
+    assert "name = 'O''Malley'" in conditions
+
+
+@patch("requests.Session.get")
+def test_find_configurations_parses_configuration_id_as_positive_integer(mock_get, client):
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = []
+
+    client.find_configurations(42, "id", "137")
+
+    conditions = mock_get.call_args.kwargs["params"]["conditions"]
+    assert conditions.endswith("id = 137")
+
+
+@patch("requests.Session.get")
+def test_find_matching_configurations_combines_criteria_in_one_bounded_request(mock_get, client):
+    configurations = [
+        {
+            "id": 137,
+            "name": "DEXTER",
+            "company": {"id": 42},
+            "activeFlag": True,
+            "ipAddress": "10.70.10.20",
+        }
+    ]
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = configurations
+
+    result = client.find_matching_configurations(
+        42,
+        [
+            ("ipAddress", "10.70.10.20"),
+            ("macAddress", "00-15-5d-65-66-88"),
+        ],
+    )
+
+    assert result == configurations
+    mock_get.assert_called_once()
+    params = mock_get.call_args.kwargs["params"]
+    assert params["conditions"] == (
+        "company/id = 42 AND activeFlag = true AND (ipAddress = '10.70.10.20' OR macAddress = '00-15-5d-65-66-88')"
+    )
+    assert params["pageSize"] == 129
+
+
+@pytest.mark.parametrize(
+    "searches",
+    [
+        [],
+        [("ipAddress", "10.70.10.20")] * 17,
+        [("manufacturer", "Microsoft")],
+        [("id", "137 OR 1=1")],
+    ],
+)
+def test_find_matching_configurations_rejects_unsafe_or_unbounded_criteria(client, searches):
+    client.session.get = MagicMock()
+
+    with pytest.raises(ValueError):
+        client.find_matching_configurations(42, searches)
+
+    client.session.get.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("company_id", "field", "value"),
+    [
+        (0, "ipAddress", "10.70.10.20"),
+        (True, "ipAddress", "10.70.10.20"),
+        (42, "manufacturer", "Microsoft"),
+        (42, "id", "137 OR 1=1"),
+        (42, "id", 0),
+    ],
+)
+def test_find_configurations_rejects_unsafe_query_inputs(client, company_id, field, value):
+    client.session.get = MagicMock()
+
+    with pytest.raises(ValueError):
+        client.find_configurations(company_id, field, value)
+
+    client.session.get.assert_not_called()
+
+
+@patch("requests.Session.get")
+def test_find_configurations_rejects_invalid_provider_shape(mock_get, client):
+    mock_get.return_value.status_code = 200
+    mock_get.return_value.json.return_value = [{"id": 137}, "not-an-object"]
+
+    with pytest.raises(ConfigurationRequestError, match="unexpected response") as raised:
+        client.find_configurations(42, "ipAddress", "10.70.10.20")
+
+    assert raised.value.operation == "search"
+    assert raised.value.retryable is False
+    assert raised.value.outcome_unknown is False
+
+
+@patch("requests.Session.get")
+def test_find_configurations_classifies_transient_provider_error(mock_get, client):
+    response = MagicMock(status_code=503)
+    mock_get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "503 Server Error", response=response
+    )
+
+    with pytest.raises(ConfigurationRequestError) as raised:
+        client.find_configurations(42, "ipAddress", "10.70.10.20")
+
+    assert raised.value.operation == "search"
+    assert raised.value.status_code == 503
+    assert raised.value.retryable is True
+    assert raised.value.outcome_unknown is False
+
+
+@pytest.mark.parametrize(("status_code", "expected"), [(200, True), (404, False)])
+@patch("requests.Session.get")
+def test_is_configuration_attached_reads_exact_association(mock_get, status_code, expected, client):
+    mock_get.return_value.status_code = status_code
+
+    result = client.is_configuration_attached(321, 137)
+
+    assert result is expected
+    assert mock_get.call_args.args[0] == "https://api-test.com/service/tickets/321/configurations/137"
+
+
+@patch("requests.Session.get")
+def test_is_configuration_attached_classifies_provider_errors(mock_get, client):
+    response = MagicMock(status_code=403)
+    mock_get.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "403 Client Error", response=response
+    )
+
+    with pytest.raises(ConfigurationRequestError) as raised:
+        client.is_configuration_attached(321, 137)
+
+    assert raised.value.operation == "readback"
+    assert raised.value.status_code == 403
+    assert raised.value.retryable is False
+    assert raised.value.outcome_unknown is False
+
+
+@pytest.mark.parametrize("status_code", [200, 201])
+@patch("requests.Session.post")
+def test_attach_configuration_posts_reference_and_returns_validated_object(mock_post, status_code, client):
+    association = {"id": 137, "name": "DEXTER"}
+    mock_post.return_value.status_code = status_code
+    mock_post.return_value.json.return_value = association
+
+    result = client.attach_configuration(321, 137)
+
+    assert result == association
+    mock_post.assert_called_once_with(
+        "https://api-test.com/service/tickets/321/configurations",
+        headers=client.headers,
+        json={"id": 137},
+        timeout=client.timeout,
+    )
+
+
+@patch("requests.Session.post")
+def test_attach_configuration_rejects_invalid_provider_shape(mock_post, client):
+    mock_post.return_value.status_code = 201
+    mock_post.return_value.json.return_value = [137]
+
+    with pytest.raises(ConfigurationRequestError, match="unexpected response") as raised:
+        client.attach_configuration(321, 137)
+
+    assert raised.value.operation == "attach"
+    assert raised.value.retryable is False
+    assert raised.value.outcome_unknown is True
+
+
+@patch("requests.Session.post")
+def test_attach_configuration_classifies_ambiguous_failure_without_retrying(mock_post, client):
+    response = MagicMock(status_code=503)
+    mock_post.return_value.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "503 Server Error", response=response
+    )
+
+    with pytest.raises(ConfigurationRequestError) as raised:
+        client.attach_configuration(321, 137)
+
+    assert raised.value.operation == "attach"
+    assert raised.value.status_code == 503
+    assert raised.value.retryable is True
+    assert raised.value.outcome_unknown is True
+    mock_post.assert_called_once()
+
+
+@patch("requests.Session.post")
+def test_attach_configuration_classifies_transport_failure_as_unknown_without_retrying(mock_post, client):
+    mock_post.side_effect = requests.exceptions.Timeout("timed out")
+
+    with pytest.raises(ConfigurationRequestError) as raised:
+        client.attach_configuration(321, 137)
+
+    assert raised.value.operation == "attach"
+    assert raised.value.status_code is None
+    assert raised.value.retryable is True
+    assert raised.value.outcome_unknown is True
+    mock_post.assert_called_once()
 
 
 @patch("requests.Session.get")

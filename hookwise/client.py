@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+from collections.abc import Sequence
 from math import isfinite
 from typing import Any, Dict, List, Optional, cast
 
@@ -15,10 +16,38 @@ _QUOTA_HEADER_ALIASES = {
     "remaining": ("x-ratelimit-remaining", "ratelimit-remaining", "x-rate-limit-remaining", "x-quota-remaining"),
     "reset": ("x-ratelimit-reset", "ratelimit-reset", "x-rate-limit-reset", "x-quota-reset"),
 }
+_CONFIGURATION_QUERY_FIELDS = frozenset(
+    {"id", "deviceIdentifier", "serialNumber", "macAddress", "tagNumber", "ipAddress", "name"}
+)
+_CONFIGURATION_RESPONSE_FIELDS = (
+    "id,name,company,deviceIdentifier,serialNumber,macAddress,tagNumber,ipAddress,activeFlag"
+)
+_MAX_CONFIGURATION_RESULTS = 2
+_MAX_CONFIGURATION_MATCH_CRITERIA = 16
+_MAX_CONFIGURATION_MATCH_RESULTS = 129
 
 
 class ConnectWiseError(Exception):
     pass
+
+
+class ConfigurationRequestError(ConnectWiseError):
+    """A configuration lookup or association request failed safely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str,
+        status_code: Optional[int] = None,
+        retryable: bool = False,
+        outcome_unknown: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.operation = operation
+        self.status_code = status_code
+        self.retryable = retryable
+        self.outcome_unknown = outcome_unknown
 
 
 class TicketNotFoundError(ConnectWiseError):
@@ -122,7 +151,48 @@ class ConnectWiseClient:
             pass
         return response
 
-    def find_open_ticket(self, summary_contains: str, close_status: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _positive_id(value: Any, field_name: str) -> int:
+        if type(value) is int:
+            parsed = value
+        elif isinstance(value, str) and value.isascii() and value.isdigit():
+            parsed = int(value)
+        else:
+            raise ValueError(f"{field_name} must be a positive integer")
+        if parsed <= 0:
+            raise ValueError(f"{field_name} must be a positive integer")
+        return parsed
+
+    @staticmethod
+    def _configuration_error(
+        operation: str,
+        *,
+        status_code: Optional[int] = None,
+        mutation: bool = False,
+    ) -> ConfigurationRequestError:
+        retryable = status_code is None or status_code in {408, 425, 429} or status_code >= 500
+        outcome_unknown = mutation and (status_code is None or status_code in {408, 409} or status_code >= 500)
+        status_suffix = f" (HTTP {status_code})" if status_code is not None else ""
+        return ConfigurationRequestError(
+            f"ConnectWise configuration {operation} failed{status_suffix}",
+            operation=operation,
+            status_code=status_code,
+            retryable=retryable,
+            outcome_unknown=outcome_unknown,
+        )
+
+    @staticmethod
+    def _request_status_code(error: requests.exceptions.RequestException) -> Optional[int]:
+        response = getattr(error, "response", None)
+        status_code = getattr(response, "status_code", None) if response is not None else None
+        return int(status_code) if isinstance(status_code, int) else None
+
+    def find_open_ticket(
+        self,
+        summary_contains: str,
+        close_status: Optional[str] = None,
+        company_identifier: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         try:
             safe_summary = summary_contains.replace("'", "''")
             excluded_statuses = [self.status_closed, "Cancelled", "Completed"]
@@ -130,7 +200,11 @@ class ConnectWiseClient:
                 excluded_statuses.append(close_status)
             status_clauses = " AND ".join([f"status/name != '{s.replace("'", "''")}'" for s in excluded_statuses])
 
-            conditions = f"closedFlag=false AND {status_clauses} AND summary contains '{safe_summary}'"
+            company_clause = ""
+            if company_identifier:
+                safe_company_identifier = company_identifier.replace("'", "''")
+                company_clause = f"company/identifier = '{safe_company_identifier}' AND "
+            conditions = f"closedFlag=false AND {company_clause}{status_clauses} AND summary contains '{safe_summary}'"
             params: Dict[str, Any] = {"conditions": conditions, "pageSize": 1}
             response = self.session.get(
                 f"{self.base_url}/service/tickets", headers=self.headers, params=params, timeout=self.timeout
@@ -143,6 +217,155 @@ class ConnectWiseClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"Error finding ticket: {e}")
             raise TicketRequestError("Unable to determine whether an open ticket exists") from e
+
+    def find_configurations(
+        self,
+        company_id: int,
+        field: str,
+        value: Any,
+        *,
+        page_size: int = _MAX_CONFIGURATION_RESULTS,
+    ) -> List[Dict[str, Any]]:
+        """Return at most two active, exact matches within one numeric company ID."""
+        if type(company_id) is not int or company_id <= 0:
+            raise ValueError("company_id must be a positive integer")
+        if type(page_size) is not int or page_size <= 0:
+            raise ValueError("page_size must be a positive integer")
+
+        clause = self._configuration_query_clause(field, value)
+        conditions = f"company/id = {company_id} AND activeFlag = true AND {clause}"
+        return self._request_configurations(conditions, min(page_size, _MAX_CONFIGURATION_RESULTS))
+
+    def find_matching_configurations(
+        self,
+        company_id: int,
+        searches: Sequence[tuple[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Search all exact identifiers in one bounded provider request.
+
+        One extra result beyond the matcher's 128-record validation budget lets
+        the selector detect truncation instead of treating a capped page as unique.
+        """
+        if type(company_id) is not int or company_id <= 0:
+            raise ValueError("company_id must be a positive integer")
+        if not 1 <= len(searches) <= _MAX_CONFIGURATION_MATCH_CRITERIA:
+            raise ValueError("configuration search requires 1 to 16 criteria")
+
+        clauses: list[str] = []
+        for search in searches:
+            if not isinstance(search, tuple) or len(search) != 2:
+                raise ValueError("configuration search criteria must be field/value pairs")
+            clause = self._configuration_query_clause(search[0], search[1])
+            if clause not in clauses:
+                clauses.append(clause)
+        joined_clauses = " OR ".join(clauses)
+        conditions = f"company/id = {company_id} AND activeFlag = true AND ({joined_clauses})"
+        return self._request_configurations(conditions, _MAX_CONFIGURATION_MATCH_RESULTS)
+
+    def _configuration_query_clause(self, field: str, value: Any) -> str:
+        if field not in _CONFIGURATION_QUERY_FIELDS:
+            raise ValueError("field is not allowed for configuration lookup")
+        if field == "id":
+            query_value = str(self._positive_id(value, "configuration id"))
+        else:
+            if not isinstance(value, str):
+                raise ValueError("configuration query value must be a string")
+            query_value = value.strip()
+            if not query_value or len(query_value) > 255:
+                raise ValueError("configuration query value must contain 1 to 255 characters")
+            query_value = f"'{query_value.replace("'", "''")}'"
+        return f"{field} = {query_value}"
+
+    def _request_configurations(self, conditions: str, page_size: int) -> List[Dict[str, Any]]:
+        params: Dict[str, Any] = {
+            "conditions": conditions,
+            "fields": _CONFIGURATION_RESPONSE_FIELDS,
+            "pageSize": page_size,
+        }
+        try:
+            response = self.session.get(
+                f"{self.base_url}/company/configurations",
+                headers=self.headers,
+                params=params,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.exceptions.RequestException as e:
+            status_code = self._request_status_code(e)
+            logger.error("ConnectWise configuration search failed (HTTP %s)", status_code)
+            raise self._configuration_error("search", status_code=status_code) from e
+        except ValueError as e:
+            raise ConfigurationRequestError(
+                "ConnectWise configuration search returned an unexpected response",
+                operation="search",
+            ) from e
+
+        if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+            raise ConfigurationRequestError(
+                "ConnectWise configuration search returned an unexpected response",
+                operation="search",
+            )
+        return cast(List[Dict[str, Any]], data)
+
+    def is_configuration_attached(self, ticket_id: int, configuration_id: int) -> bool:
+        """Read back one exact ticket/configuration association."""
+        ticket_id = self._positive_id(ticket_id, "ticket_id")
+        configuration_id = self._positive_id(configuration_id, "configuration_id")
+        try:
+            response = self.session.get(
+                f"{self.base_url}/service/tickets/{ticket_id}/configurations/{configuration_id}",
+                headers=self.headers,
+                timeout=self.timeout,
+            )
+            if response.status_code == 404:
+                return False
+            response.raise_for_status()
+            if response.status_code != 200:
+                raise self._configuration_error("readback", status_code=response.status_code)
+            return True
+        except ConfigurationRequestError:
+            raise
+        except requests.exceptions.RequestException as e:
+            status_code = self._request_status_code(e)
+            logger.error("ConnectWise configuration association readback failed (HTTP %s)", status_code)
+            raise self._configuration_error("readback", status_code=status_code) from e
+
+    def attach_configuration(self, ticket_id: int, configuration_id: int) -> Dict[str, Any]:
+        """Attach one configuration; callers must perform readback before retrying."""
+        ticket_id = self._positive_id(ticket_id, "ticket_id")
+        configuration_id = self._positive_id(configuration_id, "configuration_id")
+        try:
+            response = self.session.post(
+                f"{self.base_url}/service/tickets/{ticket_id}/configurations",
+                headers=self.headers,
+                json={"id": configuration_id},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            if response.status_code not in {200, 201}:
+                raise self._configuration_error("attach", status_code=response.status_code, mutation=True)
+            data = response.json()
+        except ConfigurationRequestError:
+            raise
+        except requests.exceptions.RequestException as e:
+            status_code = self._request_status_code(e)
+            logger.error("ConnectWise configuration association failed (HTTP %s)", status_code)
+            raise self._configuration_error("attach", status_code=status_code, mutation=True) from e
+        except ValueError as e:
+            raise ConfigurationRequestError(
+                "ConnectWise configuration attach returned an unexpected response",
+                operation="attach",
+                outcome_unknown=True,
+            ) from e
+
+        if not isinstance(data, dict) or data.get("id") != configuration_id:
+            raise ConfigurationRequestError(
+                "ConnectWise configuration attach returned an unexpected response",
+                operation="attach",
+                outcome_unknown=True,
+            )
+        return cast(Dict[str, Any], data)
 
     def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
         try:
