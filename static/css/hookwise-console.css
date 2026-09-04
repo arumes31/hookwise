@@ -1693,6 +1693,8 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
    aus localStorage, bevor der Browser das Grid je malt. toggleView pflegt
    sie danach weiter. */
 .hw-listenstart #endpoint-grid { display:none; }
+/* Archiv liegt ausserhalb des Rasters und gilt fuer beide Ansichten. */
+.hw-archivbereich { margin-top:8px; }
 
 .hw-sparkzelle { width:130px; }
 .hw-zeilenspark { width:110px; height:26px; display:block; opacity:.85; }

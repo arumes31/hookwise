@@ -457,8 +457,16 @@
     </div>
     {% endfor %}
     {% endif %}
-    {% if archived_configs %}
-    {# Nr. 12: Archiv am Listenende -- zugeklappt, mit Wiederherstellen. #}
+</div>
+{% endif %}
+
+{% if archived_configs %}
+{# Nr. 12: Archiv am Listenende -- zugeklappt, mit Wiederherstellen.
+   Bewusst ausserhalb von #endpoint-grid und ausserhalb der configs-Bedingung:
+   das Raster wird in der Listenansicht ausgeblendet, und bei ausschliesslich
+   archivierten Endpoints gibt es gar kein Raster. Das Archiv muss in beiden
+   Ansichten und in beiden Faellen erreichbar bleiben. #}
+<div class="row hw-archivbereich">
     <div class="col-12">
         <details class="hw-archiv">
             <summary class="hw-draftkopf" style="cursor:pointer">Archive <span>({{ archived_configs | length }})</span></summary>
@@ -476,7 +484,6 @@
             </div>
         </details>
     </div>
-    {% endif %}
 </div>
 {% endif %}
 </div>
@@ -611,7 +618,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
             </div>
             <div class="modal-body text-center py-5">
-                <img src="{{ url_for('static', filename='img/logo.png', v='20260908b') }}" alt="HookWise" height="80" class="mb-4">
+                <img src="{{ url_for('static', filename='img/logo.png', v='20260908c') }}" alt="HookWise" height="80" class="mb-4">
                 <h3 class="fw-bold">Let's get you set up.</h3>
                 <p class="text-secondary mb-5">HookWise bridges your monitoring tools to ConnectWise Manage tickets.</p>
 
@@ -702,8 +709,8 @@
 
 <meta name="hookwise-cw-url" content="{{ cw_url }}">
 
-<script src="{{ url_for('static', filename='js/dashboard.js', v='20260908b') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260908b') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js', v='20260908c') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260908c') }}"></script>
 
 <script>
     // Endpoint-Detail-Drawer: ersetzt die fruehere Detailseite.
