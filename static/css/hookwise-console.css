@@ -2128,6 +2128,18 @@ input[type="password"]::-ms-clear { display:none; }
 }
 .hw-permzeile input[disabled] { opacity:.45; }
 
+.hw-rollenwahl { display:grid; gap:8px; }
+.hw-rollenwahl-zeile {
+    display:flex; align-items:flex-start; gap:11px; padding:11px 14px;
+    border:1px solid var(--line-2); border-radius:var(--radius-md);
+    background:var(--bg-sunken); cursor:pointer; margin:0;
+}
+.hw-rollenwahl-zeile:has(input:checked) {
+    border-color:var(--accent); background:var(--accent-soft);
+}
+.hw-rollenwahl-zeile input { margin-top:3px; flex:none; }
+.hw-rollenwahl-zeile b { font-family:var(--font-head); font-size:13px; }
+
 /* ---------------- 6. Motion ----------------
    style.css shipped eleven animations, several 2s infinite, with zero
    prefers-reduced-motion rules in 1088 lines. Last block so it wins on order

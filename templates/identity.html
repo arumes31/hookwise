@@ -184,6 +184,74 @@
     </div>
 </div>
 
+
+<!-- Neuer Nutzer -->
+<div class="modal fade" id="userNeuModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="glass-card shadow-lg border-0 w-100 p-1">
+            <div class="modal-content bg-transparent border-0 p-4">
+                <div class="modal-header border-0 p-0 mb-4">
+                    <h5 class="modal-title fw-bold text-light">New user</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="hw-prov-wahl mb-3" id="neu-quelle">
+                    <button type="button" class="hw-prov-karte an" data-quelle="entra">
+                        <span class="hw-prov-punkt"></span>
+                        <span><b>Entra ID account</b>
+                            <span class="small text-secondary d-block">Signs in through Microsoft.
+                                Enter the exact UPN; the account is bound on first sign-in.</span></span>
+                    </button>
+                    <button type="button" class="hw-prov-karte" data-quelle="local">
+                        <span class="hw-prov-punkt"></span>
+                        <span><b>Local account</b>
+                            <span class="small text-secondary d-block">Password sign-in with optional 2FA.
+                                For break-glass and headless clients.</span></span>
+                    </button>
+                </div>
+                <div class="mb-3">
+                    <label for="neu-username" class="form-label small fw-bold text-secondary ls-wide" id="neu-username-label">UPN</label>
+                    <input id="neu-username" class="form-control bg-dark border-secondary text-light"
+                        placeholder="user@company.com" autocomplete="off">
+                </div>
+                <div class="mb-3" id="neu-passwort-feld" hidden>
+                    <label for="neu-passwort" class="form-label small fw-bold text-secondary ls-wide">PASSWORD</label>
+                    <input type="password" id="neu-passwort" class="form-control bg-dark border-secondary text-light"
+                        autocomplete="new-password">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-bold text-secondary ls-wide">ROLES</label>
+                    <div id="neu-rollen" class="hw-rollenwahl"></div>
+                </div>
+                <div id="neu-fehler" class="text-danger small" aria-live="polite"></div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="neu-anlegen">Create user</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rollen zuweisen -->
+<div class="modal fade" id="rollenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="glass-card shadow-lg border-0 w-100 p-1">
+            <div class="modal-content bg-transparent border-0 p-4">
+                <div class="modal-header border-0 p-0 mb-4">
+                    <h5 class="modal-title fw-bold text-light" id="rollen-titel">Roles</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div id="rollen-wahl" class="hw-rollenwahl"></div>
+                <div id="rollen-fehler" class="text-danger small" aria-live="polite"></div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="rollen-speichern-btn">Save roles</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     (function () {
         'use strict';
@@ -234,24 +302,43 @@
         document.getElementById('user-suche').addEventListener('input', nutzerZeichnen);
         document.getElementById('user-quelle').addEventListener('change', nutzerZeichnen);
 
+        // ---- Rollen-Checkboxen (gemeinsam fuer beide Modals) ----
+        function rollenwahlHtml(ausgewaehlt) {
+            const satz = new Set(ausgewaehlt || []);
+            return ROLLEN.map(r => `
+                <label class="hw-rollenwahl-zeile">
+                  <input class="form-check-input" type="checkbox" value="${esc(r.key)}"
+                    ${satz.has(r.key) ? 'checked' : ''}>
+                  <span><b>${esc(r.name || r.key)}</b>
+                    <span class="small text-secondary d-block">${esc(r.key)} ·
+                      ${r.permissions.length} permissions${r.is_builtin ? ' · built-in' : ''}</span></span>
+                </label>`).join('') || '<div class="text-secondary small">No roles available yet.</div>';
+        }
+        const gewaehlteRollen = (behaelter) =>
+            [...behaelter.querySelectorAll('input:checked')].map(i => i.value);
+
+        // ---- Rollen zuweisen: Auswahl statt Texteingabe ----
+        let rollenNutzer = null;
+        const rollenModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('rollenModal'));
+
         document.getElementById('user-tabelle').addEventListener('click', async (ev) => {
             const rollenKnopf = ev.target.closest('[data-rollen]');
             if (rollenKnopf) {
-                const u = NUTZER.find(x => x.id === rollenKnopf.dataset.rollen);
-                const eingabe = window.prompt(
-                    'Roles for ' + u.username + ' (comma separated).\nAvailable: ' + ROLLEN.map(r => r.key).join(', '),
-                    (u.roles || []).join(', '));
-                if (eingabe === null) return;
-                const liste = eingabe.split(',').map(s => s.trim()).filter(Boolean);
-                const a = await senden('/api/users/' + u.id + '/roles', 'PUT', { roles: liste });
-                if (!a.ok) { showToast(a.daten.message || 'Could not set roles', 'error'); return; }
-                showToast('Roles updated', 'success');
-                nutzerLaden();
+                rollenNutzer = NUTZER.find(x => x.id === rollenKnopf.dataset.rollen);
+                document.getElementById('rollen-titel').textContent = 'Roles for ' + rollenNutzer.username;
+                document.getElementById('rollen-wahl').innerHTML = rollenwahlHtml(rollenNutzer.roles);
+                document.getElementById('rollen-fehler').textContent = '';
+                rollenModal().show();
                 return;
             }
             const aktivKnopf = ev.target.closest('[data-aktiv]');
             if (aktivKnopf) {
                 const u = NUTZER.find(x => x.id === aktivKnopf.dataset.aktiv);
+                const frage = u.is_active
+                    ? 'Disable ' + u.username + '? They can no longer sign in until re-enabled.'
+                    : 'Enable ' + u.username + '? They can sign in again.';
+                if (!await hwConfirm(frage, { title: u.is_active ? 'Disable user' : 'Enable user',
+                    okText: u.is_active ? 'Disable' : 'Enable' })) return;
                 const a = await senden('/api/users/' + u.id, 'PATCH', { is_active: !u.is_active });
                 if (!a.ok) { showToast(a.daten.message || 'Could not update user', 'error'); return; }
                 showToast(u.is_active ? 'User disabled' : 'User enabled', 'success');
@@ -259,19 +346,57 @@
             }
         });
 
-        document.getElementById('user-neu-btn').addEventListener('click', async () => {
-            const username = window.prompt('Username (for Entra users: their UPN)');
-            if (!username) return;
-            const quelle = window.confirm('OK = Entra ID account, Cancel = local account') ? 'entra' : 'local';
-            const koerper = { username: username.trim(), auth_source: quelle };
-            if (quelle === 'entra') koerper.upn = username.trim();
+        document.getElementById('rollen-speichern-btn').addEventListener('click', async () => {
+            const liste = gewaehlteRollen(document.getElementById('rollen-wahl'));
+            const a = await senden('/api/users/' + rollenNutzer.id + '/roles', 'PUT', { roles: liste });
+            if (!a.ok) {
+                document.getElementById('rollen-fehler').textContent = a.daten.message || 'Could not set roles';
+                return;
+            }
+            rollenModal().hide();
+            showToast('Roles updated', 'success');
+            nutzerLaden();
+        });
+
+        // ---- Neuer Nutzer: Formular-Modal ----
+        const neuModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('userNeuModal'));
+        const neuQuelle = () => document.querySelector('#neu-quelle .hw-prov-karte.an').dataset.quelle;
+
+        document.querySelectorAll('#neu-quelle .hw-prov-karte').forEach(k => k.addEventListener('click', () => {
+            document.querySelectorAll('#neu-quelle .hw-prov-karte').forEach(x => x.classList.toggle('an', x === k));
+            const lokal = k.dataset.quelle === 'local';
+            document.getElementById('neu-passwort-feld').hidden = !lokal;
+            document.getElementById('neu-username-label').textContent = lokal ? 'USERNAME' : 'UPN';
+            document.getElementById('neu-username').placeholder = lokal ? 'username' : 'user@company.com';
+        }));
+
+        document.getElementById('user-neu-btn').addEventListener('click', () => {
+            document.getElementById('neu-username').value = '';
+            document.getElementById('neu-passwort').value = '';
+            document.getElementById('neu-fehler').textContent = '';
+            document.getElementById('neu-rollen').innerHTML = rollenwahlHtml(['viewer']);
+            neuModal().show();
+            setTimeout(() => document.getElementById('neu-username').focus(), 250);
+        });
+
+        document.getElementById('neu-anlegen').addEventListener('click', async () => {
+            const fehler = document.getElementById('neu-fehler');
+            const username = document.getElementById('neu-username').value.trim();
+            if (!username) { fehler.textContent = 'Username is required.'; return; }
+            const quelle = neuQuelle();
+            const koerper = {
+                username, auth_source: quelle,
+                roles: gewaehlteRollen(document.getElementById('neu-rollen')),
+            };
+            if (quelle === 'entra') koerper.upn = username;
             else {
-                const pw = window.prompt('Password for the local account');
-                if (!pw) return;
+                const pw = document.getElementById('neu-passwort').value;
+                if (!pw) { fehler.textContent = 'Password is required for local accounts.'; return; }
                 koerper.password = pw;
             }
             const a = await senden('/api/users', 'POST', koerper);
-            if (!a.ok) { showToast(a.daten.message || 'Could not create user', 'error'); return; }
+            if (!a.ok) { fehler.textContent = a.daten.message || 'Could not create user'; return; }
+            neuModal().hide();
             showToast('User created', 'success');
             nutzerLaden();
         });

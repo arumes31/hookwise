@@ -6,6 +6,7 @@
 <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
     {% if name == 'endpoints' %}<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>
     {% elif name == 'webhooks' %}<path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/>
+    {% elif name == 'users' %}<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
     {% elif name == 'tenantmap' %}<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>
     {% elif name == 'history' %}<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>
     {% elif name == 'audit' %}<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>
@@ -29,14 +30,14 @@
     {# Favicon = die geroutete Hook-Marke (templates/_brand.html), nicht mehr
        das alte Logo. SVG zuerst (scharf in jeder Groesse), PNG als Fallback
        fuer Altbrowser, Apple-Touch fuer Homescreen-Verknuepfungen. #}
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ url_for('static', filename='img/favicon-hook.svg', v='20260909a') }}">
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ url_for('static', filename='img/favicon-hook-light.svg', v='20260909a') }}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-hook-32.png', v='20260909a') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-hook.png', v='20260909a') }}">
-    <link href="{{ url_for('static', filename='css/bootstrap.min.css', v='20260909a') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/prism.css', v='20260909a') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css', v='20260909a') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/hookwise-console.css', v='20260909a') }}" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ url_for('static', filename='img/favicon-hook.svg', v='20260909b') }}">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ url_for('static', filename='img/favicon-hook-light.svg', v='20260909b') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-hook-32.png', v='20260909b') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-hook.png', v='20260909b') }}">
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css', v='20260909b') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/prism.css', v='20260909b') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css', v='20260909b') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/hookwise-console.css', v='20260909b') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {# Theme is applied before first paint so an explicit choice never flashes. #}
     <script>
@@ -50,16 +51,16 @@
             } catch (e) { /* private mode: keep the default */ }
         })();
     </script>
-    <script src="{{ url_for('static', filename='js/http.js', v='20260909a') }}"></script>
-    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/socket.io.min.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/prism.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mini-charts.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/htmx.min.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/ux.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/activity.js', v='20260909a') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/history-operations.js', v='20260909a') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/http.js', v='20260909b') }}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/socket.io.min.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/prism.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mini-charts.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/htmx.min.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/ux.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/activity.js', v='20260909b') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/history-operations.js', v='20260909b') }}" defer></script>
 </head>
 
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
@@ -177,7 +178,7 @@
                 </a>
                 <a class="nav-link{% if request.endpoint == 'main.identity_settings' %} active{% endif %}"
                     href="{{ url_for('main.identity_settings') }}"{% if request.endpoint == 'main.identity_settings' %} aria-current="page"{% endif %}>
-                    {{ nav_icon('tenantmap') }}<span>Identity</span>
+                    {{ nav_icon('users') }}<span>Identity</span>
                 </a>
                 <a class="nav-link{% if request.endpoint in ['main.settings', 'main.setup_2fa', 'main.admin_maintenance'] %} active{% endif %}"
                     href="{{ url_for('main.settings') }}"{% if request.endpoint in ['main.settings', 'main.setup_2fa', 'main.admin_maintenance'] %} aria-current="page"{% endif %}>
