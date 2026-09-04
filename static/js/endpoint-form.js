@@ -185,15 +185,14 @@ function updatePreview() {
         }
     }
 
-    // Use htmx.onLoad for HTMX navigation compatibility (fires on both first load and HTMX swaps)
-    if (typeof htmx !== 'undefined') {
-        htmx.onLoad(function () {
-            initFormSelects();
-        });
+    // Page-specific scripts execute after HTMX has swapped the new body, so
+    // registering for the current htmx:load event can be too late. Initialize
+    // immediately when the DOM already exists and keep listeners for later loads.
+    document.addEventListener('htmx:load', initFormSelects);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initFormSelects, { once: true });
     } else {
-        document.addEventListener('DOMContentLoaded', function () {
-            initFormSelects();
-        });
+        initFormSelects();
     }
 
 

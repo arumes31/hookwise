@@ -532,5 +532,9 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
         setTimeout(() => { window.dashboardState.isInitialized = false; }, 500);
     }
 
-    document.addEventListener('DOMContentLoaded', initSparklinesAndStats);
     document.addEventListener('htmx:load', initSparklinesAndStats);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSparklinesAndStats, { once: true });
+    } else {
+        initSparklinesAndStats();
+    }
