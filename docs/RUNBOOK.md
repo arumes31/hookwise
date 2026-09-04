@@ -77,7 +77,9 @@ cannot be reused and timestamps are accepted only within a five-minute window.
 
 ## Worker / beat not processing
 
-1. `GET /health/services` — check the `celery` field (`up` / `warning` / `down`)
+1. `GET /health/services` — check the `celery` field (`up` / `warning` / `down`).
+   Needs a signed-in session (`settings:read`); only `/health` and `/readyz`
+   are public, and those are what the container healthchecks use.
    and `celery_active`.
 2. If `down`: confirm the worker container is running and can reach Redis
    (`redis` field). Restart the worker.
