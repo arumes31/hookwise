@@ -219,7 +219,7 @@
                         autocomplete="new-password">
                 </div>
                 <div class="mb-1">
-                    <label class="form-label small fw-bold text-secondary ls-wide">ROLES</label>
+                    <label class="form-label small fw-bold text-secondary ls-wide">ROLE</label>
                     <div id="neu-rollen" class="hw-rollenwahl"></div>
                 </div>
                 <div id="neu-fehler" class="text-danger small" aria-live="polite"></div>
@@ -302,20 +302,31 @@
         document.getElementById('user-suche').addEventListener('input', nutzerZeichnen);
         document.getElementById('user-quelle').addEventListener('change', nutzerZeichnen);
 
-        // ---- Rollen-Checkboxen (gemeinsam fuer beide Modals) ----
-        function rollenwahlHtml(ausgewaehlt) {
-            const satz = new Set(ausgewaehlt || []);
+        // ---- Rollenwahl (gemeinsam fuer beide Modals): genau EINE Rolle ----
+        // Radios statt Checkboxen -- ein Nutzer traegt eine Rolle. Das Datenmodell
+        // kann mehr, aber die Vergabe bleibt bewusst eindeutig.
+        function rollenwahlHtml(ausgewaehlt, gruppe) {
+            const wahl = ausgewaehlt || null;
             return ROLLEN.map(r => `
                 <label class="hw-rollenwahl-zeile">
-                  <input class="form-check-input" type="checkbox" value="${esc(r.key)}"
-                    ${satz.has(r.key) ? 'checked' : ''}>
+                  <input class="form-check-input" type="radio" name="${esc(gruppe)}" value="${esc(r.key)}"
+                    ${wahl === r.key ? 'checked' : ''}>
                   <span><b>${esc(r.name || r.key)}</b>
                     <span class="small text-secondary d-block">${esc(r.key)} ·
                       ${r.permissions.length} permissions${r.is_builtin ? ' · built-in' : ''}</span></span>
                 </label>`).join('') || '<div class="text-secondary small">No roles available yet.</div>';
         }
-        const gewaehlteRollen = (behaelter) =>
-            [...behaelter.querySelectorAll('input:checked')].map(i => i.value);
+        const gewaehlteRolle = (behaelter) => {
+            const an = behaelter.querySelector('input:checked');
+            return an ? an.value : null;
+        };
+        // Traegt ein Altbestand mehrere Rollen, wird die maechtigste vorbelegt.
+        const staerksteRolle = (schluessel) => {
+            const eigene = ROLLEN.filter(r => (schluessel || []).includes(r.key));
+            if (!eigene.length) return null;
+            eigene.sort((a, b) => b.permissions.length - a.permissions.length);
+            return eigene[0].key;
+        };
 
         // ---- Rollen zuweisen: Auswahl statt Texteingabe ----
         let rollenNutzer = null;
@@ -325,9 +336,13 @@
             const rollenKnopf = ev.target.closest('[data-rollen]');
             if (rollenKnopf) {
                 rollenNutzer = NUTZER.find(x => x.id === rollenKnopf.dataset.rollen);
-                document.getElementById('rollen-titel').textContent = 'Roles for ' + rollenNutzer.username;
-                document.getElementById('rollen-wahl').innerHTML = rollenwahlHtml(rollenNutzer.roles);
-                document.getElementById('rollen-fehler').textContent = '';
+                document.getElementById('rollen-titel').textContent = 'Role for ' + rollenNutzer.username;
+                document.getElementById('rollen-wahl').innerHTML =
+                    rollenwahlHtml(staerksteRolle(rollenNutzer.roles), 'rolle-zuweisen');
+                document.getElementById('rollen-fehler').textContent =
+                    (rollenNutzer.roles || []).length > 1
+                        ? 'This user currently holds several roles; saving keeps only the selected one.'
+                        : '';
                 rollenModal().show();
                 return;
             }
@@ -347,8 +362,12 @@
         });
 
         document.getElementById('rollen-speichern-btn').addEventListener('click', async () => {
-            const liste = gewaehlteRollen(document.getElementById('rollen-wahl'));
-            const a = await senden('/api/users/' + rollenNutzer.id + '/roles', 'PUT', { roles: liste });
+            const rolle = gewaehlteRolle(document.getElementById('rollen-wahl'));
+            if (!rolle) {
+                document.getElementById('rollen-fehler').textContent = 'Select a role.';
+                return;
+            }
+            const a = await senden('/api/users/' + rollenNutzer.id + '/roles', 'PUT', { roles: [rolle] });
             if (!a.ok) {
                 document.getElementById('rollen-fehler').textContent = a.daten.message || 'Could not set roles';
                 return;
@@ -374,7 +393,7 @@
             document.getElementById('neu-username').value = '';
             document.getElementById('neu-passwort').value = '';
             document.getElementById('neu-fehler').textContent = '';
-            document.getElementById('neu-rollen').innerHTML = rollenwahlHtml(['viewer']);
+            document.getElementById('neu-rollen').innerHTML = rollenwahlHtml('viewer', 'rolle-neu');
             neuModal().show();
             setTimeout(() => document.getElementById('neu-username').focus(), 250);
         });
@@ -384,10 +403,9 @@
             const username = document.getElementById('neu-username').value.trim();
             if (!username) { fehler.textContent = 'Username is required.'; return; }
             const quelle = neuQuelle();
-            const koerper = {
-                username, auth_source: quelle,
-                roles: gewaehlteRollen(document.getElementById('neu-rollen')),
-            };
+            const rolle = gewaehlteRolle(document.getElementById('neu-rollen'));
+            if (!rolle) { fehler.textContent = 'Select a role.'; return; }
+            const koerper = { username, auth_source: quelle, roles: [rolle] };
             if (quelle === 'entra') koerper.upn = username;
             else {
                 const pw = document.getElementById('neu-passwort').value;
