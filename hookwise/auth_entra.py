@@ -58,7 +58,12 @@ def entra_aktiv() -> bool:
     if os.environ.get("ENTRA_ENABLED", "false").strip().lower() != "true":
         return False
     konf = _konfiguration()
-    if not all([konf["tenant"], konf["client"], konf["redirect"], konf["secret_file"]]):
+    if not all([konf["tenant"], konf["client"], konf["redirect"]]):
+        return False
+    # Der Pfad allein sagt nichts: Ist die Datei leer oder nicht lesbar, wuerde
+    # der Client ohne Credential gebaut und jeder Token-Tausch scheitern --
+    # dann ist Entra nicht "aktiv", sondern kaputt.
+    if not _secret_lesen(konf["secret_file"]):
         return False
     try:
         import msal  # noqa: F401
@@ -94,11 +99,19 @@ def _nutzer_finden(anspruch: Dict[str, Any]) -> Optional[User]:
         if gebunden is not None:
             return gebunden
     if upn:
-        # Erstanmeldung: ueber die verifizierte UPN, danach nie wieder.
-        kandidat = User.query.filter(db.func.lower(User.upn) == upn.lower(), User.auth_source == "entra").first()
+        # Erstanmeldung ueber die verifizierte UPN -- aber nur fuer noch
+        # ungebundene Konten. Sonst uebernaehme der neue Inhaber einer in Entra
+        # wiederverwendeten UPN das Konto des alten, samt dessen Rollen.
+        kandidat = User.query.filter(
+            db.func.lower(User.upn) == upn.lower(),
+            User.auth_source == "entra",
+            User.entra_oid.is_(None),
+        ).first()
         if kandidat is None:
             kandidat = User.query.filter(
-                db.func.lower(User.username) == upn.lower(), User.auth_source == "entra"
+                db.func.lower(User.username) == upn.lower(),
+                User.auth_source == "entra",
+                User.entra_oid.is_(None),
             ).first()
         return kandidat
     return None
@@ -191,6 +204,22 @@ def register_entra_routes(main_bp: Blueprint) -> None:
         erwartet = _konfiguration()["tenant"]
         if str(anspruch.get("tid") or "") != erwartet:
             return _abweisen("foreign tenant", upn)
+
+        # Die oid ist der unveraenderliche Anker der Identitaet. Ohne sie laesst
+        # sich ein Konto weder sicher zuordnen noch binden.
+        if not str(anspruch.get("oid") or ""):
+            return _abweisen("token without oid", upn)
+
+        # Gruppenfilter, falls gesetzt: bewusst fail-closed. Ein Filter, der bei
+        # fehlendem groups-Claim durchwinkt, waere nur die Behauptung eines
+        # Zugangsschutzes. Die App-Registrierung muss Gruppen-Claims ausgeben.
+        from .user_api import entra_gruppenfilter
+
+        gefordert = entra_gruppenfilter()
+        if gefordert:
+            gruppen = anspruch.get("groups")
+            if not isinstance(gruppen, list) or gefordert not in [str(g) for g in gruppen]:
+                return _abweisen(f"not in required group {gefordert}", upn)
 
         nutzer = _nutzer_finden(anspruch)
         if nutzer is None:

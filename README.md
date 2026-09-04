@@ -522,6 +522,11 @@ inert and local login is unchanged.
 | `ENTRA_SCOPES` | Default `openid profile email`. |
 | `ENTRA_AUTO_PROVISION` / `ENTRA_AUTO_PROVISION_ROLE` | Start values only; the runtime switch on the Identity page (stored in Redis) takes precedence. |
 
+An optional **group filter** (Identity page) restricts sign-in to members of one
+Entra group. It is enforced fail-closed: with a filter set, a token that carries
+no matching `groups` claim is refused, so the app registration must be
+configured to emit group claims (optional claims → groups).
+
 Two provisioning modes, switchable at runtime on the Identity page:
 **pre-provisioned only** (an account must exist here; it binds to the Entra
 object on first sign-in) or **automatic** (any user the tenant assigns gets an

@@ -233,3 +233,89 @@ def test_umbenennen_prueft_eindeutigkeit():
         assert User.query.get(ziel.id).username == "kollegin"
         db.session.remove()
         db.drop_all()
+
+
+# ------------------------------------------------------- Anmeldung gesperrt --
+def test_deaktiviertes_konto_kann_sich_nicht_anmelden():
+    """Sperren heisst sperren: kein Passwort-Login, kein 2FA-Schritt."""
+    from werkzeug.security import generate_password_hash
+
+    app = _app()
+    with app.app_context():
+        _vorbereiten(app)
+        gesperrt = _nutzer("gesperrt", "viewer")
+        gesperrt.password_hash = generate_password_hash("Ein-gutes-Passwort-1")
+        gesperrt.is_active = False
+        db.session.commit()
+
+        client = app.test_client()
+        antwort = client.post(
+            "/login",
+            data={"username": "gesperrt", "password": "Ein-gutes-Passwort-1"},
+            follow_redirects=False,
+        )
+        assert antwort.status_code == 200  # bleibt auf der Anmeldeseite
+        with client.session_transaction() as sess:
+            assert "user_id" not in sess
+            assert "pending_user_id" not in sess
+        db.session.remove()
+        db.drop_all()
+
+
+def test_geloeschtes_konto_verliert_laufende_sitzung():
+    """Nach dem Loeschen darf die offene Sitzung nicht weiter Adminrechte
+    aus der Legacy-Rolle ziehen.
+
+    Nachgestellt wird eine echte Anmeldung (``sitzung_setzen`` haelt fest, zu
+    welchem Konto die Sitzung gehoert) -- genau daran erkennt die Aufloesung
+    spaeter, dass das Konto fort ist.
+    """
+    from flask import session as sitzung
+
+    from hookwise.rbac.resolver import bump_epoch, current_permissions, sitzung_setzen
+
+    app = _app()
+    with app.app_context():
+        _vorbereiten(app)
+        opfer = _nutzer("faellt-weg", "admin")
+        opfer_id = opfer.id
+
+        with app.test_request_context():
+            sitzung["user_id"] = opfer_id
+            sitzung["username"] = "faellt-weg"
+            sitzung["role"] = "admin"
+            assert "user:manage" in sitzung_setzen(opfer)
+
+            gemerkt = dict(sitzung)
+
+        RbacUserRole.query.filter_by(user_id=opfer_id).delete(synchronize_session=False)
+        db.session.delete(User.query.get(opfer_id))
+        db.session.commit()
+        bump_epoch()
+
+        with app.test_request_context():
+            sitzung.update(gemerkt)
+            assert current_permissions() == frozenset()
+            assert "user_id" not in sitzung  # die Sitzung ist gekappt
+        db.session.remove()
+        db.drop_all()
+
+
+def test_health_services_verlangt_anmeldung():
+    """Die Route deklariert settings:read -- anonym darf sie nichts liefern."""
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        anonym = app.test_client()
+        antwort = anonym.get("/health/services")
+        assert antwort.status_code in (302, 401, 403), antwort.status_code
+
+        angemeldet = app.test_client()
+        _anmelden(angemeldet, chef)
+        assert angemeldet.get("/health/services").status_code in (200, 503)
+
+        # /health und /readyz bleiben offen -- daran haengen die Healthchecks.
+        assert anonym.get("/health").status_code in (200, 503)
+        assert anonym.get("/readyz").status_code in (200, 503)
+        db.session.remove()
+        db.drop_all()

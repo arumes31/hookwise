@@ -262,7 +262,9 @@
     (function () {
         'use strict';
         const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
-        const holen = (u) => fetch(u, { credentials: 'same-origin' }).then(r => r.json());
+        const holen = (u) => fetch(u, { credentials: 'same-origin' })
+            .then(r => r.ok ? r.json().catch(() => ({})) : ({}))
+            .catch(() => ({}));
         const senden = (u, methode, koerper) => fetch(u, {
             method: methode,
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },

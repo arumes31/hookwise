@@ -19,11 +19,13 @@ FREMD = "99999999-8888-7777-6666-555555555555"
 
 
 @pytest.fixture
-def app(monkeypatch):
+def app(monkeypatch, tmp_path):
+    geheim = tmp_path / "entra-secret"
+    geheim.write_text("test-client-secret", encoding="utf-8")
     monkeypatch.setenv("ENTRA_ENABLED", "true")
     monkeypatch.setenv("ENTRA_TENANT_ID", TENANT)
     monkeypatch.setenv("ENTRA_CLIENT_ID", "client-id")
-    monkeypatch.setenv("ENTRA_CLIENT_SECRET_FILE", "/dev/null")
+    monkeypatch.setenv("ENTRA_CLIENT_SECRET_FILE", str(geheim))
     monkeypatch.setenv("ENTRA_REDIRECT_URL", "https://example.test/auth/entra/callback")
     app = create_app()
     app.config["TESTING"] = True
@@ -63,19 +65,22 @@ def _flow_setzen(client):
         sess["entra_flow"] = {"state": "s1", "nonce": "n1"}
 
 
-def _antwort(tid=TENANT, oid="oid-1", upn="kollege@example.test", fehler=None):
+def _antwort(tid=TENANT, oid="oid-1", upn="kollege@example.test", fehler=None, gruppen=None):
     if fehler:
         return {"error": fehler, "error_description": fehler}
-    return {"id_token_claims": {"tid": tid, "oid": oid, "preferred_username": upn}}
+    anspruch = {"tid": tid, "oid": oid, "preferred_username": upn}
+    if gruppen is not None:
+        anspruch["groups"] = gruppen
+    return {"id_token_claims": anspruch}
 
 
 class _mit_token:
     """Ersetzt Token-Tausch und Bibliotheks-Pruefung; alles dazwischen laeuft echt.
 
-    ``msal`` ist im Test-Image nicht installiert -- das ist Absicht (der
-    Entra-Login bleibt ohne die Bibliothek inaktiv). Fuer den Flow-Test wird
-    deshalb ``entra_aktiv`` ueberbrueckt; dass die Degradation selbst greift,
-    prueft ``test_ohne_bibliothek_bleibt_entra_inaktiv``.
+    ``entra_aktiv`` wird ueberbrueckt, damit der Flow unabhaengig von der
+    Umgebung laeuft; dass die Konfigurationspruefung selbst greift, pruefen
+    ``test_ohne_bibliothek_bleibt_entra_inaktiv`` und
+    ``test_ohne_lesbares_secret_bleibt_entra_inaktiv``.
     """
 
     def __init__(self, antwort):
@@ -266,9 +271,17 @@ def test_ohne_aktiven_flow_kein_login(app, client):
         assert "user_id" not in sess
 
 
-def test_ohne_bibliothek_bleibt_entra_inaktiv(app, client):
+def test_ohne_bibliothek_bleibt_entra_inaktiv(app, client, monkeypatch):
     """Fehlt msal, sind die Entra-Routen wirkungslos -- die lokale Anmeldung
-    laeuft unveraendert weiter. Das Test-Image hat msal bewusst nicht."""
+    laeuft unveraendert weiter.
+
+    ``sys.modules[...] = None`` laesst den Import scheitern, unabhaengig davon
+    ob das Paket installiert ist; sonst pruefte der Test nur die Umgebung.
+    """
+    import sys
+
+    monkeypatch.setitem(sys.modules, "msal", None)
+
     from hookwise.auth_entra import entra_aktiv
 
     with app.app_context():
@@ -283,3 +296,91 @@ def test_ohne_bibliothek_bleibt_entra_inaktiv(app, client):
     assert callback.status_code == 302
     with client.session_transaction() as sess:
         assert "user_id" not in sess
+
+
+def test_ohne_lesbares_secret_bleibt_entra_inaktiv(app, monkeypatch, tmp_path):
+    """Ein Pfad allein genuegt nicht -- ohne Inhalt gibt es kein Credential.
+
+    msal wird gestellt, damit allein das Secret ueber das Ergebnis entscheidet
+    und der Test nicht davon abhaengt, ob das Paket im Image liegt.
+    """
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "msal", types.ModuleType("msal"))
+
+    from hookwise.auth_entra import entra_aktiv
+
+    with app.app_context():
+        assert entra_aktiv() is True
+
+        leer = tmp_path / "leer"
+        leer.write_text("", encoding="utf-8")
+        monkeypatch.setenv("ENTRA_CLIENT_SECRET_FILE", str(leer))
+        assert entra_aktiv() is False
+
+        monkeypatch.setenv("ENTRA_CLIENT_SECRET_FILE", str(tmp_path / "gibt-es-nicht"))
+        assert entra_aktiv() is False
+
+
+def test_gebundenes_konto_nicht_ueber_upn_uebernehmbar(app, client):
+    """Wird eine UPN in Entra neu vergeben, darf der neue Inhaber nicht das
+    Konto des alten erben. Nach der Bindung zaehlt allein die oid."""
+    with app.app_context():
+        _entra_nutzer(upn="alt@example.test", oid="oid-1")
+    _flow_setzen(client)
+
+    with _mit_token(_antwort(oid="oid-2", upn="alt@example.test")):
+        antwort = client.get("/auth/entra/callback?code=c&state=s1")
+
+    assert antwort.status_code == 302
+    with client.session_transaction() as sess:
+        assert "user_id" not in sess
+    with app.app_context():
+        assert User.query.filter_by(upn="alt@example.test").first().entra_oid == "oid-1"
+
+
+def test_token_ohne_oid_wird_abgewiesen(app, client):
+    """Ohne den unveraenderlichen Anker gibt es keine sichere Zuordnung."""
+    with app.app_context():
+        _entra_nutzer()
+    _flow_setzen(client)
+
+    with _mit_token(_antwort(oid=None)):
+        antwort = client.get("/auth/entra/callback?code=c&state=s1")
+
+    assert antwort.status_code == 302
+    with client.session_transaction() as sess:
+        assert "user_id" not in sess
+
+
+def test_gruppenfilter_wird_durchgesetzt(app, client):
+    """Ist ein Filter gesetzt, muss der Token die Gruppe fuehren -- und ein
+    fehlender groups-Claim weist ab, statt durchzuwinken."""
+    with app.app_context():
+        _entra_nutzer()
+
+    with patch("hookwise.user_api.entra_gruppenfilter", return_value="gruppe-1"):
+        _flow_setzen(client)
+        with _mit_token(_antwort()):  # ohne groups-Claim
+            ohne = client.get("/auth/entra/callback?code=c&state=s1")
+        assert ohne.status_code == 302
+        with client.session_transaction() as sess:
+            assert "user_id" not in sess
+
+        _flow_setzen(client)
+        with _mit_token(_antwort(gruppen=["gruppe-9"])):
+            fremd = client.get("/auth/entra/callback?code=c&state=s1")
+        assert fremd.status_code == 302
+        with client.session_transaction() as sess:
+            assert "user_id" not in sess
+
+        _flow_setzen(client)
+        with _mit_token(_antwort(gruppen=["gruppe-1", "gruppe-9"])):
+            passend = client.get("/auth/entra/callback?code=c&state=s1")
+        assert passend.status_code == 302
+        with client.session_transaction() as sess:
+            assert sess.get("user_id")
+
+    with app.app_context():
+        assert AuditLog.query.filter_by(action="entra_login_denied").count() == 2

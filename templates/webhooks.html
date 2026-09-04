@@ -591,20 +591,21 @@
 <!-- Context Menu -->
 <div id="context-menu" class="dropdown-menu shadow-lg border border-secondary border-opacity-25"
     style="display: none; position: absolute; z-index: 10000; min-width: 180px;">
-    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-edit">
+    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-edit" data-braucht="endpoint:write">
         <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-pencil-square"></use></svg>
         Edit Endpoint
     </a>
-    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-test">
+    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-test" data-braucht="endpoint:test">
         <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-play-fill"></use></svg>
         Test Webhook
     </a>
-    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-clone">
+    <a class="dropdown-item d-flex align-items-center" href="#" id="ctx-clone" data-braucht="endpoint:write">
         <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg>
         Clone Configuration
     </a>
     <div class="dropdown-divider border-secondary border-opacity-10"></div>
-    <a class="dropdown-item d-flex align-items-center text-warning" href="#" id="ctx-archive">
+    <a class="dropdown-item d-flex align-items-center text-warning" href="#" id="ctx-archive"
+       data-braucht="endpoint:archive">
         <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>
         Archive Endpoint
     </a>

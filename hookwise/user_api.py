@@ -103,8 +103,30 @@ def _legacy_rolle(rollen_keys: List[str]) -> str:
     return "viewer" if not rollen_keys else "user"
 
 
+#: Beratungssperre fuer die user:manage-Invariante -- eigener Schluessel neben
+#: dem der Schema-Bruecke (0x484F4F4B).
+INVARIANTEN_LOCK_ID = 0x484F_4F4C  # "HOOL"
+
+
+def _invariante_sperren() -> None:
+    """Serialisiert Pruefung und Aenderung der user:manage-Invariante.
+
+    Ohne Sperre koennten zwei Administratoren gleichzeitig pruefen, jeder saehe
+    noch einen zweiten Halter, und nach beiden Aenderungen gaebe es keinen mehr.
+    Transaktionsweite Sperre wie in der Schema-Bruecke; auf SQLite ein No-op,
+    weil dort ohnehin eine einzige Schreibtransaktion zur Zeit laeuft.
+    """
+    try:
+        if db.engine.dialect.name != "postgresql":
+            return
+        db.session.execute(db.text("SELECT pg_advisory_xact_lock(:id)"), {"id": INVARIANTEN_LOCK_ID})
+    except Exception:  # pragma: no cover - Sperre ist Schutz, kein Selbstzweck
+        _logger.exception("Beratungssperre fuer die user:manage-Invariante nicht erhalten")
+
+
 def _wuerde_aussperren(user_id: str, neue_rollen: List[str] | None = None, deaktivieren: bool = False) -> bool:
     """Bleibt nach der Aenderung noch jemand mit ``user:manage`` uebrig?"""
+    _invariante_sperren()
     halter = set(_nutzer_mit("user:manage"))
     if user_id not in halter:
         return False  # der Nutzer haelt es ohnehin nicht
@@ -415,6 +437,9 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             if unbekannt:
                 return jsonify({"status": "error", "message": f"unknown permissions: {sorted(unbekannt)}"}), 400
             if "user:manage" not in neu:
+                # Gleiche Sperre wie die uebrigen Wege zur Invariante: Rolle
+                # entrechten und Nutzer entrechten duerfen sich nicht kreuzen.
+                _invariante_sperren()
                 betroffen = [z.user_id for z in RbacUserRole.query.filter_by(role_id=role_id)]
                 halter = set(_nutzer_mit("user:manage"))
                 if halter and halter <= set(betroffen):

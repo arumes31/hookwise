@@ -495,6 +495,19 @@ def _register_crud_routes(main_bp: Any) -> None:
         return response
 
 
+def _bulk_ids() -> list[str] | None:
+    """IDs aus dem Rumpf, oder None wenn die Nutzlast unbrauchbar ist.
+
+    Verlangt eine nicht leere Liste von Zeichenketten: alles andere laesst
+    entweder die Abfrage oder das ``", ".join`` der Audit-Meldung platzen.
+    """
+    daten = request.get_json(silent=True)
+    ids = daten.get("ids", []) if isinstance(daten, dict) else []
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        return None
+    return ids
+
+
 def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/archive", methods=["POST"])
     @auth_required
@@ -502,8 +515,8 @@ def _register_bulk_routes(main_bp: Any) -> None:
         """Endpoints werden nie geloescht, nur archiviert: Zustellhistorie und
         Tickets bleiben nachvollziehbar. Archiviert = zusaetzlich pausiert,
         damit die bestehenden is_enabled-Filter greifen."""
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         betroffen = WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
             {"archived_at": datetime.now(timezone.utc), "is_enabled": False},
@@ -516,8 +529,8 @@ def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/pause", methods=["POST"])
     @auth_required
     def bulk_pause_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
             {"is_enabled": False}, synchronize_session=False
@@ -535,10 +548,11 @@ def _register_bulk_routes(main_bp: Any) -> None:
         der Quick-Update-Route (ohne name -- Massen-Umbenennen ergibt keinen
         Sinn und waere ein Fussschuss).
         """
-        ids = request.json.get("ids", [])
-        field = request.json.get("field")
-        value = request.json.get("value")
-        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        daten = request.get_json(silent=True) or {}
+        ids = _bulk_ids()
+        field = daten.get("field") if isinstance(daten, dict) else None
+        value = daten.get("value") if isinstance(daten, dict) else None
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         if field not in ["board", "priority", "close_status", "status"]:
             return jsonify({"status": "error", "message": "Invalid field"}), 400
@@ -554,8 +568,8 @@ def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/resume", methods=["POST"])
     @auth_required
     def bulk_resume_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
             {"is_enabled": True}, synchronize_session=False
@@ -567,8 +581,8 @@ def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/export", methods=["POST"])
     @auth_required
     def bulk_export_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         configs = WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()
         export_data = [c.to_dict() for c in configs]

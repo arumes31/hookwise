@@ -680,6 +680,7 @@
                         <div>
                             {% if config.id %}
                             <button type="button" class="btn btn-outline-warning px-4" id="archive-endpoint-btn"
+                                data-braucht="endpoint:archive"
                                 data-id='{{ config.id|tojson }}' data-name='{{ config.name|tojson }}'
                                 onclick="const btn=this; confirmArchive(JSON.parse(btn.dataset.id), JSON.parse(btn.dataset.name))">
                                 <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>Archive Endpoint

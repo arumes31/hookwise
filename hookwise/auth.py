@@ -53,6 +53,14 @@ def _register_login_routes(bp: Any) -> None:
 
                 # valid_window=1 laesst den direkt vorherigen/naechsten Code zu --
                 # die Toleranz fuer Tipp-Zeit und leichte Uhrenabweichung.
+                # Zwischen Passwort- und Code-Eingabe kann das Konto gesperrt
+                # worden sein -- der zweite Schritt prueft deshalb erneut.
+                if user and not user.aktiv:
+                    session.pop("pending_user_id", None)
+                    log_audit("login_denied", None, f"Disabled account {user.username} attempted 2FA")
+                    flash("Invalid username or password", "danger")
+                    return render_template("login.html")
+
                 if user and otp_secret and otp and pyotp.TOTP(otp_secret).verify(otp, valid_window=1):
                     # Success
                     session["user_id"] = user.id
@@ -83,6 +91,14 @@ def _register_login_routes(bp: Any) -> None:
 
             user = User.query.filter_by(username=username).first()
             if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
+                # Ein deaktiviertes Konto authentifiziert sich nicht -- weder in
+                # den 2FA-Schritt hinein noch in eine Sitzung. Die Meldung
+                # bleibt die allgemeine, um kein Konto zu bestaetigen.
+                if not user.aktiv:
+                    log_audit("login_denied", None, f"Disabled account {username} attempted sign-in")
+                    flash("Invalid username or password", "danger")
+                    return render_template("login.html")
+
                 if user.is_2fa_enabled:
                     session["pending_user_id"] = user.id
                     return render_template("login.html", step="2fa")

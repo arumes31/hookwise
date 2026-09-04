@@ -9,9 +9,10 @@ Wartezeit bis zum naechsten Login.
 
 import logging
 import time
-from typing import Any, FrozenSet, Optional, Set
+from typing import Any, FrozenSet, Optional, Set, Tuple
 
 from flask import current_app, session
+from sqlalchemy.exc import IntegrityError
 
 from .catalog import ALL_PERMISSIONS, permissions_for_legacy_role
 
@@ -90,16 +91,32 @@ def bump_epoch() -> int:
     from ..extensions import db
     from ..models import RbacMeta
 
-    zeile = RbacMeta.query.get(1)
-    if zeile is None:
-        zeile = RbacMeta(id=1, permissions_epoch=2)
-        db.session.add(zeile)
+    # Im SQL hochzaehlen statt lesen-rechnen-schreiben: zwei gleichzeitige
+    # Rechteaenderungen wuerden sich sonst gegenseitig ueberschreiben.
+    geaendert = (
+        db.session.query(RbacMeta)
+        .filter_by(id=1)
+        .update({RbacMeta.permissions_epoch: RbacMeta.permissions_epoch + 1}, synchronize_session=False)
+    )
+    if not geaendert:
+        try:
+            db.session.add(RbacMeta(id=1, permissions_epoch=2))
+            db.session.commit()
+        except IntegrityError:
+            # Ein paralleler Prozess war schneller -- dann zaehlt dessen Zeile.
+            db.session.rollback()
+            db.session.query(RbacMeta).filter_by(id=1).update(
+                {RbacMeta.permissions_epoch: RbacMeta.permissions_epoch + 1}, synchronize_session=False
+            )
+            db.session.commit()
     else:
-        zeile.permissions_epoch = int(zeile.permissions_epoch or 1) + 1
-    db.session.commit()
-    _EPOCH_CACHE["wert"] = int(zeile.permissions_epoch)
+        db.session.commit()
+
+    zeile = RbacMeta.query.get(1)
+    wert = int(zeile.permissions_epoch) if zeile else 1
+    _EPOCH_CACHE["wert"] = wert
     _EPOCH_CACHE["bis"] = time.monotonic() + _EPOCH_TTL
-    return int(zeile.permissions_epoch)
+    return wert
 
 
 def resolve_permissions(user: Any) -> FrozenSet[str]:
@@ -142,16 +159,22 @@ def sitzung_setzen(user: Any) -> FrozenSet[str]:
     return rechte
 
 
-def _aktueller_nutzer() -> Optional[Any]:
+def _aktueller_nutzer() -> Tuple[Optional[Any], bool]:
+    """(Nutzer, Stoerung).
+
+    Ein geloeschtes Konto und eine nicht erreichbare Datenbank sehen gleich aus,
+    bedeuten aber das Gegenteil: das eine ist ein Rechteentzug, das andere ein
+    Ausfall. Nur beim Ausfall darf die Legacy-Rolle noch tragen.
+    """
     from ..models import User
 
     user_id = session.get("user_id")
     if not user_id or user_id == "basic_auth":
-        return None
+        return None, False
     try:
-        return User.query.get(user_id)
+        return User.query.get(user_id), False
     except Exception:  # pragma: no cover
-        return None
+        return None, True
 
 
 def current_permissions() -> FrozenSet[str]:
@@ -168,12 +191,20 @@ def current_permissions() -> FrozenSet[str]:
     ):
         return frozenset(session[SESSION_PERMS])
 
-    nutzer = _aktueller_nutzer()
-    if nutzer is None:
-        # Session ohne DB-Nutzer (z. B. Alt-Session): Legacy-Rolle aus der
-        # Session, nie mehr als deren Rechte.
+    nutzer, stoerung = _aktueller_nutzer()
+    if nutzer is not None:
+        return sitzung_setzen(nutzer)
+    if stoerung:
+        # Datenbank nicht erreichbar: nicht mehr gewaehren als die Legacy-Rolle.
         return permissions_for_legacy_role(session.get("role"))
-    return sitzung_setzen(nutzer)
+    if session.get(SESSION_UID) and session.get(SESSION_UID) == session.get("user_id"):
+        # Diese Sitzung entstand aus einer echten Anmeldung an genau diesem
+        # Konto -- und das Konto gibt es nicht mehr. Ohne den Schnitt behielte
+        # sie die Rechte ihrer Legacy-Rolle, bei einem Administrator also alle.
+        session.clear()
+        return frozenset()
+    # Sitzung ohne aufgeloesten DB-Bezug (Alt-Sitzung): Legacy-Rolle, nie mehr.
+    return permissions_for_legacy_role(session.get("role"))
 
 
 def has_permission(permission: str) -> bool:
