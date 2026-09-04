@@ -1,9 +1,11 @@
+import hashlib
 import json
 import logging
 import os
 import random
 import re
 import time
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
 
@@ -11,10 +13,21 @@ from celery import Celery, Task
 from celery.exceptions import Retry as CeleryRetry
 from prometheus_client import Counter, Histogram
 
-from .client import ConnectWiseClient, ConnectWiseError, TicketCreationRejected, TicketNotFoundError
+from .client import (
+    ConfigurationRequestError,
+    ConnectWiseClient,
+    ConnectWiseError,
+    TicketCreationRejected,
+    TicketNotFoundError,
+)
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
+from .services.configuration_matching import (
+    ConfigurationHints,
+    extract_configuration_hints,
+    select_configuration,
+)
 from .services.routing import evaluate_routing
 from .services.ticket_operations import (
     TicketOperationInProgress,
@@ -29,6 +42,7 @@ from .utils import (
     filter_cipp_app_certificate_expiry_results,
     format_cipp_results,
     log_to_web,
+    mask_secrets,
     parse_cipp_app_certificate_exclude_patterns,
     resolve_jsonpath,
     resolve_monitor_name,
@@ -46,6 +60,7 @@ CACHE_PREFIX = "hookwise_ticket:"
 CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
+MAX_CONFIGURATION_LOOKUPS = 16
 
 _ERROR_SECRET_RE = re.compile(r"(?i)(authorization|token|password|secret|api[-_ ]?key)\s*([:=])\s*[^\s,;]+")
 
@@ -186,6 +201,189 @@ cw_client = ConnectWiseClient()
 _cached_mappings = None
 _last_cache_update = 0.0
 CACHE_REFRESH_INTERVAL = 300  # 5 minutes
+
+_CONFIGURATION_SEARCH_FIELDS: tuple[tuple[str, str], ...] = (
+    ("id", "configuration_ids"),
+    ("deviceIdentifier", "device_identifiers"),
+    ("serialNumber", "serial_numbers"),
+    ("macAddress", "mac_addresses"),
+    ("tagNumber", "tag_numbers"),
+    ("ipAddress", "ip_addresses"),
+    ("name", "names"),
+)
+
+
+def _positive_external_id(value: Any) -> int | None:
+    """Parse a provider ID without accepting bools, signs, or expressions."""
+    if type(value) is int:
+        candidate = value
+    elif isinstance(value, str) and value.isascii() and value.isdigit():
+        candidate = int(value)
+    else:
+        return None
+    return candidate if candidate > 0 else None
+
+
+def _ticket_company_id(ticket: object) -> int | None:
+    if not isinstance(ticket, Mapping):
+        return None
+    company = ticket.get("company")
+    if not isinstance(company, Mapping):
+        return None
+    return _positive_external_id(company.get("id"))
+
+
+def _company_cache_token(company_identifier: str | None) -> str:
+    discriminator = b"\x00" if company_identifier is None else b"\x01" + company_identifier.encode("utf-8")
+    return hashlib.sha256(discriminator).hexdigest()
+
+
+def _render_ticket_description(
+    *,
+    mapped_description: Any,
+    description_template: str | None,
+    monitor_name: str,
+    message: Any,
+    request_id: str,
+    data: dict[str, Any],
+) -> str:
+    if mapped_description:
+        return str(mapped_description)
+
+    safe_data = mask_secrets(data)
+    if not isinstance(safe_data, dict):
+        safe_data = {}
+    if not description_template:
+        return f"Source: {monitor_name}\nMessage: {message}\nRequest ID: {request_id}\nPayload: {json.dumps(safe_data)}"
+
+    description = (
+        description_template.replace("{{ monitor_name }}", monitor_name)
+        .replace("{{ msg }}", str(message))
+        .replace("{{ request_id }}", request_id)
+    )
+    for path in re.findall(r"\{(\$.+?)\}", description):
+        description = description.replace("{" + path + "}", str(resolve_jsonpath(safe_data, path)))
+    if "{{ cipp_results }}" in description:
+        description = description.replace("{{ cipp_results }}", format_cipp_results(safe_data))
+    return description
+
+
+def _configuration_searches(hints: ConfigurationHints) -> list[tuple[str, int | str]] | None:
+    searches: list[tuple[str, int | str]] = []
+    for api_field, hints_field in _CONFIGURATION_SEARCH_FIELDS:
+        for value in getattr(hints, hints_field):
+            query_values: tuple[int | str, ...] = (value,)
+            if api_field == "macAddress" and isinstance(value, str) and len(value) == 12:
+                octets = tuple(value[index : index + 2] for index in range(0, 12, 2))
+                query_values = (
+                    value,
+                    ":".join(octets),
+                    "-".join(octets),
+                    ".".join((value[0:4], value[4:8], value[8:12])),
+                )
+            searches.extend((api_field, query_value) for query_value in query_values)
+    return searches if len(searches) <= MAX_CONFIGURATION_LOOKUPS else None
+
+
+def _set_configuration_link_result(
+    log_entry: WebhookLog,
+    status: str,
+    configuration_id: int | None = None,
+) -> None:
+    log_entry.configuration_link_status = status
+    log_entry.configuration_id = configuration_id
+
+
+def _link_matching_configuration(
+    *,
+    config: WebhookConfig,
+    log_entry: WebhookLog,
+    ticket_id: int,
+    ticket: object,
+    data: Mapping[str, Any],
+    mapped_values: Mapping[str, Any],
+    title: str,
+    description: str,
+    extra: Mapping[str, str],
+) -> None:
+    """Best-effort, idempotent configuration association for one ticket."""
+    if not config.auto_link_configuration_enabled:
+        _set_configuration_link_result(log_entry, "disabled")
+        return
+
+    hints = extract_configuration_hints(
+        data,
+        mapped_values,
+        title=title,
+        description=description,
+    )
+    if not hints.has_identifiers:
+        _set_configuration_link_result(log_entry, "no_identifiers")
+        return
+
+    searches = _configuration_searches(hints)
+    if searches is None:
+        _set_configuration_link_result(log_entry, "ambiguous")
+        logger.warning("Configuration linking skipped: too many identifiers", extra=extra)
+        return
+
+    try:
+        company_id = _ticket_company_id(ticket)
+        if company_id is None:
+            company_id = _ticket_company_id(cw_client.get_ticket(ticket_id))
+        if company_id is None:
+            _set_configuration_link_result(log_entry, "no_company")
+            return
+
+        configurations = cw_client.find_matching_configurations(company_id, searches)
+    except Exception as error:
+        _set_configuration_link_result(log_entry, "lookup_error")
+        logger.warning(
+            "Configuration lookup failed for ticket %s (%s)",
+            ticket_id,
+            type(error).__name__,
+            extra=extra,
+        )
+        return
+
+    match = select_configuration(configurations, company_id, hints)
+    if match.status != "matched" or match.configuration_id is None:
+        _set_configuration_link_result(log_entry, match.status)
+        logger.info(
+            "Configuration linking skipped for ticket %s: %s",
+            ticket_id,
+            match.status,
+            extra=extra,
+        )
+        return
+
+    configuration_id = match.configuration_id
+    _set_configuration_link_result(log_entry, "attach_error", configuration_id)
+    try:
+        if cw_client.is_configuration_attached(ticket_id, configuration_id):
+            _set_configuration_link_result(log_entry, "already_attached", configuration_id)
+            return
+        try:
+            cw_client.attach_configuration(ticket_id, configuration_id)
+        except ConfigurationRequestError as error:
+            if not error.outcome_unknown or not cw_client.is_configuration_attached(ticket_id, configuration_id):
+                raise
+        _set_configuration_link_result(log_entry, "attached", configuration_id)
+        logger.info(
+            "Attached configuration %s to ticket %s using %s",
+            configuration_id,
+            ticket_id,
+            match.match_type,
+            extra=extra,
+        )
+    except Exception as error:
+        logger.warning(
+            "Configuration association failed for ticket %s and configuration %s (%s)",
+            ticket_id,
+            configuration_id,
+            type(error).__name__,
+            extra=extra,
+        )
 
 
 def get_all_global_mappings() -> list[dict[str, Any]]:
@@ -973,8 +1171,6 @@ def handle_webhook_logic(
             logger.error(f"Config {config_id} not found", extra=extra)
             return
         # 1. Create or update Webhook History Log
-        from .utils import mask_secrets
-
         log_entry = WebhookLog.query.get(log_id) if log_id else None
         if log_entry is None:
             log_entry = (
@@ -1002,6 +1198,11 @@ def handle_webhook_logic(
         if log_entry.processing_started_at is None:
             log_entry.processing_started_at = datetime.now(timezone.utc)
         log_entry.status = "processing"
+        if config.auto_link_configuration_enabled:
+            log_entry.configuration_link_status = None
+            log_entry.configuration_id = None
+        else:
+            _set_configuration_link_result(log_entry, "disabled")
         if source_ip:
             config.last_ip = source_ip
         db.session.commit()
@@ -1119,7 +1320,88 @@ def handle_webhook_logic(
             if not ticket_summary.strip():
                 ticket_summary = f"{prefix} Summary unavailable" if prefix else "Summary unavailable"
 
-            cache_key = f"{CACHE_PREFIX}{config_id}:{ticket_summary}"
+            description = ""
+            if alert_type in {"DOWN", "GENERIC"}:
+                description = _render_ticket_description(
+                    mapped_description=mapped_description,
+                    description_template=description_template,
+                    monitor_name=monitor_name,
+                    message=msg,
+                    request_id=request_id,
+                    data=data,
+                )
+
+            company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
+            company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else None)
+
+            # Resolve the effective company before deduplication so neither the
+            # Redis cache nor the PSA lookup can cross customer boundaries.
+            if not company_id and config.global_routing_enabled:
+                tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
+                tenant_val = None
+                for tenant_field in tenant_fields:
+                    tenant_raw = resolve_jsonpath(data, f"$.{tenant_field}")
+                    if not tenant_raw:
+                        tenant_raw = resolve_jsonpath(data, f"$.TaskInfo.{tenant_field}")
+                    if tenant_raw:
+                        tenant_val = str(tenant_raw)
+                        break
+
+                if tenant_val:
+                    all_mappings = get_all_global_mappings()
+                    global_mapping = next(
+                        (mapping for mapping in all_mappings if mapping.get("tenant_value") == tenant_val), None
+                    )
+
+                    if not global_mapping:
+                        import fnmatch
+
+                        global_mapping = next(
+                            (
+                                mapping
+                                for mapping in all_mappings
+                                if isinstance(mapping.get("tenant_value"), str)
+                                and ("*" in mapping["tenant_value"] or "?" in mapping["tenant_value"])
+                                and fnmatch.fnmatch(tenant_val, mapping["tenant_value"])
+                            ),
+                            None,
+                        )
+
+                    if not global_mapping:
+                        from .utils import call_llm
+
+                        companies = cw_client.get_companies()
+                        available_companies = [
+                            str(company.get("identifier")) for company in companies if company.get("identifier")
+                        ]
+                        if available_companies:
+                            companies_str = ", ".join(available_companies)
+                            llm_prompt = (
+                                f'Match this incoming tenant string: "{tenant_val}" to the best option '
+                                f"from this list of company identifiers from ConnectWise: {companies_str}. "
+                                "Respond with ONLY the exact string from the list that matches best. "
+                                'If none match reasonably well, reply with exactly "NONE".'
+                            )
+                            llm_resp = call_llm(llm_prompt)
+                            if llm_resp and llm_resp.strip() != "NONE" and llm_resp.strip() in available_companies:
+                                company_id = llm_resp.strip()
+                                logger.info("LLM fallback matched: %s -> %s", tenant_val, company_id, extra=extra)
+                                log_entry.matched_rule = (
+                                    log_entry.matched_rule or ""
+                                ) + f" [LLM Global: {tenant_val} -> {company_id}]"
+
+                    if global_mapping and not company_id:
+                        company_id = global_mapping.get("company_id")
+                        logger.info("Global mapping matched: %s -> %s", tenant_val, company_id, extra=extra)
+                        log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
+
+            if not company_id:
+                company_id = customer_id_default or os.environ.get("CW_DEFAULT_COMPANY_ID")
+            if company_id is not None:
+                company_id = str(company_id).strip() or None
+
+            company_cache_token = _company_cache_token(company_id)
+            cache_key = f"{CACHE_PREFIX}{config_id}:{company_cache_token}:{ticket_summary}"
 
             ticket_id = None
             log_entry.connectwise_started_at = datetime.now(timezone.utc)
@@ -1129,6 +1411,7 @@ def handle_webhook_logic(
                     ticket_id = int(cached_val.decode())
                     viable_key = f"{cache_key}:viable"
                     is_usable = False
+                    ticket_data: dict[str, Any] | None = None
 
                     is_replay = request_id.startswith(("replay_", "test_"))
 
@@ -1159,6 +1442,17 @@ def handle_webhook_logic(
                             f"Message: {msg}\nRequest ID: {request_id}"
                         )
                         _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
+                        _link_matching_configuration(
+                            config=config,
+                            log_entry=log_entry,
+                            ticket_id=ticket_id,
+                            ticket=ticket_data,
+                            data=data,
+                            mapped_values=mapped_vals,
+                            title=ticket_summary,
+                            description=description,
+                            extra=extra,
+                        )
                         log_to_web(
                             f"{alert_type} alert: Updated existing ticket (ID: {ticket_id})",
                             "warning" if alert_type == "DOWN" else "info",
@@ -1179,7 +1473,15 @@ def handle_webhook_logic(
                         redis_client.delete(viable_key)
                         ticket_id = None
 
-                existing_ticket = cw_client.find_open_ticket(ticket_summary, close_status=config.close_status)
+                existing_ticket = (
+                    cw_client.find_open_ticket(
+                        ticket_summary,
+                        close_status=config.close_status,
+                        company_identifier=company_id,
+                    )
+                    if company_id
+                    else None
+                )
                 if existing_ticket:
                     ticket_id = existing_ticket["id"]
                     note_text = (
@@ -1187,6 +1489,17 @@ def handle_webhook_logic(
                         f"Message: {msg}\nRequest ID: {request_id}"
                     )
                     _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
+                    _link_matching_configuration(
+                        config=config,
+                        log_entry=log_entry,
+                        ticket_id=ticket_id,
+                        ticket=existing_ticket,
+                        data=data,
+                        mapped_values=mapped_vals,
+                        title=ticket_summary,
+                        description=description,
+                        extra=extra,
+                    )
                     log_to_web(
                         f"{alert_type} alert: Found and updated open ticket (ID: {ticket_id})",
                         "warning" if alert_type == "DOWN" else "info",
@@ -1203,119 +1516,20 @@ def handle_webhook_logic(
                     db.session.commit()
                     return
 
-                company_id_match = re.search(r"#CW-?(\w+)", monitor_name)
-                company_id = mapped_customer_id or (company_id_match.group(1) if company_id_match else None)
-
-                # 3. Apply Global Mapping (TenantMap) if not yet resolved and enabled
-                if not company_id and config.global_routing_enabled:
-                    # Try common tenant fields
-                    tenant_fields = ["Tenant", "tenant", "tenantId", "TenantId"]
-                    tenant_val = None
-                    for tf in tenant_fields:
-                        tenant_raw = resolve_jsonpath(data, f"$.{tf}")
-                        if not tenant_raw:
-                            # Try nested commonly used paths like .TaskInfo.Tenant
-                            tenant_raw = resolve_jsonpath(data, f"$.TaskInfo.{tf}")
-                        if tenant_raw:
-                            tenant_val = str(tenant_raw)
-                            break
-
-                    if tenant_val:
-                        all_mappings = get_all_global_mappings()
-                        mapping = None
-
-                        # 1. Try exact match (in-memory)
-                        for m in all_mappings:
-                            if m.get("tenant_value") == tenant_val:
-                                mapping = m
-                                break
-
-                        # 2. Try wildcard matches if no exact match found (in-memory)
-                        if not mapping:
-                            import fnmatch
-
-                            for w_mapping in all_mappings:
-                                t_val = w_mapping.get("tenant_value")
-                                if isinstance(t_val, str) and ("*" in t_val or "?" in t_val):
-                                    if fnmatch.fnmatch(tenant_val, t_val):
-                                        mapping = w_mapping
-                                        break
-                        # 3. Try LLM semantic match if still no match
-                        if not mapping:
-                            from .utils import call_llm
-
-                            # Get all companies from ConnectWise
-                            companies = cw_client.get_companies()
-                            if companies:
-                                # Create a list of identifiers (typically "identifier" or "name")
-                                available_companies = [
-                                    str(c.get("identifier")) for c in companies if c.get("identifier")
-                                ]
-
-                                if available_companies:
-                                    companies_str = ", ".join(available_companies)
-                                    llm_prompt = (
-                                        f'Match this incoming tenant string: "{tenant_val}" to the best option '
-                                        f"from this list of company identifiers from ConnectWise: {companies_str}. "
-                                        "Respond with ONLY the exact string from the list that matches best. "
-                                        'If none match reasonably well, reply with exactly "NONE".'
-                                    )
-                                    llm_resp = call_llm(llm_prompt)
-                                    if (
-                                        llm_resp
-                                        and llm_resp.strip() != "NONE"
-                                        and llm_resp.strip() in available_companies
-                                    ):
-                                        company_id = llm_resp.strip()
-                                        logger.info(
-                                            f"LLM fallback matched: {tenant_val} -> {company_id}",
-                                            extra=extra,
-                                        )
-                                        log_entry.matched_rule = (
-                                            log_entry.matched_rule or ""
-                                        ) + f" [LLM Global: {tenant_val} -> {company_id}]"
-
-                        if mapping and not company_id:
-                            company_id = mapping.get("company_id")
-                            logger.info(f"Global mapping matched: {tenant_val} -> {company_id}", extra=extra)
-                            log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
-
-                # Fallback to default
-                if not company_id:
-                    company_id = customer_id_default
-
-                # Sanitize data for substitution/logging
-                safe_data = mask_secrets(data)
-
-                if mapped_description:
-                    description = mapped_description
-                elif description_template:
-                    description = (
-                        description_template.replace("{{ monitor_name }}", monitor_name)
-                        .replace("{{ msg }}", msg)
-                        .replace("{{ request_id }}", request_id)
-                    )
-                    # Handle {$.path} in template
-                    paths = re.findall(r"\{(\$.+?)\}", description)
-                    for p in paths:
-                        val = str(resolve_jsonpath(safe_data, p))
-                        description = description.replace("{" + p + "}", val)
-                    if "{{ cipp_results }}" in description:
-                        description = description.replace("{{ cipp_results }}", format_cipp_results(safe_data))
-                else:
-                    description = (
-                        f"Source: {monitor_name}\n"
-                        f"Message: {msg}\n"
-                        f"Request ID: {request_id}\n"
-                        f"Payload: {json.dumps(safe_data)}"
-                    )
-
                 operation, acquired = reserve(log_entry.id, "create_ticket")
                 new_ticket: dict[str, Any] | None = None
                 if not acquired and operation.status == "completed" and operation.ticket_id:
                     new_ticket = {"id": operation.ticket_id}
                 elif not acquired:
-                    recovered = cw_client.find_open_ticket(ticket_summary, close_status=config.close_status)
+                    recovered = (
+                        cw_client.find_open_ticket(
+                            ticket_summary,
+                            close_status=config.close_status,
+                            company_identifier=company_id,
+                        )
+                        if company_id
+                        else None
+                    )
                     if recovered:
                         recovered_id = int(recovered["id"])
                         complete(operation, recovered_id)
@@ -1358,6 +1572,17 @@ def handle_webhook_logic(
                 if operation.status != "completed":
                     complete(operation, ticket_id)
                 redis_client.set(cache_key, str(ticket_id), ex=CACHE_TTL)
+                _link_matching_configuration(
+                    config=config,
+                    log_entry=log_entry,
+                    ticket_id=ticket_id,
+                    ticket=new_ticket,
+                    data=data,
+                    mapped_values=mapped_vals,
+                    title=ticket_summary,
+                    description=description,
+                    extra=extra,
+                )
                 log_to_web(
                     f"{alert_type} alert: Created NEW ticket (ID: {ticket_id})",
                     "warning" if alert_type == "DOWN" else "info",
@@ -1394,7 +1619,11 @@ def handle_webhook_logic(
                 if cached_val:
                     ticket_id = int(cached_val.decode())
                 else:
-                    existing_ticket = cw_client.find_open_ticket(ticket_summary)
+                    existing_ticket = (
+                        cw_client.find_open_ticket(ticket_summary, company_identifier=company_id)
+                        if company_id
+                        else None
+                    )
                     if existing_ticket:
                         ticket_id = existing_ticket["id"]
 
