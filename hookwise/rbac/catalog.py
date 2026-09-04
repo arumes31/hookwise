@@ -77,6 +77,8 @@ _OPERATOR: FrozenSet[str] = _VIEWER | frozenset(
         "endpoint:write",
         "endpoint:archive",
         "endpoint:test",
+        "secret:reveal",
+        "secret:rotate",
         "history:retry",
         "tenantmap:write",
         "audit:read",
@@ -93,7 +95,7 @@ ROLE_PRESETS: Dict[str, Dict[str, object]] = {
     },
     "operator": {
         "name": "Operator",
-        "description": "Runs the platform day to day, without secrets or user management.",
+        "description": "Runs the platform day to day, including delivery credentials; no user management.",
         "permissions": _OPERATOR,
     },
     "viewer": {

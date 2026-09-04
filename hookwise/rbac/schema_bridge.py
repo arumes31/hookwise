@@ -128,6 +128,10 @@ def seed_builtin_roles() -> int:
             db.session.add(rolle)
             db.session.flush()
             geaendert += 1
+        elif (rolle.name, rolle.description) != (vorgabe["name"], vorgabe["description"]):
+            rolle.name = str(vorgabe["name"])
+            rolle.description = str(vorgabe["description"])
+            geaendert += 1
 
         soll = set(cast("FrozenSet[str]", vorgabe["permissions"]))
         ist = {p.permission for p in RbacRolePermission.query.filter_by(role_id=rolle.id)}

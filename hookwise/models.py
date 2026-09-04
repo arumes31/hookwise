@@ -70,6 +70,7 @@ class User(Base):
             "auth_source": self.quelle,
             "upn": self.upn,
             "is_active": self.aktiv,
+            "mfa_enabled": bool(self.is_2fa_enabled),
             "entra_bound": bool(self.entra_oid),
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
         }

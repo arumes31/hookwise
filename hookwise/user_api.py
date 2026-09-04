@@ -14,8 +14,17 @@ from typing import Any, Callable, Dict, List, Mapping
 from flask import Blueprint, jsonify, render_template, request, session
 from werkzeug.security import generate_password_hash
 
+from .auth_entra import entra_aktiv
 from .extensions import db
-from .models import RbacRole, RbacRolePermission, RbacUserRole, User
+from .models import (
+    EventAnnotation,
+    RbacRole,
+    RbacRolePermission,
+    RbacUserRole,
+    SavedHistorySearch,
+    User,
+    UserPreference,
+)
 from .rbac.catalog import ALL_PERMISSIONS, PERMISSION_GROUPS, is_assignable_start_role
 from .rbac.resolver import bump_epoch, schema_bereit
 from .utils import auth_required, log_audit
@@ -115,6 +124,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             entra_redirect=os.environ.get("ENTRA_REDIRECT_URL", ""),
             entra_secret_file=os.environ.get("ENTRA_CLIENT_SECRET_FILE", ""),
             entra_scopes=os.environ.get("ENTRA_SCOPES", "openid profile email"),
+            entra_ready=entra_aktiv(),
             auto_provision=auto_provision_aktiv(),
             auto_role=auto_provision_rolle(),
             group_filter=entra_gruppenfilter(),
@@ -150,6 +160,19 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             return jsonify({"status": "error", "message": "auth_source must be local or entra"}), 400
         if User.query.filter_by(username=username).first():
             return jsonify({"status": "error", "message": "username already exists"}), 409
+
+        # Ein Entra-Konto ohne konfiguriertes Entra kann sich nie anmelden --
+        # so ein Datensatz waere nur ein stiller Fehler auf Vorrat.
+        if quelle == "entra" and not entra_aktiv():
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Entra ID is not configured. Set up the connection before creating Entra accounts.",
+                    }
+                ),
+                409,
+            )
 
         upn = (daten.get("upn") or "").strip() or None
         if quelle == "entra" and not upn:
@@ -193,12 +216,94 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
                     409,
                 )
             nutzer.is_active = aktiv
+        if "username" in daten:
+            name = (daten.get("username") or "").strip()
+            if not name:
+                return jsonify({"status": "error", "message": "username must not be empty"}), 400
+            belegt = User.query.filter(User.username == name, User.id != user_id).first()
+            if belegt:
+                return jsonify({"status": "error", "message": "username already exists"}), 409
+            nutzer.username = name
         if "upn" in daten:
+            # Nach der Bindung kommt der UPN von Microsoft und wird bei jeder
+            # Anmeldung nachgezogen -- eine Handaenderung waere Selbstbetrug.
+            if nutzer.entra_oid:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "This account is bound to Entra; clear the binding to edit the UPN.",
+                        }
+                    ),
+                    409,
+                )
             nutzer.upn = (daten.get("upn") or "").strip() or None
         db.session.commit()
         log_audit("user_update", None, f"User {nutzer.username} updated")
         bump_epoch()
         return jsonify({"status": "success", "user": nutzer.to_dict()})
+
+    @main_bp.route("/api/users/<user_id>", methods=["DELETE"])
+    @auth_required
+    def user_delete(user_id: str) -> Any:
+        nutzer = User.query.get_or_404(user_id)
+        if session.get("user_id") == user_id:
+            return jsonify({"status": "error", "message": "You cannot delete your own account."}), 409
+        if _wuerde_aussperren(user_id, deaktivieren=True):
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "This is the last account holding user:manage.",
+                    }
+                ),
+                409,
+            )
+        name = nutzer.username
+        # Abhaengige Zeilen explizit raeumen: der DB-Cascade greift in Postgres,
+        # aber nicht in jeder Testumgebung.
+        RbacUserRole.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        for modell in (UserPreference, SavedHistorySearch, EventAnnotation):
+            modell.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.session.delete(nutzer)
+        db.session.commit()
+        log_audit("user_delete", None, f"User {name} deleted")
+        bump_epoch()
+        return jsonify({"status": "success"})
+
+    @main_bp.route("/api/users/<user_id>/password", methods=["POST"])
+    @auth_required
+    def user_set_password(user_id: str) -> Any:
+        nutzer = User.query.get_or_404(user_id)
+        if nutzer.quelle == "entra":
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Entra accounts sign in through Microsoft; there is no local password.",
+                    }
+                ),
+                409,
+            )
+        passwort = (request.get_json(silent=True) or {}).get("password") or ""
+        if len(passwort) < 8:
+            return jsonify({"status": "error", "message": "Password needs at least 8 characters."}), 400
+        nutzer.password_hash = generate_password_hash(passwort)
+        db.session.commit()
+        log_audit("user_password_reset", None, f"Password reset for {nutzer.username}")
+        return jsonify({"status": "success"})
+
+    @main_bp.route("/api/users/<user_id>/mfa", methods=["DELETE"])
+    @auth_required
+    def user_reset_mfa(user_id: str) -> Any:
+        nutzer = User.query.get_or_404(user_id)
+        if not nutzer.is_2fa_enabled and not nutzer.otp_secret:
+            return jsonify({"status": "error", "message": "No MFA is set up for this account."}), 409
+        nutzer.otp_secret = None
+        nutzer.is_2fa_enabled = False
+        db.session.commit()
+        log_audit("user_mfa_reset", None, f"MFA reset for {nutzer.username}")
+        return jsonify({"status": "success"})
 
     @main_bp.route("/api/users/<user_id>/roles", methods=["PUT"])
     @auth_required

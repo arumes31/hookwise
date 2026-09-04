@@ -60,23 +60,30 @@ def test_rollen_sind_aufsteigend():
     assert viewer < operator < admin
 
 
-def test_nur_admin_darf_secrets_und_nutzerverwaltung():
-    for heikel in ("secret:reveal", "secret:rotate", "user:manage", "history:delete"):
+def test_verwaltungsrechte_bleiben_beim_admin():
+    """Operator betreibt inkl. Zustell-Credentials, verwaltet aber nichts."""
+    for heikel in ("user:manage", "settings:write", "history:delete"):
         assert heikel not in ROLE_PRESETS["operator"]["permissions"], heikel
         assert heikel not in ROLE_PRESETS["viewer"]["permissions"], heikel
         assert heikel in ROLE_PRESETS["admin"]["permissions"], heikel
+    for secret in ("secret:reveal", "secret:rotate"):
+        assert secret in ROLE_PRESETS["operator"]["permissions"], secret
+        assert secret not in ROLE_PRESETS["viewer"]["permissions"], secret
 
 
 def test_startrolle_lehnt_privilegierte_rechte_ab():
-    """Auto-Provisioning darf per Konstruktion keine Administratoren erzeugen."""
+    """Auto-Provisioning darf per Konstruktion keine Administratoren erzeugen.
+
+    Seit operator Secrets haelt, faellt auch er als Startrolle aus."""
     assert is_assignable_start_role(frozenset(ROLE_PRESETS["viewer"]["permissions"]))
+    assert not is_assignable_start_role(frozenset(ROLE_PRESETS["operator"]["permissions"]))
     assert not is_assignable_start_role(frozenset(ROLE_PRESETS["admin"]["permissions"]))
 
 
 def test_legacy_abbildung():
     assert permissions_for_legacy_role("admin") == ALL_PERMISSIONS
     assert "endpoint:write" in permissions_for_legacy_role("user")
-    assert "secret:reveal" not in permissions_for_legacy_role("user")
+    assert "user:manage" not in permissions_for_legacy_role("user")
     # Unbekannt und leer fallen auf die schwaechste Stufe zurueck.
     assert permissions_for_legacy_role(None) == permissions_for_legacy_role("quatsch")
 
@@ -130,7 +137,7 @@ def test_aufloesung_vereinigt_mehrere_rollen(app, db_bereit):
         rechte = resolve_permissions(u)
         assert "endpoint:write" in rechte  # aus operator
         assert "dashboard:read" in rechte  # aus viewer
-        assert "secret:reveal" not in rechte
+        assert "user:manage" not in rechte
 
 
 def test_deaktivierter_nutzer_hat_keine_rechte(app, db_bereit):

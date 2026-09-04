@@ -2100,6 +2100,12 @@ input[type="password"]::-ms-clear { display:none; }
     background:var(--bg-sunken); color:inherit; cursor:pointer;
 }
 .hw-prov-karte.an { border-color:var(--accent); background:var(--accent-soft); }
+.hw-prov-karte[disabled] { opacity:.55; cursor:not-allowed; }
+.hw-nutzer-detail > td {
+    background:var(--bg-sunken);
+    border-top:1px dashed var(--line-2);
+    box-shadow:inset 3px 0 0 var(--accent);
+}
 .hw-prov-punkt {
     flex:none; width:15px; height:15px; border-radius:50%; margin-top:3px;
     border:2px solid var(--line-2);
