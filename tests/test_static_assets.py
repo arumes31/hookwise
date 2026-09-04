@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 import flask
 import pytest
 
-from hookwise import create_app
+from hookwise import _canonical_static_asset_name, create_app
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_ROOT = ROOT / "static"
@@ -92,6 +92,39 @@ def test_correctly_versioned_static_asset_is_cached_immutably(client):
     assert response.cache_control.max_age == ONE_YEAR_SECONDS
     assert response.cache_control.immutable is True
     assert response.cache_control.no_cache is not True
+
+
+def test_static_cache_policy_does_not_resolve_request_controlled_paths(app, monkeypatch):
+    filename = "js/dashboard.js"
+    asset_url = f"/static/{filename}?v={_content_digest(filename)}"
+
+    def reject_filesystem_resolution(*_args, **_kwargs):
+        raise AssertionError("request-controlled static filenames must not reach Path.resolve")
+
+    monkeypatch.setattr(Path, "resolve", reject_filesystem_resolution)
+
+    response = app.test_client().get(asset_url)
+
+    assert response.status_code == 200
+    assert response.cache_control.immutable is True
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "",
+        ".",
+        "js/..",
+        "../js/dashboard.js",
+        "js/../../dashboard.js",
+        "/js/dashboard.js",
+        "js\\dashboard.js",
+        "js/\0dashboard.js",
+    ],
+)
+def test_static_asset_name_rejects_unsafe_or_empty_paths(filename):
+    with pytest.raises(ValueError, match="Unknown static asset"):
+        _canonical_static_asset_name(filename)
 
 
 @pytest.mark.parametrize(

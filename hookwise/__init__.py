@@ -74,13 +74,25 @@ def _register_rbac(app: Flask) -> None:
         return {"hw_kann": has_permission, "hw_rechte": hw_rechte}
 
 
-def _resolve_static_asset(static_folder: str, filename: str) -> tuple[Path, str]:
-    """Resolve an asset to its canonical in-root path and manifest key."""
-    static_root = Path(static_folder).resolve()
-    asset_path = (static_root / filename).resolve()
-    if not asset_path.is_relative_to(static_root) or not asset_path.is_file():
+def _canonical_static_asset_name(filename: str) -> str:
+    """Normalize URL aliases without using request data in filesystem paths."""
+    if not filename or filename.startswith("/") or "\\" in filename or "\0" in filename:
         raise ValueError(f"Unknown static asset: {filename}")
-    return asset_path, asset_path.relative_to(static_root).as_posix()
+
+    segments: list[str] = []
+    for segment in filename.split("/"):
+        if segment in {"", "."}:
+            continue
+        if segment == "..":
+            if not segments:
+                raise ValueError(f"Unknown static asset: {filename}")
+            segments.pop()
+            continue
+        segments.append(segment)
+
+    if not segments:
+        raise ValueError(f"Unknown static asset: {filename}")
+    return "/".join(segments)
 
 
 def _build_static_asset_manifest(static_folder: str) -> dict[str, str]:
@@ -90,16 +102,18 @@ def _build_static_asset_manifest(static_folder: str) -> dict[str, str]:
     for candidate in static_root.rglob("*"):
         if not candidate.is_file():
             continue
-        asset_path, canonical_name = _resolve_static_asset(static_folder, str(candidate))
+        asset_path = candidate.resolve()
+        if not asset_path.is_relative_to(static_root):
+            raise ValueError(f"Static asset escapes its root: {candidate}")
+        canonical_name = candidate.relative_to(static_root).as_posix()
         with asset_path.open("rb") as asset:
             versions[canonical_name] = hashlib.file_digest(asset, "sha256").hexdigest()[:_STATIC_ASSET_VERSION_LENGTH]
     return versions
 
 
 def _static_asset_version(app: Flask, filename: str) -> str:
-    """Look up a canonical asset version without caching request-controlled aliases."""
-    static_folder = cast(str, app.extensions["static_asset_root"])
-    _, canonical_name = _resolve_static_asset(static_folder, filename)
+    """Look up an asset version without using the filename in filesystem operations."""
+    canonical_name = _canonical_static_asset_name(filename)
     versions = cast(Mapping[str, str], app.extensions["static_asset_versions"])
     try:
         return versions[canonical_name]
@@ -112,7 +126,6 @@ def _register_template_helpers(app: Flask) -> None:
     if app.static_folder is None:
         raise RuntimeError("HookWise requires a static asset directory")
     static_folder = str(Path(app.static_folder).resolve())
-    app.extensions["static_asset_root"] = static_folder
     app.extensions["static_asset_versions"] = MappingProxyType(_build_static_asset_manifest(static_folder))
 
     def static_asset(filename: str) -> str:
