@@ -27,6 +27,9 @@ dependencies = [
     "cryptography",
     "gevent",
     "jsonpath-ng",
+    # Microsoft Entra ID (OpenID Connect); ohne das Paket bleibt der
+    # Entra-Login inaktiv, die lokale Anmeldung laeuft unveraendert.
+    "msal",
     "psycopg2-binary",
     "pyotp",
     "python-dotenv",

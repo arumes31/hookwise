@@ -6,10 +6,10 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import Response, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Response, flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db
-from .models import EndpointTag, WebhookConfig, WebhookLog
+from .models import EndpointTag, WebhookConfig
 from .services.endpoint_templates import public_endpoint_templates
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
@@ -17,8 +17,12 @@ _TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
 
 
 def _operator_denied() -> Any:
-    if session.get("role") not in {"admin", "operator"}:
-        return jsonify({"error": "An operator role is required for this action."}), 403
+    # Frueher ein Blick auf die alte Ein-Rollen-Spalte; jetzt zaehlt das echte
+    # Recht der Route (secret:reveal bzw. secret:rotate aus der Registry).
+    from .rbac.decorators import routen_recht_fehlt
+
+    if fehlt := routen_recht_fehlt():
+        return jsonify({"error": f"Missing permission: {fehlt}", "required": fehlt}), 403
     return None
 
 
@@ -493,37 +497,43 @@ def _register_crud_routes(main_bp: Any) -> None:
         response.headers["Cache-Control"] = "no-store"
         return response
 
-    @main_bp.route("/endpoint/delete/<config_id>", methods=["POST"])
-    @auth_required
-    def delete_endpoint(config_id: str) -> Any:
-        config = WebhookConfig.query.get_or_404(config_id)
-        name = config.name
-        WebhookLog.query.filter_by(config_id=config_id).delete(synchronize_session=False)
-        db.session.delete(config)
-        db.session.commit()
-        log_audit("delete", config_id, f"Endpoint {name} deleted")
-        flash(f'Endpoint "{name}" deleted.')
-        return redirect(url_for("main.webhooks"))
+
+def _bulk_ids() -> list[str] | None:
+    """IDs aus dem Rumpf, oder None wenn die Nutzlast unbrauchbar ist.
+
+    Verlangt eine nicht leere Liste von Zeichenketten: alles andere laesst
+    entweder die Abfrage oder das ``", ".join`` der Audit-Meldung platzen.
+    """
+    daten = request.get_json(silent=True)
+    ids = daten.get("ids", []) if isinstance(daten, dict) else []
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        return None
+    return ids
 
 
 def _register_bulk_routes(main_bp: Any) -> None:
-    @main_bp.route("/endpoint/bulk/delete", methods=["POST"])
+    @main_bp.route("/endpoint/bulk/archive", methods=["POST"])
     @auth_required
-    def bulk_delete_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+    def bulk_archive_endpoints() -> Any:
+        """Endpoints werden nie geloescht, nur archiviert: Zustellhistorie und
+        Tickets bleiben nachvollziehbar. Archiviert = zusaetzlich pausiert,
+        damit die bestehenden is_enabled-Filter greifen."""
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
-        WebhookLog.query.filter(WebhookLog.config_id.in_(ids)).delete(synchronize_session=False)
-        WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).delete(synchronize_session=False)
+        betroffen = WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
+            {"archived_at": datetime.now(timezone.utc), "is_enabled": False},
+            synchronize_session=False,
+        )
         db.session.commit()
-        log_audit("bulk_delete", None, f"Deleted endpoints: {', '.join(ids)}")
-        return jsonify({"status": "success", "message": f"Deleted {len(ids)} endpoints"})
+        log_audit("bulk_archive", None, f"Archived endpoints: {', '.join(ids)}")
+        return jsonify({"status": "success", "message": f"Archived {betroffen} endpoints"})
 
     @main_bp.route("/endpoint/bulk/pause", methods=["POST"])
     @auth_required
     def bulk_pause_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
             {"is_enabled": False}, synchronize_session=False
@@ -541,10 +551,11 @@ def _register_bulk_routes(main_bp: Any) -> None:
         der Quick-Update-Route (ohne name -- Massen-Umbenennen ergibt keinen
         Sinn und waere ein Fussschuss).
         """
-        ids = request.json.get("ids", [])
-        field = request.json.get("field")
-        value = request.json.get("value")
-        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        daten = request.get_json(silent=True) or {}
+        ids = _bulk_ids()
+        field = daten.get("field") if isinstance(daten, dict) else None
+        value = daten.get("value") if isinstance(daten, dict) else None
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         if field not in ["board", "priority", "close_status", "status"]:
             return jsonify({"status": "error", "message": "Invalid field"}), 400
@@ -560,8 +571,8 @@ def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/resume", methods=["POST"])
     @auth_required
     def bulk_resume_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         WebhookConfig.query.filter(WebhookConfig.id.in_(ids), WebhookConfig.archived_at.is_(None)).update(
             {"is_enabled": True}, synchronize_session=False
@@ -573,8 +584,8 @@ def _register_bulk_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/bulk/export", methods=["POST"])
     @auth_required
     def bulk_export_endpoints() -> Any:
-        ids = request.json.get("ids", [])
-        if not ids:
+        ids = _bulk_ids()
+        if ids is None:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
         configs = WebhookConfig.query.filter(WebhookConfig.id.in_(ids)).all()
         export_data = [c.to_dict() for c in configs]

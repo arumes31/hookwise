@@ -383,12 +383,16 @@ function initServiceHealth(container = document) {
             canvas.width = 32; canvas.height = 32;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(bild, 0, 0, 32, 32);
-            const farbe = faviconStatus === 'up' ? '#00e38b'
-                : faviconStatus === 'warning' ? '#ffdd65' : '#a90219';
-            ctx.beginPath(); ctx.arc(6.3, 8.3, 5.6, 0, 2 * Math.PI);
-            ctx.fillStyle = hell ? '#f2f8f4' : '#0b0f0f'; ctx.fill();
-            ctx.beginPath(); ctx.arc(6.3, 8.3, 4.4, 0, 2 * Math.PI);
-            ctx.fillStyle = farbe; ctx.fill();
+            // Der Center Knot fuellt die Kachel -- ein Statuspunkt wuerde ihn
+            // im Normalfall nur beschaedigen. Er erscheint deshalb nur, wenn
+            // wirklich etwas zu melden ist.
+            if (faviconStatus !== 'up') {
+                const farbe = faviconStatus === 'warning' ? '#ffdd65' : '#a90219';
+                ctx.beginPath(); ctx.arc(24.5, 24.5, 7, 0, 2 * Math.PI);
+                ctx.fillStyle = hell ? '#f2f8f4' : '#0b0f0f'; ctx.fill();
+                ctx.beginPath(); ctx.arc(24.5, 24.5, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = farbe; ctx.fill();
+            }
             const daten = canvas.toDataURL('image/png');
             document.querySelectorAll("link[rel~='icon']").forEach(l => { l.href = daten; });
         };
@@ -453,13 +457,16 @@ function initTransitions() {
 }
 
 // Bulk Actions Implementation
-window.bulkDelete = async function () {
+// Endpoints werden nie geloescht, nur archiviert -- umkehrbar ueber die
+// Archivgruppe am Listenende.
+window.bulkArchive = async function () {
     const checked = Array.from(document.querySelectorAll('.endpoint-check:checked')).map(c => c.dataset.id);
     if (!checked.length) return;
 
-    if (await hwConfirm(`Delete ${checked.length} endpoints?`, { title: 'Bulk Delete', okText: 'Delete All' })) {
+    if (await hwConfirm(`Archive ${checked.length} endpoints? They stop receiving events and can be restored anytime.`,
+        { title: 'Bulk Archive', okText: 'Archive All' })) {
         try {
-            const resp = await fetch('/endpoint/bulk/delete', {
+            const resp = await fetch('/endpoint/bulk/archive', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: checked })
@@ -470,7 +477,7 @@ window.bulkDelete = async function () {
                 setTimeout(() => window.hwReloadInPlace(), 1000);
             }
         } catch (e) {
-            showToast('Error deleting endpoints', 'error');
+            showToast('Error archiving endpoints', 'error');
         }
     }
 };
@@ -862,12 +869,13 @@ function initContextMenu(container = document) {
                 document.body.appendChild(form);
                 form.submit();
             };
-            document.getElementById('ctx-delete').onclick = async () => {
-                if (await hwConfirm('Delete endpoint ' + name + '?', { title: 'Delete Endpoint', okText: 'Delete' })) {
+            document.getElementById('ctx-archive').onclick = async () => {
+                if (await hwConfirm('Archive endpoint ' + name + '? It stops receiving events and can be restored anytime.',
+                    { title: 'Archive Endpoint', okText: 'Archive' })) {
                     setTimeout(() => {
                         const form = document.createElement('form');
                         form.method = 'POST';
-                        form.action = '/endpoint/delete/' + id;
+                        form.action = '/endpoint/archive/' + id;
                         const csrfInput = document.createElement('input');
                         csrfInput.type = 'hidden';
                         csrfInput.name = 'csrf_token';
@@ -1153,3 +1161,63 @@ document.addEventListener('keydown', (e) => {
         });
     }
 });
+
+// ---------------------------------------------------------------------------
+// Rechte-abhaengige Oberflaeche (data-braucht)
+// Regel: Ausblenden ist der Standard, Sperren mit Hinweis die Ausnahme
+// (data-braucht-modus="sperren", z. B. Secrets). Nur Anzeige-Logik -- der
+// Server prueft jede Aktion selbst.
+// ---------------------------------------------------------------------------
+(function () {
+    const meta = document.querySelector('meta[name="hw-perms"]');
+    const rechte = meta ? new Set(meta.content.split(' ').filter(Boolean)) : null;
+
+    window.hwDarf = (recht) => !rechte || rechte.has(recht);
+
+    window.hwRechteAnwenden = (wurzel) => {
+        if (!rechte) return;
+        const bereich = wurzel && wurzel.querySelectorAll ? wurzel : document;
+        const ziele = [...bereich.querySelectorAll('[data-braucht]:not([data-braucht-fertig])')];
+        if (bereich.matches && bereich.matches('[data-braucht]:not([data-braucht-fertig])')) ziele.push(bereich);
+        ziele.forEach(el => {
+            el.setAttribute('data-braucht-fertig', '1');
+            if (window.hwDarf(el.dataset.braucht)) return;
+            if (el.dataset.brauchtModus === 'sperren') {
+                const hinweis = 'Requires ' + el.dataset.braucht;
+                el.classList.add('hw-gesperrt');
+                el.setAttribute('aria-disabled', 'true');
+                if (el.hasAttribute('data-tooltip')) el.setAttribute('data-tooltip', hinweis);
+                else el.title = hinweis;
+                el.querySelectorAll('button, input, select, textarea').forEach(k => { k.disabled = true; });
+                if (el.matches('button, input, select, textarea')) el.disabled = true;
+            } else {
+                // Klasse zusaetzlich zu hidden: Seiten-JS, das Elemente ueber
+                // .hidden wieder einblendet (z. B. der DLQ-Replay-Knopf),
+                // kann die Rechte-Entscheidung nicht aufheben.
+                el.hidden = true;
+                el.classList.add('hw-verboten');
+            }
+        });
+    };
+
+    // Gesperrte Elemente schlucken jeden Klick, bevor onclick-Attribute feuern.
+    document.addEventListener('click', (ev) => {
+        if (ev.target.closest && ev.target.closest('.hw-gesperrt')) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        }
+    }, true);
+
+    // Deckt HTMX-Swaps und alle JS-Renderer ab, ohne jeden einzeln anzufassen.
+    const beobachter = new MutationObserver(muts => {
+        for (const m of muts) {
+            m.addedNodes.forEach(k => { if (k.nodeType === 1) window.hwRechteAnwenden(k); });
+        }
+    });
+    const start = () => {
+        window.hwRechteAnwenden(document);
+        beobachter.observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+})();

@@ -288,8 +288,11 @@ def _register() -> None:
     @main_bp.route("/history/replay/<log_id>", methods=["POST"])
     @auth_required
     def replay_webhook(log_id: str) -> Any:
-        if session.get("role") not in {"admin", "operator"}:
-            return jsonify({"error": "An operator role is required for this action."}), 403
+        # Frueher die alte Ein-Rollen-Spalte; jetzt das Registry-Recht (history:retry).
+        from .rbac.decorators import routen_recht_fehlt
+
+        if fehlt := routen_recht_fehlt():
+            return jsonify({"error": f"Missing permission: {fehlt}", "required": fehlt}), 403
         log_entry = WebhookLog.query.get_or_404(log_id)
         try:
             data = json.loads(log_entry.payload)

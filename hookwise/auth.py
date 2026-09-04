@@ -2,6 +2,7 @@
 
 import base64
 import io
+from datetime import datetime, timezone
 from typing import Any, cast
 
 import pyotp
@@ -35,7 +36,8 @@ def _register_login_routes(bp: Any) -> None:
         if request.method == "POST":
             # Case 1: Submitting OTP (User is in pending state)
             if pending_user_id and "otp" in request.form:
-                otp = request.form.get("otp")
+                # Authenticator-Apps zeigen "123 456" -- Leerraum ist kein Fehler.
+                otp = (request.form.get("otp") or "").strip().replace(" ", "")
                 user = User.query.get(pending_user_id)
                 secret_unavailable = bool(user and not user.otp_secret)
 
@@ -49,11 +51,22 @@ def _register_login_routes(bp: Any) -> None:
                         user.id if user else "unknown",
                     )
 
-                if user and otp_secret and pyotp.TOTP(otp_secret).verify(cast(str, otp)):
+                # valid_window=1 laesst den direkt vorherigen/naechsten Code zu --
+                # die Toleranz fuer Tipp-Zeit und leichte Uhrenabweichung.
+                # Zwischen Passwort- und Code-Eingabe kann das Konto gesperrt
+                # worden sein -- der zweite Schritt prueft deshalb erneut.
+                if user and not user.aktiv:
+                    session.pop("pending_user_id", None)
+                    log_audit("login_denied", None, f"Disabled account {user.username} attempted 2FA")
+                    flash("Invalid username or password", "danger")
+                    return render_template("login.html")
+
+                if user and otp_secret and otp and pyotp.TOTP(otp_secret).verify(otp, valid_window=1):
                     # Success
                     session["user_id"] = user.id
                     session["username"] = user.username
                     session["role"] = user.role
+                    anmeldung_abschliessen(user)
                     session.pop("pending_user_id", None)
                     log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
                     return redirect(url_for("main.index"))
@@ -78,6 +91,14 @@ def _register_login_routes(bp: Any) -> None:
 
             user = User.query.filter_by(username=username).first()
             if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
+                # Ein deaktiviertes Konto authentifiziert sich nicht -- weder in
+                # den 2FA-Schritt hinein noch in eine Sitzung. Die Meldung
+                # bleibt die allgemeine, um kein Konto zu bestaetigen.
+                if not user.aktiv:
+                    log_audit("login_denied", None, f"Disabled account {username} attempted sign-in")
+                    flash("Invalid username or password", "danger")
+                    return render_template("login.html")
+
                 if user.is_2fa_enabled:
                     session["pending_user_id"] = user.id
                     return render_template("login.html", step="2fa")
@@ -86,6 +107,7 @@ def _register_login_routes(bp: Any) -> None:
                 session["user_id"] = user.id
                 session["username"] = user.username
                 session["role"] = user.role
+                anmeldung_abschliessen(user)
                 log_audit("login", None, f"User {username} logged in")
                 return redirect(url_for("main.index"))
 
@@ -109,9 +131,9 @@ def _register_2fa_routes(bp: Any) -> None:
             return redirect(url_for("main.settings"))
 
         if request.method == "POST":
-            otp = request.form.get("otp")
+            otp = (request.form.get("otp") or "").strip().replace(" ", "")
             secret = session.get("pending_otp_secret")
-            if secret and pyotp.TOTP(cast(str, secret)).verify(cast(str, otp)):
+            if secret and otp and pyotp.TOTP(cast(str, secret)).verify(otp, valid_window=1):
                 user.otp_secret = encrypt_string(secret)
                 user.is_2fa_enabled = True
                 db.session.commit()
@@ -121,8 +143,11 @@ def _register_2fa_routes(bp: Any) -> None:
                 return redirect(url_for("main.settings"))
             flash("Invalid 2FA code", "danger")
 
-        # GET: Generate secret and QR code
-        secret = pyotp.random_base32()
+        # Das pending-Secret ueberlebt Fehlversuche und Seiten-Reloads: die
+        # Authenticator-App haelt das zuerst gescannte Secret, also muss die
+        # Seite dasselbe weiterzeigen. Vorher rotierte es bei jedem Rendern --
+        # nach dem ersten Fehlversuch konnte das Setup nie mehr gelingen.
+        secret = session.get("pending_otp_secret") or pyotp.random_base32()
         session["pending_otp_secret"] = secret
         totp_uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user.username, issuer_name="HookWise")
 
@@ -163,3 +188,46 @@ def _register() -> None:
 
 
 _register()
+
+
+def anmeldung_abschliessen(user: Any) -> None:
+    """Nach erfolgreicher Anmeldung: Bestand nachziehen, Rechte aufloesen.
+
+    Der Backfill laeuft verzoegert pro Nutzer statt als Big-Bang: Wer noch keine
+    Rollenzuweisung hat, bekommt beim ersten Login nach dem Rollout genau eine,
+    abgeleitet aus dem alten role-Wert.
+    """
+    from .rbac.resolver import schema_bereit, sitzung_setzen
+
+    try:
+        user.last_login_at = datetime.now(timezone.utc)
+        if user.auth_source is None:
+            user.auth_source = "local"
+        if user.is_active is None:
+            user.is_active = True
+        db.session.commit()
+    except Exception:  # pragma: no cover
+        db.session.rollback()
+
+    if schema_bereit():
+        try:
+            backfill_nutzer(user)
+        except Exception:  # pragma: no cover
+            db.session.rollback()
+    sitzung_setzen(user)
+
+
+def backfill_nutzer(user: Any) -> bool:
+    """Legt fuer einen Nutzer ohne Zuweisung eine aus der Legacy-Rolle an."""
+    from .models import RbacRole, RbacUserRole
+
+    if RbacUserRole.query.filter_by(user_id=user.id).first() is not None:
+        return False
+    schluessel = (user.role or "user").strip().lower()
+    ziel = {"user": "operator"}.get(schluessel, schluessel)
+    rolle = RbacRole.query.filter_by(key=ziel).first() or RbacRole.query.filter_by(key="viewer").first()
+    if rolle is None:
+        return False
+    db.session.add(RbacUserRole(user_id=user.id, role_id=rolle.id, granted_by="backfill"))
+    db.session.commit()
+    return True

@@ -77,7 +77,9 @@ cannot be reused and timestamps are accepted only within a five-minute window.
 
 ## Worker / beat not processing
 
-1. `GET /health/services` — check the `celery` field (`up` / `warning` / `down`)
+1. `GET /health/services` — check the `celery` field (`up` / `warning` / `down`).
+   Needs a signed-in session (`settings:read`); only `/health` and `/readyz`
+   are public, and those are what the container healthchecks use.
    and `celery_active`.
 2. If `down`: confirm the worker container is running and can reach Redis
    (`redis` field). Restart the worker.
@@ -89,12 +91,49 @@ cannot be reused and timestamps are accepted only within a five-minute window.
 
 ---
 
+## Roles, sign-in & lockout recovery
+
+Roles are enforced by default (`RBAC_ENFORCE=on`). Denied requests return 403
+and are written to the audit log as `perm_denied`.
+
+**"Someone can't do X anymore" triage**
+1. Identity page → expand the user → check the assigned role; the permission
+   matrix (Permissions tab) shows exactly what each role grants.
+2. `/audit` filtered for `perm_denied` names the missing permission per event.
+3. If a legitimate workflow is blocked and needs time to sort out, set
+   `RBAC_ENFORCE=log` (env) and restart — everything works again while every
+   would-be denial is still logged. Revert to `on` afterwards.
+
+**Locked out (no admin can sign in or manage users)**
+The app refuses to deactivate/delete the last `user:manage` holder, so this
+state normally cannot be reached through the UI. If it happens anyway
+(lost password, disabled account):
+1. `BOOTSTRAP_ADMIN=true` + `GUI_PASSWORD=<new>` on the web container
+   recreates/re-syncs the local `admin` account (role `admin`) at startup.
+2. Alternatively `RBAC_ENFORCE=log` grants temporary access to repair role
+   assignments through the Identity page.
+
+**MFA reset**: Identity page → expand the user → *Reset MFA* (visible only
+when enrolled). The user signs in with password only until re-enrolling under
+Settings → Two-Factor Auth.
+
+**Entra ID outage**: local accounts are unaffected — keep at least one local
+break-glass admin. Entra accounts cannot fall back to passwords (they have
+none). The Entra ID tab on the Identity page shows the connection state.
+
+**Headless/API clients** authenticate via Basic Auth against
+`GUI_USERNAME`/`GUI_PASSWORD` *and* need an active HookWise account with that
+username; the account's roles decide what the client may call.
+
+---
+
 ## Configuration & limits (env)
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SECRET_KEY` | — (required in prod) | Flask session signing |
-| `GUI_PASSWORD` | — (required) | admin login password |
+| `GUI_PASSWORD` | — (required) | admin login password (also basic-auth secret for headless clients) |
+| `RBAC_ENFORCE` | `on` | role enforcement: `on` / `log` (check + log only) / `off` |
 | `ENCRYPTION_KEY` | — (required) | Fernet key for stored secrets |
 | `SESSION_COOKIE_SECURE` | `true` | send session cookie only over HTTPS |
 | `MAX_CONTENT_LENGTH_KB` | `1024` | reject inbound bodies above this size (413) |
@@ -109,5 +148,9 @@ cannot be reused and timestamps are accepted only within a five-minute window.
 
 Security-relevant events are written to `AuditLog` and viewable at `/audit`:
 logins (success and **failed** attempts), 2FA enable/disable, logout,
-maintenance toggles, and configuration changes. Review it after any suspected
-unauthorized access or unexpected config change.
+maintenance toggles, and configuration changes. Identity & access adds:
+`perm_denied`, `user_create` / `user_update` / `user_delete`, `role_grant`,
+`role_create` / `role_update` / `role_delete`, `user_password_reset`,
+`user_mfa_reset`, `entra_login` / `entra_login_denied`,
+`entra_auto_provisioned`, `entra_binding_reset` and `entra_settings_update`.
+Review it after any suspected unauthorized access or unexpected config change.

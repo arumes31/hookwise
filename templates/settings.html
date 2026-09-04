@@ -4,6 +4,11 @@
 <div class="row justify-content-center">
     <div class="col-lg-10 col-xl-8">
         <h1 class="accent-gradient fw-bold mb-4">System Settings</h1>
+        {% if not hw_kann('settings:write') %}
+        <div class="alert alert-info small">Read-only &mdash; changing system settings requires
+            <code>settings:write</code>. Ask an administrator for changes.</div>
+        {% endif %}
+
 
         <!-- General Configuration -->
         <div class="glass-card mb-5 anime-slide-up" style="animation-delay: 0.1s;">
@@ -17,7 +22,8 @@
                 </div>
             </div>
             <div class="card-body p-4">
-                <form action="{{ url_for('main.update_settings') }}" method="POST">
+                <form action="{{ url_for('main.update_settings') }}" method="POST"
+                    data-braucht="settings:write" data-braucht-modus="sperren">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
                     <div class="mb-4">
@@ -67,7 +73,8 @@
                     <div class="mb-4">
                         <label class="form-label text-secondary fw-bold text-uppercase small ls-1">Maintenance</label>
                         <div>
-                            <button type="button" class="btn btn-outline-warning btn-sm" onclick="clearCache()">
+                            <button type="button" class="btn btn-outline-warning btn-sm" data-braucht="settings:write"
+                                data-braucht-modus="sperren" onclick="clearCache()">
                                 Clear ConnectWise Cache
                             </button>
                             <span class="ms-2 lightgrey small">Forces a refresh of Boards, Priorities, and Companies
@@ -106,7 +113,7 @@
                         <input type="text" id="master-api-key"
                             class="form-control bg-dark border-secondary text-warning font-monospace"
                             value="{{ master_api_key }}" readonly>
-                        <button class="btn btn-outline-warning" onclick="generateApiKey()">
+                        <button class="btn btn-outline-warning" data-braucht="settings:write" data-braucht-modus="sperren" onclick="generateApiKey()">
                             <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg> Regenerate
                         </button>
                         <button class="btn btn-primary"
@@ -139,14 +146,15 @@
                         <h3 class="h6 text-light fw-bold mb-3">Export Configuration</h3>
                         <p class="text-secondary small mb-3">Download your full system configuration as a specific JSON
                             file.</p>
-                        <a href="{{ url_for('main.backup_config') }}" class="btn btn-outline-info w-100">
+                        <a href="{{ url_for('main.backup_config') }}" class="btn btn-outline-info w-100"
+                            data-braucht="settings:write" data-braucht-modus="sperren">
                             <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>Download Backup
                         </a>
                     </div>
                     <div class="col-md-6 ps-md-4">
                         <h3 class="h6 text-light fw-bold mb-3">Restore Configuration</h3>
                         <p class="text-secondary small mb-3">Restore settings from a previously backup file.</p>
-                        <div class="input-group">
+                        <div class="input-group" data-braucht="settings:write" data-braucht-modus="sperren">
                             <input type="file" id="backup-file" class="form-control bg-dark border-secondary text-light"
                                 aria-label="Choose configuration backup file"
                                 accept=".json">
@@ -178,7 +186,8 @@
                         placeholder="Enter a test prompt for the LLM..."></textarea>
                 </div>
                 <div class="d-flex justify-content-end mb-4">
-                    <button class="btn btn-primary px-4 py-2 fw-bold shadow-lg" id="llm-test-btn" onclick="testLLM()">
+                    <button class="btn btn-primary px-4 py-2 fw-bold shadow-lg" id="llm-test-btn"
+                        data-braucht="settings:write" data-braucht-modus="sperren" onclick="testLLM()">
                         Test LLM
                     </button>
                 </div>
@@ -256,7 +265,8 @@
         </div>
 
         <!-- Danger Zone -->
-        <div class="glass-card border-danger border-opacity-25 anime-slide-up" style="animation-delay: 0.6s;">
+        <div class="glass-card border-danger border-opacity-25 anime-slide-up" style="animation-delay: 0.6s;"
+            data-braucht="history:delete">
             <div class="card-body p-4 d-flex align-items-center justify-content-between">
                 <div>
                     <h3 class="h5 fw-bold text-danger mb-1">Danger Zone</h3>

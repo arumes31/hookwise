@@ -8,7 +8,7 @@
             globally.</p>
     </div>
     <div class="col-md-4 text-end d-flex align-items-center justify-content-end">
-        <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#addMappingModal">
+        <button class="btn btn-primary fw-bold" data-braucht="tenantmap:write" data-bs-toggle="modal" data-bs-target="#addMappingModal">
             <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>New Mapping
         </button>
     </div>
@@ -42,7 +42,7 @@
                         {{ m.description or '-' }}
                     </td>
                     <td class="text-end">
-                        <button class="btn btn-sm btn-link text-info p-0 text-decoration-none me-3"
+                        <button class="btn btn-sm btn-link text-info p-0 text-decoration-none me-3" data-braucht="tenantmap:write"
                             data-tooltip="Edit Mapping" aria-label="Edit mapping" data-m-id="{{ m.id }}" data-m-tenant="{{ m.tenant_value }}"
                             data-m-company="{{ m.company_id }}" data-m-desc="{{ m.description or '' }}"
                             onclick="openEditModal(this)">
@@ -51,7 +51,7 @@
                         <form action="{{ url_for('main.delete_mapping', mapping_id=m.id) }}" method="POST" class="d-inline"
                             onsubmit="return confirm('Delete mapping for {{ m.tenant_value }}?')">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none"
+                            <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" data-braucht="tenantmap:write"
                                 data-tooltip="Delete Mapping" aria-label="Delete mapping">
                                 <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-trash-fill"></use></svg>
                             </button>

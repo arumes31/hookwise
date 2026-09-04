@@ -35,6 +35,7 @@ _PAGE_TITLES = {
     "main.history": "History",
     "main.audit_logs": "Audit Log",
     "main.settings": "Settings",
+    "main.identity_settings": "Identity",
     "main.new_endpoint": "New Endpoint",
     "main.edit_endpoint": "Edit Endpoint",
     "main.setup_2fa": "Two-Factor Authentication",
@@ -375,3 +376,11 @@ from . import (  # noqa: E402, F401
     tenantmap,
     webhook,
 )
+
+# Nutzer-, Rollen- und Identitaetsverwaltung. Registriert sich selbst am
+# Blueprint, damit routes.py nicht weiter waechst.
+from .auth_entra import register_entra_routes  # noqa: E402
+from .user_api import register_user_routes  # noqa: E402
+
+register_user_routes(main_bp)
+register_entra_routes(main_bp)

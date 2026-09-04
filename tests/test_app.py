@@ -114,6 +114,11 @@ def test_health_services(mock_inspect, mock_api_redis, mock_tasks_redis, client)
     mock_api_redis.ping.return_value = True
     mock_inspect.return_value.stats.return_value = {"worker1": {}}
 
+    # Die Detailansicht legt Dienstzustaende offen und verlangt eine Anmeldung
+    # (settings:read); nur /health und /readyz sind oeffentlich.
+    with client.session_transaction() as sess:
+        sess["user_id"] = "test-user"
+
     response = client.get("/health/services")
     assert response.status_code == 200
     assert response.json["redis"] == "up"

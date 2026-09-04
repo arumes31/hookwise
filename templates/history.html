@@ -72,7 +72,7 @@
             <a class="hw-more-row" href="{{ url_for('main.index') }}">
                 <span class="hw-more-text">Back to dashboard</span>
             </a>
-            <button class="hw-more-row hw-more-danger" type="button" onclick="deleteAllLogs()"
+            <button class="hw-more-row hw-more-danger" type="button" data-braucht="history:delete" onclick="deleteAllLogs()"
                 aria-label="Delete all history">
                 <span class="hw-more-text">Delete entire history</span>
             </button>
@@ -110,7 +110,7 @@
         <div class="history-operation-summary mt-3" aria-live="polite">
             <span id="history-advanced-count" class="text-secondary small">Loading operations…</span>
             <span id="history-retry-alert" class="badge bg-warning text-dark" hidden></span>
-            <button id="history-replay-dlq" class="btn btn-sm btn-outline-warning" type="button" hidden>Replay selected DLQ</button>
+            <button id="history-replay-dlq" class="btn btn-sm btn-outline-warning" type="button" data-braucht="history:retry" hidden>Replay selected DLQ</button>
         </div>
         <div id="history-rate-limits" class="small text-secondary mt-2"></div>
         </details>
@@ -121,8 +121,8 @@
     class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
     <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
     <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-outline-primary" onclick="bulkReplay()">Replay Selected</button>
-        <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteLogs()">Delete Selected</button>
+        <button class="btn btn-sm btn-outline-primary" data-braucht="history:retry" onclick="bulkReplay()">Replay Selected</button>
+        <button class="btn btn-sm btn-outline-danger" data-braucht="history:delete" onclick="bulkDeleteLogs()">Delete Selected</button>
     </div>
 </div>
 
@@ -239,7 +239,7 @@
                 <h3 class="h6">Retry intervals</h3><ul id="diagnostics-retries" class="diagnostic-list"></ul>
                 <h3 class="h6">Complete error chain</h3><pre id="diagnostics-errors" class="diagnostic-code"></pre>
                 <p class="small text-secondary mb-0">Payloads and authentication headers are excluded from diagnostics downloads.</p>
-                <div class="d-flex gap-2 mt-3"><button id="diagnostics-retry" class="btn btn-warning btn-sm" type="button">Retry now</button><button id="diagnostics-replay-edit" class="btn btn-outline-primary btn-sm" type="button">Replay with edits</button></div>
+                <div class="d-flex gap-2 mt-3"><button id="diagnostics-retry" class="btn btn-warning btn-sm" type="button" data-braucht="history:retry">Retry now</button><button id="diagnostics-replay-edit" class="btn btn-outline-primary btn-sm" type="button" data-braucht="history:retry">Replay with edits</button></div>
             </div>
         </div>
     </div>

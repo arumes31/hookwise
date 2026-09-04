@@ -25,6 +25,7 @@ HookWise is a highly performant, general-purpose webhook router designed to brid
 - [Deep-Dive Usage](#-deep-dive-usage)
 - [Configuration Recipes](#-configuration-recipes)
 - [Troubleshooting & FAQ](#-troubleshooting--faq)
+- [Identity & Access (RBAC + Entra ID)](#-identity--access-rbac--entra-id)
 - [Security & Compliance](#-security--compliance)
 - [Development & Contributing](#-development--contributing)
 
@@ -261,6 +262,9 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | Variable | Usage |
 |----------|-------|
 | `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** |
+| `RBAC_ENFORCE` | Role enforcement: `on` (default), `log` (check + log only), `off`. See [Identity & Access](#-identity--access-rbac--entra-id). |
+| `ENTRA_*` | Microsoft Entra ID sign-in — see [Identity & Access](#-identity--access-rbac--entra-id). |
+| `GUI_USERNAME` / `GUI_PASSWORD` | Basic-auth credentials for headless clients. The username must belong to an **active HookWise account**; its roles decide what the client may do. |
 | `GUI_TRUSTED_IPS`| CIDR list (e.g., `10.0.0.0/24, 192.168.1.5`). |
 | `LOG_RETENTION_DAYS`| Auto-cleanup limit for `webhook_log` table. |
 | `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
@@ -461,6 +465,89 @@ HookWise provides a centralized mapping table called **TenantMap** (found in the
 - Ensure your monitoring tool is sending the payload as raw JSON.
 - If your tool adds extra whitespace or re-orders JSON keys after signing, the signature won't match.
 - Ensure all three HMAC headers are present, the timestamp is within five minutes, and every request uses a fresh nonce.
+
+---
+
+## 🔐 Identity & Access (RBAC + Entra ID)
+
+HookWise ships a role-based access model and optional Microsoft Entra ID
+single sign-on. Everything is managed on the **Identity** page
+(`/settings/identity`, requires `user:read`).
+
+### Roles & permissions
+
+Permissions follow the `resource:action` scheme (17 keys, defined in
+`hookwise/rbac/catalog.py` — the code is the single source of truth). Three
+built-in roles are seeded and kept up to date automatically:
+
+| Role | Grants |
+|------|--------|
+| `admin` | All 17 permissions, including user management and system settings. |
+| `operator` | Day-to-day operations **including delivery credentials** (`secret:reveal`, `secret:rotate`), endpoint write/archive/test, replay, tenant mapping, audit — no user management, no settings writes, no history deletion. |
+| `viewer` | Read-only: dashboard, endpoints, history, tenant map, settings view. |
+
+Custom roles can be created in the permission matrix. Each user holds exactly
+one role (assigned via the Identity page). Accounts still carrying only the
+legacy `role` column behave as before: `admin` → admin, `user`/`operator` →
+operator, `viewer` → viewer. Revoking a role takes effect on the next request
+(permissions epoch), not the next login. The UI hides actions the session
+lacks; secrets stay visible but locked, so their existence remains auditable.
+
+### Enforcement modes (`RBAC_ENFORCE`)
+
+| Mode | Behaviour |
+|------|-----------|
+| `on` *(default)* | Denied requests get a 403 (JSON for APIs, a 403 page for views). |
+| `log` | Checks and logs `RBAC(log)` warnings, but never blocks — rollout/diagnosis stage. |
+| `off` | No permission checks (pre-RBAC behaviour). |
+
+The routes that always enforced their own boundary (secret reveal/rotate,
+replay, history operations) keep blocking in **every** mode.
+
+No database migration is required: an idempotent schema bridge creates the
+RBAC tables and user columns at startup (Postgres advisory lock, safe with
+multiple containers booting in parallel).
+
+### Microsoft Entra ID sign-in
+
+Configured entirely through the environment; without it the Entra routes stay
+inert and local login is unchanged.
+
+| Variable | Usage |
+|----------|-------|
+| `ENTRA_ENABLED` | `true` activates the sign-in button and callback routes. |
+| `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` | App registration (single tenant; the tenant is verified on every login). |
+| `ENTRA_REDIRECT_URL` | Must match the registration, e.g. `https://host/auth/entra/callback`. |
+| `ENTRA_CLIENT_SECRET_FILE` | Path to a mounted secret file — the secret never lives in env or DB. |
+| `ENTRA_SCOPES` | Default `openid profile email`. |
+| `ENTRA_AUTO_PROVISION` / `ENTRA_AUTO_PROVISION_ROLE` | Start values only; the runtime switch on the Identity page (stored in Redis) takes precedence. |
+
+An optional **group filter** (Identity page) restricts sign-in to members of one
+Entra group. It is enforced fail-closed: with a filter set, a token that carries
+no matching `groups` claim is refused, so the app registration must be
+configured to emit group claims (optional claims → groups).
+
+Two provisioning modes, switchable at runtime on the Identity page:
+**pre-provisioned only** (an account must exist here; it binds to the Entra
+object on first sign-in) or **automatic** (any user the tenant assigns gets an
+account with the chosen start role — roles holding privileged permissions such
+as `secret:*` or `user:manage` are rejected as start roles, so auto-provisioning
+can never create an administrator). Only the stable `tid`/`oid` pair is stored,
+never tokens. Entra accounts have no local password or app MFA — both are
+Microsoft's job — and their UPN is frozen while bound (clear the binding on the
+Identity page to edit it).
+
+### User management
+
+Each row on the Identity page expands into a management panel: rename,
+set a new password (local accounts, min. 8 characters), reset MFA (shown only
+when enrolled), clear the Entra binding, enable/disable and delete. Two
+invariants are enforced server-side: the last active holder of `user:manage`
+cannot be deactivated or deleted, and you cannot delete your own account.
+
+**Note for headless/API clients:** HTTP Basic Auth authenticates against
+`GUI_USERNAME`/`GUI_PASSWORD` but now also requires an **active HookWise
+account with that username** — the former synthetic admin session is gone.
 
 ---
 

@@ -702,10 +702,11 @@
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 hw-formbar">
                         <div>
                             {% if config.id %}
-                            <button type="button" class="btn btn-outline-danger px-4" id="delete-endpoint-btn"
+                            <button type="button" class="btn btn-outline-warning px-4" id="archive-endpoint-btn"
+                                data-braucht="endpoint:archive"
                                 data-id='{{ config.id|tojson }}' data-name='{{ config.name|tojson }}'
-                                onclick="const btn=this; confirmDelete(JSON.parse(btn.dataset.id), JSON.parse(btn.dataset.name))">
-                                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-trash-fill"></use></svg>Delete Endpoint
+                                onclick="const btn=this; confirmArchive(JSON.parse(btn.dataset.id), JSON.parse(btn.dataset.name))">
+                                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>Archive Endpoint
                             </button>
                             {% endif %}
                         </div>
@@ -799,8 +800,8 @@
 {% endif %}
 <meta name="hookwise-base-url" content="{{ base_url }}">
 <script id="endpoint-template-data" type="application/json">{{ endpoint_templates|default({})|tojson }}</script>
-<script src="{{ url_for('static', filename='js/endpoint-form-fields.js', v='20260907f') }}"></script>
-<script src="{{ url_for('static', filename='js/endpoint-form-actions.js', v='20260907f') }}"></script>
+<script src="{{ url_for('static', filename='js/endpoint-form-fields.js', v='20260909e') }}"></script>
+<script src="{{ url_for('static', filename='js/endpoint-form-actions.js', v='20260909e') }}"></script>
 <script>
     /* Stepper: General -> Routing -> Security -> Delivery. "Next" blaettert,
        der Absende-Knopf erscheint erst im letzten Schritt. Die Schritte oben
@@ -854,6 +855,6 @@
         })();
     }
 </script>
-<script src="{{ url_for('static', filename='js/endpoint-form.js', v='20260907f') }}"></script>
+<script src="{{ url_for('static', filename='js/endpoint-form.js', v='20260909e') }}"></script>
 {% include 'dry_run_modal.html' %}
 {% endblock %}

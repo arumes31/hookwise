@@ -1,0 +1,640 @@
+{% extends "base.html" %}
+
+{# Nutzer-, Entra- und Rechteverwaltung in einer Ansicht. Aufbau und Bausteine
+   folgen den freigegebenen Screen-Vorlagen; die Daten kommen ueber /api/users,
+   /api/roles und /api/permissions. #}
+
+{% block content %}
+<div class="row mb-4 animate-fade-in">
+    <div class="col-md-8">
+        <h1 class="accent-gradient fw-bold mb-1">Identity &amp; Access</h1>
+        <p class="text-secondary small">Users, Entra ID sign-in and the permission matrix.</p>
+    </div>
+</div>
+
+{% if not schema_ok %}
+<div class="alert alert-warning" role="alert">
+    <strong>RBAC schema not ready.</strong>
+    Permissions fall back to the legacy role column until the schema bridge completes.
+</div>
+{% endif %}
+
+<ul class="nav nav-pills hw-formtabs mb-4" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-users" data-bs-toggle="tab" data-bs-target="#pane-users"
+            type="button" role="tab" aria-controls="pane-users" aria-selected="true">Users</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-entra" data-bs-toggle="tab" data-bs-target="#pane-entra"
+            type="button" role="tab" aria-controls="pane-entra" aria-selected="false">Entra ID</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-roles" data-bs-toggle="tab" data-bs-target="#pane-roles"
+            type="button" role="tab" aria-controls="pane-roles" aria-selected="false">Permissions</button>
+    </li>
+</ul>
+
+<div class="tab-content hw-formtab-inhalt">
+
+    <!-- ============ Nutzer ============ -->
+    <div class="tab-pane active" id="pane-users" role="tabpanel" aria-labelledby="tab-users">
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+            <input id="user-suche" class="form-control" style="max-width:240px"
+                placeholder="Search name or UPN&hellip;" aria-label="Search users">
+            <select id="user-quelle" class="form-select" style="width:auto" aria-label="Filter by source">
+                <option value="">All sources</option>
+                <option value="local">Local</option>
+                <option value="entra">Entra ID</option>
+            </select>
+            <span id="user-zaehler" class="text-secondary small ms-auto"></span>
+            <button class="btn btn-primary fw-bold" id="user-neu-btn" data-braucht="user:manage">
+                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>New user
+            </button>
+        </div>
+
+        <div class="card glass-card">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr>
+                        <th class="ps-4 py-3">User</th><th class="py-3">Source</th><th class="py-3">Roles</th>
+                        <th class="py-3">State</th><th class="py-3">Last sign-in</th>
+                        <th class="pe-4 py-3 text-end"><span class="visually-hidden">Actions</span></th>
+                    </tr></thead>
+                    <tbody id="user-tabelle"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ Entra ID ============ -->
+    <div class="tab-pane" id="pane-entra" role="tabpanel" aria-labelledby="tab-entra">
+        <div class="card glass-card mb-3">
+            <div class="card-body p-4">
+                <h2 class="h6 fw-bold text-light mb-3">Connection</h2>
+                <p class="small text-secondary">
+                    Connection settings come from the environment and the mounted secret file, so they
+                    survive a container restart and never end up in the database.
+                </p>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">STATUS</label>
+                        <div class="hw-drawer-feld">
+                            <code>{{ 'enabled' if entra_enabled else 'disabled' }}</code>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">TENANT ID</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_tenant or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">CLIENT ID</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_client or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">REDIRECT URI</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_redirect or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">CLIENT SECRET FILE</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_secret_file or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">SCOPES</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_scopes }}</code></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card glass-card mb-3" style="border-color:var(--accent)">
+            <div class="card-body p-4">
+                <h2 class="h6 fw-bold text-light mb-1">Provisioning</h2>
+                <p class="small text-secondary mb-3">Switchable at runtime &mdash; no restart required.</p>
+
+                <div class="hw-prov-wahl" data-braucht="user:manage" data-braucht-modus="sperren">
+                    <button type="button" class="hw-prov-karte{% if not auto_provision %} an{% endif %}"
+                        data-modus="vorab" aria-pressed="{{ 'false' if auto_provision else 'true' }}">
+                        <span class="hw-prov-punkt"></span>
+                        <span>
+                            <b>Pre-provisioned only</b>
+                            <span class="small text-secondary d-block">A user needs an assignment in Entra
+                                <em>and</em> an active account here. Two independent gates.</span>
+                        </span>
+                    </button>
+                    <button type="button" class="hw-prov-karte{% if auto_provision %} an{% endif %}"
+                        data-modus="auto" aria-pressed="{{ 'true' if auto_provision else 'false' }}">
+                        <span class="hw-prov-punkt"></span>
+                        <span>
+                            <b>Create accounts automatically</b>
+                            <span class="small text-secondary d-block">Any user assigned in Entra gets an account
+                                on first sign-in, with the start role below.</span>
+                        </span>
+                    </button>
+                </div>
+
+                <div id="auto-block" data-braucht="user:manage" data-braucht-modus="sperren"
+                    class="mt-3 pt-3 border-top border-secondary border-opacity-10"
+                    {% if not auto_provision %}hidden{% endif %}>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="auto-rolle" class="form-label small fw-bold text-secondary ls-wide">START ROLE</label>
+                            <select id="auto-rolle" class="form-select"></select>
+                            <div class="form-text">Roles holding <code>user:manage</code> or <code>secret:*</code>
+                                are rejected &mdash; automatic provisioning cannot create administrators.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="auto-gruppe" class="form-label small fw-bold text-secondary ls-wide">ENTRA GROUP (OPTIONAL)</label>
+                            <input id="auto-gruppe" class="form-control" value="{{ group_filter }}"
+                                placeholder="Group object ID&hellip;">
+                        </div>
+                    </div>
+                    <div class="alert alert-warning mt-3 mb-0 small">
+                        <strong>What changes with this setting.</strong>
+                        Anyone the tenant assigns to this application reaches HookWise without a second approval.
+                        Every automatic account is written to the audit log as <code>entra_auto_provisioned</code>.
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-primary fw-bold" id="prov-speichern" data-braucht="user:manage"
+                        data-braucht-modus="sperren">Save provisioning</button>
+                    <span id="prov-status" class="align-self-center small text-secondary"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ Rechte ============ -->
+    <div class="tab-pane" id="pane-roles" role="tabpanel" aria-labelledby="tab-roles">
+        <div class="row g-3">
+            <div class="col-lg-3">
+                <div id="rollen-liste" class="d-flex flex-column gap-2"></div>
+            </div>
+            <div class="col-lg-9">
+                <div class="card glass-card">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+                            <h2 class="h6 fw-bold text-light mb-0" id="matrix-titel">&mdash;</h2>
+                            <span class="small text-secondary" id="matrix-sub"></span>
+                            <button class="btn btn-sm btn-primary fw-bold ms-auto" id="rolle-speichern" data-braucht="user:manage" hidden>Save role</button>
+                        </div>
+                        <div id="matrix"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Neuer Nutzer -->
+<div class="modal fade" id="userNeuModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="glass-card shadow-lg border-0 w-100 p-1">
+            <div class="modal-content bg-transparent border-0 p-4">
+                <div class="modal-header border-0 p-0 mb-4">
+                    <h5 class="modal-title fw-bold text-light">New user</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="hw-prov-wahl mb-3" id="neu-quelle">
+                    <button type="button" class="hw-prov-karte{% if entra_ready %} an{% endif %}"
+                        data-quelle="entra" {% if not entra_ready %}disabled{% endif %}>
+                        <span class="hw-prov-punkt"></span>
+                        <span><b>Entra ID account</b>
+                            <span class="small text-secondary d-block">Signs in through Microsoft.
+                                Enter the exact UPN; the account is bound on first sign-in.</span>
+                            {% if not entra_ready %}<span class="small text-warning d-block mt-1">Entra ID is not
+                                configured &mdash; set up the connection first.</span>{% endif %}</span>
+                    </button>
+                    <button type="button" class="hw-prov-karte{% if not entra_ready %} an{% endif %}" data-quelle="local">
+                        <span class="hw-prov-punkt"></span>
+                        <span><b>Local account</b>
+                            <span class="small text-secondary d-block">Password sign-in with optional 2FA.
+                                For break-glass and headless clients.</span></span>
+                    </button>
+                </div>
+                <div class="mb-3">
+                    <label for="neu-username" class="form-label small fw-bold text-secondary ls-wide"
+                        id="neu-username-label">{{ 'UPN' if entra_ready else 'USERNAME' }}</label>
+                    <input id="neu-username" class="form-control bg-dark border-secondary text-light"
+                        placeholder="{{ 'user@company.com' if entra_ready else 'username' }}" autocomplete="off">
+                </div>
+                <div class="mb-3" id="neu-passwort-feld" {% if entra_ready %}hidden{% endif %}>
+                    <label for="neu-passwort" class="form-label small fw-bold text-secondary ls-wide">PASSWORD</label>
+                    <input type="password" id="neu-passwort" class="form-control bg-dark border-secondary text-light"
+                        autocomplete="new-password">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-bold text-secondary ls-wide">ROLE</label>
+                    <div id="neu-rollen" class="hw-rollenwahl"></div>
+                </div>
+                <div id="neu-fehler" class="text-danger small" aria-live="polite"></div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="neu-anlegen">Create user</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rollen zuweisen -->
+<div class="modal fade" id="rollenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="glass-card shadow-lg border-0 w-100 p-1">
+            <div class="modal-content bg-transparent border-0 p-4">
+                <div class="modal-header border-0 p-0 mb-4">
+                    <h5 class="modal-title fw-bold text-light" id="rollen-titel">Roles</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div id="rollen-wahl" class="hw-rollenwahl"></div>
+                <div id="rollen-fehler" class="text-danger small" aria-live="polite"></div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="rollen-speichern-btn">Save roles</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        'use strict';
+        const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+        const holen = (u) => fetch(u, { credentials: 'same-origin' })
+            .then(r => r.ok ? r.json().catch(() => ({})) : ({}))
+            .catch(() => ({}));
+        const senden = (u, methode, koerper) => fetch(u, {
+            method: methode,
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+            credentials: 'same-origin',
+            body: JSON.stringify(koerper || {}),
+        }).then(async r => ({ ok: r.ok, daten: await r.json().catch(() => ({})) }));
+
+        let NUTZER = [], ROLLEN = [], GRUPPEN = [], aktiveRolle = null;
+
+        // ---------------- Nutzer ----------------
+        const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+            c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        let offenDetail = null;  // id des ausgeklappten Verwaltungspanels
+
+        // Das Panel unter der Zeile: Umbenennen, Passwort, MFA, Entra-Bindung,
+        // Gefahrenzone. Entra-Konten zeigen nur, was Entra nicht selbst regelt.
+        function detailHtml(u) {
+            const entra = u.auth_source === 'entra';
+            const anmeldung = entra
+                ? `<p class="small text-secondary mb-2">Password and MFA are managed by Microsoft Entra ID.</p>
+                   ${u.entra_bound
+                       ? `<p class="small text-secondary mb-2">Bound to an Entra object. Clearing the binding
+                              re-binds on the next sign-in with this UPN.</p>
+                          <button class="btn btn-sm btn-outline-warning" data-bindung="${esc(u.id)}">Clear Entra binding</button>`
+                       : '<p class="small text-secondary mb-0">Not bound yet &mdash; the account binds on first sign-in.</p>'}`
+                : `<label for="detail-passwort" class="form-label small fw-bold text-secondary ls-wide">NEW PASSWORD</label>
+                   <div class="d-flex gap-2 mb-2">
+                     <input type="password" id="detail-passwort" class="form-control form-control-sm"
+                       autocomplete="new-password" placeholder="At least 8 characters">
+                     <button class="btn btn-sm btn-primary fw-bold" data-passwort="${esc(u.id)}">Set</button>
+                   </div>
+                   ${u.mfa_enabled
+                       ? `<button class="btn btn-sm btn-outline-warning" data-mfa="${esc(u.id)}">Reset MFA</button>`
+                       : '<p class="small text-secondary mb-0">MFA is not set up for this account.</p>'}`;
+            const upnFeld = entra
+                ? `<label for="detail-upn" class="form-label small fw-bold text-secondary ls-wide mt-2">UPN</label>
+                   <input id="detail-upn" class="form-control form-control-sm" value="${esc(u.upn || '')}"
+                     ${u.entra_bound ? 'readonly title="Bound to Entra; clear the binding to edit."' : ''}>`
+                : '';
+            return `
+                <tr class="hw-nutzer-detail"><td colspan="6" class="px-4 py-3">
+                  <div class="row g-4">
+                    <div class="col-md-5">
+                      <div class="small fw-bold text-secondary ls-wide mb-2">ACCOUNT</div>
+                      <label for="detail-username" class="form-label small fw-bold text-secondary ls-wide">USERNAME</label>
+                      <input id="detail-username" class="form-control form-control-sm" value="${esc(u.username)}">
+                      ${upnFeld}
+                      <button class="btn btn-sm btn-outline-secondary mt-2" data-speichern="${esc(u.id)}">Save changes</button>
+                    </div>
+                    <div class="col-md-4">
+                      <div class="small fw-bold text-secondary ls-wide mb-2">SIGN-IN</div>
+                      ${anmeldung}
+                    </div>
+                    <div class="col-md-3">
+                      <div class="small fw-bold text-danger ls-wide mb-2">DANGER ZONE</div>
+                      <button class="btn btn-sm btn-outline-danger" data-loeschen="${esc(u.id)}">Delete user</button>
+                      <p class="small text-secondary mt-2 mb-0">Removes the account and its role assignments.
+                        History and audit entries stay.</p>
+                    </div>
+                  </div>
+                </td></tr>`;
+        }
+
+        function nutzerZeichnen() {
+            const suche = (document.getElementById('user-suche').value || '').toLowerCase();
+            const quelle = document.getElementById('user-quelle').value;
+            const sichtbar = NUTZER.filter(u =>
+                (!quelle || u.auth_source === quelle) &&
+                (!suche || (u.username + ' ' + (u.upn || '')).toLowerCase().includes(suche)));
+            document.getElementById('user-zaehler').textContent =
+                sichtbar.length + ' users · ' + sichtbar.filter(u => u.is_active).length + ' active';
+            document.getElementById('user-tabelle').innerHTML = sichtbar.map(u => `
+                <tr>
+                  <td class="ps-4"><span class="fw-bold">${esc(u.username)}</span>
+                      ${u.upn ? '<br><span class="small text-secondary">' + esc(u.upn) + '</span>' : ''}</td>
+                  <td><span class="badge ${u.auth_source === 'entra' ? 'bg-primary' : 'bg-secondary'}">${esc(u.auth_source).toUpperCase()}</span></td>
+                  <td>${(u.roles || []).map(r => '<span class="badge bg-dark border border-secondary me-1">' + esc(r) + '</span>').join('') || '<span class="text-secondary small">&mdash;</span>'}</td>
+                  <td><span class="badge ${u.is_active ? 'bg-success' : 'bg-secondary'}">${u.is_active ? 'ACTIVE' : 'DISABLED'}</span></td>
+                  <td class="small text-secondary">${u.last_login_at ? esc(u.last_login_at.slice(0, 16).replace('T', ' ')) : 'never'}</td>
+                  <td class="pe-4 text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-secondary" data-braucht="user:manage" data-rollen="${esc(u.id)}">Roles</button>
+                    <button class="btn btn-sm btn-outline-warning" data-braucht="user:manage" data-aktiv="${esc(u.id)}">${u.is_active ? 'Disable' : 'Enable'}</button>
+                    <button class="btn btn-sm ${offenDetail === u.id ? 'btn-secondary' : 'btn-outline-secondary'}"
+                      data-braucht="user:manage" data-detail="${esc(u.id)}" aria-expanded="${offenDetail === u.id}">Manage</button>
+                  </td>
+                </tr>${offenDetail === u.id ? detailHtml(u) : ''}`).join('')
+                || '<tr><td colspan="6" class="text-center text-secondary py-4">No users match.</td></tr>';
+        }
+
+        async function nutzerLaden() {
+            const d = await holen('/api/users');
+            NUTZER = d.users || [];
+            nutzerZeichnen();
+        }
+
+        document.getElementById('user-suche').addEventListener('input', nutzerZeichnen);
+        document.getElementById('user-quelle').addEventListener('change', nutzerZeichnen);
+
+        // ---- Rollenwahl (gemeinsam fuer beide Modals): genau EINE Rolle ----
+        // Radios statt Checkboxen -- ein Nutzer traegt eine Rolle. Das Datenmodell
+        // kann mehr, aber die Vergabe bleibt bewusst eindeutig.
+        function rollenwahlHtml(ausgewaehlt, gruppe) {
+            const wahl = ausgewaehlt || null;
+            return ROLLEN.map(r => `
+                <label class="hw-rollenwahl-zeile">
+                  <input class="form-check-input" type="radio" name="${esc(gruppe)}" value="${esc(r.key)}"
+                    ${wahl === r.key ? 'checked' : ''}>
+                  <span><b>${esc(r.name || r.key)}</b>
+                    <span class="small text-secondary d-block">${esc(r.key)} ·
+                      ${r.permissions.length} permissions${r.is_builtin ? ' · built-in' : ''}</span></span>
+                </label>`).join('') || '<div class="text-secondary small">No roles available yet.</div>';
+        }
+        const gewaehlteRolle = (behaelter) => {
+            const an = behaelter.querySelector('input:checked');
+            return an ? an.value : null;
+        };
+        // Traegt ein Altbestand mehrere Rollen, wird die maechtigste vorbelegt.
+        const staerksteRolle = (schluessel) => {
+            const eigene = ROLLEN.filter(r => (schluessel || []).includes(r.key));
+            if (!eigene.length) return null;
+            eigene.sort((a, b) => b.permissions.length - a.permissions.length);
+            return eigene[0].key;
+        };
+
+        // ---- Rollen zuweisen: Auswahl statt Texteingabe ----
+        let rollenNutzer = null;
+        const rollenModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('rollenModal'));
+
+        document.getElementById('user-tabelle').addEventListener('click', async (ev) => {
+            const rollenKnopf = ev.target.closest('[data-rollen]');
+            if (rollenKnopf) {
+                rollenNutzer = NUTZER.find(x => x.id === rollenKnopf.dataset.rollen);
+                document.getElementById('rollen-titel').textContent = 'Role for ' + rollenNutzer.username;
+                document.getElementById('rollen-wahl').innerHTML =
+                    rollenwahlHtml(staerksteRolle(rollenNutzer.roles), 'rolle-zuweisen');
+                document.getElementById('rollen-fehler').textContent =
+                    (rollenNutzer.roles || []).length > 1
+                        ? 'This user currently holds several roles; saving keeps only the selected one.'
+                        : '';
+                rollenModal().show();
+                return;
+            }
+            const aktivKnopf = ev.target.closest('[data-aktiv]');
+            if (aktivKnopf) {
+                const u = NUTZER.find(x => x.id === aktivKnopf.dataset.aktiv);
+                const frage = u.is_active
+                    ? 'Disable ' + u.username + '? They can no longer sign in until re-enabled.'
+                    : 'Enable ' + u.username + '? They can sign in again.';
+                if (!await hwConfirm(frage, { title: u.is_active ? 'Disable user' : 'Enable user',
+                    okText: u.is_active ? 'Disable' : 'Enable' })) return;
+                const a = await senden('/api/users/' + u.id, 'PATCH', { is_active: !u.is_active });
+                if (!a.ok) { showToast(a.daten.message || 'Could not update user', 'error'); return; }
+                showToast(u.is_active ? 'User disabled' : 'User enabled', 'success');
+                nutzerLaden();
+                return;
+            }
+            const detailKnopf = ev.target.closest('[data-detail]');
+            if (detailKnopf) {
+                offenDetail = offenDetail === detailKnopf.dataset.detail ? null : detailKnopf.dataset.detail;
+                nutzerZeichnen();
+                return;
+            }
+            const speichernKnopf = ev.target.closest('[data-speichern]');
+            if (speichernKnopf) {
+                const u = NUTZER.find(x => x.id === speichernKnopf.dataset.speichern);
+                const koerper = { username: document.getElementById('detail-username').value.trim() };
+                const upnFeld = document.getElementById('detail-upn');
+                if (upnFeld && !upnFeld.readOnly) koerper.upn = upnFeld.value.trim();
+                const a = await senden('/api/users/' + u.id, 'PATCH', koerper);
+                if (!a.ok) { showToast(a.daten.message || 'Could not save changes', 'error'); return; }
+                showToast('User updated', 'success');
+                nutzerLaden();
+                return;
+            }
+            const passwortKnopf = ev.target.closest('[data-passwort]');
+            if (passwortKnopf) {
+                const pw = document.getElementById('detail-passwort').value;
+                if (pw.length < 8) { showToast('Password needs at least 8 characters.', 'error'); return; }
+                const a = await senden('/api/users/' + passwortKnopf.dataset.passwort + '/password', 'POST', { password: pw });
+                if (!a.ok) { showToast(a.daten.message || 'Could not set password', 'error'); return; }
+                document.getElementById('detail-passwort').value = '';
+                showToast('Password set', 'success');
+                return;
+            }
+            const mfaKnopf = ev.target.closest('[data-mfa]');
+            if (mfaKnopf) {
+                const u = NUTZER.find(x => x.id === mfaKnopf.dataset.mfa);
+                if (!await hwConfirm('Reset MFA for ' + u.username + '? They sign in with the password alone '
+                    + 'until they enrol again.', { title: 'Reset MFA', okText: 'Reset' })) return;
+                const a = await senden('/api/users/' + u.id + '/mfa', 'DELETE');
+                if (!a.ok) { showToast(a.daten.message || 'Could not reset MFA', 'error'); return; }
+                showToast('MFA reset', 'success');
+                nutzerLaden();
+                return;
+            }
+            const bindungKnopf = ev.target.closest('[data-bindung]');
+            if (bindungKnopf) {
+                const u = NUTZER.find(x => x.id === bindungKnopf.dataset.bindung);
+                if (!await hwConfirm('Clear the Entra binding for ' + u.username + '? The account re-binds on '
+                    + 'the next sign-in that matches the UPN.', { title: 'Clear Entra binding', okText: 'Clear' })) return;
+                const a = await senden('/api/users/' + u.id + '/entra-binding', 'DELETE');
+                if (!a.ok) { showToast(a.daten.message || 'Could not clear binding', 'error'); return; }
+                showToast('Entra binding cleared', 'success');
+                nutzerLaden();
+                return;
+            }
+            const loeschenKnopf = ev.target.closest('[data-loeschen]');
+            if (loeschenKnopf) {
+                const u = NUTZER.find(x => x.id === loeschenKnopf.dataset.loeschen);
+                if (!await hwConfirm('Delete ' + u.username + ' permanently? Role assignments and personal '
+                    + 'settings are removed; this cannot be undone.', { title: 'Delete user', okText: 'Delete' })) return;
+                const a = await senden('/api/users/' + u.id, 'DELETE');
+                if (!a.ok) { showToast(a.daten.message || 'Could not delete user', 'error'); return; }
+                offenDetail = null;
+                showToast('User deleted', 'success');
+                nutzerLaden();
+            }
+        });
+
+        document.getElementById('rollen-speichern-btn').addEventListener('click', async () => {
+            const rolle = gewaehlteRolle(document.getElementById('rollen-wahl'));
+            if (!rolle) {
+                document.getElementById('rollen-fehler').textContent = 'Select a role.';
+                return;
+            }
+            const a = await senden('/api/users/' + rollenNutzer.id + '/roles', 'PUT', { roles: [rolle] });
+            if (!a.ok) {
+                document.getElementById('rollen-fehler').textContent = a.daten.message || 'Could not set roles';
+                return;
+            }
+            rollenModal().hide();
+            showToast('Roles updated', 'success');
+            nutzerLaden();
+        });
+
+        // ---- Neuer Nutzer: Formular-Modal ----
+        const neuModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('userNeuModal'));
+        const neuQuelle = () => document.querySelector('#neu-quelle .hw-prov-karte.an').dataset.quelle;
+
+        document.querySelectorAll('#neu-quelle .hw-prov-karte').forEach(k => k.addEventListener('click', () => {
+            document.querySelectorAll('#neu-quelle .hw-prov-karte').forEach(x => x.classList.toggle('an', x === k));
+            const lokal = k.dataset.quelle === 'local';
+            document.getElementById('neu-passwort-feld').hidden = !lokal;
+            document.getElementById('neu-username-label').textContent = lokal ? 'USERNAME' : 'UPN';
+            document.getElementById('neu-username').placeholder = lokal ? 'username' : 'user@company.com';
+        }));
+
+        document.getElementById('user-neu-btn').addEventListener('click', () => {
+            document.getElementById('neu-username').value = '';
+            document.getElementById('neu-passwort').value = '';
+            document.getElementById('neu-fehler').textContent = '';
+            document.getElementById('neu-rollen').innerHTML = rollenwahlHtml('viewer', 'rolle-neu');
+            neuModal().show();
+            setTimeout(() => document.getElementById('neu-username').focus(), 250);
+        });
+
+        document.getElementById('neu-anlegen').addEventListener('click', async () => {
+            const fehler = document.getElementById('neu-fehler');
+            const username = document.getElementById('neu-username').value.trim();
+            if (!username) { fehler.textContent = 'Username is required.'; return; }
+            const quelle = neuQuelle();
+            const rolle = gewaehlteRolle(document.getElementById('neu-rollen'));
+            if (!rolle) { fehler.textContent = 'Select a role.'; return; }
+            const koerper = { username, auth_source: quelle, roles: [rolle] };
+            if (quelle === 'entra') koerper.upn = username;
+            else {
+                const pw = document.getElementById('neu-passwort').value;
+                if (!pw) { fehler.textContent = 'Password is required for local accounts.'; return; }
+                koerper.password = pw;
+            }
+            const a = await senden('/api/users', 'POST', koerper);
+            if (!a.ok) { fehler.textContent = a.daten.message || 'Could not create user'; return; }
+            neuModal().hide();
+            showToast('User created', 'success');
+            nutzerLaden();
+        });
+
+        // ---------------- Provisionierung ----------------
+        // Bewusst auf den Entra-Tab begrenzt: die Quellkarten im Nutzer-Modal
+        // tragen dieselbe Klasse und haben ihren eigenen Umschalter.
+        document.querySelectorAll('#pane-entra .hw-prov-karte').forEach(k => k.addEventListener('click', () => {
+            document.querySelectorAll('#pane-entra .hw-prov-karte').forEach(x => {
+                const an = x === k;
+                x.classList.toggle('an', an);
+                x.setAttribute('aria-pressed', String(an));
+            });
+            document.getElementById('auto-block').hidden = k.dataset.modus !== 'auto';
+        }));
+
+        document.getElementById('prov-speichern').addEventListener('click', async () => {
+            const auto = document.querySelector('#pane-entra .hw-prov-karte.an').dataset.modus === 'auto';
+            const a = await senden('/api/entra/settings', 'POST', {
+                auto_provision: auto,
+                auto_role: document.getElementById('auto-rolle').value,
+                group_filter: document.getElementById('auto-gruppe').value,
+            });
+            const status = document.getElementById('prov-status');
+            if (!a.ok) { status.textContent = a.daten.message || 'Could not save'; showToast(a.daten.message || 'Could not save', 'error'); return; }
+            status.textContent = 'Saved.';
+            showToast('Provisioning updated', 'success');
+        });
+
+        // ---------------- Rollen und Matrix ----------------
+        function rollenlisteZeichnen() {
+            document.getElementById('rollen-liste').innerHTML = ROLLEN.map(r => `
+                <button type="button" class="hw-rollenknopf${aktiveRolle === r.key ? ' an' : ''}" data-rolle="${esc(r.key)}">
+                  <b>${esc(r.name || r.key)}</b>
+                  <span class="small text-secondary d-block">
+                    ${r.is_builtin ? 'built-in' : 'custom'} · ${r.permissions.length} permissions · ${r.user_count} users
+                  </span>
+                </button>`).join('');
+        }
+
+        function matrixZeichnen() {
+            const rolle = ROLLEN.find(r => r.key === aktiveRolle);
+            if (!rolle) { document.getElementById('matrix').innerHTML = ''; return; }
+            document.getElementById('matrix-titel').textContent = rolle.name || rolle.key;
+            document.getElementById('matrix-sub').textContent =
+                (rolle.is_builtin ? 'built-in · read-only' : 'custom role') + ' · ' + rolle.user_count + ' users';
+            document.getElementById('rolle-speichern').hidden = !!rolle.is_builtin;
+            const gesetzt = new Set(rolle.permissions);
+            document.getElementById('matrix').innerHTML = GRUPPEN.map(g => `
+                <div class="hw-permgruppe">${esc(g.name)}</div>
+                ${g.permissions.map(p => `
+                  <div class="hw-permzeile">
+                    <span><code class="text-info">${esc(p.key)}</code>
+                      <span class="text-secondary small"> &mdash; ${esc(p.text)}</span></span>
+                    <input class="form-check-input" type="checkbox" data-perm="${esc(p.key)}"
+                      ${gesetzt.has(p.key) ? 'checked' : ''} ${rolle.is_builtin || !window.hwDarf('user:manage') ? 'disabled' : ''}
+                      aria-label="${esc(p.key)}">
+                  </div>`).join('')}`).join('');
+        }
+
+        document.getElementById('rollen-liste').addEventListener('click', (ev) => {
+            const k = ev.target.closest('[data-rolle]');
+            if (!k) return;
+            aktiveRolle = k.dataset.rolle;
+            rollenlisteZeichnen();
+            matrixZeichnen();
+        });
+
+        document.getElementById('rolle-speichern').addEventListener('click', async () => {
+            const rolle = ROLLEN.find(r => r.key === aktiveRolle);
+            const rechte = [...document.querySelectorAll('#matrix input[data-perm]:checked')].map(i => i.dataset.perm);
+            const a = await senden('/api/roles/' + rolle.id, 'PATCH', { permissions: rechte });
+            if (!a.ok) { showToast(a.daten.message || 'Could not save role', 'error'); return; }
+            showToast('Role saved', 'success');
+            rollenLaden();
+        });
+
+        async function rollenLaden() {
+            const [r, p] = await Promise.all([holen('/api/roles'), holen('/api/permissions')]);
+            ROLLEN = r.roles || [];
+            GRUPPEN = p.groups || [];
+            if (!aktiveRolle && ROLLEN.length) aktiveRolle = ROLLEN[0].key;
+            rollenlisteZeichnen();
+            matrixZeichnen();
+            // Startrollen-Auswahl: nur Rollen ohne privilegierte Rechte.
+            const gesperrt = ['user:manage', 'secret:reveal', 'secret:rotate', 'settings:write', 'history:delete'];
+            const wahl = document.getElementById('auto-rolle');
+            const aktuell = {{ auto_role | tojson }};
+            wahl.innerHTML = ROLLEN
+                .filter(x => !x.permissions.some(perm => gesperrt.includes(perm)))
+                .map(x => `<option value="${esc(x.key)}"${x.key === aktuell ? ' selected' : ''}>${esc(x.key)}</option>`)
+                .join('') || '<option value="viewer">viewer</option>';
+        }
+
+        nutzerLaden();
+        rollenLaden();
+    })();
+</script>
+{% endblock %}
