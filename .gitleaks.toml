@@ -1,0 +1,23 @@
+# Gitleaks-Konfiguration.
+#
+# Alle Standardregeln bleiben in vollem Umfang aktiv, auch in tests/. Hier
+# stehen ausschliesslich einzelne, benannte Wegwerf-Zugangsdaten aus Tests,
+# an denen die entropiebasierte Heuristik "generic-api-key" anschlaegt.
+#
+# Bewusst je Literal statt pauschal ueber Pfade: eine Pfad-Ausnahme fuer
+# tests/ schaltet in dieser Gitleaks-Version faktisch *alle* Regeln fuer
+# Testdateien ab (targetRules wird dort nicht ausgewertet) -- ein echter
+# Schluessel, versehentlich in einen Test kopiert, fiele dann nicht mehr auf.
+#
+# Neue Ausnahme nur eintragen, wenn der Wert nachweislich erfunden ist.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Erfundene Zugangsdaten aus Tests"
+regexes = [
+    # tests/test_user_admin.py -- Passwort eines Wegwerf-Kontos im Test,
+    # dass ein deaktiviertes Konto sich nicht anmelden kann.
+    '''Ein-gutes-Passwort-1''',
+]
