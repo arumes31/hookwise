@@ -176,6 +176,33 @@ def test_schema_ist_nach_create_all_vollstaendig(app, db_bereit):
         zustand = rbac_schema_state(db.engine)
         assert zustand["vollstaendig"], zustand
         assert not zustand["fehlende_spalten"]
+        assert not zustand["fehlende_indizes"]
+
+
+def test_bridge_ergaenzt_fehlende_indizes(app, db_bereit):
+    """Die Bruecke schuldet nicht nur Spalten, sondern alles, was das Modell
+    deklariert. Fehlt ein Index, weicht die Datenbank vom Modell ab -- genau
+    das meldet ``flask db check`` in der CI als Drift."""
+    from sqlalchemy import inspect
+
+    from hookwise.models import USER_BRIDGE_INDEXES
+    from hookwise.rbac.schema_bridge import ensure_rbac_schema
+
+    with app.app_context():
+        for name in USER_BRIDGE_INDEXES:
+            db.session.execute(db.text(f"DROP INDEX {name}"))
+        db.session.commit()
+
+        zustand = rbac_schema_state(db.engine)
+        assert zustand["fehlende_indizes"] == set(USER_BRIDGE_INDEXES)
+        assert not zustand["vollstaendig"], "fehlender Index heisst unvollstaendig"
+
+        assert ensure_rbac_schema(db.engine)["vollstaendig"]
+        vorhanden = {i["name"] for i in inspect(db.engine).get_indexes("user")}
+        assert set(USER_BRIDGE_INDEXES) <= vorhanden
+
+        # Zweiter Lauf darf nicht an einem doppelten CREATE INDEX scheitern.
+        assert ensure_rbac_schema(db.engine)["vollstaendig"]
 
 
 def test_seed_ist_idempotent(app, db_bereit):

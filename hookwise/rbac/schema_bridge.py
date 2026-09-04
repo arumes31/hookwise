@@ -33,7 +33,7 @@ def _tabellennamen(engine: Any) -> Set[str]:
 
 def rbac_schema_state(engine: Any) -> Dict[str, Any]:
     """Was ist tatsaechlich in der Datenbank vorhanden?"""
-    from ..models import RBAC_TABLES, USER_BRIDGE_COLUMNS
+    from ..models import RBAC_TABLES, USER_BRIDGE_COLUMNS, USER_BRIDGE_INDEXES
 
     try:
         insp = inspect(engine)
@@ -46,12 +46,26 @@ def rbac_schema_state(engine: Any) -> Dict[str, Any]:
             user_spalten = {c["name"] for c in insp.get_columns("user")}
         fehlende_spalten = set(USER_BRIDGE_COLUMNS) - user_spalten if "user" in tabellen else set()
 
+        # Indizes zaehlen zum Schema: fehlen sie, weicht die Datenbank vom
+        # Modell ab und ``flask db check`` meldet Drift.
+        fehlende_indizes: Set[str] = set()
+        if "user" in tabellen:
+            vorhandene = {i["name"] for i in insp.get_indexes("user")}
+            fehlende_indizes = {
+                name
+                for name, spalte in USER_BRIDGE_INDEXES.items()
+                if name not in vorhandene and spalte in (user_spalten | set(USER_BRIDGE_COLUMNS))
+            }
+
         return {
             "user_da": "user" in tabellen,
             "tabellen_da": not fehlende_tabellen,
             "fehlende_tabellen": fehlende_tabellen,
             "fehlende_spalten": fehlende_spalten,
-            "vollstaendig": not fehlende_tabellen and not fehlende_spalten and "user" in tabellen,
+            "fehlende_indizes": fehlende_indizes,
+            "vollstaendig": (
+                not fehlende_tabellen and not fehlende_spalten and not fehlende_indizes and "user" in tabellen
+            ),
         }
     except Exception:  # pragma: no cover - Datenbank nicht erreichbar
         _logger.exception("RBAC-Schemapruefung fehlgeschlagen")
@@ -60,13 +74,17 @@ def rbac_schema_state(engine: Any) -> Dict[str, Any]:
             "tabellen_da": False,
             "fehlende_tabellen": set(),
             "fehlende_spalten": set(),
+            "fehlende_indizes": set(),
             "vollstaendig": False,
         }
 
 
 def ensure_rbac_schema(engine: Any) -> Dict[str, Any]:
-    """Legt fehlende RBAC-Tabellen und User-Spalten an. Idempotent."""
-    from ..models import RBAC_TABLES, USER_BRIDGE_COLUMNS
+    """Legt fehlende RBAC-Tabellen, User-Spalten und deren Indizes an.
+
+    Idempotent.
+    """
+    from ..models import RBAC_TABLES, USER_BRIDGE_COLUMNS, USER_BRIDGE_INDEXES
 
     zustand = rbac_schema_state(engine)
     if zustand["vollstaendig"] or not zustand["user_da"]:
@@ -89,6 +107,13 @@ def ensure_rbac_schema(engine: Any) -> Dict[str, Any]:
                 typ = USER_BRIDGE_COLUMNS[spalte]
                 conn.exec_driver_sql(f'ALTER TABLE "user" ADD COLUMN {spalte} {typ}')
                 _logger.info("RBAC-Bridge: Spalte user.%s ergaenzt", spalte)
+
+            # Nach den Spalten, denn ein Index braucht seine Spalte. Wie beim
+            # ADD COLUMN ohne IF NOT EXISTS: der Inspector hat schon entschieden.
+            for index in sorted(zustand["fehlende_indizes"]):
+                spalte = USER_BRIDGE_INDEXES[index]
+                conn.exec_driver_sql(f'CREATE INDEX {index} ON "user" ({spalte})')
+                _logger.info("RBAC-Bridge: Index %s ergaenzt", index)
 
             fehlende_tabellen = zustand["fehlende_tabellen"]
             if fehlende_tabellen:

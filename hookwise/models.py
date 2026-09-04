@@ -581,3 +581,11 @@ USER_BRIDGE_COLUMNS = {
     "is_active": "BOOLEAN",
     "last_login_at": "TIMESTAMP",
 }
+
+#: Indizes, die das Modell auf den Bridge-Spalten deklariert. Ohne sie weicht
+#: die Datenbank vom Modell ab -- ``flask db check`` meldet das zu Recht als
+#: Drift. Namen wie von SQLAlchemy vergeben (ix_<tabelle>_<spalte>).
+USER_BRIDGE_INDEXES = {
+    "ix_user_entra_oid": "entra_oid",
+    "ix_user_upn": "upn",
+}
