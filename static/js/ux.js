@@ -926,6 +926,49 @@ if (!window.originalFetch) {
     };
 }
 
+function endpointAutosaveFields(form) {
+    const skippedTypes = new Set(['button', 'file', 'hidden', 'reset', 'submit']);
+    return Array.from(form.elements).filter((field) =>
+        field.name
+        && field.dataset.autosave !== 'ignore'
+        && !field.disabled
+        && !skippedTypes.has(field.type));
+}
+
+function endpointAutosaveState(form) {
+    const data = {};
+    endpointAutosaveFields(form).forEach((field) => {
+        if (field.type === 'checkbox') {
+            data[field.name] = field.checked;
+        } else if (field.type !== 'radio' || field.checked) {
+            data[field.name] = field.value;
+        }
+    });
+    return data;
+}
+
+function sanitizeEndpointAutosave(form, data) {
+    const allowedNames = new Set(endpointAutosaveFields(form).map((field) => field.name));
+    Object.keys(data).forEach((key) => {
+        if (!allowedNames.has(key)) delete data[key];
+    });
+    return data;
+}
+
+function restoreEndpointAutosave(form, data) {
+    endpointAutosaveFields(form).forEach((field) => {
+        if (!Object.prototype.hasOwnProperty.call(data, field.name)) return;
+        const value = data[field.name];
+        if (field.type === 'checkbox') {
+            field.checked = value === true || value === 'true' || value === 'on';
+        } else if (field.type === 'radio') {
+            field.checked = field.value === value;
+        } else {
+            field.value = value;
+        }
+    });
+}
+
 async function initAutoSave() {
     const form = document.getElementById('endpoint-form');
     if (!form) return;
@@ -933,7 +976,8 @@ async function initAutoSave() {
     const formId = window.location.pathname;
     const saved = localStorage.getItem('autosave_' + formId);
     if (saved) {
-        const data = JSON.parse(saved);
+        const data = sanitizeEndpointAutosave(form, JSON.parse(saved));
+        localStorage.setItem('autosave_' + formId, JSON.stringify(data));
         const isEditPage = window.location.pathname.includes('/endpoint/edit/');
 
         const proceed = isEditPage || await hwConfirm('Restore unsaved changes?', {
@@ -943,16 +987,7 @@ async function initAutoSave() {
         });
 
         if (proceed) {
-            Object.keys(data).forEach(key => {
-                const el = form.elements[key];
-                if (el) {
-                    if (el.type === 'checkbox' || el.type === 'radio') {
-                        el.checked = (data[key] === 'true' || data[key] === 'on' || data[key] === true);
-                    } else {
-                        el.value = data[key];
-                    }
-                }
-            });
+            restoreEndpointAutosave(form, data);
             if (window.updatePreview) window.updatePreview();
             if (window.toggleBearerMgmt) window.toggleBearerMgmt();
             if (window.toggleAdvanced) window.toggleAdvanced();
@@ -965,9 +1000,7 @@ async function initAutoSave() {
     }
 
     form.addEventListener('input', () => {
-        const data = {};
-        new FormData(form).forEach((value, key) => data[key] = value);
-        localStorage.setItem('autosave_' + formId, JSON.stringify(data));
+        localStorage.setItem('autosave_' + formId, JSON.stringify(endpointAutosaveState(form)));
     });
 
     form.addEventListener('submit', () => {

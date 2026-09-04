@@ -52,8 +52,9 @@
                 </div>
             </div>
             <div class="card-body p-4">
-                <form method="POST" id="endpoint-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <form method="POST" id="endpoint-form" hx-boost="false">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"
+                        data-autosave="ignore" />
 
                     {# Live-Vorschau klebt oben im Viewport, damit Aenderungen an
                        Name/Prefix aus jedem Tab sofort sichtbar sind. Undo/Redo
@@ -559,7 +560,7 @@
                                     <input type="text"
                                         class="form-control font-monospace bg-dark border-secondary text-warning small"
                                         id="hmac_secret" name="hmac_secret" placeholder="Optional shared secret"
-                                        value=""
+                                        value="" data-autosave="ignore"
                                         data-tooltip="If set, incoming webhooks must include timestamped, nonce-protected HMAC headers.">
                                     {% if config and config.hmac_secret %}<div class="form-text">An encrypted secret is configured. Leave blank to keep it.</div>{% endif %}
                                 </div>

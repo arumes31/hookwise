@@ -1,5 +1,7 @@
 import io
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -151,6 +153,88 @@ def test_untrusted_ui_values_are_not_interpolated_as_html():
     assert 'value="${regex}"' not in form_scripts
     assert "resultPre.textContent = JSON.stringify" in form_scripts
     assert "error.textContent = String(data.message" in form_scripts
+
+
+def test_endpoint_autosave_filters_ignored_fields_and_preserves_checkbox_state():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for endpoint autosave behavior coverage")
+
+    root = Path(__file__).parents[1]
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const helpers = source.slice(
+    source.indexOf('function endpointAutosaveFields'),
+    source.indexOf('async function initAutoSave')
+);
+assert(helpers.includes('function sanitizeEndpointAutosave'));
+eval(helpers);
+
+const field = (name, type, value = '', extra = {}) => ({
+    name,
+    type,
+    value,
+    checked: false,
+    disabled: false,
+    dataset: {},
+    ...extra
+});
+const controls = [
+    field('csrf_token', 'hidden', 'fresh-token'),
+    field('hmac_secret', 'text', 'current-secret', { dataset: { autosave: 'ignore' } }),
+    field('enabled', 'checkbox', 'true', { checked: false }),
+    field('mode', 'radio', 'a'),
+    field('mode', 'radio', 'b', { checked: true }),
+    field('retry_enabled', 'checkbox', 'true', { checked: true }),
+    field('retry_enabled', 'hidden', 'false'),
+    field('title', 'text', 'draft')
+];
+const form = { elements: controls };
+
+assert.deepStrictEqual(endpointAutosaveState(form), {
+    enabled: false,
+    mode: 'b',
+    retry_enabled: true,
+    title: 'draft'
+});
+
+const legacy = sanitizeEndpointAutosave(form, {
+    csrf_token: 'stale-token',
+    hmac_secret: 'stored-secret',
+    enabled: 'on',
+    mode: 'a',
+    retry_enabled: false,
+    title: 'legacy'
+});
+assert.deepStrictEqual(legacy, {
+    enabled: 'on',
+    mode: 'a',
+    retry_enabled: false,
+    title: 'legacy'
+});
+
+restoreEndpointAutosave(form, legacy);
+const find = (name, value) => controls.find((item) =>
+    item.name === name && (value === undefined || item.value === value));
+assert.strictEqual(find('csrf_token').value, 'fresh-token');
+assert.strictEqual(find('hmac_secret').value, 'current-secret');
+assert.strictEqual(find('enabled').checked, true);
+assert.strictEqual(find('mode', 'a').checked, true);
+assert.strictEqual(find('mode', 'b').checked, false);
+assert.strictEqual(find('retry_enabled', 'true').checked, false);
+assert.strictEqual(find('title').value, 'legacy');
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_all_workflow_actions_use_immutable_shas():
