@@ -208,6 +208,23 @@
                                         data-tooltip="Text to prepend to the ConnectWise ticket title.">
                                 </div>
                                 <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                            id="auto_link_configuration_enabled"
+                                            name="auto_link_configuration_enabled" value="true"
+                                            aria-describedby="auto-link-configuration-help"
+                                            {{ 'checked' if config and config.auto_link_configuration_enabled else '' }}>
+                                        <label class="form-check-label fw-bold text-light"
+                                            for="auto_link_configuration_enabled">
+                                            Automatically link matching ConnectWise configuration
+                                        </label>
+                                    </div>
+                                    <div class="form-text text-warning" id="auto-link-configuration-help">
+                                        Only configurations belonging to the assigned ConnectWise company are considered.
+                                        Attaching a configuration can affect the ticket's SLA or agreement.
+                                    </div>
+                                </div>
+                                <div class="col-12">
                                     <div class="form-check form-switch mb-0">
                                         <input class="form-check-input" type="checkbox" id="show-advanced"
                                             onchange="toggleAdvanced()">
@@ -388,6 +405,12 @@
                                         id="json_mapping" name="json_mapping" rows="3"
                                         placeholder='{"summary": "$.title", "description": "$.msg"}'
                                         data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>
+                                    <div class="form-text text-secondary">
+                                        Asset overrides: <code>configuration_id</code>,
+                                        <code>configuration_device_id</code>, <code>configuration_serial</code>,
+                                        <code>configuration_mac</code>, <code>configuration_tag</code>,
+                                        <code>configuration_ip</code>, and <code>configuration_name</code>.
+                                    </div>
                                 </div>
 
                                 <div class="col-12">
