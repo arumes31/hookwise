@@ -121,15 +121,19 @@ def auth_required(f: Any) -> Any:
                 # Valid Basic Auth - populate synthetic session
                 from .models import User
 
+                # ADR-005: Basic Auth authentifiziert, vergibt aber keine
+                # Rolle mehr. Frueher entstand hier ohne passenden DB-Nutzer
+                # eine synthetische Admin-Session -- damit waere jede
+                # Rechtepruefung ueber den Header umgehbar gewesen.
                 user = User.query.filter_by(username=auth.username).first()
-                if user:
-                    session["user_id"] = user.id
-                    session["username"] = user.username
-                    session["role"] = user.role
-                else:
-                    session["user_id"] = "basic_auth"
-                    session["username"] = auth.username
-                    session["role"] = "admin"
+                if user is None or not user.aktiv:
+                    return Response("No active HookWise account for these credentials.", 403)
+                session["user_id"] = user.id
+                session["username"] = user.username
+                session["role"] = user.role
+                from .rbac.resolver import sitzung_setzen
+
+                sitzung_setzen(user)
                 return f(*args, **kwargs)
             else:
                 # Client sent invalid Basic Auth credentials

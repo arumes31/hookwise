@@ -31,8 +31,26 @@ class User(Base):
     password_hash = db.Column(db.String(256), nullable=False)
     otp_secret = db.Column(db.String(256))
     is_2fa_enabled = db.Column(db.Boolean, default=False, nullable=False)
-    role = db.Column(db.String(20), default="user")  # admin, user
+    role = db.Column(db.String(20), default="user")  # admin, user -- Legacy-Fallback
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    # Identitaetsquelle und Entra-Bindung. Gespeichert wird nur das stabile
+    # tid/oid-Paar, niemals ein Token. Alle Felder sind nullable, damit die
+    # Schema-Bridge sie ohne Datenmigration nachziehen kann.
+    auth_source = db.Column(db.String(16), default="local", nullable=True)
+    entra_tid = db.Column(db.String(64), nullable=True)
+    entra_oid = db.Column(db.String(64), nullable=True, index=True)
+    upn = db.Column(db.String(255), nullable=True, index=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=True)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def aktiv(self) -> bool:
+        """Deaktivierte Konten sind gesperrt; NULL zaehlt als aktiv (Altbestand)."""
+        return self.is_active is not False
+
+    @property
+    def quelle(self) -> str:
+        return (self.auth_source or "local").lower()
 
     @validates("otp_secret")
     def _encrypt_otp_secret(self, key: str, value: str | None) -> str | None:
@@ -44,7 +62,17 @@ class User(Base):
         return ensure_encrypted(value)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"id": self.id, "username": self.username, "role": self.role, "created_at": self.created_at.isoformat()}
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "created_at": self.created_at.isoformat(),
+            "auth_source": self.quelle,
+            "upn": self.upn,
+            "is_active": self.aktiv,
+            "entra_bound": bool(self.entra_oid),
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+        }
 
 
 class WebhookConfig(Base):
@@ -472,3 +500,77 @@ class GlobalMapping(Base):
             "description": self.description,
             "created_at": self.created_at.isoformat(),
         }
+
+
+# ---------------------------------------------------------------------------
+# RBAC. Diese vier Tabellen legt hookwise.rbac.schema_bridge zur Laufzeit an,
+# damit ein Deployment ohne Migrationsschritt auskommt (ADR-001). Bewusst ohne
+# Fremdschluessel-Constraints: ADD CONSTRAINT ist der Teil eines Online-DDL,
+# der bei Altbestand mit Waisen fehlschlagen kann. Die Integritaet sichert die
+# Anwendungsschicht.
+# ---------------------------------------------------------------------------
+class RbacRole(Base):
+    __tablename__ = "rbac_role"
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    key = db.Column(db.String(50), unique=True, nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(255))
+    is_builtin = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "key": self.key,
+            "name": self.name,
+            "description": self.description,
+            "is_builtin": bool(self.is_builtin),
+            "permissions": sorted(p.permission for p in RbacRolePermission.query.filter_by(role_id=self.id)),
+        }
+
+
+class RbacRolePermission(Base):
+    __tablename__ = "rbac_role_permission"
+
+    role_id = db.Column(db.String(36), primary_key=True)
+    permission = db.Column(db.String(64), primary_key=True)
+
+
+class RbacUserRole(Base):
+    __tablename__ = "rbac_user_role"
+
+    user_id = db.Column(db.String(36), primary_key=True)
+    role_id = db.Column(db.String(36), primary_key=True)
+    granted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    granted_by = db.Column(db.String(100))
+
+
+class RbacMeta(Base):
+    """Einzeiliger Zaehler. Jede Rechteaenderung erhoeht ihn; Sessions mit
+    veraltetem Stand loesen ihre Rechte beim naechsten Request neu auf."""
+
+    __tablename__ = "rbac_meta"
+
+    id = db.Column(db.Integer, primary_key=True)
+    permissions_epoch = db.Column(db.Integer, default=1, nullable=False)
+
+
+#: Nur diese Tabellen legt die Bridge an -- nicht das gesamte Metadata.
+RBAC_TABLES = (
+    RbacRole.__table__,  # type: ignore[attr-defined]
+    RbacRolePermission.__table__,  # type: ignore[attr-defined]
+    RbacUserRole.__table__,  # type: ignore[attr-defined]
+    RbacMeta.__table__,  # type: ignore[attr-defined]
+)
+
+#: Spalten, die die Bridge auf "user" nachzieht. Dialektneutrale Typen, weil
+#: dieselbe Anweisung auf Postgres (Produktion) und SQLite (Tests) laufen muss.
+USER_BRIDGE_COLUMNS = {
+    "auth_source": "VARCHAR(16)",
+    "entra_tid": "VARCHAR(64)",
+    "entra_oid": "VARCHAR(64)",
+    "upn": "VARCHAR(255)",
+    "is_active": "BOOLEAN",
+    "last_login_at": "TIMESTAMP",
+}

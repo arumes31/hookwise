@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{# Nutzer-, Entra- und Rechteverwaltung in einer Ansicht. Aufbau und Bausteine
+   folgen den freigegebenen Screen-Vorlagen; die Daten kommen ueber /api/users,
+   /api/roles und /api/permissions. #}
+
+{% block content %}
+<div class="row mb-4 animate-fade-in">
+    <div class="col-md-8">
+        <h1 class="accent-gradient fw-bold mb-1">Identity &amp; Access</h1>
+        <p class="text-secondary small">Users, Entra ID sign-in and the permission matrix.</p>
+    </div>
+</div>
+
+{% if not schema_ok %}
+<div class="alert alert-warning" role="alert">
+    <strong>RBAC schema not ready.</strong>
+    Permissions fall back to the legacy role column until the schema bridge completes.
+</div>
+{% endif %}
+
+<ul class="nav nav-pills hw-formtabs mb-4" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-users" data-bs-toggle="tab" data-bs-target="#pane-users"
+            type="button" role="tab" aria-controls="pane-users" aria-selected="true">Users</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-entra" data-bs-toggle="tab" data-bs-target="#pane-entra"
+            type="button" role="tab" aria-controls="pane-entra" aria-selected="false">Entra ID</button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-roles" data-bs-toggle="tab" data-bs-target="#pane-roles"
+            type="button" role="tab" aria-controls="pane-roles" aria-selected="false">Permissions</button>
+    </li>
+</ul>
+
+<div class="tab-content hw-formtab-inhalt">
+
+    <!-- ============ Nutzer ============ -->
+    <div class="tab-pane active" id="pane-users" role="tabpanel" aria-labelledby="tab-users">
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+            <input id="user-suche" class="form-control" style="max-width:240px"
+                placeholder="Search name or UPN&hellip;" aria-label="Search users">
+            <select id="user-quelle" class="form-select" style="width:auto" aria-label="Filter by source">
+                <option value="">All sources</option>
+                <option value="local">Local</option>
+                <option value="entra">Entra ID</option>
+            </select>
+            <span id="user-zaehler" class="text-secondary small ms-auto"></span>
+            <button class="btn btn-primary fw-bold" id="user-neu-btn">
+                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>New user
+            </button>
+        </div>
+
+        <div class="card glass-card">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead><tr>
+                        <th class="ps-4 py-3">User</th><th class="py-3">Source</th><th class="py-3">Roles</th>
+                        <th class="py-3">State</th><th class="py-3">Last sign-in</th>
+                        <th class="pe-4 py-3 text-end"><span class="visually-hidden">Actions</span></th>
+                    </tr></thead>
+                    <tbody id="user-tabelle"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ Entra ID ============ -->
+    <div class="tab-pane" id="pane-entra" role="tabpanel" aria-labelledby="tab-entra">
+        <div class="card glass-card mb-3">
+            <div class="card-body p-4">
+                <h2 class="h6 fw-bold text-light mb-3">Connection</h2>
+                <p class="small text-secondary">
+                    Connection settings come from the environment and the mounted secret file, so they
+                    survive a container restart and never end up in the database.
+                </p>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">STATUS</label>
+                        <div class="hw-drawer-feld">
+                            <code>{{ 'enabled' if entra_enabled else 'disabled' }}</code>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">TENANT ID</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_tenant or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">CLIENT ID</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_client or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">REDIRECT URI</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_redirect or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">CLIENT SECRET FILE</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_secret_file or 'not set' }}</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-bold text-secondary ls-wide">SCOPES</label>
+                        <div class="hw-drawer-feld"><code>{{ entra_scopes }}</code></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card glass-card mb-3" style="border-color:var(--accent)">
+            <div class="card-body p-4">
+                <h2 class="h6 fw-bold text-light mb-1">Provisioning</h2>
+                <p class="small text-secondary mb-3">Switchable at runtime &mdash; no restart required.</p>
+
+                <div class="hw-prov-wahl">
+                    <button type="button" class="hw-prov-karte{% if not auto_provision %} an{% endif %}"
+                        data-modus="vorab" aria-pressed="{{ 'false' if auto_provision else 'true' }}">
+                        <span class="hw-prov-punkt"></span>
+                        <span>
+                            <b>Pre-provisioned only</b>
+                            <span class="small text-secondary d-block">A user needs an assignment in Entra
+                                <em>and</em> an active account here. Two independent gates.</span>
+                        </span>
+                    </button>
+                    <button type="button" class="hw-prov-karte{% if auto_provision %} an{% endif %}"
+                        data-modus="auto" aria-pressed="{{ 'true' if auto_provision else 'false' }}">
+                        <span class="hw-prov-punkt"></span>
+                        <span>
+                            <b>Create accounts automatically</b>
+                            <span class="small text-secondary d-block">Any user assigned in Entra gets an account
+                                on first sign-in, with the start role below.</span>
+                        </span>
+                    </button>
+                </div>
+
+                <div id="auto-block" class="mt-3 pt-3 border-top border-secondary border-opacity-10"
+                    {% if not auto_provision %}hidden{% endif %}>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="auto-rolle" class="form-label small fw-bold text-secondary ls-wide">START ROLE</label>
+                            <select id="auto-rolle" class="form-select"></select>
+                            <div class="form-text">Roles holding <code>user:manage</code> or <code>secret:*</code>
+                                are rejected &mdash; automatic provisioning cannot create administrators.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="auto-gruppe" class="form-label small fw-bold text-secondary ls-wide">ENTRA GROUP (OPTIONAL)</label>
+                            <input id="auto-gruppe" class="form-control" value="{{ group_filter }}"
+                                placeholder="Group object ID&hellip;">
+                        </div>
+                    </div>
+                    <div class="alert alert-warning mt-3 mb-0 small">
+                        <strong>What changes with this setting.</strong>
+                        Anyone the tenant assigns to this application reaches HookWise without a second approval.
+                        Every automatic account is written to the audit log as <code>entra_auto_provisioned</code>.
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-primary fw-bold" id="prov-speichern">Save provisioning</button>
+                    <span id="prov-status" class="align-self-center small text-secondary"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ Rechte ============ -->
+    <div class="tab-pane" id="pane-roles" role="tabpanel" aria-labelledby="tab-roles">
+        <div class="row g-3">
+            <div class="col-lg-3">
+                <div id="rollen-liste" class="d-flex flex-column gap-2"></div>
+            </div>
+            <div class="col-lg-9">
+                <div class="card glass-card">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+                            <h2 class="h6 fw-bold text-light mb-0" id="matrix-titel">&mdash;</h2>
+                            <span class="small text-secondary" id="matrix-sub"></span>
+                            <button class="btn btn-sm btn-primary fw-bold ms-auto" id="rolle-speichern" hidden>Save role</button>
+                        </div>
+                        <div id="matrix"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        'use strict';
+        const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+        const holen = (u) => fetch(u, { credentials: 'same-origin' }).then(r => r.json());
+        const senden = (u, methode, koerper) => fetch(u, {
+            method: methode,
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+            credentials: 'same-origin',
+            body: JSON.stringify(koerper || {}),
+        }).then(async r => ({ ok: r.ok, daten: await r.json().catch(() => ({})) }));
+
+        let NUTZER = [], ROLLEN = [], GRUPPEN = [], aktiveRolle = null;
+
+        // ---------------- Nutzer ----------------
+        const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+            c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        function nutzerZeichnen() {
+            const suche = (document.getElementById('user-suche').value || '').toLowerCase();
+            const quelle = document.getElementById('user-quelle').value;
+            const sichtbar = NUTZER.filter(u =>
+                (!quelle || u.auth_source === quelle) &&
+                (!suche || (u.username + ' ' + (u.upn || '')).toLowerCase().includes(suche)));
+            document.getElementById('user-zaehler').textContent =
+                sichtbar.length + ' users · ' + sichtbar.filter(u => u.is_active).length + ' active';
+            document.getElementById('user-tabelle').innerHTML = sichtbar.map(u => `
+                <tr>
+                  <td class="ps-4"><span class="fw-bold">${esc(u.username)}</span>
+                      ${u.upn ? '<br><span class="small text-secondary">' + esc(u.upn) + '</span>' : ''}</td>
+                  <td><span class="badge ${u.auth_source === 'entra' ? 'bg-primary' : 'bg-secondary'}">${esc(u.auth_source).toUpperCase()}</span></td>
+                  <td>${(u.roles || []).map(r => '<span class="badge bg-dark border border-secondary me-1">' + esc(r) + '</span>').join('') || '<span class="text-secondary small">&mdash;</span>'}</td>
+                  <td><span class="badge ${u.is_active ? 'bg-success' : 'bg-secondary'}">${u.is_active ? 'ACTIVE' : 'DISABLED'}</span></td>
+                  <td class="small text-secondary">${u.last_login_at ? esc(u.last_login_at.slice(0, 16).replace('T', ' ')) : 'never'}</td>
+                  <td class="pe-4 text-end">
+                    <button class="btn btn-sm btn-outline-secondary" data-rollen="${esc(u.id)}">Roles</button>
+                    <button class="btn btn-sm btn-outline-warning" data-aktiv="${esc(u.id)}">${u.is_active ? 'Disable' : 'Enable'}</button>
+                  </td>
+                </tr>`).join('') || '<tr><td colspan="6" class="text-center text-secondary py-4">No users match.</td></tr>';
+        }
+
+        async function nutzerLaden() {
+            const d = await holen('/api/users');
+            NUTZER = d.users || [];
+            nutzerZeichnen();
+        }
+
+        document.getElementById('user-suche').addEventListener('input', nutzerZeichnen);
+        document.getElementById('user-quelle').addEventListener('change', nutzerZeichnen);
+
+        document.getElementById('user-tabelle').addEventListener('click', async (ev) => {
+            const rollenKnopf = ev.target.closest('[data-rollen]');
+            if (rollenKnopf) {
+                const u = NUTZER.find(x => x.id === rollenKnopf.dataset.rollen);
+                const eingabe = window.prompt(
+                    'Roles for ' + u.username + ' (comma separated).\nAvailable: ' + ROLLEN.map(r => r.key).join(', '),
+                    (u.roles || []).join(', '));
+                if (eingabe === null) return;
+                const liste = eingabe.split(',').map(s => s.trim()).filter(Boolean);
+                const a = await senden('/api/users/' + u.id + '/roles', 'PUT', { roles: liste });
+                if (!a.ok) { showToast(a.daten.message || 'Could not set roles', 'error'); return; }
+                showToast('Roles updated', 'success');
+                nutzerLaden();
+                return;
+            }
+            const aktivKnopf = ev.target.closest('[data-aktiv]');
+            if (aktivKnopf) {
+                const u = NUTZER.find(x => x.id === aktivKnopf.dataset.aktiv);
+                const a = await senden('/api/users/' + u.id, 'PATCH', { is_active: !u.is_active });
+                if (!a.ok) { showToast(a.daten.message || 'Could not update user', 'error'); return; }
+                showToast(u.is_active ? 'User disabled' : 'User enabled', 'success');
+                nutzerLaden();
+            }
+        });
+
+        document.getElementById('user-neu-btn').addEventListener('click', async () => {
+            const username = window.prompt('Username (for Entra users: their UPN)');
+            if (!username) return;
+            const quelle = window.confirm('OK = Entra ID account, Cancel = local account') ? 'entra' : 'local';
+            const koerper = { username: username.trim(), auth_source: quelle };
+            if (quelle === 'entra') koerper.upn = username.trim();
+            else {
+                const pw = window.prompt('Password for the local account');
+                if (!pw) return;
+                koerper.password = pw;
+            }
+            const a = await senden('/api/users', 'POST', koerper);
+            if (!a.ok) { showToast(a.daten.message || 'Could not create user', 'error'); return; }
+            showToast('User created', 'success');
+            nutzerLaden();
+        });
+
+        // ---------------- Provisionierung ----------------
+        document.querySelectorAll('.hw-prov-karte').forEach(k => k.addEventListener('click', () => {
+            document.querySelectorAll('.hw-prov-karte').forEach(x => {
+                const an = x === k;
+                x.classList.toggle('an', an);
+                x.setAttribute('aria-pressed', String(an));
+            });
+            document.getElementById('auto-block').hidden = k.dataset.modus !== 'auto';
+        }));
+
+        document.getElementById('prov-speichern').addEventListener('click', async () => {
+            const auto = document.querySelector('.hw-prov-karte.an').dataset.modus === 'auto';
+            const a = await senden('/api/entra/settings', 'POST', {
+                auto_provision: auto,
+                auto_role: document.getElementById('auto-rolle').value,
+                group_filter: document.getElementById('auto-gruppe').value,
+            });
+            const status = document.getElementById('prov-status');
+            if (!a.ok) { status.textContent = a.daten.message || 'Could not save'; showToast(a.daten.message || 'Could not save', 'error'); return; }
+            status.textContent = 'Saved.';
+            showToast('Provisioning updated', 'success');
+        });
+
+        // ---------------- Rollen und Matrix ----------------
+        function rollenlisteZeichnen() {
+            document.getElementById('rollen-liste').innerHTML = ROLLEN.map(r => `
+                <button type="button" class="hw-rollenknopf${aktiveRolle === r.key ? ' an' : ''}" data-rolle="${esc(r.key)}">
+                  <b>${esc(r.name || r.key)}</b>
+                  <span class="small text-secondary d-block">
+                    ${r.is_builtin ? 'built-in' : 'custom'} · ${r.permissions.length} permissions · ${r.user_count} users
+                  </span>
+                </button>`).join('');
+        }
+
+        function matrixZeichnen() {
+            const rolle = ROLLEN.find(r => r.key === aktiveRolle);
+            if (!rolle) { document.getElementById('matrix').innerHTML = ''; return; }
+            document.getElementById('matrix-titel').textContent = rolle.name || rolle.key;
+            document.getElementById('matrix-sub').textContent =
+                (rolle.is_builtin ? 'built-in · read-only' : 'custom role') + ' · ' + rolle.user_count + ' users';
+            document.getElementById('rolle-speichern').hidden = !!rolle.is_builtin;
+            const gesetzt = new Set(rolle.permissions);
+            document.getElementById('matrix').innerHTML = GRUPPEN.map(g => `
+                <div class="hw-permgruppe">${esc(g.name)}</div>
+                ${g.permissions.map(p => `
+                  <div class="hw-permzeile">
+                    <span><code class="text-info">${esc(p.key)}</code>
+                      <span class="text-secondary small"> &mdash; ${esc(p.text)}</span></span>
+                    <input class="form-check-input" type="checkbox" data-perm="${esc(p.key)}"
+                      ${gesetzt.has(p.key) ? 'checked' : ''} ${rolle.is_builtin ? 'disabled' : ''}
+                      aria-label="${esc(p.key)}">
+                  </div>`).join('')}`).join('');
+        }
+
+        document.getElementById('rollen-liste').addEventListener('click', (ev) => {
+            const k = ev.target.closest('[data-rolle]');
+            if (!k) return;
+            aktiveRolle = k.dataset.rolle;
+            rollenlisteZeichnen();
+            matrixZeichnen();
+        });
+
+        document.getElementById('rolle-speichern').addEventListener('click', async () => {
+            const rolle = ROLLEN.find(r => r.key === aktiveRolle);
+            const rechte = [...document.querySelectorAll('#matrix input[data-perm]:checked')].map(i => i.dataset.perm);
+            const a = await senden('/api/roles/' + rolle.id, 'PATCH', { permissions: rechte });
+            if (!a.ok) { showToast(a.daten.message || 'Could not save role', 'error'); return; }
+            showToast('Role saved', 'success');
+            rollenLaden();
+        });
+
+        async function rollenLaden() {
+            const [r, p] = await Promise.all([holen('/api/roles'), holen('/api/permissions')]);
+            ROLLEN = r.roles || [];
+            GRUPPEN = p.groups || [];
+            if (!aktiveRolle && ROLLEN.length) aktiveRolle = ROLLEN[0].key;
+            rollenlisteZeichnen();
+            matrixZeichnen();
+            // Startrollen-Auswahl: nur Rollen ohne privilegierte Rechte.
+            const gesperrt = ['user:manage', 'secret:reveal', 'secret:rotate', 'settings:write', 'history:delete'];
+            const wahl = document.getElementById('auto-rolle');
+            const aktuell = {{ auto_role | tojson }};
+            wahl.innerHTML = ROLLEN
+                .filter(x => !x.permissions.some(perm => gesperrt.includes(perm)))
+                .map(x => `<option value="${esc(x.key)}"${x.key === aktuell ? ' selected' : ''}>${esc(x.key)}</option>`)
+                .join('') || '<option value="viewer">viewer</option>';
+        }
+
+        nutzerLaden();
+        rollenLaden();
+    })();
+</script>
+{% endblock %}

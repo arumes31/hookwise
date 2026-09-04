@@ -33,8 +33,24 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         _init_db_data(app)
     _register_error_handlers(app)
     _register_commands(app)
+    _register_rbac(app)
 
     return app
+
+
+def _register_rbac(app: Flask) -> None:
+    """Schema sicherstellen und pruefen, dass jede Route ihr Recht deklariert."""
+    from .rbac import verify_route_coverage
+    from .rbac.decorators import install_guard
+    from .rbac.schema_bridge import bootstrap
+
+    try:
+        bootstrap(app)
+    except Exception:  # pragma: no cover - Datenbank beim Start nicht erreichbar
+        app.logger.exception("RBAC-Bootstrap fehlgeschlagen; Legacy-Fallback aktiv")
+
+    install_guard(app)
+    verify_route_coverage(app, streng=bool(app.config.get("RBAC_STRICT_ROUTES")))
 
 
 def _configure_app(app: Flask) -> None:
@@ -50,6 +66,15 @@ def _configure_app(app: Flask) -> None:
             _logger.critical("SECRET_KEY must be set in production!")
             raise RuntimeError("SECRET_KEY env var is required")
     app.config["SECRET_KEY"] = secret_key
+
+    # RBAC. "log" prueft und protokolliert, blockiert aber nicht -- der Weg nach
+    # Produktion fuehrt ueber mehrere Tage in dieser Stufe, bis das Audit keine
+    # unerwarteten Verweigerungen mehr zeigt.
+    _modus = os.environ.get("RBAC_ENFORCE", "log").strip().lower()
+    app.config["RBAC_ENFORCE"] = _modus if _modus in ("off", "log", "on") else "log"
+    app.config["RBAC_SCHEMA_BOOTSTRAP"] = os.environ.get("RBAC_SCHEMA_BOOTSTRAP", "true").strip().lower() != "false"
+    app.config["RBAC_SCHEMA_OK"] = False
+    app.config["RBAC_STRICT_ROUTES"] = os.environ.get("RBAC_STRICT_ROUTES", "false").strip().lower() == "true"
     # Tie CSRF token validity to the session lifetime instead of the Flask-WTF
     # default 1-hour cap. Long-lived pages (e.g. the endpoint editor) otherwise
     # accumulate a stale token and POSTs fail with a 400 CSRF error. The token is

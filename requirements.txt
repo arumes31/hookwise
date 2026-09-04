@@ -1164,3 +1164,7 @@ zope-interface==8.6 \
     --hash=sha256:ef15a2f6258f809334a19c1fcce64648813066ceebe3f3f6077871483fd0f50d \
     --hash=sha256:fcc86414ee0e6b77416de81b8dead5900719b3f71b7875d8d1f87ae4e166a11f
     # via gevent
+
+# Microsoft Entra ID (OpenID Connect). Ohne dieses Paket bleibt der
+# Entra-Login inaktiv; die lokale Anmeldung laeuft unveraendert weiter.
+msal==1.31.1

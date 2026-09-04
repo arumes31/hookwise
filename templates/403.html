@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center py-5">
+    <div class="col-md-6 text-center">
+        <h1 class="display-1 fw-bold text-warning">403</h1>
+        <h2 class="mb-4">Not your permission</h2>
+        <p class="text-secondary mb-2">
+            Your roles do not include the permission this page requires.
+        </p>
+        {% if required %}
+        <p class="text-secondary mb-5">
+            Required: <code>{{ required }}</code>
+        </p>
+        {% endif %}
+        <a href="{{ url_for('main.index') }}" class="btn btn-primary px-5">Back to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

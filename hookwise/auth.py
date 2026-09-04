@@ -2,6 +2,7 @@
 
 import base64
 import io
+from datetime import datetime, timezone
 from typing import Any, cast
 
 import pyotp
@@ -54,6 +55,7 @@ def _register_login_routes(bp: Any) -> None:
                     session["user_id"] = user.id
                     session["username"] = user.username
                     session["role"] = user.role
+                    anmeldung_abschliessen(user)
                     session.pop("pending_user_id", None)
                     log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
                     return redirect(url_for("main.index"))
@@ -86,6 +88,7 @@ def _register_login_routes(bp: Any) -> None:
                 session["user_id"] = user.id
                 session["username"] = user.username
                 session["role"] = user.role
+                anmeldung_abschliessen(user)
                 log_audit("login", None, f"User {username} logged in")
                 return redirect(url_for("main.index"))
 
@@ -163,3 +166,46 @@ def _register() -> None:
 
 
 _register()
+
+
+def anmeldung_abschliessen(user: Any) -> None:
+    """Nach erfolgreicher Anmeldung: Bestand nachziehen, Rechte aufloesen.
+
+    Der Backfill laeuft verzoegert pro Nutzer statt als Big-Bang: Wer noch keine
+    Rollenzuweisung hat, bekommt beim ersten Login nach dem Rollout genau eine,
+    abgeleitet aus dem alten role-Wert.
+    """
+    from .rbac.resolver import schema_bereit, sitzung_setzen
+
+    try:
+        user.last_login_at = datetime.now(timezone.utc)
+        if user.auth_source is None:
+            user.auth_source = "local"
+        if user.is_active is None:
+            user.is_active = True
+        db.session.commit()
+    except Exception:  # pragma: no cover
+        db.session.rollback()
+
+    if schema_bereit():
+        try:
+            backfill_nutzer(user)
+        except Exception:  # pragma: no cover
+            db.session.rollback()
+    sitzung_setzen(user)
+
+
+def backfill_nutzer(user: Any) -> bool:
+    """Legt fuer einen Nutzer ohne Zuweisung eine aus der Legacy-Rolle an."""
+    from .models import RbacRole, RbacUserRole
+
+    if RbacUserRole.query.filter_by(user_id=user.id).first() is not None:
+        return False
+    schluessel = (user.role or "user").strip().lower()
+    ziel = {"user": "operator"}.get(schluessel, schluessel)
+    rolle = RbacRole.query.filter_by(key=ziel).first() or RbacRole.query.filter_by(key="viewer").first()
+    if rolle is None:
+        return False
+    db.session.add(RbacUserRole(user_id=user.id, role_id=rolle.id, granted_by="backfill"))
+    db.session.commit()
+    return True

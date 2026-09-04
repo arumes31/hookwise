@@ -1,0 +1,173 @@
+"""Rechteauflösung.
+
+Rechte in der Session zu cachen ist schnell, aber ein Rollenentzug wuerde erst
+beim naechsten Login greifen. Deshalb der Permissions-Epoch: ein Zaehler, den
+jede Rechteaenderung erhoeht. Stimmt der Stand in der Session nicht mehr,
+loest der naechste Request die Rechte neu auf -- ein DB-Roundtrip statt einer
+Wartezeit bis zum naechsten Login.
+"""
+
+import logging
+import time
+from typing import Any, FrozenSet, Optional, Set
+
+from flask import current_app, session
+
+from .catalog import ALL_PERMISSIONS, permissions_for_legacy_role
+
+_logger = logging.getLogger(__name__)
+
+SESSION_PERMS = "perms"
+SESSION_EPOCH = "perms_epoch"
+
+# Der Epoch wird pro Request gelesen; ein kurzer Prozess-Cache haelt die Last
+# von der Datenbank fern, ohne dass ein Entzug spuerbar verzoegert wirkt.
+_EPOCH_CACHE: dict[str, float | int] = {"wert": 1, "bis": 0.0}
+_EPOCH_TTL = 5.0
+
+
+_SCHEMA_CACHE: dict[str, float] = {"bis": 0.0}
+_SCHEMA_TTL = 10.0
+
+
+def schema_bereit() -> bool:
+    """Steht das RBAC-Schema?
+
+    Beim Start kann die Antwort noch "nein" lauten -- etwa weil die Tabellen
+    erst danach angelegt werden (Tests nutzen create_all nach dem App-Bau).
+    Solange die Antwort negativ ist, wird sie gelegentlich neu gestellt; sobald
+    sie positiv ist, bleibt sie es.
+    """
+    if current_app.config.get("RBAC_SCHEMA_OK"):
+        return True
+    jetzt = time.monotonic()
+    if jetzt < _SCHEMA_CACHE["bis"]:
+        return False
+    _SCHEMA_CACHE["bis"] = jetzt + _SCHEMA_TTL
+    try:
+        from ..extensions import db
+        from .schema_bridge import rbac_schema_state, seed_builtin_roles
+
+        zustand = rbac_schema_state(db.engine)
+        if zustand["vollstaendig"]:
+            current_app.config["RBAC_SCHEMA_OK"] = True
+            try:
+                seed_builtin_roles()
+            except Exception:  # pragma: no cover
+                db.session.rollback()
+            return True
+    except Exception:  # pragma: no cover
+        pass
+    return False
+
+
+def aktueller_epoch(frisch: bool = False) -> int:
+    """Aktueller Stand des Rechte-Zaehlers."""
+    if not schema_bereit():
+        return 0
+    jetzt = time.monotonic()
+    if not frisch and jetzt < float(_EPOCH_CACHE["bis"]):
+        return int(_EPOCH_CACHE["wert"])
+    try:
+        from ..models import RbacMeta
+
+        zeile = RbacMeta.query.get(1)
+        wert = int(zeile.permissions_epoch) if zeile else 1
+    except Exception:  # pragma: no cover
+        wert = int(_EPOCH_CACHE["wert"])
+    _EPOCH_CACHE["wert"] = wert
+    _EPOCH_CACHE["bis"] = jetzt + _EPOCH_TTL
+    return wert
+
+
+def bump_epoch() -> int:
+    """Nach jeder Rollen- oder Zuweisungsaenderung aufrufen."""
+    if not schema_bereit():
+        return 0
+    from ..extensions import db
+    from ..models import RbacMeta
+
+    zeile = RbacMeta.query.get(1)
+    if zeile is None:
+        zeile = RbacMeta(id=1, permissions_epoch=2)
+        db.session.add(zeile)
+    else:
+        zeile.permissions_epoch = int(zeile.permissions_epoch or 1) + 1
+    db.session.commit()
+    _EPOCH_CACHE["wert"] = int(zeile.permissions_epoch)
+    _EPOCH_CACHE["bis"] = time.monotonic() + _EPOCH_TTL
+    return int(zeile.permissions_epoch)
+
+
+def resolve_permissions(user: Any) -> FrozenSet[str]:
+    """Effektive Rechte eines Nutzers.
+
+    Reihenfolge: zugewiesene Rollen, sonst der alte ``role``-String. Damit
+    verhaelt sich die Anwendung ohne RBAC-Schema und ohne Zuweisungen exakt wie
+    vor der Einfuehrung.
+    """
+    if user is None:
+        return frozenset()
+    if getattr(user, "is_active", True) is False:
+        return frozenset()
+
+    if not schema_bereit():
+        return permissions_for_legacy_role(getattr(user, "role", None))
+
+    try:
+        from ..models import RbacRolePermission, RbacUserRole
+
+        rollen_ids = [z.role_id for z in RbacUserRole.query.filter_by(user_id=user.id)]
+        if not rollen_ids:
+            return permissions_for_legacy_role(getattr(user, "role", None))
+        rechte: Set[str] = {
+            z.permission for z in RbacRolePermission.query.filter(RbacRolePermission.role_id.in_(rollen_ids))
+        }
+        # Nur Rechte, die der Code auch kennt (ADR-004).
+        return frozenset(rechte & ALL_PERMISSIONS)
+    except Exception:  # pragma: no cover
+        _logger.exception("Rechteaufloesung fehlgeschlagen, Legacy-Fallback")
+        return permissions_for_legacy_role(getattr(user, "role", None))
+
+
+def sitzung_setzen(user: Any) -> FrozenSet[str]:
+    """Rechte in die Session schreiben; beim Login und bei Epoch-Wechsel."""
+    rechte = resolve_permissions(user)
+    session[SESSION_PERMS] = sorted(rechte)
+    session[SESSION_EPOCH] = aktueller_epoch(frisch=True)
+    return rechte
+
+
+def _aktueller_nutzer() -> Optional[Any]:
+    from ..models import User
+
+    user_id = session.get("user_id")
+    if not user_id or user_id == "basic_auth":
+        return None
+    try:
+        return User.query.get(user_id)
+    except Exception:  # pragma: no cover
+        return None
+
+
+def current_permissions() -> FrozenSet[str]:
+    """Rechte der laufenden Session, bei Bedarf neu aufgeloest."""
+    if "user_id" not in session:
+        return frozenset()
+
+    stand = session.get(SESSION_EPOCH)
+    if stand is not None and stand == aktueller_epoch() and SESSION_PERMS in session:
+        return frozenset(session[SESSION_PERMS])
+
+    nutzer = _aktueller_nutzer()
+    if nutzer is None:
+        # Session ohne DB-Nutzer (z. B. Alt-Session): Legacy-Rolle aus der
+        # Session, nie mehr als deren Rechte.
+        return permissions_for_legacy_role(session.get("role"))
+    return sitzung_setzen(nutzer)
+
+
+def has_permission(permission: str) -> bool:
+    if current_app.config.get("RBAC_ENFORCE", "log") == "off":
+        return True
+    return permission in current_permissions()
