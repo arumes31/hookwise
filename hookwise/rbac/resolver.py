@@ -177,6 +177,6 @@ def current_permissions() -> FrozenSet[str]:
 
 
 def has_permission(permission: str) -> bool:
-    if current_app.config.get("RBAC_ENFORCE", "log") == "off":
+    if current_app.config.get("RBAC_ENFORCE", "on") == "off":
         return True
     return permission in current_permissions()

@@ -82,7 +82,7 @@ def requires(permission: str) -> Callable[..., Any]:
 
         @wraps(f)
         def innen(*args: Any, **kwargs: Any) -> Any:
-            modus = current_app.config.get("RBAC_ENFORCE", "log")
+            modus = current_app.config.get("RBAC_ENFORCE", "on")
             if modus == "off":
                 return f(*args, **kwargs)
 
@@ -157,7 +157,7 @@ def install_guard(app: Any) -> None:
 
     @app.before_request
     def _rbac_guard() -> Any:  # pragma: no cover - ueber Integrationstests geprueft
-        modus = app.config.get("RBAC_ENFORCE", "log")
+        modus = app.config.get("RBAC_ENFORCE", "on")
         if modus == "off":
             return None
         endpunkt = _request.endpoint

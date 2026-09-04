@@ -61,7 +61,7 @@ def _register_rbac(app: Flask) -> None:
         from .rbac.resolver import current_permissions, has_permission
 
         def hw_rechte() -> str:
-            if app.config.get("RBAC_ENFORCE", "log") == "off":
+            if app.config.get("RBAC_ENFORCE", "on") == "off":
                 return " ".join(sorted(ALL_PERMISSIONS))
             return " ".join(sorted(current_permissions()))
 
@@ -82,11 +82,11 @@ def _configure_app(app: Flask) -> None:
             raise RuntimeError("SECRET_KEY env var is required")
     app.config["SECRET_KEY"] = secret_key
 
-    # RBAC. "log" prueft und protokolliert, blockiert aber nicht -- der Weg nach
-    # Produktion fuehrt ueber mehrere Tage in dieser Stufe, bis das Audit keine
-    # unerwarteten Verweigerungen mehr zeigt.
-    _modus = os.environ.get("RBAC_ENFORCE", "log").strip().lower()
-    app.config["RBAC_ENFORCE"] = _modus if _modus in ("off", "log", "on") else "log"
+    # RBAC. Standard ist "on" -- Rollen wirken auch ohne gesetzte Variable
+    # durchgesetzt. "log" prueft und protokolliert nur (Rollout- und
+    # Diagnosestufe), "off" schaltet die Pruefung ab.
+    _modus = os.environ.get("RBAC_ENFORCE", "on").strip().lower()
+    app.config["RBAC_ENFORCE"] = _modus if _modus in ("off", "log", "on") else "on"
     app.config["RBAC_SCHEMA_BOOTSTRAP"] = os.environ.get("RBAC_SCHEMA_BOOTSTRAP", "true").strip().lower() != "false"
     app.config["RBAC_SCHEMA_OK"] = False
     app.config["RBAC_STRICT_ROUTES"] = os.environ.get("RBAC_STRICT_ROUTES", "false").strip().lower() == "true"
