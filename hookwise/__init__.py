@@ -1,11 +1,15 @@
+import hashlib
 import logging
 import os
 import secrets
 import uuid
+from collections.abc import Mapping
+from pathlib import Path
+from types import MappingProxyType
 from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
-from flask import Flask, Response, g, jsonify, redirect, render_template, request
+from flask import Flask, Response, g, jsonify, redirect, render_template, request, url_for
 from flask_wtf.csrf import CSRFError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -14,6 +18,7 @@ from .extensions import csrf, db, limiter, migrate
 from .extensions import socketio as socketio
 
 _logger = logging.getLogger(__name__)
+_STATIC_ASSET_VERSION_LENGTH = 12
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -26,6 +31,7 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         if config.get("TESTING") and "SESSION_COOKIE_SECURE" not in config:
             app.config["SESSION_COOKIE_SECURE"] = False
         _configure_database_engine(app)
+    _register_template_helpers(app)
     _register_extensions(app)
     _register_request_handlers(app)
     _register_blueprints(app)
@@ -66,6 +72,54 @@ def _register_rbac(app: Flask) -> None:
             return " ".join(sorted(current_permissions()))
 
         return {"hw_kann": has_permission, "hw_rechte": hw_rechte}
+
+
+def _resolve_static_asset(static_folder: str, filename: str) -> tuple[Path, str]:
+    """Resolve an asset to its canonical in-root path and manifest key."""
+    static_root = Path(static_folder).resolve()
+    asset_path = (static_root / filename).resolve()
+    if not asset_path.is_relative_to(static_root) or not asset_path.is_file():
+        raise ValueError(f"Unknown static asset: {filename}")
+    return asset_path, asset_path.relative_to(static_root).as_posix()
+
+
+def _build_static_asset_manifest(static_folder: str) -> dict[str, str]:
+    """Hash every deploy-time static file once into a finite canonical manifest."""
+    static_root = Path(static_folder).resolve()
+    versions: dict[str, str] = {}
+    for candidate in static_root.rglob("*"):
+        if not candidate.is_file():
+            continue
+        asset_path, canonical_name = _resolve_static_asset(static_folder, str(candidate))
+        with asset_path.open("rb") as asset:
+            versions[canonical_name] = hashlib.file_digest(asset, "sha256").hexdigest()[:_STATIC_ASSET_VERSION_LENGTH]
+    return versions
+
+
+def _static_asset_version(app: Flask, filename: str) -> str:
+    """Look up a canonical asset version without caching request-controlled aliases."""
+    static_folder = cast(str, app.extensions["static_asset_root"])
+    _, canonical_name = _resolve_static_asset(static_folder, filename)
+    versions = cast(Mapping[str, str], app.extensions["static_asset_versions"])
+    try:
+        return versions[canonical_name]
+    except KeyError as error:
+        raise ValueError(f"Unknown static asset: {filename}") from error
+
+
+def _register_template_helpers(app: Flask) -> None:
+    """Register the single content-versioned URL contract for local assets."""
+    if app.static_folder is None:
+        raise RuntimeError("HookWise requires a static asset directory")
+    static_folder = str(Path(app.static_folder).resolve())
+    app.extensions["static_asset_root"] = static_folder
+    app.extensions["static_asset_versions"] = MappingProxyType(_build_static_asset_manifest(static_folder))
+
+    def static_asset(filename: str) -> str:
+        version = _static_asset_version(app, filename)
+        return url_for("static", filename=filename, v=version)
+
+    app.jinja_env.globals["static_asset"] = static_asset
 
 
 def _configure_app(app: Flask) -> None:
@@ -178,14 +232,41 @@ def _register_request_handlers(app: Flask) -> None:
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["X-XSS-Protection"] = "1; mode=block"
 
-        if "Cache-Control" not in response.headers:
-            if request.path.startswith("/static/"):
-                response.headers["Cache-Control"] = "public, max-age=31536000"
+        if request.endpoint == "static":
+            filename = request.view_args.get("filename") if request.view_args else None
+            supplied_version = request.args.get("v", "")
+            version_is_current = False
+            version_has_valid_shape = len(supplied_version) == _STATIC_ASSET_VERSION_LENGTH and all(
+                character in "0123456789abcdef" for character in supplied_version
+            )
+            if (
+                app.static_folder is not None
+                and filename
+                and version_has_valid_shape
+                and response.status_code
+                in {
+                    200,
+                    304,
+                }
+            ):
+                try:
+                    expected_version = _static_asset_version(app, filename)
+                    version_is_current = secrets.compare_digest(supplied_version, expected_version)
+                except OSError:
+                    pass
+                except ValueError:
+                    pass
+
+            if version_is_current:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             else:
-                # Disable caching for all protected routes to prevent "Back" button issues after logout
-                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-                response.headers["Pragma"] = "no-cache"
-                response.headers["Expires"] = "0"
+                # Unversioned or incorrectly versioned URLs must always revalidate.
+                response.headers["Cache-Control"] = "no-cache"
+        elif "Cache-Control" not in response.headers:
+            # Disable caching for all protected routes to prevent "Back" button issues after logout
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         return response
 
     @app.before_request

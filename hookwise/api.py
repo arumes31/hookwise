@@ -58,6 +58,21 @@ def _routing_regex_matches(pattern: str, value: str) -> bool:
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
 
 
+def _get_cached_connectwise_list(cache_key: str) -> str | None:
+    """Return only a valid non-empty cached lookup list."""
+    cached = redis_client.get(cache_key)
+    if not cached:
+        return None
+    decoded = cast(bytes, cached).decode()
+    try:
+        value = json.loads(decoded)
+    except json.JSONDecodeError:
+        return None
+    except TypeError:
+        return None
+    return decoded if isinstance(value, list) and value else None
+
+
 def _parse_row_date(row_date: Any) -> date | None:
     """Parse a date object or string from a database row."""
     if isinstance(row_date, date):
@@ -569,9 +584,9 @@ def _register() -> None:
     @auth_required
     def get_cw_boards() -> Any:
         cache_key = "hookwise_cw_boards"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        cached = _get_cached_connectwise_list(cache_key)
+        if cached is not None:
+            return cached, 200, {"Content-Type": "application/json"}
         boards = cw_client.get_boards()
         if boards:
             redis_client.set(cache_key, json.dumps(boards), ex=3600)
@@ -580,9 +595,9 @@ def _register() -> None:
     @auth_required
     def get_cw_priorities() -> Any:
         cache_key = "hookwise_cw_priorities"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        cached = _get_cached_connectwise_list(cache_key)
+        if cached is not None:
+            return cached, 200, {"Content-Type": "application/json"}
         priorities = cw_client.get_priorities()
         if priorities:
             redis_client.set(cache_key, json.dumps(priorities), ex=86400)
@@ -591,41 +606,45 @@ def _register() -> None:
     @auth_required
     def get_cw_statuses(board_id: str) -> Any:
         cache_key = f"hookwise_cw_statuses_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        cached = _get_cached_connectwise_list(cache_key)
+        if cached is not None:
+            return cached, 200, {"Content-Type": "application/json"}
         statuses = cw_client.get_board_statuses(int(board_id))
-        redis_client.set(cache_key, json.dumps(statuses), ex=3600)
+        if statuses:
+            redis_client.set(cache_key, json.dumps(statuses), ex=3600)
         return jsonify(statuses)
 
     @auth_required
     def get_cw_types(board_id: str) -> Any:
         cache_key = f"hookwise_cw_types_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        cached = _get_cached_connectwise_list(cache_key)
+        if cached is not None:
+            return cached, 200, {"Content-Type": "application/json"}
         types = cw_client.get_board_types(int(board_id))
-        redis_client.set(cache_key, json.dumps(types), ex=3600)
+        if types:
+            redis_client.set(cache_key, json.dumps(types), ex=3600)
         return jsonify(types)
 
     @auth_required
     def get_cw_subtypes(board_id: str) -> Any:
         cache_key = f"hookwise_cw_subtypes_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        cached = _get_cached_connectwise_list(cache_key)
+        if cached is not None:
+            return cached, 200, {"Content-Type": "application/json"}
         subtypes = cw_client.get_board_subtypes(int(board_id))
-        redis_client.set(cache_key, json.dumps(subtypes), ex=3600)
+        if subtypes:
+            redis_client.set(cache_key, json.dumps(subtypes), ex=3600)
         return jsonify(subtypes)
 
     @auth_required
     def get_cw_items(board_id: str) -> Any:
         cache_key = f"hookwise_cw_items_{board_id}"
-        cached = redis_client.get(cache_key)
-        if cached:
-            return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+        cached = _get_cached_connectwise_list(cache_key)
+        if cached is not None:
+            return cached, 200, {"Content-Type": "application/json"}
         items = cw_client.get_board_items(int(board_id))
-        redis_client.set(cache_key, json.dumps(items), ex=3600)
+        if items:
+            redis_client.set(cache_key, json.dumps(items), ex=3600)
         return jsonify(items)
 
     @auth_required
@@ -633,9 +652,9 @@ def _register() -> None:
         search = request.args.get("search")
         if not search:
             cache_key = "hookwise_cw_companies_default"
-            cached = redis_client.get(cache_key)
-            if cached:
-                return cast(bytes, cached).decode(), 200, {"Content-Type": "application/json"}
+            cached = _get_cached_connectwise_list(cache_key)
+            if cached is not None:
+                return cached, 200, {"Content-Type": "application/json"}
         companies = cw_client.get_companies(search=search)
         if not search and companies:
             redis_client.set("hookwise_cw_companies_default", json.dumps(companies), ex=3600)

@@ -363,15 +363,24 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
             });
     }
 
-    function refreshStats() {
-        if (!document.getElementById('stat-created')) return;
-        if (window.dashboardState.isRefreshing) return;
+    function refreshStats(root = window.dashboardState.statsRoot) {
+        if (!root || !document.getElementById('stat-created')) return;
+        if (window.dashboardState.refreshRoot === root && window.dashboardState.isRefreshing) return;
+
+        const generation = (window.dashboardState.statsRefreshGeneration || 0) + 1;
+        window.dashboardState.statsRefreshGeneration = generation;
+        window.dashboardState.refreshRoot = root;
         window.dashboardState.isRefreshing = true;
+        const isCurrent = () => (
+            window.dashboardState.statsRoot === root
+            && window.dashboardState.statsRefreshGeneration === generation
+        );
 
         Promise.all([
             fetch('/api/stats').then(res => res.json()),
             fetch(`/api/stats/history?period=${window.dashboardState.chartPeriod || 'daily'}`).then(res => res.json())
         ]).then(([data, historyData]) => {
+            if (!isCurrent()) return;
             const elCreated = document.getElementById('stat-created');
             const elUpdated = document.getElementById('stat-updated');
             const elClosed = document.getElementById('stat-closed');
@@ -405,9 +414,14 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
                 }
             }
         })
-            .catch(err => console.error('Error fetching stats:', err))
+            .catch(err => {
+                if (isCurrent()) console.error('Error fetching stats:', err);
+            })
             .finally(() => {
-                window.dashboardState.isRefreshing = false;
+                if (isCurrent()) {
+                    window.dashboardState.isRefreshing = false;
+                    window.dashboardState.refreshRoot = null;
+                }
             });
     }
 
@@ -499,17 +513,16 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
 
     // Unified initialization for first-load and HTMX swaps
     function initSparklinesAndStats() {
-        // Only run if on dashboard or elements exist
-        if (!document.getElementById('stat-created') && !document.querySelector('canvas[data-sparkline]')) {
-            return;
-        }
-
-        if (window.dashboardState.isInitialized) return;
-        window.dashboardState.isInitialized = true;
+        // Use the current DOM node as the idempotence key. A time-based global
+        // lock can suppress a newly swapped HTMX dashboard and leave it blank.
+        const root = document.getElementById('operations-dashboard')
+            || document.querySelector('canvas[data-sparkline]');
+        if (!root || window.dashboardState.statsRoot === root) return;
+        window.dashboardState.statsRoot = root;
 
         if (window.statsInterval) clearInterval(window.statsInterval);
 
-        refreshStats();
+        refreshStats(root);
         window.statsInterval = setInterval(refreshStats, 30000); // Every 30 seconds
 
         // Initialize Sparklines
@@ -528,8 +541,6 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
             if (toggle) toggle.checked = d.maintenance_mode;
         }).catch(() => { });
 
-        // Reset the lock after a small delay to handle intentional re-initialization (e.g. HTMX navigation)
-        setTimeout(() => { window.dashboardState.isInitialized = false; }, 500);
     }
 
     document.addEventListener('htmx:load', initSparklinesAndStats);

@@ -30,14 +30,15 @@
     {# Favicon = die geroutete Hook-Marke (templates/_brand.html), nicht mehr
        das alte Logo. SVG zuerst (scharf in jeder Groesse), PNG als Fallback
        fuer Altbrowser, Apple-Touch fuer Homescreen-Verknuepfungen. #}
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ url_for('static', filename='img/favicon-hook.svg', v='20260909e') }}">
-    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ url_for('static', filename='img/favicon-hook-light.svg', v='20260909e') }}">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-hook-32.png', v='20260909e') }}">
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/apple-touch-hook.png', v='20260909e') }}">
-    <link href="{{ url_for('static', filename='css/bootstrap.min.css', v='20260909e') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/prism.css', v='20260909e') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css', v='20260909e') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/hookwise-console.css', v='20260909e') }}" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)" href="{{ static_asset('img/favicon-hook.svg') }}">
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)" href="{{ static_asset('img/favicon-hook-light.svg') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ static_asset('img/favicon-hook-32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ static_asset('img/apple-touch-hook.png') }}">
+    <link href="{{ static_asset('css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ static_asset('css/prism.css') }}" rel="stylesheet">
+    <link href="{{ static_asset('css/style.css') }}" rel="stylesheet">
+    <link href="{{ static_asset('css/hookwise-console.css') }}" rel="stylesheet">
+    <meta name="hookwise-logo-url" content="{{ static_asset('img/logo.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     {# Rechte der Sitzung fuer ux.js (data-braucht). Nur Anzeige-Logik --
        durchgesetzt wird serverseitig. #}
@@ -54,16 +55,16 @@
             } catch (e) { /* private mode: keep the default */ }
         })();
     </script>
-    <script src="{{ url_for('static', filename='js/http.js', v='20260909e') }}"></script>
-    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/socket.io.min.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/prism.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mini-charts.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/htmx.min.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/ux.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/endpoints-dashboard.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/activity.js', v='20260909e') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/history-operations.js', v='20260909e') }}" defer></script>
+    <script src="{{ static_asset('js/http.js') }}"></script>
+    <script src="{{ static_asset('js/bootstrap.bundle.min.js') }}" defer></script>
+    <script src="{{ static_asset('js/socket.io.min.js') }}" defer></script>
+    <script src="{{ static_asset('js/prism.js') }}" defer></script>
+    <script src="{{ static_asset('js/mini-charts.js') }}" defer></script>
+    <script src="{{ static_asset('js/htmx.min.js') }}" defer></script>
+    <script src="{{ static_asset('js/ux.js') }}" defer></script>
+    <script src="{{ static_asset('js/endpoints-dashboard.js') }}" defer></script>
+    <script src="{{ static_asset('js/activity.js') }}" defer></script>
+    <script src="{{ static_asset('js/history-operations.js') }}" defer></script>
 </head>
 
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
