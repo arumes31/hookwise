@@ -1211,9 +1211,9 @@ python-dotenv==1.2.3 \
     --hash=sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9 \
     --hash=sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35
     # via hookwise (pyproject.toml)
-python-engineio==4.13.5 \
-    --hash=sha256:05c9f4951d242ad33d613b4245299562e5f64e4199f00e5390f9888505831704 \
-    --hash=sha256:b5764d62243e3ffbc4c76dda3d7897c329dc52294c80c27105f9faa054e76897
+python-engineio==4.14.0 \
+    --hash=sha256:9f0fe275fb7d67bfc1a632421adf22949fd4843bd9c458c004b0a89cede302a2 \
+    --hash=sha256:eaa1e386baf9c2c7959eef7f9d9165c5ea910c5b392f5316e78d29ed073cb43d
     # via python-socketio
 python-socketio==5.16.4 \
     --hash=sha256:0eb9c7687e7fbf59e60d714fd62afba77dfaf8ef8a06a0bff05a86c351accc2f \
