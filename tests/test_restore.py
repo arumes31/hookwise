@@ -162,3 +162,111 @@ def test_backup_is_encrypted_authenticated_and_versioned(client, app):
     )
     assert rejected.status_code == 400
     assert rejected.get_json()["message"] == "Backup validation failed"
+
+
+def test_configuration_auto_link_setting_round_trips_through_backup(client, app):
+    with app.app_context():
+        db.session.add(
+            WebhookConfig(
+                id="configuration-link-enabled",
+                name="Configuration link enabled",
+                auto_link_configuration_enabled=True,
+            )
+        )
+        db.session.commit()
+    with client.session_transaction() as sess:
+        sess.update(user_id="admin-id", username="admin", role="admin")
+
+    backup_response = client.get("/admin/backup")
+    document = parse_backup(backup_response.data)
+    assert document["version"] == 2
+    assert document["configs"][0]["auto_link_configuration_enabled"] is True
+
+    with app.app_context():
+        WebhookConfig.query.delete()
+        db.session.commit()
+
+    restore_response = client.post(
+        "/admin/restore",
+        data={"backup_file": (io.BytesIO(backup_response.data), "backup.hwbackup")},
+        content_type="multipart/form-data",
+    )
+
+    assert restore_response.status_code == 200
+    with app.app_context():
+        restored = db.session.get(WebhookConfig, "configuration-link-enabled")
+        assert restored.auto_link_configuration_enabled is True
+
+
+def test_legacy_restore_without_configuration_auto_link_setting_defaults_disabled(client, app):
+    legacy_backup = [{"id": "legacy-endpoint", "name": "Legacy endpoint"}]
+    with client.session_transaction() as sess:
+        sess.update(user_id="admin-id", username="admin", role="admin")
+
+    response = client.post(
+        "/admin/restore",
+        data={"backup_file": (io.BytesIO(json.dumps(legacy_backup).encode()), "backup.json")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        restored = db.session.get(WebhookConfig, "legacy-endpoint")
+        assert restored.auto_link_configuration_enabled is False
+
+
+@pytest.mark.parametrize("invalid_value", ["false", 0, None])
+def test_restore_rejects_non_boolean_configuration_auto_link_setting(client, app, invalid_value):
+    with app.app_context():
+        config = WebhookConfig(id="invalid-auto-link", name="Invalid auto-link")
+        db.session.add(config)
+        db.session.commit()
+    with client.session_transaction() as sess:
+        sess.update(user_id="admin-id", username="admin", role="admin")
+    backup = [
+        {
+            "id": "invalid-auto-link",
+            "name": "Invalid auto-link",
+            "auto_link_configuration_enabled": invalid_value,
+        }
+    ]
+
+    response = client.post(
+        "/admin/restore",
+        data={"backup_file": (io.BytesIO(json.dumps(backup).encode()), "backup.json")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    with app.app_context():
+        restored = db.session.get(WebhookConfig, "invalid-auto-link")
+        assert restored.auto_link_configuration_enabled is False
+
+
+def test_older_v2_restore_disables_existing_configuration_auto_link_setting(client, app):
+    with app.app_context():
+        config = WebhookConfig(
+            id="existing-auto-link",
+            name="Existing auto-link",
+            auto_link_configuration_enabled=True,
+        )
+        db.session.add(config)
+        db.session.commit()
+    with client.session_transaction() as sess:
+        sess.update(user_id="admin-id", username="admin", role="admin")
+    older_v2_backup = {
+        "format": "hookwise-config",
+        "version": 2,
+        "configs": [{"id": "existing-auto-link", "name": "Existing auto-link"}],
+    }
+
+    response = client.post(
+        "/admin/restore",
+        data={"backup_file": (io.BytesIO(json.dumps(older_v2_backup).encode()), "backup.json")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        restored = db.session.get(WebhookConfig, "existing-auto-link")
+        assert restored.auto_link_configuration_enabled is False

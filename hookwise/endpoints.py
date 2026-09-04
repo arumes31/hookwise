@@ -122,6 +122,7 @@ def _register_crud_routes(main_bp: Any) -> None:
                 bearer_auth_enabled=request.form.get("bearer_auth_enabled") == "true",
                 allow_unauthenticated=request.form.get("allow_unauthenticated") == "true",
                 global_routing_enabled=request.form.get("global_routing_enabled") == "true",
+                auto_link_configuration_enabled=request.form.get("auto_link_configuration_enabled") == "true",
                 ai_prompt_template=request.form.get("ai_prompt_template"),
                 timeout_alerts_enabled=request.form.get("timeout_alerts_enabled") == "true",
                 timeout_hours=_get_int_form_value("timeout_hours", 24),
@@ -201,6 +202,7 @@ def _register_crud_routes(main_bp: Any) -> None:
             config.bearer_auth_enabled = request.form.get("bearer_auth_enabled") == "true"
             config.allow_unauthenticated = request.form.get("allow_unauthenticated") == "true"
             config.global_routing_enabled = request.form.get("global_routing_enabled") == "true"
+            config.auto_link_configuration_enabled = request.form.get("auto_link_configuration_enabled") == "true"
             config.ai_prompt_template = request.form.get("ai_prompt_template")
             config.timeout_alerts_enabled = request.form.get("timeout_alerts_enabled") == "true"
             config.timeout_hours = _get_int_form_value("timeout_hours", 24)
@@ -460,6 +462,7 @@ def _register_crud_routes(main_bp: Any) -> None:
             bearer_auth_enabled=config.bearer_auth_enabled,
             allow_unauthenticated=config.allow_unauthenticated,
             global_routing_enabled=config.global_routing_enabled,
+            auto_link_configuration_enabled=False,
             ai_prompt_template=config.ai_prompt_template,
             timeout_alerts_enabled=config.timeout_alerts_enabled,
             timeout_hours=config.timeout_hours,

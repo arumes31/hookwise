@@ -127,6 +127,7 @@ class WebhookConfig(Base):
     ai_rca_enabled = db.Column(db.Boolean, default=False, nullable=False)
     ai_prompt_template = db.Column(db.Text)  # Custom instructions for the LLM
     global_routing_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    auto_link_configuration_enabled = db.Column(db.Boolean, default=False, nullable=False)
 
     # Health & Security
     config_health_status = db.Column(db.String(20), default="OK")  # OK, WARNING, ERROR
@@ -202,6 +203,7 @@ class WebhookConfig(Base):
             "ai_rca_enabled": self.ai_rca_enabled,
             "ai_prompt_template": self.ai_prompt_template,
             "global_routing_enabled": self.global_routing_enabled,
+            "auto_link_configuration_enabled": self.auto_link_configuration_enabled,
             "config_health_status": self.config_health_status,
             "config_health_message": self.config_health_message,
             "last_ip": self.last_ip,
@@ -234,6 +236,8 @@ class WebhookLog(Base):
     action = db.Column(db.String(50))  # create, update, close, None
     error_message = db.Column(db.Text)
     ticket_id = db.Column(db.Integer)
+    configuration_link_status = db.Column(db.String(32), nullable=True)
+    configuration_id = db.Column(db.Integer, nullable=True)
     matched_rule = db.Column(db.Text)
     processing_time = db.Column(db.Float)  # in seconds
     source_ip = db.Column(db.String(50), index=True)
@@ -299,6 +303,8 @@ class WebhookLog(Base):
             "action": self.action,
             "error_message": self.error_message,
             "ticket_id": self.ticket_id,
+            "configuration_link_status": self.configuration_link_status,
+            "configuration_id": self.configuration_id,
             "matched_rule": self.matched_rule,
             "processing_time": self.processing_time,
             "source_ip": self.source_ip,
