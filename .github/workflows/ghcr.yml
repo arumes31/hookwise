@@ -2,7 +2,7 @@ name: Build and Push to GHCR
 
 on:
   push:
-    branches: [ main, v2_test ]
+    branches: [ main, dev ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ '**' ]
@@ -10,29 +10,54 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  quality:
+    name: Required quality gates
+    uses: ./.github/workflows/ci.yml
+
   build-and-push:
+    name: Build and scan candidate
+    needs: quality
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+      publish: ${{ steps.image.outputs.publish }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select candidate image
+        id: image
+        shell: bash
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          publish=false
+          if [[ "$GITHUB_EVENT_NAME" != pull_request && ( "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/heads/dev || "$GITHUB_REF" == refs/tags/v* ) ]]; then
+            publish=true
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to the Container registry
-        if: github.event_name == 'push'
+        if: steps.image.outputs.publish == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -43,30 +68,30 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.image }}
+          flavor: latest=false
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=raw,value=candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Build and push Docker image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
-          load: ${{ github.event_name == 'pull_request' }}
+          push: ${{ steps.image.outputs.publish == 'true' }}
+          load: ${{ steps.image.outputs.publish != 'true' }}
+          provenance: ${{ steps.image.outputs.publish == 'true' }}
+          sbom: ${{ steps.image.outputs.publish == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=hookwise-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
           cache-to: type=gha,mode=max,scope=hookwise-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
 
-      - name: Verify PR runtime image excludes build-only packages
-        if: github.event_name == 'pull_request'
+      - name: Verify runtime image excludes build-only packages
+        env:
+          IMAGE: ${{ steps.image.outputs.publish == 'true' && format('{0}@{1}', steps.image.outputs.image, steps.build.outputs.digest) || steps.build.outputs.imageid }}
         run: |
-          packages=$(docker run --rm --entrypoint sh "${{ steps.build.outputs.imageid }}" -c "find /usr/local -depth \( -name 'msgpack*' -o -name 'setuptools*' -o -name '_distutils_hack' -o -name 'distutils-precedence.pth' \) -print")
+          packages=$(docker run --rm --entrypoint sh "$IMAGE" -c "find /usr/local -depth \( -name 'msgpack*' -o -name 'setuptools*' -o -name '_distutils_hack' -o -name 'distutils-precedence.pth' \) -print")
           if [ -n "$packages" ]; then
             printf '%s\n' "$packages"
             exit 1
@@ -75,9 +100,211 @@ jobs:
       - name: Scan image for high-severity vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ github.event_name == 'pull_request' && steps.build.outputs.imageid || format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.meta.outputs.version) }}
+          image-ref: ${{ steps.image.outputs.publish == 'true' && format('{0}@{1}', steps.image.outputs.image, steps.build.outputs.digest) || steps.build.outputs.imageid }}
           version: v0.74.0
           trivyignores: .trivyignore.yaml
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+
+  staging:
+    name: Test digest in staging
+    needs: build-and-push
+    if: needs.build-and-push.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    services:
+      postgres:
+        image: postgres:16.14-alpine
+        env:
+          POSTGRES_DB: hookwise_staging
+          POSTGRES_USER: hookwise
+          POSTGRES_PASSWORD: staging-only-db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hookwise -d hookwise_staging"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:8.10.1-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Migrate and start the exact candidate
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          DIGEST: ${{ needs.build-and-push.outputs.digest }}
+          DATABASE_URL: postgresql://hookwise:staging-only-db@127.0.0.1:5432/hookwise_staging
+          REDIS_HOST: 127.0.0.1
+          SECRET_KEY: hookwise-synthetic-staging-session-key
+          ENCRYPTION_KEY: vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E=
+          GUI_PASSWORD: HookWise-Staging-Only-2026
+          SESSION_COOKIE_SECURE: 'false'
+        shell: bash
+        run: |
+          docker_env=(--env DATABASE_URL --env REDIS_HOST --env SECRET_KEY --env ENCRYPTION_KEY
+            --env GUI_PASSWORD --env SESSION_COOKIE_SECURE)
+          docker run --rm --network host "${docker_env[@]}" --env RBAC_SCHEMA_BOOTSTRAP=false "$IMAGE@$DIGEST" \
+            sh -c 'flask db upgrade && flask bootstrap-admin'
+          docker run --detach --name hookwise-staging --network host \
+            "${docker_env[@]}" "$IMAGE@$DIGEST"
+
+      - name: Smoke-test health and authenticated console
+        env:
+          STAGING_USERNAME: admin
+          STAGING_PASSWORD: HookWise-Staging-Only-2026
+        run: python .github/scripts/smoke-image.py
+
+      - name: Summarize candidate for review
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          DIGEST: ${{ needs.build-and-push.outputs.digest }}
+        run: |
+          printf '### Tested image candidate\n\nCommit: %s\n\nImage: %s@%s\n\nQuality checks, image scan, migrations, health and login passed.\n' \
+            "$GITHUB_SHA" "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Staging logs
+        if: failure()
+        run: docker logs hookwise-staging || true
+
+      - name: Stop staging
+        if: always()
+        run: docker rm --force hookwise-staging || true
+
+  promote:
+    name: Approve and promote tested digest
+    needs: [build-and-push, staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Required reviewers must be configured on production in repository settings.
+    environment: ${{ github.ref == 'refs/heads/dev' && 'dev' || 'production' }}
+    concurrency:
+      group: hookwise-image-promotion
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      actions: read
+    steps:
+      - name: Refuse production promotion without required reviewers
+        if: github.ref != 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          protected=$(gh api "repos/$GITHUB_REPOSITORY/environments/production" \
+            --jq 'any(.protection_rules[]?; .type == "required_reviewers" and (.reviewers | length > 0))')
+          if [ "$protected" != true ]; then
+            echo "::error::Configure required reviewers on the production environment before publishing production images."
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select approved aliases
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ needs.build-and-push.outputs.image }}
+          tags: |
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Record previous production digest
+        id: previous
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+        shell: bash
+        run: |
+          set +e
+          output=$(docker buildx imagetools inspect "$IMAGE:latest" 2>&1)
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            digest=$(awk '/^Digest:/ { print $2; exit }' <<<"$output")
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+          elif grep -Eqi 'manifest unknown|no such manifest|:[[:space:]]*not found' <<<"$output"; then
+            digest=none
+          else
+            printf '%s\n' "$output" >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Write publication record
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          DIGEST: ${{ needs.build-and-push.outputs.digest }}
+          PREVIOUS_DIGEST: ${{ steps.previous.outputs.digest }}
+          TAGS_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          jq -n --arg commit "$GITHUB_SHA" --arg image "$IMAGE" --arg digest "$DIGEST" \
+            --arg previous_digest "$PREVIOUS_DIGEST" --argjson metadata "$TAGS_JSON" \
+            '{commit: $commit, image: $image, digest: $digest, previous_digest: $previous_digest, tags: $metadata.tags}' \
+            > image-metadata.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: image-metadata.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Promote without rebuilding and verify aliases
+        env:
+          IMAGE: ${{ needs.build-and-push.outputs.image }}
+          DIGEST: ${{ needs.build-and-push.outputs.digest }}
+          PREVIOUS_DIGEST: ${{ steps.previous.outputs.digest }}
+          TAGS_JSON: ${{ steps.meta.outputs.json }}
+        shell: bash
+        run: |
+          mapfile -t tags < <(jq -r '.tags[]' <<<"$TAGS_JSON")
+          test "${#tags[@]}" -gt 0
+          args=()
+          for tag in "${tags[@]}"; do
+            if [[ "$tag" == "$IMAGE:latest" && "$PREVIOUS_DIGEST" != none ]]; then
+              docker buildx imagetools create --prefer-index=false \
+                --tag "$IMAGE:rollback" "$IMAGE@$PREVIOUS_DIGEST"
+            fi
+            args+=(--tag "$tag")
+          done
+          docker buildx imagetools create --prefer-index=false "${args[@]}" "$IMAGE@$DIGEST"
+          for tag in "${tags[@]}"; do
+            for attempt in 1 2 3 4 5; do
+              actual=$(docker buildx imagetools inspect "$tag" --format '{{.Manifest.Digest}}')
+              [ "$actual" = "$DIGEST" ] && break
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error::$tag does not resolve to the tested digest"
+                exit 1
+              fi
+              sleep "$attempt"
+            done
+          done
+          printf '### Promoted image\n\n%s@%s\n\nPrevious latest: %s\n' \
+            "$IMAGE" "$DIGEST" "$PREVIOUS_DIGEST" >> "$GITHUB_STEP_SUMMARY"

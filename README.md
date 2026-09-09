@@ -58,6 +58,52 @@ Requirements: Docker Engine with Docker Compose and ConnectWise Manage API crede
 
 Never deploy the sample passwords or keys. For production, place HookWise behind an HTTPS reverse proxy and keep secure session cookies enabled. If AI RCA is enabled, pull the default model once with `docker exec hookwise-llm ollama pull qwen3.5:4b`. See the [operator runbook](docs/RUNBOOK.md) for health checks, recovery, secret rotation, and DLQ procedures.
 
+### Image channels and production approval
+
+The GHCR workflow runs the existing CI quality gates, builds a candidate image,
+scans that exact digest, and runs migrations, readiness, CSRF login, dashboard,
+and authenticated API checks against disposable PostgreSQL and Redis services.
+Candidates use `candidate-<commit>-<run>-<attempt>` tags. Promotion copies the
+tested digest to its final tags without rebuilding it.
+
+| Source | Published channel after validation | Approval |
+| --- | --- | --- |
+| `dev` branch | `dev` and a commit tag | Automatic, non-production |
+| `main` branch | `main`, `latest`, and a commit tag | `production` environment |
+| Stable `v*` semantic version tag | Version, major.minor, `latest`, and a commit tag | `production` environment |
+| Prerelease version tag | Prerelease and a commit tag; does not move `latest` | `production` environment |
+| Pull request or manual run on another branch | Local build and scan only | No publication |
+
+Before enabling production publication, a repository administrator must configure
+[Settings → Environments → production](https://github.com/arumes31/hookwise/settings/environments):
+
+1. Enable **Required reviewers** and add `arumes31` and every current collaborator.
+   Any one listed reviewer can approve. GitHub supports at most six users or teams;
+   an organization repository can use a team for a larger collaborator group.
+   Keep the reviewer list in sync when collaborators change.
+2. Leave **Prevent self-review** off if the person pushing the change should also
+   be able to approve it. Disable administrator bypass of protection rules.
+3. Restrict deployment branches/tags to the `main` branch and `v*` tags. The `dev`
+   environment can allow the `dev` branch without required reviewers.
+
+The promotion job refuses to update production aliases if the required-reviewer
+rule is absent or cannot be verified. In Actions, open the successful candidate
+run, inspect its commit/digest summary, then choose **Review deployments →
+production → Approve and deploy**. This updates GHCR tags; the production host
+still needs to pull and restart its containers (or use its existing update service).
+
+Each promotion saves an `image-digest-*` artifact with the candidate digest and
+previous `latest` digest. When `latest` moves, `rollback` retains its previous
+image. To roll back, use the recorded `ghcr.io/arumes31/hookwise@sha256:...`
+reference for all four HookWise services, including the migration service, and
+recreate them. Image rollback does not undo database migrations; check schema
+compatibility and restore the database backup if required. Package cleanup keeps
+`latest`, `main`, `dev`, and `rollback`; avoid cleaning pending candidates before
+approving them. If a pending digest is deleted, rerun the build and staging checks.
+
+This follows the [FortiGate image promotion flow](https://github.com/arumes31/fortigate-scp-backup/blob/main/.github/workflows/image-pipeline.yml)
+and GitHub's [environment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+
 ---
 
 ## 🏗️ Architecture & Flow
