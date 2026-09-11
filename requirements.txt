@@ -800,9 +800,9 @@ python-engineio==4.14.0 \
     --hash=sha256:9f0fe275fb7d67bfc1a632421adf22949fd4843bd9c458c004b0a89cede302a2 \
     --hash=sha256:eaa1e386baf9c2c7959eef7f9d9165c5ea910c5b392f5316e78d29ed073cb43d
     # via python-socketio
-python-socketio==5.16.2 \
-    --hash=sha256:ad88c228d921646efa436c0a0df217e364ef30ec072df4041484e54d49c15989 \
-    --hash=sha256:bef2da3374fd533aed4297f57b4f6512b52aa51604cb0da2165f401291c5ca20
+python-socketio==5.16.4 \
+    --hash=sha256:0eb9c7687e7fbf59e60d714fd62afba77dfaf8ef8a06a0bff05a86c351accc2f \
+    --hash=sha256:f7fa4a43cc8e687930b5c6e44d6e2efc2071eca4bef49b8bb3dc0827f7f92235
     # via flask-socketio
 redis==8.1.0 \
     --hash=sha256:6e1a19beef9225c83efd689c7e6b7da2d5215b1f42cd13b7fc3714d0a09c7b25 \
