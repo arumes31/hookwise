@@ -44,7 +44,7 @@ dev = [
     "pip-audit",
     "pytest==9.1.1",
     "ruff==0.16.5",
-    "types-requests==2.33.0.20260712",
+    "types-requests==2.33.0.20260906",
 ]
 
 [tool.setuptools.packages.find]
