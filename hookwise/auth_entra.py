@@ -48,7 +48,7 @@ def _secret_lesen(pfad: str) -> Optional[str]:
     try:
         with open(pfad, "r", encoding="utf-8") as datei:
             return datei.read().strip() or None
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         _logger.error("Entra: Secret-Datei %s nicht lesbar", pfad)
         return None
 
