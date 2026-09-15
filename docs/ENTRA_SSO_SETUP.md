@@ -317,6 +317,6 @@ Die `tid` im ID-Token stimmt nicht mit `ENTRA_TENANT_ID` überein.
 - Microsoft abmelden und neu anmelden; ein bestehendes ID-Token ändert sich
   nicht nachträglich.
 
-Hookwise speichert keine ID-, Access- oder Refresh-Tokens. Persistiert werden nur
-die stabile `tid`/`oid`-Bindung, die zuletzt abgeleitete Hookwise-Rolle und der
-optionale manuelle Override.
+Persistiert werden nur die stabile `tid`/`oid`-Bindung, der aktuelle UPN, die
+zuletzt synchronisierte Hookwise-Rolle und der optionale manuelle Override.
+Hookwise speichert keine ID-, Access- oder Refresh-Tokens.

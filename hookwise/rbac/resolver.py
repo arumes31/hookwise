@@ -23,6 +23,7 @@ SESSION_EPOCH = "perms_epoch"
 # Der Cache gilt nur fuer den Nutzer, fuer den er geschrieben wurde -- wechselt
 # die user_id in einer bestehenden Session, wird neu aufgeloest.
 SESSION_UID = "perms_uid"
+ENTRA_NO_PERMISSIONS_ROLE = "none"
 
 # Der Epoch wird pro Request gelesen; ein kurzer Prozess-Cache haelt die Last
 # von der Datenbank fern, ohne dass ein Entzug spuerbar verzoegert wirkt.
@@ -157,8 +158,10 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
     if getattr(user, "is_active", True) is False:
         return frozenset()
 
-    autoritative_rolle, autoritativ, _quelle = _authoritative_role(user)
-    if autoritativ and not autoritative_rolle:
+    autoritative_rolle, autoritativ, quelle = _authoritative_role(user)
+    if autoritativ and (
+        not autoritative_rolle or (quelle == "entra_app_role" and autoritative_rolle == ENTRA_NO_PERMISSIONS_ROLE)
+    ):
         return frozenset()
 
     if not schema_bereit():

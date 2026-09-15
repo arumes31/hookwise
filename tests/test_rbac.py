@@ -145,6 +145,21 @@ def test_entra_app_role_ersetzt_lokale_rollenzuweisungen(app, db_bereit):
         assert "endpoint:write" not in rechte
 
 
+def test_entra_none_rolle_bleibt_auch_ohne_rbac_schema_rechtelos(app, db_bereit, monkeypatch):
+    with app.app_context():
+        seed_builtin_roles()
+        u = _nutzer("entra-ohne-rolle", "admin")
+        u.auth_source = "entra"
+        u.entra_role = "none"
+        admin = RbacRole.query.filter_by(key="admin").first()
+        db.session.add(RbacUserRole(user_id=u.id, role_id=admin.id))
+        db.session.commit()
+
+        assert resolve_permissions(u) == frozenset()
+        monkeypatch.setattr("hookwise.rbac.resolver.schema_bereit", lambda: False)
+        assert resolve_permissions(u) == frozenset()
+
+
 def test_manueller_override_ersetzt_entra_app_role(app, db_bereit):
     from flask import session
 

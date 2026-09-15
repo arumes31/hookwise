@@ -13,6 +13,8 @@ down_revision = "6b4e2d1f9a7c"
 branch_labels = None
 depends_on = None
 
+ENTRA_NO_PERMISSIONS_ROLE = "none"
+
 
 def upgrade() -> None:
     bind = op.get_bind()
@@ -39,6 +41,17 @@ def upgrade() -> None:
             batch_op.create_index("ix_user_entra_role", ["entra_role"], unique=False)
         if "ix_user_override_role" not in indexes:
             batch_op.create_index("ix_user_override_role", ["override_role"], unique=False)
+
+    if "auth_source" in columns:
+        bind.execute(
+            sa.text("UPDATE \"user\" SET entra_role = :role WHERE LOWER(auth_source) = 'entra' AND entra_role IS NULL"),
+            {"role": ENTRA_NO_PERMISSIONS_ROLE},
+        )
+
+    if "rbac_meta" in inspector.get_table_names():
+        ergebnis = bind.execute(sa.text("UPDATE rbac_meta SET permissions_epoch = permissions_epoch + 1 WHERE id = 1"))
+        if ergebnis.rowcount == 0:
+            bind.execute(sa.text("INSERT INTO rbac_meta (id, permissions_epoch) VALUES (1, 2)"))
 
 
 def downgrade() -> None:

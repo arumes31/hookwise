@@ -26,7 +26,7 @@ from .models import (
     UserPreference,
 )
 from .rbac.catalog import ALL_PERMISSIONS, PERMISSION_GROUPS
-from .rbac.resolver import bump_epoch, effective_role_key, schema_bereit
+from .rbac.resolver import bump_epoch, effective_role_key, resolve_permissions, schema_bereit
 from .utils import auth_required, log_audit
 
 _logger = logging.getLogger(__name__)
@@ -57,11 +57,7 @@ def auto_provision_aktiv() -> bool:
     return text.strip().lower() == "true"
 
 
-def _redis_text(key: str, env_name: str, default: str) -> str:
-    try:
-        wert = _redis().get(key)
-    except Exception:  # pragma: no cover
-        wert = None
+def _redis_text(wert: Any, env_name: str, default: str) -> str:
     if wert is None:
         return os.environ.get(env_name, default).strip() or default
     return (wert.decode() if isinstance(wert, bytes) else str(wert)).strip() or default
@@ -69,14 +65,18 @@ def _redis_text(key: str, env_name: str, default: str) -> str:
 
 def entra_app_rollen() -> Dict[str, str]:
     """App-Role-Claimwert -> Hookwise-Rolle, zur Laufzeit konfigurierbar."""
+    try:
+        viewer_wert, operator_wert = _redis().mget([ENTRA_VIEWER_ROLE_KEY, ENTRA_OPERATOR_ROLE_KEY])
+    except Exception:  # pragma: no cover
+        viewer_wert, operator_wert = None, None
     return {
         _redis_text(
-            ENTRA_VIEWER_ROLE_KEY,
+            viewer_wert,
             "ENTRA_VIEWER_APP_ROLE",
             "Hookwise.Viewer",
         ): "viewer",
         _redis_text(
-            ENTRA_OPERATOR_ROLE_KEY,
+            operator_wert,
             "ENTRA_OPERATOR_APP_ROLE",
             "Hookwise.Operator",
         ): "operator",
@@ -91,7 +91,7 @@ def _rollen_mit(permission: str) -> List[str]:
 
 
 def _nutzer_mit(permission: str) -> List[str]:
-    """Aktive Nutzer, die ein Recht ueber eine Rolle halten."""
+    """Aktive Nutzer, die ein Recht effektiv ueber eine Rolle halten."""
     rollen = _rollen_mit(permission)
     if not rollen:
         return []
@@ -99,7 +99,7 @@ def _nutzer_mit(permission: str) -> List[str]:
     ids = {z.user_id for z in zuweisungen}
     if not ids:
         return []
-    return [u.id for u in User.query.filter(User.id.in_(ids)) if u.aktiv]
+    return [u.id for u in User.query.filter(User.id.in_(ids)) if u.aktiv and permission in resolve_permissions(u)]
 
 
 def _legacy_rolle(rollen_keys: List[str]) -> str:
@@ -600,9 +600,11 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             return jsonify({"status": "error", "message": "App Role values must be different."}), 400
 
         try:
-            _redis().set(ENTRA_AUTO_KEY, "true" if auto else "false")
-            _redis().set(ENTRA_VIEWER_ROLE_KEY, viewer_wert)
-            _redis().set(ENTRA_OPERATOR_ROLE_KEY, operator_wert)
+            with _redis().pipeline(transaction=True) as transaktion:
+                transaktion.set(ENTRA_AUTO_KEY, "true" if auto else "false")
+                transaktion.set(ENTRA_VIEWER_ROLE_KEY, viewer_wert)
+                transaktion.set(ENTRA_OPERATOR_ROLE_KEY, operator_wert)
+                transaktion.execute()
         except Exception:  # pragma: no cover
             _logger.exception("Entra-Einstellungen konnten nicht gespeichert werden")
             return jsonify({"status": "error", "message": "settings store unavailable"}), 503

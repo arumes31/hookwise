@@ -761,9 +761,11 @@ Two provisioning modes are switchable at runtime on the Identity page:
 object on first sign-in) or **automatic** (a user with a recognized App Role is
 created with the mapped `viewer` or `operator` role). Per-user manual overrides
 can temporarily replace that Entra role with `viewer` or `operator`; disabling
-the override immediately restores the last synchronized App Role. Only the
-stable `tid`/`oid` pair and resolved role are stored, never tokens. Entra
-accounts have no local password or app MFA; both are Microsoft's job. Their UPN
+the override immediately restores the last synchronized App Role. Hookwise
+persists only the stable `tid`/`oid` binding, current UPN, last synchronized
+role, and optional manual override. Hookwise never stores ID, access, or refresh
+tokens. Entra accounts have no local password or app MFA; both are Microsoft's
+job. Their UPN
 is not manually editable while bound and is refreshed from Microsoft after a
 successful sign-in (clear the binding on the Identity page to edit it manually).
 
