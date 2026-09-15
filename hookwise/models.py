@@ -410,6 +410,49 @@ class WebhookRetryAttempt(Base):
         }
 
 
+class CippDefenderIncidentState(Base):
+    """Durable correlation state for CIPP Defender incident bundles."""
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_id = db.Column(
+        db.String(64), db.ForeignKey("webhook_config.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tenant_key = db.Column(db.String(255), nullable=False)
+    incident_key = db.Column(db.String(255), nullable=False)
+    payload_hash = db.Column(db.String(64), nullable=False)
+    seen_alert_ids = db.Column(db.Text, nullable=False, default="[]")
+    ticket_id = db.Column(db.Integer, nullable=True, index=True)
+    bundle_key = db.Column(db.String(32), nullable=True)
+    first_seen_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_seen_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_changed_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "config_id",
+            "tenant_key",
+            "incident_key",
+            name="uq_cipp_defender_incident_config_tenant_key",
+        ),
+        db.Index(
+            "ix_cipp_defender_incident_config_tenant_bundle",
+            "config_id",
+            "tenant_key",
+            "bundle_key",
+        ),
+    )
+
+    config = db.relationship(
+        "WebhookConfig",
+        backref=db.backref(
+            "cipp_defender_incidents",
+            lazy=True,
+            cascade="all, delete-orphan",
+            passive_deletes=True,
+        ),
+    )
+
+
 class EndpointTag(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(64), nullable=False, unique=True, index=True)

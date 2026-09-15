@@ -366,7 +366,16 @@ def _append_cipp_body_section(
 def _format_cipp_result_item(item: Any, index: int, command: str) -> str:
     is_application = "AppSecretExpiry" in command or "AppCertificateExpiry" in command
     is_defender = "Defender" in command
-    item_title = "APPLICATION" if is_application else "ALERT" if is_defender else "RESULT"
+    is_defender_incident = is_defender and "Incident" in command
+    item_title = (
+        "APPLICATION"
+        if is_application
+        else "INCIDENT"
+        if is_defender_incident
+        else "ALERT"
+        if is_defender
+        else "RESULT"
+    )
     output = [f"{item_title} {index}"]
 
     if not isinstance(item, dict):
