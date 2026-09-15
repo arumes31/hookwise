@@ -72,33 +72,6 @@
        im Dokument beziehen sich hierauf. #}
     {% include '_icons.html' %}
     <div id="loading-bar" style="width: 0%;"></div>
-    {# Rail-Griff: klappt die Seitenleiste auf Icons+Beschriftung aus.
-       Auf der Login-Seite gibt es keine Rail, also auch keinen Griff. #}
-    {% if request.endpoint != 'main.login' %}
-    <button type="button" id="hw-rail-griff" class="hw-rail-griff"
-        aria-label="Expand navigation labels" aria-expanded="false" data-tooltip="Expand menu">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m9 18 6-6-6-6"/>
-        </svg>
-    </button>
-    <script>
-        /* Vor dem ersten Paint: gespeicherte Rail-Breite anwenden, sonst
-           springt das Layout beim Laden. */
-        try {
-            if (localStorage.getItem('hw.rail') === 'breit') {
-                document.documentElement.classList.add('hw-rail-breit');
-            }
-        } catch (e) {}
-        document.getElementById('hw-rail-griff').addEventListener('click', function () {
-            const breit = document.documentElement.classList.toggle('hw-rail-breit');
-            this.setAttribute('aria-expanded', String(breit));
-            this.setAttribute('aria-label', breit ? 'Collapse navigation labels' : 'Expand navigation labels');
-            this.setAttribute('data-tooltip', breit ? 'Collapse menu' : 'Expand menu');
-            try { localStorage.setItem('hw.rail', breit ? 'breit' : 'schmal'); } catch (e) {}
-        });
-    </script>
-    {% endif %}
     {% if request.endpoint != 'main.login' %}
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top" aria-label="Primary navigation">
         <div class="container">

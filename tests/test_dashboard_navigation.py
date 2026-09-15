@@ -110,6 +110,7 @@ def test_dashboard_kpis_navigation_and_notifications(app, client):
     assert re.search(r'id="kpi-events-24h">\s*3\s*</strong>', html)
     assert re.search(r'id="kpi-failures-24h">\s*2\s*</strong>', html)
     assert re.search(r'id="notification-count"[^>]*>\s*3\s*</span>', html)
+    assert 'id="hw-rail-griff"' not in html
     assert "Unhealthy Endpoint needs attention" in html
     assert "Failed webhook: Unhealthy Endpoint" in html
     assert "Dead-lettered webhook: Paused Endpoint" in html

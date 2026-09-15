@@ -1914,48 +1914,26 @@ code, pre, .font-monospace, kbd, samp {
 #hw-drawer-rotate { white-space:nowrap; }
 
 /* ---- Ausklappbare Rail: Icons + Beschriftung ----
-   Der Griff unten an der Rail schaltet um; die Wahl liegt in localStorage
-   und wird vor dem ersten Paint angewandt (Sync-Skript im Head). */
-.hw-rail-griff { display:none; }
+   Auf Desktop oeffnet die Rail, sobald Maus oder Tastatur die Navigation
+   betritt, und schliesst wieder beim Verlassen. Mobile bleibt unveraendert. */
 @media (min-width: 992px) {
-    /* Griff an der Rail-Kante: halb ueberstehend, kollidiert mit keinem
-       Icon und wandert ueber var(--rail-w) automatisch mit. */
-    .hw-rail-griff {
-        display:grid; place-items:center; position:fixed; z-index:2000;
-        left:calc(var(--rail-w) - 13px); top:50%; transform:translateY(-50%);
-        width:26px; height:46px;
-        border:1px solid var(--line-2); border-radius:var(--radius-md);
-        background:var(--bg-surface); color:var(--text-faint); cursor:pointer;
-        box-shadow:var(--shadow-1);
-        transition:color var(--dur-1) var(--ease), left var(--dur-2) var(--ease),
-                   opacity var(--dur-1) var(--ease);
-    }
-    .hw-rail-griff:hover { color:var(--accent); border-color:var(--accent); }
-    /* Der Griff liegt ueber der Rail; ein geoeffnetes Rail-Menue (z. B.
-       Notifications) klappt darunter auf und wurde von ihm durchschnitten.
-       Solange ein Menue offen ist, weicht der Griff. */
-    body:has(.navbar .dropdown-menu.show) .hw-rail-griff {
-        opacity:0; pointer-events:none;
-    }
-    .hw-rail-griff svg { transition:transform var(--dur-2) var(--ease); }
-    :root.hw-rail-breit { --rail-w:212px; }
-    :root.hw-rail-breit .hw-rail-griff svg { transform:rotate(180deg); }
-    :root.hw-rail-breit .navbar-nav .nav-link {
+    :root:has(.navbar-nav:hover, .navbar:focus-within) { --rail-w:212px; }
+    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .nav-link {
         /* Rail-Basis erzwingt display:grid !important (Icon-only, zentriert)
            -- im Breit-Modus genauso hart auf Flex-Zeile umstellen. */
         display:flex !important; flex-direction:row; align-items:center;
         justify-content:flex-start; gap:10px; width:100%; height:40px;
         padding-left:14px !important; padding-right:10px !important;
     }
-    :root.hw-rail-breit .navbar-nav > .notification-center { width:100%; }
-    :root.hw-rail-breit .notification-center .nav-link { width:100%; }
-    :root.hw-rail-breit .navbar-nav .nav-link > span:not(.notification-count) {
+    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav > .notification-center { width:100%; }
+    :root:has(.navbar-nav:hover, .navbar:focus-within) .notification-center .nav-link { width:100%; }
+    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .nav-link > span:not(.notification-count) {
         position:static; width:auto; height:auto; margin:0; overflow:visible;
         clip-path:none; white-space:nowrap;
         font-family:var(--font-mono); font-size:12.5px;
     }
-    :root.hw-rail-breit .navbar-nav .nav-link.active::before { left:-14px; }
-    :root.hw-rail-breit .navbar-nav .notification-toggle > span.d-lg-none {
+    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .nav-link.active::before { left:-14px; }
+    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .notification-toggle > span.d-lg-none {
         display:inline !important;
         font-family:var(--font-mono); font-size:12.5px; white-space:nowrap;
     }
@@ -1985,7 +1963,7 @@ code, pre, .font-monospace, kbd, samp {
 }
 .hw-login-links {
     padding:56px clamp(28px, 6vw, 90px);
-    display:flex; flex-direction:column;
+    display:flex; flex-direction:column; min-width:0;
 }
 .hw-login-wm {
     display:flex; align-items:center; gap:14px;
@@ -1995,7 +1973,7 @@ code, pre, .font-monospace, kbd, samp {
 .hw-login-wm > svg { color:var(--text); flex:none; }
 .hw-login-wm > svg .hw-knoten-akzent { color:var(--accent); }
 .hw-login-wm i { font-style:normal; color:var(--accent); }
-.hw-login-form { margin:auto 0; max-width:360px; width:100%; }
+.hw-login-form { margin:auto 0; max-width:420px; min-width:0; width:100%; }
 .hw-login-titel {
     font-family:var(--font-head); font-weight:700; font-size:24px;
     color:var(--text); margin-bottom:4px;
@@ -2013,6 +1991,41 @@ code, pre, .font-monospace, kbd, samp {
 }
 .hw-login-form .form-control::placeholder { color:var(--text-faint); }
 .hw-login-form .btn-outline-secondary { border-color:var(--line-2); color:var(--text-faint); }
+.hw-login-separator {
+    display:flex; align-items:center; gap:12px; margin:22px 0;
+    color:var(--text-faint); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
+}
+.hw-login-separator::before, .hw-login-separator::after {
+    content:""; flex:1; height:1px; background:var(--line-2);
+}
+.hw-entra-login {
+    min-height:56px; width:100%; padding:0 14px;
+    display:grid; grid-template-columns:22px minmax(0, 1fr) auto; align-items:center; gap:11px;
+    border:1px solid color-mix(in srgb, var(--accent) 34%, var(--line-2));
+    border-radius:var(--radius-sm); background:var(--bg-sunken); color:var(--text);
+    text-decoration:none; box-shadow:none;
+    transition:background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+               color var(--dur-1) var(--ease);
+}
+.hw-entra-login:hover {
+    background:var(--bg-surface); border-color:var(--accent); color:var(--text);
+}
+.hw-entra-login:focus-visible {
+    outline:var(--focus-width) solid var(--focus-color); outline-offset:3px;
+}
+.hw-microsoft-mark { width:20px; height:20px; display:block; }
+.hw-entra-login-label {
+    min-width:0; font-family:var(--font-mono); font-size:12px; font-weight:700;
+    letter-spacing:.06em; text-transform:uppercase; white-space:nowrap;
+}
+.hw-entra-login-context {
+    color:var(--text-faint); font-family:var(--font-mono); font-size:8px;
+    letter-spacing:.12em; text-transform:uppercase; white-space:nowrap;
+}
+@media (max-width: 575.98px) {
+    .hw-entra-login { grid-template-columns:22px minmax(0, 1fr); }
+    .hw-entra-login-context { display:none; }
+}
 /* Insert-Placeholder-Knopf: gleiche Flaeche wie das Apply-Template-Select. */
 .hw-mapwerkzeug {
     background:var(--bg-surface) !important;

@@ -69,6 +69,22 @@ def test_login_normal(client, sample_users):
     assert b"Logout" in resp.data
 
 
+def test_login_shows_microsoft_action_only_when_entra_is_ready(client):
+    with patch("hookwise.auth.entra_aktiv", return_value=True):
+        ready = client.get("/login")
+
+    assert ready.status_code == 200
+    assert b"Sign in with Microsoft" in ready.data
+    assert b'href="/auth/entra/login"' in ready.data
+    assert b'hx-boost="false"' in ready.data
+
+    with patch("hookwise.auth.entra_aktiv", return_value=False):
+        unavailable = client.get("/login")
+
+    assert unavailable.status_code == 200
+    assert b"Sign in with Microsoft" not in unavailable.data
+
+
 def test_login_page_views_do_not_consume_credential_attempt_limit(client, sample_users):
     """Only submitted credentials should count toward brute-force protection."""
     for _ in range(6):

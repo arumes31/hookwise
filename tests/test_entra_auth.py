@@ -8,6 +8,7 @@ Anbindung traegt -- der Erfolgsfall ist der einfache Teil.
 from unittest.mock import patch
 
 import pytest
+from werkzeug.security import generate_password_hash
 
 from hookwise import create_app
 from hookwise.extensions import db
@@ -346,6 +347,28 @@ def test_ohne_lesbares_secret_bleibt_entra_inaktiv(app, monkeypatch, tmp_path):
 
         monkeypatch.setenv("ENTRA_CLIENT_SECRET_FILE", str(tmp_path / "gibt-es-nicht"))
         assert entra_aktiv() is False
+
+
+def test_ungueltiges_utf8_secret_blockiert_lokale_anmeldung_nicht(app, client, monkeypatch, tmp_path):
+    geheim = tmp_path / "ungueltiges-secret"
+    geheim.write_bytes(b"\xff")
+    monkeypatch.setenv("ENTRA_CLIENT_SECRET_FILE", str(geheim))
+
+    with app.app_context():
+        nutzer = User(username="lokal", password_hash=generate_password_hash("passwort"))
+        db.session.add(nutzer)
+        db.session.commit()
+
+    seite = client.get("/login")
+    assert seite.status_code == 200
+    assert b"Sign in with Microsoft" not in seite.data
+
+    antwort = client.post("/login", data={"username": "lokal", "password": "passwort"})
+    assert antwort.status_code == 302
+    assert antwort.headers["Location"].endswith("/")
+
+    with client.session_transaction() as sitzung:
+        assert sitzung["username"] == "lokal"
 
 
 def test_gebundenes_konto_nicht_ueber_upn_uebernehmbar(app, client):

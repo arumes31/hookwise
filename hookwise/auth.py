@@ -10,6 +10,7 @@ import segno
 from flask import current_app, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
+from .auth_entra import entra_aktiv
 from .extensions import db, limiter
 from .models import User
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
@@ -32,6 +33,7 @@ def _register_login_routes(bp: Any) -> None:
     def login() -> Any:
         # If we are already in the 2FA step (from previous credential check)
         pending_user_id = session.get("pending_user_id")
+        entra_ready = entra_aktiv()
 
         if request.method == "POST":
             # Case 1: Submitting OTP (User is in pending state)
@@ -59,7 +61,7 @@ def _register_login_routes(bp: Any) -> None:
                     session.pop("pending_user_id", None)
                     log_audit("login_denied", None, f"Disabled account {user.username} attempted 2FA")
                     flash("Invalid username or password", "danger")
-                    return render_template("login.html")
+                    return render_template("login.html", entra_ready=entra_ready)
 
                 if user and otp_secret and otp and pyotp.TOTP(otp_secret).verify(otp, valid_window=1):
                     # Success
@@ -75,11 +77,11 @@ def _register_login_routes(bp: Any) -> None:
                     session.pop("pending_user_id", None)
                     log_audit("login_2fa_secret_error", None, f"Could not decrypt 2FA secret for user {user.id}")
                     flash("Two-factor authentication is unavailable. Contact an administrator.", "danger")
-                    return render_template("login.html"), 503
+                    return render_template("login.html", entra_ready=entra_ready), 503
 
                 log_audit("login_2fa_failed", None, f"Failed 2FA attempt for pending user {pending_user_id}")
                 flash("Invalid 2FA code", "danger")
-                return render_template("login.html", step="2fa")
+                return render_template("login.html", step="2fa", entra_ready=entra_ready)
 
             # Case 2: Submitting Credentials or restarting flow
             # If attempting to login with new creds, clear old pending state
@@ -97,7 +99,7 @@ def _register_login_routes(bp: Any) -> None:
                 if not user.aktiv:
                     log_audit("login_denied", None, f"Disabled account {username} attempted sign-in")
                     flash("Invalid username or password", "danger")
-                    return render_template("login.html")
+                    return render_template("login.html", entra_ready=entra_ready)
 
                 if user.is_2fa_enabled:
                     session["pending_user_id"] = user.id
@@ -118,7 +120,7 @@ def _register_login_routes(bp: Any) -> None:
         if "pending_user_id" in session:
             session.pop("pending_user_id", None)
 
-        return render_template("login.html")
+        return render_template("login.html", entra_ready=entra_ready)
 
 
 def _register_2fa_routes(bp: Any) -> None:
