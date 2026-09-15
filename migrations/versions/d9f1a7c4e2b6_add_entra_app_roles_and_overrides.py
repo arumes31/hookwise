@@ -22,6 +22,18 @@ def upgrade() -> None:
     columns = {column["name"] for column in inspector.get_columns("user")}
     indexes = {index["name"] for index in inspector.get_indexes("user")}
     with op.batch_alter_table("user") as batch_op:
+        if "auth_source" not in columns:
+            batch_op.add_column(sa.Column("auth_source", sa.String(length=16), nullable=True))
+        if "entra_tid" not in columns:
+            batch_op.add_column(sa.Column("entra_tid", sa.String(length=64), nullable=True))
+        if "entra_oid" not in columns:
+            batch_op.add_column(sa.Column("entra_oid", sa.String(length=64), nullable=True))
+        if "upn" not in columns:
+            batch_op.add_column(sa.Column("upn", sa.String(length=255), nullable=True))
+        if "is_active" not in columns:
+            batch_op.add_column(sa.Column("is_active", sa.Boolean(), nullable=True))
+        if "last_login_at" not in columns:
+            batch_op.add_column(sa.Column("last_login_at", sa.DateTime(), nullable=True))
         if "entra_role" not in columns:
             batch_op.add_column(sa.Column("entra_role", sa.String(length=50), nullable=True))
         if "entra_role_synced_at" not in columns:
@@ -37,16 +49,19 @@ def upgrade() -> None:
             )
         if "override_role" not in columns:
             batch_op.add_column(sa.Column("override_role", sa.String(length=50), nullable=True))
+        if "ix_user_entra_oid" not in indexes:
+            batch_op.create_index("ix_user_entra_oid", ["entra_oid"], unique=False)
+        if "ix_user_upn" not in indexes:
+            batch_op.create_index("ix_user_upn", ["upn"], unique=False)
         if "ix_user_entra_role" not in indexes:
             batch_op.create_index("ix_user_entra_role", ["entra_role"], unique=False)
         if "ix_user_override_role" not in indexes:
             batch_op.create_index("ix_user_override_role", ["override_role"], unique=False)
 
-    if "auth_source" in columns:
-        bind.execute(
-            sa.text("UPDATE \"user\" SET entra_role = :role WHERE LOWER(auth_source) = 'entra' AND entra_role IS NULL"),
-            {"role": ENTRA_NO_PERMISSIONS_ROLE},
-        )
+    bind.execute(
+        sa.text("UPDATE \"user\" SET entra_role = :role WHERE LOWER(auth_source) = 'entra' AND entra_role IS NULL"),
+        {"role": ENTRA_NO_PERMISSIONS_ROLE},
+    )
 
     if "rbac_meta" in inspector.get_table_names():
         ergebnis = bind.execute(sa.text("UPDATE rbac_meta SET permissions_epoch = permissions_epoch + 1 WHERE id = 1"))

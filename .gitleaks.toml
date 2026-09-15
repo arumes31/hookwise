@@ -15,9 +15,15 @@
 useDefault = true
 
 [allowlist]
-description = "Erfundene Zugangsdaten aus Tests"
+description = "Erfundene Zugangsdaten aus Tests und CI"
 regexes = [
     # tests/test_user_admin.py -- Passwort eines Wegwerf-Kontos im Test,
     # dass ein deaktiviertes Konto sich nicht anmelden kann.
     '''Ein-gutes-Passwort-1''',
+    # .github/workflows/{ci,ghcr}.yml -- Fernet-Schluessel fuer isolierte
+    # Test- und Staging-Container ohne persistente Produktionsdaten.
+    '''vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E=''',
+    # Ehemals tests/test_utils.py und docker-compose.yml -- ausrangierter
+    # Fernet-Schluessel fuer lokale Wegwerf-Datenbanken.
+    '''OV0PcQMSRDhDsggpvMAukyXoc8Q2vZXo74KjSSLRnsk=''',
 ]
