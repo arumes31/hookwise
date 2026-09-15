@@ -486,8 +486,8 @@ def test_ci_uses_latest_python_and_recommended_pr_guards():
     assert 'target-version = "py314"' in project
     assert 'python_version = "3.14"' in project
     assert "cancel-in-progress: true" in ci
-    assert "cancel-in-progress: true" in ghcr
-    assert "Verify PR runtime image excludes build-only packages" in ghcr
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in ghcr
+    assert "Verify runtime image excludes build-only packages" in ghcr
     assert "trivyignores: .trivyignore.yaml" in ghcr
     assert "GHSA-6v7p-g79w-8964" in trivyignore
     assert "pkg:pypi/msgpack@1.1.2" in trivyignore
