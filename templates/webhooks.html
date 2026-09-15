@@ -620,7 +620,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close welcome dialog"></button>
             </div>
             <div class="modal-body text-center py-5">
-                <img src="{{ url_for('static', filename='img/logo.png', v='20260909e') }}" alt="HookWise" height="80" class="mb-4">
+                <img src="{{ static_asset('img/logo.png') }}" alt="HookWise" height="80" class="mb-4">
                 <h3 class="fw-bold">Let's get you set up.</h3>
                 <p class="text-secondary mb-5">HookWise bridges your monitoring tools to ConnectWise Manage tickets.</p>
 
@@ -711,8 +711,8 @@
 
 <meta name="hookwise-cw-url" content="{{ cw_url }}">
 
-<script src="{{ url_for('static', filename='js/dashboard.js', v='20260909e') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-page.js', v='20260909e') }}"></script>
+<script src="{{ static_asset('js/dashboard.js') }}"></script>
+<script src="{{ static_asset('js/dashboard-page.js') }}"></script>
 
 <script>
     // Endpoint-Detail-Drawer: ersetzt die fruehere Detailseite.

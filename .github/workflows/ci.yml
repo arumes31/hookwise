@@ -1,16 +1,19 @@
 name: CI
 
 on:
+  workflow_call:
   push:
-    branches: [ main, v2_test ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, v2_test ]
+    branches: [ main, dev ]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A reusable workflow inherits github.workflow from its caller. Keep its
+  # concurrency group distinct so CI cannot cancel the image pipeline itself.
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:

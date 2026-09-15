@@ -495,6 +495,10 @@
     document.addEventListener('htmx:beforeCleanupElement', event => {
         if (activeRoot && (event.target === activeRoot || event.target.contains?.(activeRoot))) cleanup(activeRoot);
     });
-    document.addEventListener('DOMContentLoaded', init);
     document.addEventListener('htmx:load', init);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        init();
+    }
 })();

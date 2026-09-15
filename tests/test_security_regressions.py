@@ -1,5 +1,7 @@
 import io
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -151,6 +153,308 @@ def test_untrusted_ui_values_are_not_interpolated_as_html():
     assert 'value="${regex}"' not in form_scripts
     assert "resultPre.textContent = JSON.stringify" in form_scripts
     assert "error.textContent = String(data.message" in form_scripts
+
+
+def test_endpoint_autosave_filters_ignored_fields_and_preserves_checkbox_state():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for endpoint autosave behavior coverage")
+
+    root = Path(__file__).parents[1]
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const helpers = source.slice(
+    source.indexOf('function endpointAutosaveFields'),
+    source.indexOf('async function initAutoSave')
+);
+assert(helpers.includes('function sanitizeEndpointAutosave'));
+eval(helpers);
+global.document = {
+    createElement() {
+        return { value: '', textContent: '', selected: false };
+    }
+};
+
+const field = (name, type, value = '', extra = {}) => ({
+    name,
+    type,
+    value,
+    checked: false,
+    disabled: false,
+    dataset: {},
+    ...extra
+});
+const controls = [
+    field('csrf_token', 'hidden', 'fresh-token'),
+    field('hmac_secret', 'text', 'current-secret', { dataset: { autosave: 'ignore' } }),
+    field('enabled', 'checkbox', 'true', { checked: false }),
+    field('mode', 'radio', 'a'),
+    field('mode', 'radio', 'b', { checked: true }),
+    field('retry_enabled', 'checkbox', 'true', { checked: true }),
+    field('retry_enabled', 'hidden', 'false'),
+    field('title', 'text', 'draft')
+];
+const form = { elements: controls };
+
+assert.deepStrictEqual(endpointAutosaveState(form), {
+    enabled: false,
+    mode: 'b',
+    retry_enabled: true,
+    title: 'draft'
+});
+
+const legacy = sanitizeEndpointAutosave(form, {
+    csrf_token: 'stale-token',
+    hmac_secret: 'stored-secret',
+    enabled: 'on',
+    mode: 'a',
+    retry_enabled: false,
+    title: 'legacy'
+});
+assert.deepStrictEqual(legacy, {
+    enabled: 'on',
+    mode: 'a',
+    retry_enabled: false,
+    title: 'legacy'
+});
+
+restoreEndpointAutosave(form, legacy);
+const find = (name, value) => controls.find((item) =>
+    item.name === name && (value === undefined || item.value === value));
+assert.strictEqual(find('csrf_token').value, 'fresh-token');
+assert.strictEqual(find('hmac_secret').value, 'current-secret');
+assert.strictEqual(find('enabled').checked, true);
+assert.strictEqual(find('mode', 'a').checked, true);
+assert.strictEqual(find('mode', 'b').checked, false);
+assert.strictEqual(find('retry_enabled', 'true').checked, false);
+assert.strictEqual(find('title').value, 'legacy');
+
+const select = field('board', 'select-one', '', {
+    tagName: 'SELECT',
+    options: [{ value: '', textContent: 'Loading...', selected: true }],
+    appendChild(option) {
+        this.options.forEach(existing => { existing.selected = false; });
+        this.options.push(option);
+    }
+});
+restoreEndpointAutosave({ elements: [select] }, { board: 'Draft Board' });
+assert.strictEqual(select.value, 'Draft Board');
+assert.strictEqual(select.options.at(-1).textContent, 'Draft Board (restored draft)');
+assert.strictEqual(select.options.at(-1).selected, true);
+assert.strictEqual(select.dataset.autosaveRestored, 'true');
+
+const blankSelect = field('board', 'select-one', '', {
+    tagName: 'SELECT',
+    options: [{ value: '', textContent: 'Loading...', selected: true }],
+    appendChild(option) { this.options.push(option); }
+});
+restoreEndpointAutosave({ elements: [blankSelect] }, { board: '' });
+assert.strictEqual(blankSelect.value, '');
+assert.strictEqual(blankSelect.dataset.autosaveRestored, 'true');
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_endpoint_autosave_always_signals_readiness_when_storage_is_unavailable():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for endpoint autosave behavior coverage")
+
+    root = Path(__file__).parents[1]
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const autosave = source.slice(
+    source.indexOf('function endpointAutosaveFields'),
+    source.indexOf('function initFeedback')
+);
+
+const dispatched = [];
+const form = {
+    dataset: {},
+    elements: [],
+    addEventListener() {},
+    dispatchEvent(event) { dispatched.push(event); }
+};
+global.window = { location: { pathname: '/endpoint/edit/7' } };
+global.document = {
+    getElementById(id) { return id === 'endpoint-form' ? form : null; },
+    createElement() { return {}; }
+};
+global.localStorage = {
+    getItem() { throw new Error('storage denied'); },
+    setItem() { throw new Error('storage denied'); },
+    removeItem() { throw new Error('storage denied'); }
+};
+global.CustomEvent = class CustomEvent {
+    constructor(type, options) {
+        this.type = type;
+        this.bubbles = options.bubbles;
+    }
+};
+
+eval(autosave);
+(async () => {
+    await initAutoSave();
+    assert.strictEqual(form.dataset.autosaveInitialized, 'true');
+    assert.strictEqual(form.dataset.autosaveReady, 'true');
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0].type, 'hookwise:autosave-ready');
+    assert.strictEqual(dispatched[0].bubbles, true);
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_endpoint_autosave_persists_select_changes_after_dependent_reset():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for endpoint autosave behavior coverage")
+
+    root = Path(__file__).parents[1]
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const autosave = source.slice(
+    source.indexOf('function endpointAutosaveFields'),
+    source.indexOf('function initFeedback')
+);
+const listeners = {};
+const writes = [];
+const select = (name, value) => ({
+    name,
+    value,
+    type: 'select-one',
+    tagName: 'SELECT',
+    disabled: false,
+    dataset: {},
+    options: [{ value, selected: true }],
+    appendChild(option) { this.options.push(option); }
+});
+const board = select('board', 'Board A');
+const status = select('status', 'Status A');
+const form = {
+    dataset: {},
+    elements: [board, status],
+    addEventListener(name, callback) { (listeners[name] ||= []).push(callback); },
+    dispatchEvent() {}
+};
+global.window = { location: { pathname: '/endpoint/edit/7' } };
+global.document = {
+    getElementById(id) { return id === 'endpoint-form' ? form : null; },
+    createElement() { return { value: '', textContent: '', selected: false }; }
+};
+global.localStorage = {
+    getItem() { return null; },
+    setItem(key, value) { writes.push([key, value]); },
+    removeItem() {}
+};
+global.CustomEvent = class CustomEvent {
+    constructor(type, options) { this.type = type; this.bubbles = options.bubbles; }
+};
+
+eval(autosave);
+(async () => {
+    await initAutoSave();
+
+    // A target-level board handler clears stale dependent options before the
+    // native change event bubbles to the form-level autosave listener.
+    board.value = 'Board B';
+    status.value = '';
+    for (const callback of listeners.change || []) callback({ target: board });
+
+    assert.strictEqual(writes.length, 1);
+    const saved = JSON.parse(writes[0][1]);
+    assert.deepStrictEqual(saved, { board: 'Board B', status: '' });
+
+    const reopenedBoard = select('board', 'Board A');
+    const reopenedStatus = select('status', 'Status A');
+    restoreEndpointAutosave({ elements: [reopenedBoard, reopenedStatus] }, saved);
+    assert.strictEqual(reopenedBoard.value, 'Board B');
+    assert.strictEqual(reopenedStatus.value, '');
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_endpoint_autosave_starts_before_other_page_initializers_can_fail():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for frontend initialization coverage")
+
+    root = Path(__file__).parents[1]
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const reinitSource = source.slice(
+    source.indexOf('function reinitApp'),
+    source.indexOf('// A8:')
+);
+let autosaveStarted = false;
+const initAutoSave = () => { autosaveStarted = true; };
+const noOp = () => {};
+const initSearch = noOp;
+const initBulkActions = noOp;
+const initServiceHealth = noOp;
+const initToasts = noOp;
+const initTransitions = () => { throw new Error('unrelated initializer failed'); };
+const initDragAndDrop = noOp;
+const initContextMenu = noOp;
+const initFeedback = noOp;
+const initPullToRefresh = noOp;
+const initOnboarding = noOp;
+const initNotifications = noOp;
+const initTooltips = noOp;
+global.window = {};
+
+eval(reinitSource);
+assert.throws(() => reinitApp({}), /unrelated initializer failed/);
+assert.strictEqual(autosaveStarted, true);
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_all_workflow_actions_use_immutable_shas():

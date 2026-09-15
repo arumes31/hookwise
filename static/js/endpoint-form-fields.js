@@ -433,7 +433,16 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $body`;
             if (optionsHTML) {
                 // Ensure options don't carry over the 'selected' attribute from the main form
                 selectElem.innerHTML = '<option value="">-- No Change --</option>' + optionsHTML.replace(/selected(="[^"]*")?/gi, '');
-                if (overrideVal) selectElem.value = overrideVal;
+                if (overrideVal) {
+                    selectElem.value = overrideVal;
+                    if (selectElem.value !== overrideVal) {
+                        const option = document.createElement('option');
+                        option.value = String(overrideVal);
+                        option.textContent = `${overrideVal} (saved value unavailable)`;
+                        option.selected = true;
+                        selectElem.appendChild(option);
+                    }
+                }
             }
         };
 

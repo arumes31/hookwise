@@ -80,6 +80,24 @@ def test_new_endpoint_form_shows_disabled_configuration_auto_link_warning(client
     assert "configuration_mac" in html
 
 
+def test_endpoint_form_uses_native_submission_and_excludes_sensitive_autosave_fields(client):
+    _authenticate(client)
+
+    response = client.get("/endpoint/new")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    form = re.search(r'<form[^>]*id="endpoint-form"[^>]*>', html)
+    csrf = re.search(r'<input[^>]*name="csrf_token"[^>]*>', html)
+    hmac_secret = re.search(r'<input[^>]*name="hmac_secret"[^>]*>', html)
+    assert form is not None
+    assert 'hx-boost="false"' in form.group(0)
+    assert csrf is not None
+    assert 'data-autosave="ignore"' in csrf.group(0)
+    assert hmac_secret is not None
+    assert 'data-autosave="ignore"' in hmac_secret.group(0)
+
+
 def test_create_endpoint_persists_configuration_auto_link_opt_in_and_safe_default(client, app):
     _authenticate(client)
 

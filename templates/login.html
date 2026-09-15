@@ -5,7 +5,7 @@
 {% block main_content_class %}hw-login-main{% endblock %}
 
 {% block content %}
-{# Split Signal: form on the left, a slow synthetic delivery feed with the
+{# Split Signal: form on the left, a synthetic delivery feed with the
    hook watermark on the right. The feed is generated client-side -- the
    login page is unauthenticated and must never show real delivery data. #}
 <div class="hw-login-split">
@@ -87,7 +87,7 @@
         const term = document.getElementById('hw-login-term');
         if (term) {
             const pfade = ['grafana-pay', 'stripe-bill', 'gh-ci', 'zbx-edge', 'kuma-prod'];
-            const MAX_ZEILEN = 40;
+            let maxZeilen = 1;
             let reqNr = 1000 + Math.floor(Math.random() * 900);
 
             const neueZeile = () => {
@@ -104,13 +104,23 @@
                     + '  \u00b7  ' + (45 + Math.floor(Math.random() * 306)) + 'ms'
                     + '  \u00b7  req-' + (reqNr++)));
                 term.appendChild(el);
-                while (term.children.length > MAX_ZEILEN) term.removeChild(term.firstChild);
+                while (term.children.length > maxZeilen) term.removeChild(term.firstChild);
             };
 
-            // Start with a filled column, then keep appending forever.
-            for (let i = 0; i < 26; i++) neueZeile();
+            // Fill the actual panel height, including after resizing. One
+            // extra row keeps the top covered between whole-line updates.
+            const fuelleSpalte = () => {
+                if (!term.clientHeight) return;
+                const style = window.getComputedStyle(term);
+                const hoehe = term.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+                maxZeilen = Math.max(1, Math.ceil(hoehe / parseFloat(style.lineHeight)) + 1);
+                while (term.children.length < maxZeilen) neueZeile();
+                while (term.children.length > maxZeilen) term.removeChild(term.firstChild);
+            };
+            fuelleSpalte();
+            new ResizeObserver(fuelleSpalte).observe(term);
             (function tick() {
-                window.setTimeout(() => { neueZeile(); tick(); }, 800 + Math.random() * 1700);
+                window.setTimeout(() => { neueZeile(); tick(); }, 600 + Math.random() * 1200);
             })();
         }
 
