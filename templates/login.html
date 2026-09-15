@@ -65,6 +65,19 @@
                     <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                 </button>
             </div>
+            {% if entra_ready %}
+            <div class="hw-login-separator" aria-hidden="true"><span>or</span></div>
+            <a class="hw-entra-login" href="{{ url_for('main.entra_login') }}" hx-boost="false">
+                <svg class="hw-microsoft-mark" viewBox="0 0 23 23" aria-hidden="true" focusable="false">
+                    <rect x="1" y="1" width="9.5" height="9.5" fill="#f35325"/>
+                    <rect x="12.5" y="1" width="9.5" height="9.5" fill="#81bc06"/>
+                    <rect x="1" y="12.5" width="9.5" height="9.5" fill="#05a6f0"/>
+                    <rect x="12.5" y="12.5" width="9.5" height="9.5" fill="#ffba08"/>
+                </svg>
+                <span class="hw-entra-login-label">Sign in with Microsoft</span>
+                <span class="hw-entra-login-context">Organization identity</span>
+            </a>
+            {% endif %}
             {% endif %}
         </form>
 
