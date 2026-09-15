@@ -162,9 +162,7 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
         return frozenset()
 
     if not schema_bereit():
-        return permissions_for_legacy_role(
-            autoritative_rolle if autoritativ else getattr(user, "role", None)
-        )
+        return permissions_for_legacy_role(autoritative_rolle if autoritativ else getattr(user, "role", None))
 
     try:
         from ..models import RbacRole, RbacRolePermission, RbacUserRole
@@ -174,9 +172,7 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
             if rolle is None:
                 _logger.error("Autoritative Rolle %s existiert nicht", autoritative_rolle)
                 return frozenset()
-            autoritative_rechte = {
-                z.permission for z in RbacRolePermission.query.filter_by(role_id=rolle.id)
-            }
+            autoritative_rechte = {z.permission for z in RbacRolePermission.query.filter_by(role_id=rolle.id)}
             return frozenset(autoritative_rechte & ALL_PERMISSIONS)
 
         rollen_ids = [z.role_id for z in RbacUserRole.query.filter_by(user_id=user.id)]
@@ -189,9 +185,7 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
         return frozenset(rechte & ALL_PERMISSIONS)
     except Exception:  # pragma: no cover
         _logger.exception("Rechteaufloesung fehlgeschlagen, Legacy-Fallback")
-        return permissions_for_legacy_role(
-            autoritative_rolle if autoritativ else getattr(user, "role", None)
-        )
+        return permissions_for_legacy_role(autoritative_rolle if autoritativ else getattr(user, "role", None))
 
 
 def sitzung_setzen(user: Any) -> FrozenSet[str]:

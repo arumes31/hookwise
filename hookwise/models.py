@@ -81,9 +81,7 @@ class User(Base):
             "mfa_enabled": bool(self.is_2fa_enabled),
             "entra_bound": bool(self.entra_oid),
             "entra_role": self.entra_role,
-            "entra_role_synced_at": (
-                self.entra_role_synced_at.isoformat() if self.entra_role_synced_at else None
-            ),
+            "entra_role_synced_at": (self.entra_role_synced_at.isoformat() if self.entra_role_synced_at else None),
             "is_override_active": bool(self.is_override_active),
             "override_role": self.override_role,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
