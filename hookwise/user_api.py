@@ -25,15 +25,15 @@ from .models import (
     User,
     UserPreference,
 )
-from .rbac.catalog import ALL_PERMISSIONS, PERMISSION_GROUPS, is_assignable_start_role
-from .rbac.resolver import bump_epoch, schema_bereit
+from .rbac.catalog import ALL_PERMISSIONS, PERMISSION_GROUPS
+from .rbac.resolver import bump_epoch, effective_role_key, schema_bereit
 from .utils import auth_required, log_audit
 
 _logger = logging.getLogger(__name__)
 
 ENTRA_AUTO_KEY = "hookwise_entra_auto_provision"
-ENTRA_AUTO_ROLE_KEY = "hookwise_entra_auto_provision_role"
-ENTRA_GROUP_KEY = "hookwise_entra_group_filter"
+ENTRA_VIEWER_ROLE_KEY = "hookwise_entra_viewer_app_role"
+ENTRA_OPERATOR_ROLE_KEY = "hookwise_entra_operator_app_role"
 
 
 # --------------------------------------------------------------------------
@@ -57,22 +57,30 @@ def auto_provision_aktiv() -> bool:
     return text.strip().lower() == "true"
 
 
-def auto_provision_rolle() -> str:
+def _redis_text(key: str, env_name: str, default: str) -> str:
     try:
-        wert = _redis().get(ENTRA_AUTO_ROLE_KEY)
+        wert = _redis().get(key)
     except Exception:  # pragma: no cover
         wert = None
     if wert is None:
-        return os.environ.get("ENTRA_AUTO_PROVISION_ROLE", "viewer")
-    return (wert.decode() if isinstance(wert, bytes) else str(wert)) or "viewer"
+        return os.environ.get(env_name, default).strip() or default
+    return (wert.decode() if isinstance(wert, bytes) else str(wert)).strip() or default
 
 
-def entra_gruppenfilter() -> str:
-    try:
-        wert = _redis().get(ENTRA_GROUP_KEY)
-    except Exception:  # pragma: no cover
-        wert = None
-    return (wert.decode() if isinstance(wert, bytes) else str(wert or "")).strip()
+def entra_app_rollen() -> Dict[str, str]:
+    """App-Role-Claimwert -> Hookwise-Rolle, zur Laufzeit konfigurierbar."""
+    return {
+        _redis_text(
+            ENTRA_VIEWER_ROLE_KEY,
+            "ENTRA_VIEWER_APP_ROLE",
+            "Hookwise.Viewer",
+        ): "viewer",
+        _redis_text(
+            ENTRA_OPERATOR_ROLE_KEY,
+            "ENTRA_OPERATOR_APP_ROLE",
+            "Hookwise.Operator",
+        ): "operator",
+    }
 
 
 # --------------------------------------------------------------------------
@@ -146,6 +154,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @main_bp.route("/settings/identity")
     @auth_required
     def identity_settings() -> Any:
+        app_rollen = entra_app_rollen()
         return render_template(
             "identity.html",
             schema_ok=schema_bereit(),
@@ -157,8 +166,8 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             entra_scopes=os.environ.get("ENTRA_SCOPES", "openid profile email"),
             entra_ready=entra_aktiv(),
             auto_provision=auto_provision_aktiv(),
-            auto_role=auto_provision_rolle(),
-            group_filter=entra_gruppenfilter(),
+            viewer_app_role=next((wert for wert, rolle in app_rollen.items() if rolle == "viewer"), ""),
+            operator_app_role=next((wert for wert, rolle in app_rollen.items() if rolle == "operator"), ""),
             permission_groups=PERMISSION_GROUPS,
         )
 
@@ -174,7 +183,21 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
                 zuweisungen.setdefault(z.user_id, []).append(rollen.get(z.role_id, "?"))
         return jsonify(
             {
-                "users": [dict(u.to_dict(), roles=sorted(zuweisungen.get(u.id, []))) for u in nutzer],
+                "users": [
+                    dict(
+                        u.to_dict(),
+                        roles=sorted(zuweisungen.get(u.id, [])),
+                        effective_role=effective_role_key(u),
+                        authorization_source=(
+                            "manual_override"
+                            if u.is_override_active
+                            else "entra_app_role"
+                            if u.quelle == "entra" and u.entra_role
+                            else "local"
+                        ),
+                    )
+                    for u in nutzer
+                ],
                 "schema_ok": schema_bereit(),
             }
         )
@@ -363,14 +386,87 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         bump_epoch()
         return jsonify({"status": "success", "roles": sorted(gewuenscht)})
 
+    @main_bp.route("/api/users/<user_id>/authorization-override", methods=["PUT"])
+    @auth_required
+    def user_authorization_override(user_id: str) -> Any:
+        """Setzt eine exakte Ersatzrolle fuer ein Entra-Konto.
+
+        Viewer und Operator sind die bewusst begrenzte Override-Flaeche. Ein
+        Entra-Benutzer kann dadurch weder sich selbst noch einen anderen Nutzer
+        an der App-Role-Verwaltung vorbei zum Administrator machen.
+        """
+        if not schema_bereit():
+            return jsonify({"status": "error", "message": "RBAC schema not ready"}), 503
+        nutzer = User.query.get_or_404(user_id)
+        if nutzer.quelle != "entra":
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Local accounts use their normal role assignment.",
+                    }
+                ),
+                409,
+            )
+
+        daten = request.get_json(silent=True) or {}
+        if not isinstance(daten.get("is_override_active"), bool):
+            return jsonify({"status": "error", "message": "is_override_active must be boolean"}), 400
+        aktiv = daten["is_override_active"]
+        rollen_key = (daten.get("override_role") or nutzer.override_role or "").strip().lower()
+        erlaubte_rollen = {"viewer", "operator"}
+        if aktiv and rollen_key not in erlaubte_rollen:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Override role must be viewer or operator.",
+                    }
+                ),
+                400,
+            )
+        if rollen_key and rollen_key not in erlaubte_rollen:
+            return jsonify({"status": "error", "message": "unknown override role"}), 400
+        if rollen_key and RbacRole.query.filter_by(key=rollen_key).first() is None:
+            return jsonify({"status": "error", "message": "override role is unavailable"}), 409
+
+        nutzer.is_override_active = aktiv
+        nutzer.override_role = rollen_key or None
+        # Die Legacy-Spalte traegt bei einem kurzzeitig fehlenden RBAC-Schema
+        # dieselbe effektive eingebaute Rolle, aber bleibt nie die Quelle der
+        # normalen App-Role-Auswertung.
+        nutzer.role = rollen_key if aktiv else (nutzer.entra_role or nutzer.role)
+        db.session.commit()
+        log_audit(
+            "authorization_override_update",
+            None,
+            (
+                f"{nutzer.username}: override={rollen_key}"
+                if aktiv
+                else f"{nutzer.username}: override=off entra_role={nutzer.entra_role or 'none'}"
+            ),
+        )
+        bump_epoch()
+        return jsonify(
+            {
+                "status": "success",
+                "is_override_active": aktiv,
+                "override_role": nutzer.override_role,
+                "effective_role": effective_role_key(nutzer),
+            }
+        )
+
     @main_bp.route("/api/users/<user_id>/entra-binding", methods=["DELETE"])
     @auth_required
     def user_reset_entra(user_id: str) -> Any:
         nutzer = User.query.get_or_404(user_id)
         nutzer.entra_tid = None
         nutzer.entra_oid = None
+        nutzer.entra_role = None
+        nutzer.entra_role_synced_at = None
         db.session.commit()
         log_audit("entra_binding_reset", None, f"Entra binding reset for {nutzer.username}")
+        bump_epoch()
         return jsonify({"status": "success"})
 
     # ---------------- Rollen ---------------------------------------------
@@ -493,32 +589,20 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @main_bp.route("/api/entra/settings", methods=["POST"])
     @auth_required
     def entra_settings_update() -> Any:
-        """Der Provisionierungs-Schalter. Redis wie die uebrigen Einstellungen,
-        damit er ohne Neustart und ohne Schemaaenderung wirkt (ADR-002)."""
+        """Provisionierung und App-Role-Claimwerte zur Laufzeit setzen."""
         daten = request.get_json(silent=True) or {}
         auto = bool(daten.get("auto_provision"))
-        rolle_key = (daten.get("auto_role") or "viewer").strip().lower()
-
-        if auto:
-            rolle = RbacRole.query.filter_by(key=rolle_key).first() if schema_bereit() else None
-            if rolle is None:
-                return jsonify({"status": "error", "message": "unknown start role"}), 400
-            rechte = frozenset(z.permission for z in RbacRolePermission.query.filter_by(role_id=rolle.id))
-            if not is_assignable_start_role(rechte):
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": "Start role must not hold privileged permissions.",
-                        }
-                    ),
-                    400,
-                )
+        viewer_wert = (daten.get("viewer_app_role") or "").strip()
+        operator_wert = (daten.get("operator_app_role") or "").strip()
+        if not viewer_wert or not operator_wert:
+            return jsonify({"status": "error", "message": "Both App Role values are required."}), 400
+        if viewer_wert == operator_wert:
+            return jsonify({"status": "error", "message": "App Role values must be different."}), 400
 
         try:
             _redis().set(ENTRA_AUTO_KEY, "true" if auto else "false")
-            _redis().set(ENTRA_AUTO_ROLE_KEY, rolle_key)
-            _redis().set(ENTRA_GROUP_KEY, (daten.get("group_filter") or "").strip())
+            _redis().set(ENTRA_VIEWER_ROLE_KEY, viewer_wert)
+            _redis().set(ENTRA_OPERATOR_ROLE_KEY, operator_wert)
         except Exception:  # pragma: no cover
             _logger.exception("Entra-Einstellungen konnten nicht gespeichert werden")
             return jsonify({"status": "error", "message": "settings store unavailable"}), 503
@@ -526,9 +610,19 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         log_audit(
             "entra_settings_update",
             None,
-            f"auto_provision={'on' if auto else 'off'} role={rolle_key}",
+            (
+                f"auto_provision={'on' if auto else 'off'} "
+                f"viewer_app_role={viewer_wert} operator_app_role={operator_wert}"
+            ),
         )
-        return jsonify({"status": "success", "auto_provision": auto, "auto_role": rolle_key})
+        return jsonify(
+            {
+                "status": "success",
+                "auto_provision": auto,
+                "viewer_app_role": viewer_wert,
+                "operator_app_role": operator_wert,
+            }
+        )
 
 
 def _rollen_setzen(user_id: str, rollen_keys: List[str]) -> None:

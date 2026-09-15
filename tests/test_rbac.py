@@ -9,7 +9,6 @@ from hookwise.rbac.catalog import (
     ALL_PERMISSIONS,
     PERMISSION_GROUPS,
     ROLE_PRESETS,
-    is_assignable_start_role,
     permissions_for_legacy_role,
 )
 from hookwise.rbac.decorators import verify_route_coverage
@@ -71,15 +70,6 @@ def test_verwaltungsrechte_bleiben_beim_admin():
         assert secret not in ROLE_PRESETS["viewer"]["permissions"], secret
 
 
-def test_startrolle_lehnt_privilegierte_rechte_ab():
-    """Auto-Provisioning darf per Konstruktion keine Administratoren erzeugen.
-
-    Seit operator Secrets haelt, faellt auch er als Startrolle aus."""
-    assert is_assignable_start_role(frozenset(ROLE_PRESETS["viewer"]["permissions"]))
-    assert not is_assignable_start_role(frozenset(ROLE_PRESETS["operator"]["permissions"]))
-    assert not is_assignable_start_role(frozenset(ROLE_PRESETS["admin"]["permissions"]))
-
-
 def test_legacy_abbildung():
     assert permissions_for_legacy_role("admin") == ALL_PERMISSIONS
     assert "endpoint:write" in permissions_for_legacy_role("user")
@@ -138,6 +128,56 @@ def test_aufloesung_vereinigt_mehrere_rollen(app, db_bereit):
         assert "endpoint:write" in rechte  # aus operator
         assert "dashboard:read" in rechte  # aus viewer
         assert "user:manage" not in rechte
+
+
+def test_entra_app_role_ersetzt_lokale_rollenzuweisungen(app, db_bereit):
+    with app.app_context():
+        seed_builtin_roles()
+        u = _nutzer("entra-viewer", "operator")
+        u.auth_source = "entra"
+        u.entra_role = "viewer"
+        operator = RbacRole.query.filter_by(key="operator").first()
+        db.session.add(RbacUserRole(user_id=u.id, role_id=operator.id))
+        db.session.commit()
+
+        rechte = resolve_permissions(u)
+        assert "dashboard:read" in rechte
+        assert "endpoint:write" not in rechte
+
+
+def test_manueller_override_ersetzt_entra_app_role(app, db_bereit):
+    from flask import session
+
+    from hookwise.rbac.resolver import sitzung_setzen
+
+    with app.app_context():
+        seed_builtin_roles()
+        u = _nutzer("entra-operator", "operator")
+        u.auth_source = "entra"
+        u.entra_role = "operator"
+        u.is_override_active = True
+        u.override_role = "viewer"
+        db.session.commit()
+
+        assert "endpoint:write" not in resolve_permissions(u)
+        with app.test_request_context():
+            session["user_id"] = u.id
+            sitzung_setzen(u)
+            assert session["role"] == "viewer"
+            assert session["authz_source"] == "manual_override"
+
+
+def test_unvollstaendiger_override_ist_fail_closed(app, db_bereit):
+    with app.app_context():
+        seed_builtin_roles()
+        u = _nutzer("kaputter-override", "operator")
+        u.auth_source = "entra"
+        u.entra_role = "operator"
+        u.is_override_active = True
+        u.override_role = None
+        db.session.commit()
+
+        assert resolve_permissions(u) == frozenset()
 
 
 def test_deaktivierter_nutzer_hat_keine_rechte(app, db_bereit):

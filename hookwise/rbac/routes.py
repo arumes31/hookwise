@@ -137,6 +137,7 @@ ENDPUNKT_RECHTE: Dict[str, str] = {
     "main.user_set_password": "user:manage",
     "main.user_reset_mfa": "user:manage",
     "main.user_roles_set": "user:manage",
+    "main.user_authorization_override": "user:manage",
     "main.user_reset_entra": "user:manage",
     "main.role_create": "user:manage",
     "main.role_update": "user:manage",

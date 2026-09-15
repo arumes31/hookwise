@@ -108,6 +108,36 @@
 
         <div class="card glass-card mb-3" style="border-color:var(--accent)">
             <div class="card-body p-4">
+                <h2 class="h6 fw-bold text-light mb-1">App role authorization</h2>
+                <p class="small text-secondary mb-3">
+                    These values must exactly match the <code>Value</code> fields in the Entra App Registration.
+                    HookWise reads the ID-token <code>roles</code> claim. Unknown or missing roles are denied;
+                    Operator wins when both roles are present.
+                </p>
+                <div class="row g-3" data-braucht="user:manage" data-braucht-modus="sperren">
+                    <div class="col-md-6">
+                        <label for="viewer-app-role" class="form-label small fw-bold text-secondary ls-wide">VIEWER APP ROLE VALUE</label>
+                        <input id="viewer-app-role" class="form-control" value="{{ viewer_app_role }}"
+                            autocomplete="off" spellcheck="false">
+                        <div class="form-text">Recommended: <code>Hookwise.Viewer</code></div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="operator-app-role" class="form-label small fw-bold text-secondary ls-wide">OPERATOR APP ROLE VALUE</label>
+                        <input id="operator-app-role" class="form-control" value="{{ operator_app_role }}"
+                            autocomplete="off" spellcheck="false">
+                        <div class="form-text">Recommended: <code>Hookwise.Operator</code></div>
+                    </div>
+                </div>
+                <div class="alert alert-info mt-3 mb-0 small">
+                    Assign the <strong>1st-Level</strong> group to the Viewer App Role and
+                    <strong>2nd-Level</strong> to Operator in the Hookwise Enterprise Application.
+                    No groups claim or Microsoft Graph permission is needed.
+                </div>
+            </div>
+        </div>
+
+        <div class="card glass-card mb-3" style="border-color:var(--accent)">
+            <div class="card-body p-4">
                 <h2 class="h6 fw-bold text-light mb-1">Provisioning</h2>
                 <p class="small text-secondary mb-3">Switchable at runtime &mdash; no restart required.</p>
 
@@ -127,7 +157,7 @@
                         <span>
                             <b>Create accounts automatically</b>
                             <span class="small text-secondary d-block">Any user assigned in Entra gets an account
-                                on first sign-in, with the start role below.</span>
+                                on first sign-in, with the role from the App Role claim.</span>
                         </span>
                     </button>
                 </div>
@@ -135,29 +165,16 @@
                 <div id="auto-block" data-braucht="user:manage" data-braucht-modus="sperren"
                     class="mt-3 pt-3 border-top border-secondary border-opacity-10"
                     {% if not auto_provision %}hidden{% endif %}>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="auto-rolle" class="form-label small fw-bold text-secondary ls-wide">START ROLE</label>
-                            <select id="auto-rolle" class="form-select"></select>
-                            <div class="form-text">Roles holding <code>user:manage</code> or <code>secret:*</code>
-                                are rejected &mdash; automatic provisioning cannot create administrators.</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="auto-gruppe" class="form-label small fw-bold text-secondary ls-wide">ENTRA GROUP (OPTIONAL)</label>
-                            <input id="auto-gruppe" class="form-control" value="{{ group_filter }}"
-                                placeholder="Group object ID&hellip;">
-                        </div>
-                    </div>
                     <div class="alert alert-warning mt-3 mb-0 small">
                         <strong>What changes with this setting.</strong>
-                        Anyone the tenant assigns to this application reaches HookWise without a second approval.
+                        Anyone with a recognized Viewer or Operator App Role reaches HookWise without a second approval.
                         Every automatic account is written to the audit log as <code>entra_auto_provisioned</code>.
                     </div>
                 </div>
 
                 <div class="d-flex gap-2 mt-3">
                     <button class="btn btn-primary fw-bold" id="prov-speichern" data-braucht="user:manage"
-                        data-braucht-modus="sperren">Save provisioning</button>
+                        data-braucht-modus="sperren">Save Entra settings</button>
                     <span id="prov-status" class="align-self-center small text-secondary"></span>
                 </div>
             </div>
@@ -247,10 +264,23 @@
                     <h5 class="modal-title fw-bold text-light" id="rollen-titel">Roles</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
+                <div id="override-block" class="mb-3" hidden>
+                    <div class="hw-drawer-feld mb-3">
+                        <span class="small text-secondary">Entra App Role</span>
+                        <strong class="d-block" id="entra-rollenwert">Not synchronized yet</strong>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="override-aktiv">
+                        <label class="form-check-label fw-bold" for="override-aktiv">Use manual override</label>
+                    </div>
+                    <p class="small text-secondary mb-0 mt-1">
+                        The selected role replaces the Entra role completely until this switch is turned off.
+                    </p>
+                </div>
                 <div id="rollen-wahl" class="hw-rollenwahl"></div>
                 <div id="rollen-fehler" class="text-danger small" aria-live="polite"></div>
                 <div class="d-flex gap-2 mt-3">
-                    <button type="button" class="btn btn-primary fw-bold px-4" id="rollen-speichern-btn">Save roles</button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" id="rollen-speichern-btn">Save role</button>
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 </div>
             </div>
@@ -342,11 +372,20 @@
                   <td class="ps-4"><span class="fw-bold">${esc(u.username)}</span>
                       ${u.upn ? '<br><span class="small text-secondary">' + esc(u.upn) + '</span>' : ''}</td>
                   <td><span class="badge ${u.auth_source === 'entra' ? 'bg-primary' : 'bg-secondary'}">${esc(u.auth_source).toUpperCase()}</span></td>
-                  <td>${(u.roles || []).map(r => '<span class="badge bg-dark border border-secondary me-1">' + esc(r) + '</span>').join('') || '<span class="text-secondary small">&mdash;</span>'}</td>
+                  <td>
+                    ${u.effective_role
+                        ? '<span class="badge bg-dark border border-secondary me-1">' + esc(u.effective_role) + '</span>'
+                        : '<span class="text-secondary small">&mdash;</span>'}
+                    ${u.authorization_source === 'manual_override'
+                        ? '<span class="badge bg-warning text-dark">OVERRIDE</span>'
+                        : u.authorization_source === 'entra_app_role'
+                            ? '<span class="badge bg-primary">APP ROLE</span>'
+                            : ''}
+                  </td>
                   <td><span class="badge ${u.is_active ? 'bg-success' : 'bg-secondary'}">${u.is_active ? 'ACTIVE' : 'DISABLED'}</span></td>
                   <td class="small text-secondary">${u.last_login_at ? esc(u.last_login_at.slice(0, 16).replace('T', ' ')) : 'never'}</td>
                   <td class="pe-4 text-end text-nowrap">
-                    <button class="btn btn-sm btn-outline-secondary" data-braucht="user:manage" data-rollen="${esc(u.id)}">Roles</button>
+                    <button class="btn btn-sm btn-outline-secondary" data-braucht="user:manage" data-rollen="${esc(u.id)}">${u.auth_source === 'entra' ? 'Authorization' : 'Role'}</button>
                     <button class="btn btn-sm btn-outline-warning" data-braucht="user:manage" data-aktiv="${esc(u.id)}">${u.is_active ? 'Disable' : 'Enable'}</button>
                     <button class="btn btn-sm ${offenDetail === u.id ? 'btn-secondary' : 'btn-outline-secondary'}"
                       data-braucht="user:manage" data-detail="${esc(u.id)}" aria-expanded="${offenDetail === u.id}">Manage</button>
@@ -367,9 +406,10 @@
         // ---- Rollenwahl (gemeinsam fuer beide Modals): genau EINE Rolle ----
         // Radios statt Checkboxen -- ein Nutzer traegt eine Rolle. Das Datenmodell
         // kann mehr, aber die Vergabe bleibt bewusst eindeutig.
-        function rollenwahlHtml(ausgewaehlt, gruppe) {
+        function rollenwahlHtml(ausgewaehlt, gruppe, erlaubt) {
             const wahl = ausgewaehlt || null;
-            return ROLLEN.map(r => `
+            const rollen = erlaubt ? ROLLEN.filter(r => erlaubt.includes(r.key)) : ROLLEN;
+            return rollen.map(r => `
                 <label class="hw-rollenwahl-zeile">
                   <input class="form-check-input" type="radio" name="${esc(gruppe)}" value="${esc(r.key)}"
                     ${wahl === r.key ? 'checked' : ''}>
@@ -398,13 +438,23 @@
             const rollenKnopf = ev.target.closest('[data-rollen]');
             if (rollenKnopf) {
                 rollenNutzer = NUTZER.find(x => x.id === rollenKnopf.dataset.rollen);
-                document.getElementById('rollen-titel').textContent = 'Role for ' + rollenNutzer.username;
-                document.getElementById('rollen-wahl').innerHTML =
-                    rollenwahlHtml(staerksteRolle(rollenNutzer.roles), 'rolle-zuweisen');
-                document.getElementById('rollen-fehler').textContent =
-                    (rollenNutzer.roles || []).length > 1
-                        ? 'This user currently holds several roles; saving keeps only the selected one.'
-                        : '';
+                const entra = rollenNutzer.auth_source === 'entra';
+                const overrideBlock = document.getElementById('override-block');
+                overrideBlock.hidden = !entra;
+                document.getElementById('rollen-titel').textContent =
+                    (entra ? 'Authorization for ' : 'Role for ') + rollenNutzer.username;
+                document.getElementById('override-aktiv').checked = !!rollenNutzer.is_override_active;
+                document.getElementById('entra-rollenwert').textContent =
+                    rollenNutzer.entra_role || 'Not synchronized yet';
+                document.getElementById('rollen-wahl').innerHTML = entra
+                    ? rollenwahlHtml(
+                        rollenNutzer.override_role || rollenNutzer.entra_role || 'viewer',
+                        'rolle-override',
+                        ['viewer', 'operator'])
+                    : rollenwahlHtml(staerksteRolle(rollenNutzer.roles), 'rolle-zuweisen');
+                document.getElementById('rollen-fehler').textContent = !entra && (rollenNutzer.roles || []).length > 1
+                    ? 'This user currently holds several roles; saving keeps only the selected one.'
+                    : '';
                 rollenModal().show();
                 return;
             }
@@ -487,17 +537,24 @@
 
         document.getElementById('rollen-speichern-btn').addEventListener('click', async () => {
             const rolle = gewaehlteRolle(document.getElementById('rollen-wahl'));
-            if (!rolle) {
+            const entra = rollenNutzer.auth_source === 'entra';
+            const overrideAktiv = entra && document.getElementById('override-aktiv').checked;
+            if (!rolle && (!entra || overrideAktiv)) {
                 document.getElementById('rollen-fehler').textContent = 'Select a role.';
                 return;
             }
-            const a = await senden('/api/users/' + rollenNutzer.id + '/roles', 'PUT', { roles: [rolle] });
+            const a = entra
+                ? await senden('/api/users/' + rollenNutzer.id + '/authorization-override', 'PUT', {
+                    is_override_active: overrideAktiv,
+                    override_role: rolle,
+                })
+                : await senden('/api/users/' + rollenNutzer.id + '/roles', 'PUT', { roles: [rolle] });
             if (!a.ok) {
                 document.getElementById('rollen-fehler').textContent = a.daten.message || 'Could not set roles';
                 return;
             }
             rollenModal().hide();
-            showToast('Roles updated', 'success');
+            showToast(entra ? 'Authorization updated' : 'Role updated', 'success');
             nutzerLaden();
         });
 
@@ -559,8 +616,8 @@
             const auto = document.querySelector('#pane-entra .hw-prov-karte.an').dataset.modus === 'auto';
             const a = await senden('/api/entra/settings', 'POST', {
                 auto_provision: auto,
-                auto_role: document.getElementById('auto-rolle').value,
-                group_filter: document.getElementById('auto-gruppe').value,
+                viewer_app_role: document.getElementById('viewer-app-role').value.trim(),
+                operator_app_role: document.getElementById('operator-app-role').value.trim(),
             });
             const status = document.getElementById('prov-status');
             if (!a.ok) { status.textContent = a.daten.message || 'Could not save'; showToast(a.daten.message || 'Could not save', 'error'); return; }
@@ -623,14 +680,6 @@
             if (!aktiveRolle && ROLLEN.length) aktiveRolle = ROLLEN[0].key;
             rollenlisteZeichnen();
             matrixZeichnen();
-            // Startrollen-Auswahl: nur Rollen ohne privilegierte Rechte.
-            const gesperrt = ['user:manage', 'secret:reveal', 'secret:rotate', 'settings:write', 'history:delete'];
-            const wahl = document.getElementById('auto-rolle');
-            const aktuell = {{ auto_role | tojson }};
-            wahl.innerHTML = ROLLEN
-                .filter(x => !x.permissions.some(perm => gesperrt.includes(perm)))
-                .map(x => `<option value="${esc(x.key)}"${x.key === aktuell ? ' selected' : ''}>${esc(x.key)}</option>`)
-                .join('') || '<option value="viewer">viewer</option>';
         }
 
         nutzerLaden();

@@ -745,22 +745,27 @@ inert and local login is unchanged.
 | `ENTRA_REDIRECT_URL` | Must match the registration, e.g. `https://host/auth/entra/callback`. |
 | `ENTRA_CLIENT_SECRET_FILE` | Path to a mounted secret file — the secret never lives in env or DB. |
 | `ENTRA_SCOPES` | Default `openid profile email`. |
-| `ENTRA_AUTO_PROVISION` / `ENTRA_AUTO_PROVISION_ROLE` | Start values only; the runtime switch on the Identity page (stored in Redis) takes precedence. |
+| `ENTRA_VIEWER_APP_ROLE` | App Role value mapped to Hookwise `viewer`; default `Hookwise.Viewer`. |
+| `ENTRA_OPERATOR_APP_ROLE` | App Role value mapped to Hookwise `operator`; default `Hookwise.Operator`. |
+| `ENTRA_AUTO_PROVISION` | Start value only; the runtime switch on the Identity page (stored in Redis) takes precedence. |
 
-An optional **group filter** (Identity page) restricts sign-in to members of one
-Entra group. It is enforced fail-closed: with a filter set, a token that carries
-no matching `groups` claim is refused, so the app registration must be
-configured to emit group claims (optional claims → groups).
+Authorization uses Entra **App Roles**, not raw group claims. Assign the
+`1st-Level` group to `Hookwise.Viewer` and `2nd-Level` to
+`Hookwise.Operator` in the Enterprise Application. Hookwise reads the ID-token
+`roles` claim and rejects a login without a recognized role. If both values are
+present, `operator` wins. The complete portal and Hookwise procedure is in
+[Microsoft Entra ID SSO with App Roles](docs/ENTRA_SSO_SETUP.html).
 
-Two provisioning modes, switchable at runtime on the Identity page:
+Two provisioning modes are switchable at runtime on the Identity page:
 **pre-provisioned only** (an account must exist here; it binds to the Entra
-object on first sign-in) or **automatic** (any user the tenant assigns gets an
-account with the chosen start role — roles holding privileged permissions such
-as `secret:*` or `user:manage` are rejected as start roles, so auto-provisioning
-can never create an administrator). Only the stable `tid`/`oid` pair is stored,
-never tokens. Entra accounts have no local password or app MFA — both are
-Microsoft's job — and their UPN is frozen while bound (clear the binding on the
-Identity page to edit it).
+object on first sign-in) or **automatic** (a user with a recognized App Role is
+created with the mapped `viewer` or `operator` role). Per-user manual overrides
+can temporarily replace that Entra role with `viewer` or `operator`; disabling
+the override immediately restores the last synchronized App Role. Only the
+stable `tid`/`oid` pair and resolved role are stored, never tokens. Entra
+accounts have no local password or app MFA; both are Microsoft's job. Their UPN
+is not manually editable while bound and is refreshed from Microsoft after a
+successful sign-in (clear the binding on the Identity page to edit it manually).
 
 ### User management
 

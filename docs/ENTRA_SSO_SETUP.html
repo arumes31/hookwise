@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b1110">
+  <title>Hookwise · Microsoft Entra ID SSO einrichten</title>
+  <meta name="description" content="Vollständige Installations- und Konfigurationsanleitung für Microsoft Entra ID SSO mit Hookwise App Roles.">
+  <link rel="icon" href="../static/img/favicon-hook.svg" type="image/svg+xml">
+  <style>
+    @font-face {
+      font-family: "Geist";
+      src: url("../static/fonts/geist-latin.woff2") format("woff2");
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "JetBrains Mono";
+      src: url("../static/fonts/jetbrains-mono-latin.woff2") format("woff2");
+      font-display: swap;
+    }
+    :root {
+      --ink: #eef7f3;
+      --muted: #a4b5ae;
+      --quiet: #71847c;
+      --ground: #09100e;
+      --surface: #101916;
+      --surface-2: #15211d;
+      --rule: #283a33;
+      --rule-strong: #3f5b50;
+      --accent: #00e99a;
+      --accent-ink: #002d1d;
+      --accent-soft: #062d21;
+      --blue: #58a6ff;
+      --amber: #f3c969;
+      --danger: #ff8d8d;
+      --warn-bg: #261f0c;
+      --warn-border: #806824;
+      --radius: 14px;
+      --body: min(74ch, 100%);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 2rem; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--ground);
+      font-family: "Geist", "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+    ::selection { color: var(--accent-ink); background: var(--accent); }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    a { color: var(--accent); text-underline-offset: .24em; }
+    a:hover { text-decoration-thickness: 2px; }
+    code, pre, .mono { font-family: "JetBrains Mono", Consolas, monospace; }
+    code {
+      color: #b5ffe2;
+      font-size: .9em;
+      overflow-wrap: anywhere;
+    }
+    h1, h2, h3 { line-height: 1.12; letter-spacing: -.025em; text-wrap: balance; }
+    h1 { margin: 0; max-width: 15ch; font-size: clamp(2.6rem, 6vw, 5.5rem); font-weight: 690; }
+    h2 { margin: 5.5rem 0 1rem; font-size: clamp(1.75rem, 3vw, 2.6rem); }
+    h3 { margin: 2.8rem 0 .7rem; font-size: 1.3rem; }
+    p, li { max-width: var(--body); }
+    img { display: block; max-width: 100%; height: auto; }
+    button { font: inherit; }
+    .shell { display: grid; grid-template-columns: 288px minmax(0, 1fr); min-height: 100vh; }
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 1.5rem 1.15rem;
+      border-right: 1px solid var(--rule);
+      background: #0c1412;
+      overflow: auto;
+      scrollbar-color: var(--rule-strong) transparent;
+    }
+    .brand { display: flex; align-items: center; gap: .8rem; padding: .25rem .35rem 1.4rem; color: var(--ink); text-decoration: none; }
+    .brand img { width: 34px; height: 34px; }
+    .brand strong { font-size: 1.05rem; letter-spacing: -.01em; }
+    .rail-note { margin: 0 .35rem 1.1rem; color: var(--quiet); font-size: .78rem; text-transform: uppercase; letter-spacing: .09em; }
+    .toc { display: grid; gap: .2rem; }
+    .toc a {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.65rem 1fr;
+      gap: .25rem;
+      padding: .62rem .7rem;
+      border-radius: 10px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .9rem;
+      line-height: 1.25;
+    }
+    .toc a:hover { color: var(--ink); background: var(--surface); }
+    .toc a[aria-current="true"] { color: var(--accent); background: var(--accent-soft); }
+    .toc a[aria-current="true"]::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: .55rem;
+      bottom: .55rem;
+      width: 2px;
+      background: var(--accent);
+    }
+    .toc-num { color: var(--quiet); font-family: "JetBrains Mono", monospace; font-size: .75rem; }
+    .rail-progress { margin: 1.4rem .35rem 0; }
+    .rail-progress span { display: flex; justify-content: space-between; color: var(--quiet); font-size: .75rem; }
+    .progress-track { height: 3px; margin-top: .55rem; background: var(--rule); }
+    .progress-bar { width: 100%; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform 180ms ease-out; }
+    .mobile-head { display: none; }
+    main { min-width: 0; }
+    .hero {
+      min-height: 88vh;
+      display: grid;
+      align-content: center;
+      padding: clamp(3.5rem, 8vw, 8rem) clamp(1.5rem, 6vw, 7rem);
+      border-bottom: 1px solid var(--rule);
+      background:
+        radial-gradient(ellipse at 82% 18%, rgba(0, 233, 154, .1), transparent 34%),
+        var(--ground);
+    }
+    .hero-inner { width: min(1120px, 100%); margin: 0 auto; }
+    .hero p { margin: 1.5rem 0 0; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.3rem); }
+    .route {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr;
+      align-items: center;
+      gap: 1rem;
+      margin-top: clamp(3rem, 7vw, 5rem);
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--rule-strong);
+    }
+    .route-node { min-width: 0; }
+    .route-node strong { display: block; font-size: 1.05rem; }
+    .route-node span { display: block; color: var(--muted); font-size: .87rem; }
+    .route-arrow { color: var(--accent); font-family: "JetBrains Mono", monospace; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 2.25rem; }
+    .button {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      padding: .65rem 1rem;
+      border: 1px solid var(--rule-strong);
+      border-radius: 10px;
+      color: var(--ink);
+      background: var(--surface);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .button.primary { color: var(--accent-ink); border-color: var(--accent); background: var(--accent); font-weight: 650; }
+    .button:hover { border-color: var(--accent); }
+    .content { width: min(980px, calc(100% - 3rem)); margin: 0 auto; padding: 1rem 0 8rem; }
+    .chapter { position: relative; padding-top: 1px; }
+    .chapter > p { color: var(--muted); }
+    .chapter-head { display: flex; align-items: start; gap: 1rem; }
+    .step-index {
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      width: 2.4rem;
+      height: 2.4rem;
+      margin-top: 5.45rem;
+      border: 1px solid var(--rule-strong);
+      border-radius: 50%;
+      color: var(--accent);
+      font-family: "JetBrains Mono", monospace;
+      font-size: .8rem;
+    }
+    .chapter-head h2 { margin-left: 0; }
+    .lede { color: var(--muted); font-size: 1.08rem; }
+    .callout {
+      margin: 1.8rem 0;
+      padding: 1.05rem 1.2rem;
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--muted);
+    }
+    .callout strong { color: var(--ink); }
+    .callout.good { border-color: #1e7554; background: var(--accent-soft); }
+    .callout.warn { border-color: var(--warn-border); background: var(--warn-bg); }
+    .checklist, .steps { padding-left: 1.35rem; }
+    .steps > li { padding: .42rem 0 .42rem .35rem; }
+    .steps > li::marker { color: var(--accent); font-family: "JetBrains Mono", monospace; font-weight: 700; }
+    .checklist { list-style: none; padding-left: 0; }
+    .checklist li { position: relative; padding: .35rem 0 .35rem 1.75rem; }
+    .checklist li::before { content: ""; position: absolute; left: 0; top: .75rem; width: .65rem; height: .65rem; border: 1px solid var(--accent); border-radius: 2px; }
+    .data-table { width: 100%; margin: 1.4rem 0 2rem; border-collapse: collapse; font-size: .93rem; }
+    .data-table th, .data-table td { padding: .8rem .85rem; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+    .data-table th { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .07em; }
+    .data-table tr:last-child td { border-bottom-color: var(--rule-strong); }
+    .role-map { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; align-items: stretch; margin: 1.8rem 0; }
+    .role-side { padding: 1.15rem; border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--surface); }
+    .role-side span { display: block; color: var(--quiet); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+    .role-side strong { display: block; margin: .35rem 0 .1rem; }
+    .role-link { align-self: center; color: var(--accent); font-family: "JetBrains Mono", monospace; }
+    figure { margin: 2rem 0 3rem; }
+    .shot { overflow: hidden; border: 1px solid var(--rule-strong); border-radius: var(--radius); background: #fff; }
+    .shot img { width: 100%; }
+    figcaption { margin-top: .65rem; color: var(--quiet); font-size: .84rem; }
+    .code-wrap { position: relative; margin: 1.5rem 0 2rem; }
+    pre {
+      margin: 0;
+      padding: 1.25rem;
+      overflow: auto;
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius);
+      color: #d9f8ea;
+      background: #050907;
+      font-size: .85rem;
+      line-height: 1.6;
+      tab-size: 2;
+      scrollbar-color: var(--rule-strong) transparent;
+    }
+    .copy {
+      position: absolute;
+      top: .65rem;
+      right: .65rem;
+      min-height: 34px;
+      padding: .35rem .62rem;
+      border: 1px solid var(--rule-strong);
+      border-radius: 8px;
+      color: var(--muted);
+      background: var(--surface-2);
+      cursor: pointer;
+    }
+    .copy:hover { color: var(--ink); border-color: var(--accent); }
+    .source-links { display: flex; flex-wrap: wrap; gap: .65rem 1.2rem; padding: 0; list-style: none; }
+    details { padding: 1rem 0; border-bottom: 1px solid var(--rule); }
+    summary { color: var(--ink); font-weight: 630; cursor: pointer; }
+    details p, details ul { color: var(--muted); }
+    .finish {
+      margin-top: 5rem;
+      padding: 2.5rem;
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      background: var(--accent-soft);
+    }
+    .finish h2 { margin: 0 0 1rem; }
+    .finish p { color: var(--muted); }
+    footer { padding: 2rem 0 4rem; color: var(--quiet); font-size: .84rem; }
+    @media (max-width: 900px) {
+      .shell { display: block; }
+      .rail { display: none; }
+      .mobile-head {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 58px;
+        padding: .65rem 1rem;
+        border-bottom: 1px solid var(--rule);
+        background: rgba(9, 16, 14, .96);
+      }
+      .mobile-head .brand { padding: 0; }
+      .mobile-head .brand img { width: 28px; height: 28px; }
+      .mobile-head .button { min-height: 38px; padding: .4rem .7rem; }
+      .hero { min-height: auto; padding-top: 5rem; }
+      .route { grid-template-columns: 1fr; }
+      .route-arrow { transform: rotate(90deg); width: min-content; }
+      .content { width: min(100% - 2rem, 740px); }
+    }
+    @media (max-width: 620px) {
+      body { font-size: 15px; }
+      h1 { font-size: clamp(2.4rem, 13vw, 4rem); }
+      h2 { margin-top: 4rem; }
+      .step-index { width: 2rem; height: 2rem; margin-top: 4rem; }
+      .chapter-head { gap: .7rem; }
+      .role-map { grid-template-columns: 1fr; }
+      .role-link { transform: rotate(90deg); justify-self: center; }
+      .data-table { display: block; overflow-x: auto; white-space: nowrap; }
+      .finish { padding: 1.4rem; }
+      .shot { border-radius: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; }
+    }
+    @media print {
+      :root { --ink: #111; --muted: #333; --quiet: #555; --ground: #fff; --surface: #fff; --surface-2: #f5f5f5; --rule: #bbb; --rule-strong: #777; --accent: #007a52; --accent-ink: #fff; --accent-soft: #eef8f4; --warn-bg: #fff8e5; --warn-border: #8a6b00; }
+      body { font-size: 10.5pt; }
+      .rail, .mobile-head, .hero-actions, .copy { display: none !important; }
+      .shell { display: block; }
+      .hero { min-height: auto; padding: 1.5cm 0 1cm; background: none; }
+      .content { width: 100%; padding-bottom: 0; }
+      h2 { margin-top: 1.5cm; break-after: avoid; }
+      h3, figure, pre, table, .callout, .role-map { break-inside: avoid; }
+      a { color: #005a3c; }
+      pre { color: #111; background: #f4f4f4; white-space: pre-wrap; }
+      .shot { border-color: #aaa; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mobile-head">
+    <a class="brand" href="#top"><img src="../static/img/logo.svg" alt=""><strong>Hookwise</strong></a>
+    <a class="button" href="#checkliste">Zur Checkliste</a>
+  </div>
+
+  <div class="shell">
+    <aside class="rail" aria-label="Seitennavigation">
+      <a class="brand" href="#top"><img src="../static/img/logo.svg" alt=""><strong>Hookwise</strong></a>
+      <p class="rail-note">Entra SSO Installation</p>
+      <nav class="toc">
+        <a href="#vorbereitung"><span class="toc-num">00</span><span>Vorbereitung</span></a>
+        <a href="#registrierung"><span class="toc-num">01</span><span>App Registration</span></a>
+        <a href="#secret"><span class="toc-num">02</span><span>Client Secret</span></a>
+        <a href="#rollen"><span class="toc-num">03</span><span>App Roles</span></a>
+        <a href="#zuweisung"><span class="toc-num">04</span><span>Gruppen zuweisen</span></a>
+        <a href="#docker"><span class="toc-num">05</span><span>Docker konfigurieren</span></a>
+        <a href="#hookwise"><span class="toc-num">06</span><span>Hookwise konfigurieren</span></a>
+        <a href="#override"><span class="toc-num">07</span><span>Overrides</span></a>
+        <a href="#checkliste"><span class="toc-num">08</span><span>Abnahmetest</span></a>
+        <a href="#fehler"><span class="toc-num">09</span><span>Fehlerdiagnose</span></a>
+      </nav>
+      <div class="rail-progress" aria-hidden="true">
+        <span><span>Lesefortschritt</span><span id="progress-label">0%</span></span>
+        <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+      </div>
+    </aside>
+
+    <main id="top">
+      <header class="hero">
+        <div class="hero-inner">
+          <h1>Entra SSO für Hookwise</h1>
+          <p>Eine vollständige Installation: App registrieren, Microsoft-365-Gruppen auf App Roles abbilden, Docker konfigurieren und den Zugriff kontrolliert abnehmen.</p>
+          <div class="route" aria-label="Authentifizierungsfluss">
+            <div class="route-node"><strong>Microsoft Entra</strong><span>Identität und Gruppen</span></div>
+            <span class="route-arrow" aria-hidden="true">→</span>
+            <div class="route-node"><strong>ID Token</strong><span><code>tid</code>, <code>oid</code>, <code>roles</code></span></div>
+            <span class="route-arrow" aria-hidden="true">→</span>
+            <div class="route-node"><strong>Hookwise</strong><span>Viewer oder Operator</span></div>
+          </div>
+          <div class="hero-actions">
+            <a class="button primary" href="#vorbereitung">Installation starten</a>
+            <button class="button" type="button" onclick="window.print()">Drucken / PDF</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="chapter" id="vorbereitung">
+          <div class="chapter-head"><span class="step-index">00</span><h2>Vorbereitung</h2></div>
+          <p class="lede">Die Microsoft-Konfiguration erfolgt im <a href="https://entra.microsoft.com">Microsoft Entra Admin Center</a>. Das klassische Microsoft-365-Admin-Center verwaltet zwar dasselbe Verzeichnis, aber nicht die App Registration.</p>
+          <ul class="checklist">
+            <li>Öffentliche HTTPS-URL für Hookwise</li>
+            <li>Rechte für App Registrations und Enterprise Applications</li>
+            <li>Entra ID P1 oder P2 für gruppenbasierte Zuweisungen</li>
+            <li>Zwei Security Groups mit direkten Benutzermitgliedschaften</li>
+            <li>Lokales Break-Glass-Administratorkonto in Hookwise</li>
+          </ul>
+          <table class="data-table">
+            <thead><tr><th>Zweck</th><th>Beispielwert</th></tr></thead>
+            <tbody>
+              <tr><td>Hookwise URL</td><td><code>https://hookwise.example.com</code></td></tr>
+              <tr><td>Redirect URI</td><td><code>https://hookwise.example.com/auth/entra/callback</code></td></tr>
+              <tr><td>Viewer-Gruppe</td><td><code>1st-Level</code></td></tr>
+              <tr><td>Operator-Gruppe</td><td><code>2nd-Level</code></td></tr>
+              <tr><td>Viewer App Role Value</td><td><code>Hookwise.Viewer</code></td></tr>
+              <tr><td>Operator App Role Value</td><td><code>Hookwise.Operator</code></td></tr>
+            </tbody>
+          </table>
+          <div class="callout warn"><strong>Vor dem Aktivieren:</strong> Das lokale Administratorkonto testen und dessen Zugangsdaten sicher hinterlegen. So bleibt der Zugriff möglich, wenn Entra falsch konfiguriert ist.</div>
+        </section>
+
+        <section class="chapter" id="registrierung">
+          <div class="chapter-head"><span class="step-index">01</span><h2>App Registration anlegen</h2></div>
+          <ol class="steps">
+            <li>Im Entra Admin Center <strong>Entra ID → App registrations → New registration</strong> öffnen.</li>
+            <li>Als Namen <code>Hookwise</code> eintragen.</li>
+            <li><strong>Accounts in this organizational directory only</strong> auswählen.</li>
+            <li>Unter Redirect URI den Typ <strong>Web</strong> auswählen und <code>https://hookwise.example.com/auth/entra/callback</code> eintragen.</li>
+            <li>Registrierung abschließen und auf <strong>Overview</strong> die <strong>Application (client) ID</strong> sowie <strong>Directory (tenant) ID</strong> notieren.</li>
+          </ol>
+          <div class="callout"><strong>Redirect URI exakt übernehmen.</strong> Schema, Host, Port, Pfad und abschließender Slash müssen mit <code>ENTRA_REDIRECT_URL</code> übereinstimmen. Für Produktion ausschließlich HTTPS verwenden; <code>http://localhost</code> ist nur für lokale Tests.</div>
+          <p>Falls die URI beim Registrieren ausgelassen wurde: <strong>Authentication → Add a platform → Web</strong> öffnen, die URI eintragen und speichern.</p>
+        </section>
+
+        <section class="chapter" id="secret">
+          <div class="chapter-head"><span class="step-index">02</span><h2>Client Secret erzeugen</h2></div>
+          <ol class="steps">
+            <li>In der App Registration <strong>Certificates &amp; secrets → Client secrets</strong> öffnen.</li>
+            <li><strong>New client secret</strong> wählen, Beschreibung und Laufzeit festlegen.</li>
+            <li>Nach dem Erstellen sofort den Wert aus der Spalte <strong>Value</strong> kopieren — nicht die Secret ID.</li>
+            <li>Auf dem Docker-Host als <code>./secrets/entra_client_secret</code> speichern und den Dateizugriff auf den Betriebsaccount beschränken.</li>
+          </ol>
+          <div class="callout warn"><strong>Secret niemals</strong> in Git, die Datenbank oder direkt in eine Umgebungsvariable schreiben. Hookwise liest es über <code>ENTRA_CLIENT_SECRET_FILE</code> aus einer read-only gemounteten Datei.</div>
+          <p>Microsoft begrenzt Client Secrets derzeit auf höchstens 24 Monate und empfiehlt weniger als 12 Monate. Ablaufdatum und verantwortliche Person in den Betriebsprozess aufnehmen.</p>
+        </section>
+
+        <section class="chapter" id="rollen">
+          <div class="chapter-head"><span class="step-index">03</span><h2>App Roles definieren</h2></div>
+          <p class="lede">In der App Registration <strong>App roles → Create app role</strong> öffnen und zwei anwendungsspezifische Rollen anlegen.</p>
+          <figure>
+            <div class="shot"><img src="https://learn.microsoft.com/en-us/entra/identity-platform/media/howto-add-app-roles-in-apps/app-roles-overview-pane.png" alt="App roles Übersicht einer Microsoft Entra App Registration"></div>
+            <figcaption>Microsoft Entra: App Registration → App roles. Quelle: Microsoft Learn.</figcaption>
+          </figure>
+          <div class="role-map">
+            <div class="role-side"><span>Entra Value</span><strong><code>Hookwise.Viewer</code></strong><small>Display name: Hookwise Viewer · Users/Groups · Enabled</small></div>
+            <span class="role-link" aria-hidden="true">→</span>
+            <div class="role-side"><span>Hookwise Rolle</span><strong>viewer</strong><small>Nur lesender Zugriff</small></div>
+          </div>
+          <div class="role-map">
+            <div class="role-side"><span>Entra Value</span><strong><code>Hookwise.Operator</code></strong><small>Display name: Hookwise Operator · Users/Groups · Enabled</small></div>
+            <span class="role-link" aria-hidden="true">→</span>
+            <div class="role-side"><span>Hookwise Rolle</span><strong>operator</strong><small>Operativer Zugriff</small></div>
+          </div>
+          <table class="data-table">
+            <thead><tr><th>Feld</th><th>Viewer</th><th>Operator</th></tr></thead>
+            <tbody>
+              <tr><td>Display name</td><td><code>Hookwise Viewer</code></td><td><code>Hookwise Operator</code></td></tr>
+              <tr><td>Allowed member types</td><td><code>Users/Groups</code></td><td><code>Users/Groups</code></td></tr>
+              <tr><td>Value</td><td><code>Hookwise.Viewer</code></td><td><code>Hookwise.Operator</code></td></tr>
+              <tr><td>Description</td><td>Read-only access to Hookwise</td><td>Operational access to Hookwise</td></tr>
+              <tr><td>Enabled</td><td>Ja</td><td>Ja</td></tr>
+            </tbody>
+          </table>
+          <figure>
+            <div class="shot"><img src="https://learn.microsoft.com/en-us/entra/identity-platform/media/howto-add-app-roles-in-apps/app-roles-create-context-pane.png" alt="Create app role Dialog in Microsoft Entra"></div>
+            <figcaption>Das Feld <strong>Value</strong> ist der Wert im <code>roles</code>-Claim und muss exakt mit Hookwise übereinstimmen.</figcaption>
+          </figure>
+          <div class="callout good"><strong>Keine Groups Claims oder Microsoft-Graph-Berechtigung erforderlich.</strong> Hookwise wertet ausschließlich den anwendungsspezifischen <code>roles</code>-Claim aus. Unbekannte oder fehlende Rollen werden abgelehnt; bei beiden Rollen gewinnt <code>operator</code>.</div>
+        </section>
+
+        <section class="chapter" id="zuweisung">
+          <div class="chapter-head"><span class="step-index">04</span><h2>Microsoft-365-Gruppen zuweisen</h2></div>
+          <ol class="steps">
+            <li><strong>Entra ID → Enterprise applications → Hookwise</strong> öffnen.</li>
+            <li>Unter <strong>Properties</strong> die Option <strong>Assignment required?</strong> auf <strong>Yes</strong> setzen.</li>
+            <li><strong>Users and groups → Add user/group</strong> öffnen.</li>
+            <li>Gruppe <code>1st-Level</code> auswählen, dann die Rolle <strong>Hookwise Viewer</strong> wählen und zuweisen.</li>
+            <li>Gruppe <code>2nd-Level</code> auswählen, dann die Rolle <strong>Hookwise Operator</strong> wählen und zuweisen.</li>
+          </ol>
+          <figure>
+            <div class="shot"><img src="https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/media/add-application-portal-assign-users/assign-user.png" alt="Benutzer- und Gruppenzuweisung für eine Enterprise Application"></div>
+            <figcaption>Enterprise applications → Users and groups → Add assignment. Quelle: Microsoft Learn.</figcaption>
+          </figure>
+          <div class="callout"><strong>Nur direkte Mitgliedschaften.</strong> Verschachtelte Gruppen werden bei Enterprise-App-Zuweisungen nicht ausgewertet. Gruppenbasierte Zuweisungen benötigen Entra ID P1 oder P2.</div>
+          <h3>Admin Consent</h3>
+          <p>Bei <strong>Assignment required? = Yes</strong> können Benutzer nicht selbst zustimmen. Falls die erste Anmeldung eine Consent-Meldung zeigt, unter <strong>Enterprise applications → Hookwise → Permissions</strong> als Administrator <strong>Grant admin consent</strong> ausführen.</p>
+        </section>
+
+        <section class="chapter" id="docker">
+          <div class="chapter-head"><span class="step-index">05</span><h2>Docker und Hookwise-Umgebung konfigurieren</h2></div>
+          <p>Die folgenden Werte in der Hookwise-<code>.env</code>-Datei setzen:</p>
+          <div class="code-wrap">
+            <button class="copy" type="button" data-copy="env-code">Kopieren</button>
+            <pre id="env-code"><code>ENTRA_ENABLED=true
+ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000
+ENTRA_CLIENT_ID=00000000-0000-0000-0000-000000000000
+ENTRA_REDIRECT_URL=https://hookwise.example.com/auth/entra/callback
+ENTRA_CLIENT_SECRET_FILE=/run/secrets/entra_client_secret
+ENTRA_SCOPES=openid profile email
+ENTRA_VIEWER_APP_ROLE=Hookwise.Viewer
+ENTRA_OPERATOR_APP_ROLE=Hookwise.Operator
+ENTRA_AUTO_PROVISION=false</code></pre>
+          </div>
+          <p>In <code>docker-compose.override.yml</code> den vorhandenen read-only Bind-Mount für <code>hookwise-proxy</code> aktivieren:</p>
+          <div class="code-wrap">
+            <button class="copy" type="button" data-copy="compose-code">Kopieren</button>
+            <pre id="compose-code"><code>services:
+  hookwise-proxy:
+    volumes:
+      - type: bind
+        source: ./secrets/entra_client_secret
+        target: /run/secrets/entra_client_secret
+        read_only: true
+        bind:
+          create_host_path: false</code></pre>
+          </div>
+          <p>Die Secret-Datei vor dem Start anlegen. <code>create_host_path: false</code> verhindert, dass Docker bei einem Tippfehler unbemerkt ein leeres Verzeichnis erzeugt.</p>
+          <h3>Stack starten</h3>
+          <p>Lokales Image:</p>
+          <div class="code-wrap">
+            <button class="copy" type="button" data-copy="local-code">Kopieren</button>
+            <pre id="local-code"><code>docker compose build
+docker compose up -d</code></pre>
+          </div>
+          <p>GHCR-Image mit explizitem Override:</p>
+          <div class="code-wrap">
+            <button class="copy" type="button" data-copy="ghcr-code">Kopieren</button>
+            <pre id="ghcr-code"><code>docker compose \
+  -f docker-compose.ghcr.yml \
+  -f docker-compose.override.yml \
+  up -d</code></pre>
+          </div>
+          <h3>Migration und Health prüfen</h3>
+          <div class="code-wrap">
+            <button class="copy" type="button" data-copy="verify-code">Kopieren</button>
+            <pre id="verify-code"><code>docker compose ps
+docker compose logs hookwise-migrate
+docker compose exec hookwise-proxy flask db current</code></pre>
+          </div>
+          <div class="callout good"><strong>Erwartung:</strong> Die laufenden Services sind <code>healthy</code>, <code>hookwise-migrate</code> wurde erfolgreich beendet und die Datenbank zeigt <code>d9f1a7c4e2b6 (head)</code>.</div>
+        </section>
+
+        <section class="chapter" id="hookwise">
+          <div class="chapter-head"><span class="step-index">06</span><h2>Hookwise-Einstellungen prüfen</h2></div>
+          <ol class="steps">
+            <li>Mit dem lokalen Break-Glass-Administrator anmelden.</li>
+            <li><strong>Identity &amp; Access → Entra ID</strong> öffnen.</li>
+            <li>Connection-Status, Tenant ID, Client ID, Redirect URI, Secret-Dateipfad und Scopes prüfen.</li>
+            <li>Unter <strong>App role authorization</strong> <code>Hookwise.Viewer</code> und <code>Hookwise.Operator</code> kontrollieren.</li>
+            <li>Provisionierungsmodus auswählen und <strong>Save Entra settings</strong> betätigen.</li>
+          </ol>
+          <figure>
+            <div class="shot"><img src="images/entra/hookwise-entra-settings.png" alt="Hookwise Identity & Access Seite mit Entra-Konfiguration"></div>
+            <figcaption>Lokale Hookwise-Testumgebung. <code>disabled</code> ist der sichere, unkonfigurierte Ausgangszustand. Nach vollständiger Konfiguration und Neustart muss der Status <code>ready</code> anzeigen.</figcaption>
+          </figure>
+          <table class="data-table">
+            <thead><tr><th>Modus</th><th>Verhalten</th><th>Geeignet für</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Pre-provisioned only</strong></td><td>Der Benutzer benötigt sowohl eine Entra-Zuweisung als auch ein aktives Hookwise-Konto.</td><td>Kontrollierter Rollout</td></tr>
+              <tr><td><strong>Create accounts automatically</strong></td><td>Ein Benutzer mit erkannter App Role wird beim ersten Login als Viewer oder Operator angelegt.</td><td>Automatisierter Betrieb</td></tr>
+            </tbody>
+          </table>
+          <p>In der Oberfläche gespeicherte App-Role-Werte liegen in Redis und haben Vorrang vor den Umgebungsvariablen. Ist Redis nicht erreichbar, verwendet Hookwise die Umgebungswerte.</p>
+        </section>
+
+        <section class="chapter" id="override">
+          <div class="chapter-head"><span class="step-index">07</span><h2>Manuellen Rollen-Override verwenden</h2></div>
+          <ol class="steps">
+            <li><strong>Identity &amp; Access → Users</strong> öffnen.</li>
+            <li>Beim gewünschten Entra-Benutzer <strong>Authorization</strong> auswählen.</li>
+            <li><strong>Use manual override</strong> aktivieren.</li>
+            <li><code>viewer</code> oder <code>operator</code> auswählen und speichern.</li>
+          </ol>
+          <div class="callout"><strong>Der Override ersetzt die Entra-Rolle vollständig.</strong> Er addiert keine Rechte. Nach dem Abschalten greift sofort wieder die zuletzt beim Entra-Login synchronisierte App Role. Änderungen werden auditiert und bestehende Sitzungen beim nächsten Request neu ausgewertet.</div>
+        </section>
+
+        <section class="chapter" id="checkliste">
+          <div class="chapter-head"><span class="step-index">08</span><h2>Abnahmetest</h2></div>
+          <p class="lede">Jeden Fall in einem privaten Browserfenster testen oder Microsoft vollständig abmelden, damit ein neues ID-Token ausgestellt wird. Danach im Hookwise Audit Log <code>entra_login</code> beziehungsweise <code>entra_login_denied</code> kontrollieren.</p>
+          <table class="data-table">
+            <thead><tr><th>Testbenutzer</th><th>Erwartetes Ergebnis</th></tr></thead>
+            <tbody>
+              <tr><td>Nur Mitglied von <code>1st-Level</code></td><td>Login erfolgreich, effektive Rolle <code>viewer</code></td></tr>
+              <tr><td>Nur Mitglied von <code>2nd-Level</code></td><td>Login erfolgreich, effektive Rolle <code>operator</code></td></tr>
+              <tr><td>Mitglied beider Gruppen</td><td>Login erfolgreich, <code>operator</code> gewinnt</td></tr>
+              <tr><td>Keine zugewiesene App Role</td><td>Login wird abgelehnt</td></tr>
+              <tr><td>Operator mit Viewer-Override</td><td>Effektive Rolle <code>viewer</code></td></tr>
+              <tr><td>Viewer mit Operator-Override</td><td>Effektive Rolle <code>operator</code></td></tr>
+              <tr><td>Deaktiviertes Hookwise-Konto</td><td>Login wird abgelehnt</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warn"><strong>Rollenänderungen benötigen ein neues Token.</strong> Nach einer Entra-Gruppen- oder App-Role-Änderung Microsoft abmelden und neu anmelden. Ein lokaler Override wirkt dagegen bei der nächsten Hookwise-Anfrage.</div>
+        </section>
+
+        <section class="chapter" id="fehler">
+          <div class="chapter-head"><span class="step-index">09</span><h2>Fehlerdiagnose</h2></div>
+          <details open>
+            <summary><code>no recognized Hookwise App Role</code></summary>
+            <ul><li>Benutzer oder direkte Gruppe ist keiner App Role zugewiesen.</li><li>Das App-Role-Value stimmt nicht exakt mit Hookwise überein.</li><li>Das Token ist älter als die Rollenzuweisung; vollständig ab- und wieder anmelden.</li></ul>
+          </details>
+          <details>
+            <summary><code>foreign tenant</code></summary>
+            <p>Die <code>tid</code> im ID-Token stimmt nicht mit <code>ENTRA_TENANT_ID</code> überein. Tenant ID und verwendetes Microsoft-Konto prüfen.</p>
+          </details>
+          <details>
+            <summary>Entra-Schaltfläche fehlt oder führt zurück zum lokalen Login</summary>
+            <ul><li><code>ENTRA_ENABLED</code> ist nicht <code>true</code>.</li><li>Tenant ID, Client ID oder Redirect URL fehlen.</li><li>Die Secret-Datei ist leer, nicht gemountet oder nicht lesbar.</li><li>Das Python-Paket <code>msal</code> fehlt im Image.</li></ul>
+          </details>
+          <details>
+            <summary><code>AADSTS50011</code> / Redirect URI mismatch</summary>
+            <ul><li>Den vollständigen Callback aus der Fehlermeldung mit der Web Redirect URI vergleichen.</li><li>Externes Schema, Hostname und Port des Reverse Proxy prüfen.</li><li>Einen abschließenden Slash nicht übersehen.</li></ul>
+          </details>
+          <details>
+            <summary>Login funktioniert, neue Gruppenrolle aber nicht</summary>
+            <ul><li>Unter Enterprise applications → Hookwise → Users and groups die Rollenzuweisung prüfen.</li><li>Direkte Gruppenmitgliedschaft des Benutzers bestätigen.</li><li>Microsoft vollständig abmelden und ein neues Token beziehen.</li></ul>
+          </details>
+        </section>
+
+        <section class="finish">
+          <h2>Installation abgeschlossen</h2>
+          <p>Hookwise speichert keine ID-, Access- oder Refresh-Tokens. Persistiert werden nur die stabile <code>tid</code>/<code>oid</code>-Bindung, die zuletzt abgeleitete Hookwise-Rolle und ein optionaler manueller Override.</p>
+          <ul class="source-links">
+            <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app">App registrieren</a></li>
+            <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-redirect-uri">Redirect URI</a></li>
+            <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials">Credentials</a></li>
+            <li><a href="https://learn.microsoft.com/en-us/entra/identity-platform/howto-add-app-roles-in-apps">App Roles</a></li>
+            <li><a href="https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/assign-user-or-group-access-portal">Benutzer und Gruppen zuweisen</a></li>
+          </ul>
+        </section>
+        <footer>Hookwise · Microsoft Entra ID SSO Installationsanleitung · Stand September 2026</footer>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const sections = [...document.querySelectorAll(".chapter")];
+    const links = [...document.querySelectorAll(".toc a")];
+    const progressBar = document.getElementById("progress-bar");
+    const progressLabel = document.getElementById("progress-label");
+
+    function updateReadingState() {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = max > 0 ? Math.min(100, Math.max(0, (window.scrollY / max) * 100)) : 0;
+      progressBar.style.transform = `scaleX(${progress / 100})`;
+      progressLabel.textContent = `${Math.round(progress)}%`;
+      const marker = window.scrollY + window.innerHeight * .32;
+      let current = sections[0]?.id;
+      for (const section of sections) {
+        if (section.offsetTop <= marker) current = section.id;
+      }
+      links.forEach(link => link.setAttribute("aria-current", String(link.hash === `#${current}`)));
+    }
+
+    document.addEventListener("scroll", updateReadingState, { passive: true });
+    window.addEventListener("resize", updateReadingState);
+    updateReadingState();
+
+    document.querySelectorAll("[data-copy]").forEach(button => {
+      button.addEventListener("click", async () => {
+        const target = document.getElementById(button.dataset.copy);
+        try {
+          await navigator.clipboard.writeText(target.innerText);
+          button.textContent = "Kopiert";
+          window.setTimeout(() => { button.textContent = "Kopieren"; }, 1600);
+        } catch {
+          button.textContent = "Markieren & kopieren";
+        }
+      });
+    });
+  </script>
+</body>
+</html>
