@@ -84,6 +84,8 @@ jobs:
           sbom: ${{ steps.image.outputs.publish == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            RUNTIME_APT_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           cache-from: type=gha,scope=hookwise-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
           cache-to: type=gha,mode=max,scope=hookwise-${{ runner.arch }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
 

@@ -662,6 +662,11 @@ def _register() -> None:
 
     # --- Health & Infrastructure ---
 
+    # Liveness- und Readiness-Proben duerfen nie ins Rate-Limit laufen: der
+    # Container-Healthcheck fragt im 30-Sekunden-Takt, was das Tageslimit
+    # (2000) allein aufbraucht -- danach meldet er 429 und der Container gilt
+    # als ungesund, obwohl die Anwendung laeuft.
+    @limiter.exempt
     def readyz() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))
@@ -677,6 +682,7 @@ def _register() -> None:
             current_app.logger.exception("Redis readiness check failed")
             return jsonify({"status": "not ready", "reason": "Redis error"}), 503
 
+    @limiter.exempt
     def health() -> Tuple[Response, int]:
         try:
             db.session.execute(db.text("SELECT 1"))

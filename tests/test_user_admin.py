@@ -5,7 +5,7 @@ Entra-Konten haben kein lokales Passwort, gebundene UPNs sind eingefroren,
 und der letzte Verwalter kann sich nicht selbst aussperren.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 from werkzeug.security import check_password_hash
 
@@ -111,6 +111,210 @@ def test_gebundener_upn_ist_eingefroren():
         antwort = client.patch(f"/api/users/{gebunden.id}", json={"upn": "neu@firma.test"})
         assert antwort.status_code == 200
         assert User.query.get(gebunden.id).upn == "neu@firma.test"
+        db.session.remove()
+        db.drop_all()
+
+
+def test_entra_override_kann_operator_setzen_und_wieder_freigeben():
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        ziel = _nutzer(
+            "extern",
+            "viewer",
+            auth_source="entra",
+            upn="extern@firma.test",
+            entra_role="viewer",
+        )
+        client = app.test_client()
+        _anmelden(client, chef)
+
+        antwort = client.put(
+            f"/api/users/{ziel.id}/authorization-override",
+            json={"is_override_active": True, "override_role": "operator"},
+        )
+        assert antwort.status_code == 200
+        assert antwort.json["effective_role"] == "operator"
+        frisch = User.query.get(ziel.id)
+        assert frisch.is_override_active is True
+        assert frisch.override_role == "operator"
+
+        liste = client.get("/api/users").json["users"]
+        eintrag = next(u for u in liste if u["id"] == ziel.id)
+        assert eintrag["effective_role"] == "operator"
+        assert eintrag["authorization_source"] == "manual_override"
+
+        antwort = client.put(
+            f"/api/users/{ziel.id}/authorization-override",
+            json={"is_override_active": False, "override_role": "operator"},
+        )
+        assert antwort.status_code == 200
+        assert antwort.json["effective_role"] == "viewer"
+        db.session.remove()
+        db.drop_all()
+
+
+def test_entra_override_lehnt_admin_und_lokale_konten_ab():
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        entra = _nutzer("extern", "viewer", auth_source="entra", upn="e@firma.test")
+        lokal = _nutzer("lokal", "viewer")
+        client = app.test_client()
+        _anmelden(client, chef)
+
+        assert (
+            client.put(
+                f"/api/users/{entra.id}/authorization-override",
+                json={"is_override_active": True, "override_role": "admin"},
+            ).status_code
+            == 400
+        )
+        assert (
+            client.put(
+                f"/api/users/{lokal.id}/authorization-override",
+                json={"is_override_active": True, "override_role": "operator"},
+            ).status_code
+            == 409
+        )
+        db.session.remove()
+        db.drop_all()
+
+
+def test_entra_viewer_mit_veralteter_adminrolle_ist_keine_adminreserve():
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        _nutzer(
+            "extern",
+            "admin",
+            auth_source="entra",
+            upn="extern@firma.test",
+            entra_role="viewer",
+        )
+        client = app.test_client()
+        _anmelden(client, chef)
+
+        deaktivieren = client.patch(f"/api/users/{chef.id}", json={"is_active": False})
+        herabstufen = client.put(f"/api/users/{chef.id}/roles", json={"roles": ["viewer"]})
+
+        assert deaktivieren.status_code == 409
+        assert herabstufen.status_code == 409
+        db.session.remove()
+        db.drop_all()
+
+
+def test_effektiver_zweiter_verwalter_erlaubt_rollenentzug():
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        _nutzer("vize", "admin")
+        client = app.test_client()
+        _anmelden(client, chef)
+
+        antwort = client.put(f"/api/users/{chef.id}/roles", json={"roles": ["viewer"]})
+
+        assert antwort.status_code == 200
+        db.session.remove()
+        db.drop_all()
+
+
+def test_effektiver_zweiter_verwalter_erlaubt_deaktivierung():
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        vize = _nutzer("vize", "admin")
+        client = app.test_client()
+        _anmelden(client, vize)
+
+        antwort = client.patch(f"/api/users/{chef.id}", json={"is_active": False})
+
+        assert antwort.status_code == 200
+        db.session.remove()
+        db.drop_all()
+
+
+def test_entra_app_role_werte_sind_laufzeitkonfigurierbar():
+    from hookwise.user_api import entra_app_rollen
+
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        client = app.test_client()
+        _anmelden(client, chef)
+        speicher = {}
+        redis = MagicMock()
+        redis.mget.side_effect = lambda keys: [speicher.get(key) for key in keys]
+        pipeline = redis.pipeline.return_value.__enter__.return_value
+
+        def speichern(key, value):
+            speicher[key] = value
+            return pipeline
+
+        pipeline.set.side_effect = speichern
+
+        with patch("hookwise.user_api._redis", return_value=redis):
+            doppelt = client.post(
+                "/api/entra/settings",
+                json={
+                    "auto_provision": True,
+                    "viewer_app_role": "Hookwise.Role",
+                    "operator_app_role": "Hookwise.Role",
+                },
+            )
+            assert doppelt.status_code == 400
+
+            antwort = client.post(
+                "/api/entra/settings",
+                json={
+                    "auto_provision": True,
+                    "viewer_app_role": "Company.Reader",
+                    "operator_app_role": "Company.Operator",
+                },
+            )
+            assert antwort.status_code == 200
+            assert entra_app_rollen() == {
+                "Company.Reader": "viewer",
+                "Company.Operator": "operator",
+            }
+            redis.mget.assert_called_once_with(["hookwise_entra_viewer_app_role", "hookwise_entra_operator_app_role"])
+            redis.pipeline.assert_called_once_with(transaction=True)
+            assert pipeline.set.call_args_list == [
+                call("hookwise_entra_auto_provision", "true"),
+                call("hookwise_entra_viewer_app_role", "Company.Reader"),
+                call("hookwise_entra_operator_app_role", "Company.Operator"),
+            ]
+            pipeline.execute.assert_called_once_with()
+        db.session.remove()
+        db.drop_all()
+
+
+def test_entra_app_role_werte_nutzen_umgebung_und_default(monkeypatch):
+    from hookwise.user_api import entra_app_rollen
+
+    monkeypatch.setenv("ENTRA_VIEWER_APP_ROLE", "Tenant.Reader")
+    monkeypatch.delenv("ENTRA_OPERATOR_APP_ROLE", raising=False)
+    redis = MagicMock()
+    redis.mget.return_value = [None, None]
+
+    with patch("hookwise.user_api._redis", return_value=redis):
+        assert entra_app_rollen() == {
+            "Tenant.Reader": "viewer",
+            "Hookwise.Operator": "operator",
+        }
+
+
+def test_identity_seite_zeigt_app_roles_und_override_steuerung():
+    app = _app()
+    with app.app_context():
+        chef = _vorbereiten(app)
+        client = app.test_client()
+        _anmelden(client, chef)
+        antwort = client.get("/settings/identity")
+        assert antwort.status_code == 200
+        assert b'id="viewer-app-role"' in antwort.data
+        assert b'id="operator-app-role"' in antwort.data
+        assert b'id="override-aktiv"' in antwort.data
         db.session.remove()
         db.drop_all()
 

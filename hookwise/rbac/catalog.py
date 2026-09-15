@@ -62,13 +62,6 @@ PERMISSION_TEXTS: Dict[str, str] = {
     schluessel: text for _gruppe, rechte in PERMISSION_GROUPS for schluessel, text in rechte
 }
 
-# Rechte, die eine automatisch angelegte Rolle niemals mitbringen darf: Wer sich
-# selbst Rechte geben oder Zustell-Credentials lesen kann, ist kein Startzustand
-# fuer einen frisch provisionierten Account (ADR-002).
-PRIVILEGED_PERMISSIONS: FrozenSet[str] = frozenset(
-    {"user:manage", "secret:reveal", "secret:rotate", "settings:write", "history:delete"}
-)
-
 _VIEWER: FrozenSet[str] = frozenset(
     {"dashboard:read", "endpoint:read", "history:read", "tenantmap:read", "settings:read"}
 )
@@ -123,8 +116,3 @@ def permissions_for_legacy_role(role: str | None) -> FrozenSet[str]:
     if not role:
         return LEGACY_FALLBACK
     return LEGACY_ROLE_MAP.get(role.strip().lower(), LEGACY_FALLBACK)
-
-
-def is_assignable_start_role(permissions: FrozenSet[str]) -> bool:
-    """Taugt die Rolle als Startrolle fuer Auto-Provisioning?"""
-    return not (permissions & PRIVILEGED_PERMISSIONS)

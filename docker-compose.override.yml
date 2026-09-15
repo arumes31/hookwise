@@ -9,6 +9,16 @@
 
 services:
   hookwise-proxy:
+    # Mount the Entra client secret read-only when SSO is enabled. Create the
+    # host file first, then uncomment this block. Keep
+    # ENTRA_CLIENT_SECRET_FILE=/run/secrets/entra_client_secret in .env.
+    # volumes:
+    #   - type: bind
+    #     source: ./secrets/entra_client_secret
+    #     target: /run/secrets/entra_client_secret
+    #     read_only: true
+    #     bind:
+    #       create_host_path: false
     environment:
       # ── LLM Tuning ──────────────────────────────────────────────────────────
       # Maximum tokens the LLM may generate per RCA note.

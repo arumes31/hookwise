@@ -42,6 +42,14 @@ class User(Base):
     upn = db.Column(db.String(255), nullable=True, index=True)
     is_active = db.Column(db.Boolean, default=True, nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
+    # Die aus dem ``roles``-Claim abgeleitete Rolle bleibt getrennt von einem
+    # lokalen Override. So kann ein Override exakt ersetzen statt Rechte mit
+    # der Entra-Rolle zu vereinigen. Rollen-Keys verweisen auf ``rbac_role.key``;
+    # die Anwendung prueft deren Existenz fail-closed.
+    entra_role = db.Column(db.String(50), nullable=True, index=True)
+    entra_role_synced_at = db.Column(db.DateTime, nullable=True)
+    is_override_active = db.Column(db.Boolean, default=False, nullable=False)
+    override_role = db.Column(db.String(50), nullable=True, index=True)
 
     @property
     def aktiv(self) -> bool:
@@ -72,6 +80,10 @@ class User(Base):
             "is_active": self.aktiv,
             "mfa_enabled": bool(self.is_2fa_enabled),
             "entra_bound": bool(self.entra_oid),
+            "entra_role": self.entra_role,
+            "entra_role_synced_at": (self.entra_role_synced_at.isoformat() if self.entra_role_synced_at else None),
+            "is_override_active": bool(self.is_override_active),
+            "override_role": self.override_role,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
         }
 
@@ -580,6 +592,10 @@ USER_BRIDGE_COLUMNS = {
     "upn": "VARCHAR(255)",
     "is_active": "BOOLEAN",
     "last_login_at": "TIMESTAMP",
+    "entra_role": "VARCHAR(50)",
+    "entra_role_synced_at": "TIMESTAMP",
+    "is_override_active": "BOOLEAN NOT NULL DEFAULT FALSE",
+    "override_role": "VARCHAR(50)",
 }
 
 #: Indizes, die das Modell auf den Bridge-Spalten deklariert. Ohne sie weicht
@@ -588,4 +604,6 @@ USER_BRIDGE_COLUMNS = {
 USER_BRIDGE_INDEXES = {
     "ix_user_entra_oid": "entra_oid",
     "ix_user_upn": "upn",
+    "ix_user_entra_role": "entra_role",
+    "ix_user_override_role": "override_role",
 }

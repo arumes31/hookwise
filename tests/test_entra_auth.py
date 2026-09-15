@@ -53,6 +53,7 @@ def _entra_nutzer(upn="kollege@example.test", aktiv=True, oid=None):
         auth_source="entra",
         upn=upn,
         is_active=aktiv,
+        entra_tid=TENANT if oid else None,
         entra_oid=oid,
     )
     db.session.add(u)
@@ -65,12 +66,18 @@ def _flow_setzen(client):
         sess["entra_flow"] = {"state": "s1", "nonce": "n1"}
 
 
-def _antwort(tid=TENANT, oid="oid-1", upn="kollege@example.test", fehler=None, gruppen=None):
+def _antwort(
+    tid=TENANT,
+    oid="oid-1",
+    upn="kollege@example.test",
+    fehler=None,
+    rollen=("Hookwise.Viewer",),
+):
     if fehler:
         return {"error": fehler, "error_description": fehler}
     anspruch = {"tid": tid, "oid": oid, "preferred_username": upn}
-    if gruppen is not None:
-        anspruch["groups"] = gruppen
+    if rollen is not None:
+        anspruch["roles"] = list(rollen)
     return {"id_token_claims": anspruch}
 
 
@@ -121,11 +128,13 @@ def test_erfolgreiche_anmeldung_bindet_an_oid(app, client):
         frisch = User.query.get(nutzer_id)
         assert frisch.entra_oid == "oid-1"
         assert frisch.entra_tid == TENANT
+        assert frisch.entra_role == "viewer"
+        assert frisch.entra_role_synced_at is not None
         assert frisch.last_login_at is not None
 
 
 def test_bindung_ueberlebt_namensaenderung(app, client):
-    """Nach der Bindung zaehlt die oid, nicht mehr die UPN."""
+    """Nach der Bindung zaehlt tid/oid; die veraenderliche UPN wird nachgezogen."""
     with app.app_context():
         nutzer = _entra_nutzer(upn="alt@example.test", oid="oid-1")
         nutzer_id = nutzer.id
@@ -137,6 +146,24 @@ def test_bindung_ueberlebt_namensaenderung(app, client):
     assert antwort.status_code == 302
     with client.session_transaction() as sess:
         assert sess.get("user_id") == nutzer_id
+    with app.app_context():
+        assert User.query.get(nutzer_id).upn == "ganz.neu@example.test"
+
+
+def test_oid_allein_uebernimmt_keine_bindung_aus_anderem_tenant(app, client):
+    """Object IDs sind tenantgebunden; erst das Paar aus tid und oid ist stabil."""
+    with app.app_context():
+        nutzer = _entra_nutzer(upn="alt@example.test", oid="oid-1")
+        nutzer.entra_tid = FREMD
+        db.session.commit()
+    _flow_setzen(client)
+
+    with _mit_token(_antwort(oid="oid-1", upn="alt@example.test")):
+        antwort = client.get("/auth/entra/callback?code=c&state=s1")
+
+    assert antwort.status_code == 302
+    with client.session_transaction() as sess:
+        assert "user_id" not in sess
 
 
 # ------------------------------------------------------------ Negativpfade --
@@ -225,7 +252,6 @@ def test_auto_provisioning_legt_konto_mit_startrolle_an(app, client):
 
     with (
         patch("hookwise.user_api.auto_provision_aktiv", return_value=True),
-        patch("hookwise.user_api.auto_provision_rolle", return_value="viewer"),
         _mit_token(_antwort(upn="neu@example.test")),
     ):
         antwort = client.get("/auth/entra/callback?code=c&state=s1")
@@ -234,28 +260,27 @@ def test_auto_provisioning_legt_konto_mit_startrolle_an(app, client):
     with app.app_context():
         neu = User.query.filter_by(upn="neu@example.test").first()
         assert neu is not None and neu.auth_source == "entra"
+        assert neu.entra_role == "viewer"
         viewer = RbacRole.query.filter_by(key="viewer").first()
         assert RbacUserRole.query.filter_by(user_id=neu.id, role_id=viewer.id).first() is not None
         assert AuditLog.query.filter_by(action="entra_auto_provisioned").count() == 1
 
 
-def test_auto_provisioning_lehnt_privilegierte_startrolle_ab(app, client):
-    """Die Startrolle darf keinen Administrator erzeugen -- auch nicht, wenn
-    der Schalter auf eine privilegierte Rolle zeigt."""
+def test_auto_provisioning_uebernimmt_operator_app_role(app, client):
     _flow_setzen(client)
 
     with (
         patch("hookwise.user_api.auto_provision_aktiv", return_value=True),
-        patch("hookwise.user_api.auto_provision_rolle", return_value="admin"),
-        _mit_token(_antwort(upn="moechtegern@example.test")),
+        _mit_token(_antwort(upn="operator@example.test", rollen=("Hookwise.Operator",))),
     ):
         antwort = client.get("/auth/entra/callback?code=c&state=s1")
 
     assert antwort.status_code == 302
-    with client.session_transaction() as sess:
-        assert "user_id" not in sess
     with app.app_context():
-        assert User.query.filter_by(upn="moechtegern@example.test").first() is None
+        neu = User.query.filter_by(upn="operator@example.test").first()
+        assert neu is not None and neu.entra_role == "operator"
+        operator = RbacRole.query.filter_by(key="operator").first()
+        assert RbacUserRole.query.filter_by(user_id=neu.id, role_id=operator.id).first() is not None
 
 
 def test_ohne_aktiven_flow_kein_login(app, client):
@@ -354,33 +379,34 @@ def test_token_ohne_oid_wird_abgewiesen(app, client):
         assert "user_id" not in sess
 
 
-def test_gruppenfilter_wird_durchgesetzt(app, client):
-    """Ist ein Filter gesetzt, muss der Token die Gruppe fuehren -- und ein
-    fehlender groups-Claim weist ab, statt durchzuwinken."""
+def test_app_roles_werden_fail_closed_und_nach_prioritaet_ausgewertet(app, client):
     with app.app_context():
-        _entra_nutzer()
+        nutzer = _entra_nutzer()
+        nutzer_id = nutzer.id
 
-    with patch("hookwise.user_api.entra_gruppenfilter", return_value="gruppe-1"):
-        _flow_setzen(client)
-        with _mit_token(_antwort()):  # ohne groups-Claim
-            ohne = client.get("/auth/entra/callback?code=c&state=s1")
-        assert ohne.status_code == 302
-        with client.session_transaction() as sess:
-            assert "user_id" not in sess
+    _flow_setzen(client)
+    with _mit_token(_antwort(rollen=None)):
+        ohne = client.get("/auth/entra/callback?code=c&state=s1")
+    assert ohne.status_code == 302
+    with client.session_transaction() as sess:
+        assert "user_id" not in sess
 
-        _flow_setzen(client)
-        with _mit_token(_antwort(gruppen=["gruppe-9"])):
-            fremd = client.get("/auth/entra/callback?code=c&state=s1")
-        assert fremd.status_code == 302
-        with client.session_transaction() as sess:
-            assert "user_id" not in sess
+    _flow_setzen(client)
+    with _mit_token(_antwort(rollen=("Unrelated.Role",))):
+        fremd = client.get("/auth/entra/callback?code=c&state=s1")
+    assert fremd.status_code == 302
+    with client.session_transaction() as sess:
+        assert "user_id" not in sess
 
-        _flow_setzen(client)
-        with _mit_token(_antwort(gruppen=["gruppe-1", "gruppe-9"])):
-            passend = client.get("/auth/entra/callback?code=c&state=s1")
-        assert passend.status_code == 302
-        with client.session_transaction() as sess:
-            assert sess.get("user_id")
+    _flow_setzen(client)
+    with _mit_token(_antwort(rollen=("Hookwise.Viewer", "Hookwise.Operator"))):
+        passend = client.get("/auth/entra/callback?code=c&state=s1")
+    assert passend.status_code == 302
+    with client.session_transaction() as sess:
+        assert sess.get("user_id") == nutzer_id
+        assert sess.get("role") == "operator"
+        assert sess.get("authz_source") == "entra_app_role"
 
     with app.app_context():
+        assert User.query.get(nutzer_id).entra_role == "operator"
         assert AuditLog.query.filter_by(action="entra_login_denied").count() == 2

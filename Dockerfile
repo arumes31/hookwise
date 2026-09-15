@@ -18,6 +18,8 @@ RUN pip install --upgrade pip \
 
 # Stage 2: Runtime
 FROM python:3.14.7-slim AS runtime
+# CI varies this value so cached builds still fetch current Debian security fixes.
+ARG RUNTIME_APT_REFRESH=local
 
 WORKDIR /app
 

@@ -48,6 +48,9 @@ def test_user_to_dict(db_session):
     assert d["id"] == user.id
     assert d["username"] == "testuser"
     assert d["role"] == "admin"
+    assert d["entra_role"] is None
+    assert d["is_override_active"] is False
+    assert d["override_role"] is None
     assert "created_at" in d
 
 

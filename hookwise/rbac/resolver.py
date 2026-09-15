@@ -23,6 +23,7 @@ SESSION_EPOCH = "perms_epoch"
 # Der Cache gilt nur fuer den Nutzer, fuer den er geschrieben wurde -- wechselt
 # die user_id in einer bestehenden Session, wird neu aufgeloest.
 SESSION_UID = "perms_uid"
+ENTRA_NO_PERMISSIONS_ROLE = "none"
 
 # Der Epoch wird pro Request gelesen; ein kurzer Prozess-Cache haelt die Last
 # von der Datenbank fern, ohne dass ein Entzug spuerbar verzoegert wirkt.
@@ -119,23 +120,63 @@ def bump_epoch() -> int:
     return wert
 
 
+def _authoritative_role(user: Any) -> Tuple[Optional[str], bool, str]:
+    """Explizite Ein-Rollen-Quelle fuer Overrides und Entra-Konten.
+
+    Der Boolean unterscheidet "keine autoritative Quelle" von einer kaputten
+    autoritativen Quelle. Ein aktiver Override ohne Rolle darf deshalb niemals
+    auf alte Zuweisungen oder die Viewer-Rolle zurueckfallen.
+    """
+    if bool(getattr(user, "is_override_active", False)):
+        rolle = str(getattr(user, "override_role", "") or "").strip().lower()
+        return (rolle or None), True, "manual_override"
+    quelle = str(getattr(user, "auth_source", "local") or "local").strip().lower()
+    entra_rolle = str(getattr(user, "entra_role", "") or "").strip().lower()
+    if quelle == "entra" and entra_rolle:
+        return entra_rolle, True, "entra_app_role"
+    return None, False, "local"
+
+
+def effective_role_key(user: Any) -> Optional[str]:
+    """Effektiver Rollen-Key fuer Anzeige, Sitzung und Audit."""
+    rolle, autoritativ, _quelle = _authoritative_role(user)
+    if autoritativ:
+        return rolle
+    fallback = str(getattr(user, "role", "") or "").strip().lower()
+    return fallback or None
+
+
 def resolve_permissions(user: Any) -> FrozenSet[str]:
     """Effektive Rechte eines Nutzers.
 
-    Reihenfolge: zugewiesene Rollen, sonst der alte ``role``-String. Damit
-    verhaelt sich die Anwendung ohne RBAC-Schema und ohne Zuweisungen exakt wie
-    vor der Einfuehrung.
+    Reihenfolge: manueller Override, Entra App Role, zugewiesene lokale Rollen,
+    alter ``role``-String. Override und App Role sind exakte Ersatzrollen; ihre
+    Rechte werden nicht mit lokalen Zuweisungen vereinigt.
     """
     if user is None:
         return frozenset()
     if getattr(user, "is_active", True) is False:
         return frozenset()
 
+    autoritative_rolle, autoritativ, quelle = _authoritative_role(user)
+    if autoritativ and (
+        not autoritative_rolle or (quelle == "entra_app_role" and autoritative_rolle == ENTRA_NO_PERMISSIONS_ROLE)
+    ):
+        return frozenset()
+
     if not schema_bereit():
-        return permissions_for_legacy_role(getattr(user, "role", None))
+        return permissions_for_legacy_role(autoritative_rolle if autoritativ else getattr(user, "role", None))
 
     try:
-        from ..models import RbacRolePermission, RbacUserRole
+        from ..models import RbacRole, RbacRolePermission, RbacUserRole
+
+        if autoritativ:
+            rolle = RbacRole.query.filter_by(key=autoritative_rolle).first()
+            if rolle is None:
+                _logger.error("Autoritative Rolle %s existiert nicht", autoritative_rolle)
+                return frozenset()
+            autoritative_rechte = {z.permission for z in RbacRolePermission.query.filter_by(role_id=rolle.id)}
+            return frozenset(autoritative_rechte & ALL_PERMISSIONS)
 
         rollen_ids = [z.role_id for z in RbacUserRole.query.filter_by(user_id=user.id)]
         if not rollen_ids:
@@ -147,12 +188,21 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
         return frozenset(rechte & ALL_PERMISSIONS)
     except Exception:  # pragma: no cover
         _logger.exception("Rechteaufloesung fehlgeschlagen, Legacy-Fallback")
-        return permissions_for_legacy_role(getattr(user, "role", None))
+        return permissions_for_legacy_role(autoritative_rolle if autoritativ else getattr(user, "role", None))
 
 
 def sitzung_setzen(user: Any) -> FrozenSet[str]:
     """Rechte in die Session schreiben; beim Login und bei Epoch-Wechsel."""
     rechte = resolve_permissions(user)
+    rolle, autoritativ, quelle = _authoritative_role(user)
+    if autoritativ:
+        # ``None`` ist ein kaputter Override und bleibt in den Permissions leer;
+        # ein Legacy-Fallback darf daraus keine Viewer-Sitzung machen.
+        session["role"] = rolle or ""
+        session["authz_source"] = quelle
+    else:
+        session["role"] = getattr(user, "role", None)
+        session["authz_source"] = "local"
     session[SESSION_PERMS] = sorted(rechte)
     session[SESSION_EPOCH] = aktueller_epoch(frisch=True)
     session[SESSION_UID] = getattr(user, "id", None)
