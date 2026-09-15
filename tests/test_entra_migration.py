@@ -1,4 +1,5 @@
 import importlib
+from typing import Any
 
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
@@ -8,7 +9,7 @@ migration = importlib.import_module("migrations.versions.d9f1a7c4e2b6_add_entra_
 
 
 def _legacy_user_table(metadata: sa.MetaData, *, with_identity: bool = False) -> sa.Table:
-    columns = [
+    columns: list[sa.Column[Any]] = [
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("username", sa.String(100), nullable=False),
         sa.Column("password_hash", sa.String(256), nullable=False),
