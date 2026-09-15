@@ -23,6 +23,12 @@ from .client import (
 from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
+from .services.cipp_defender import (
+    DefenderIncidentDelta,
+    defender_bundle_summary,
+    persist_defender_incident_delta,
+    prepare_defender_incident_delta,
+)
 from .services.configuration_matching import (
     ConfigurationHints,
     extract_configuration_hints,
@@ -266,6 +272,19 @@ def _render_ticket_description(
     if "{{ cipp_results }}" in description:
         description = description.replace("{{ cipp_results }}", format_cipp_results(safe_data))
     return description
+
+
+def _duplicate_ticket_note(
+    *,
+    alert_type: str,
+    message: Any,
+    request_id: str,
+    description: str,
+    defender_delta: DefenderIncidentDelta | None,
+) -> str:
+    if defender_delta is not None:
+        return f"New or changed CIPP Defender incidents:\n\n{description}"
+    return f"Duplicate {alert_type} alert detected. Updated details:\nMessage: {message}\nRequest ID: {request_id}"
 
 
 def _configuration_searches(hints: ConfigurationHints) -> list[tuple[str, int | str]] | None:
@@ -1314,6 +1333,28 @@ def handle_webhook_logic(
                 for s in config.summary_remove_strings.split(","):
                     ticket_summary = ticket_summary.replace(s, "")
 
+            defender_delta = (
+                prepare_defender_incident_delta(config_id, data) if alert_type in {"DOWN", "GENERIC"} else None
+            )
+            if defender_delta is not None:
+                if defender_delta.actionable_count == 0:
+                    persist_defender_incident_delta(config_id, defender_delta, ticket_id=None)
+                    log_entry.status = "skipped"
+                    log_entry.action = None
+                    log_entry.error_message = "Skipped: No new or changed CIPP Defender incidents"
+                    log_entry.processing_time = time.time() - start_time
+                    db.session.commit()
+                    log_webhook_processed(config_id=config_id, status="skipped")
+                    log_to_web(
+                        "Webhook skipped (no new or changed CIPP Defender incidents)",
+                        "info",
+                        config_name,
+                        data=data,
+                    )
+                    return
+                data = defender_delta.data
+                ticket_summary = defender_bundle_summary(ticket_summary, defender_delta.bundle_key)
+
             if len(ticket_summary) > 99:
                 ticket_summary = ticket_summary[:96] + "..."
 
@@ -1437,9 +1478,12 @@ def handle_webhook_logic(
                                     redis_client.set(viable_key, "1", ex=VIABILITY_TTL)
 
                     if is_usable:
-                        note_text = (
-                            f"Duplicate {alert_type} alert detected. Updated details:\n"
-                            f"Message: {msg}\nRequest ID: {request_id}"
+                        note_text = _duplicate_ticket_note(
+                            alert_type=alert_type,
+                            message=msg,
+                            request_id=request_id,
+                            description=description,
+                            defender_delta=defender_delta,
                         )
                         _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                         _link_matching_configuration(
@@ -1465,6 +1509,8 @@ def handle_webhook_logic(
                         log_entry.status = "processed"
                         log_entry.action = "update"
                         log_entry.ticket_id = ticket_id
+                        if defender_delta is not None:
+                            persist_defender_incident_delta(config_id, defender_delta, ticket_id=ticket_id)
                         db.session.commit()
                         return
                     else:
@@ -1484,9 +1530,12 @@ def handle_webhook_logic(
                 )
                 if existing_ticket:
                     ticket_id = existing_ticket["id"]
-                    note_text = (
-                        f"Duplicate {alert_type} alert found in CW. Updated details:\n"
-                        f"Message: {msg}\nRequest ID: {request_id}"
+                    note_text = _duplicate_ticket_note(
+                        alert_type=alert_type,
+                        message=msg,
+                        request_id=request_id,
+                        description=description,
+                        defender_delta=defender_delta,
                     )
                     _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                     _link_matching_configuration(
@@ -1513,6 +1562,8 @@ def handle_webhook_logic(
                     log_entry.status = "processed"
                     log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
+                    if defender_delta is not None:
+                        persist_defender_incident_delta(config_id, defender_delta, ticket_id=ticket_id)
                     db.session.commit()
                     return
 
@@ -1593,6 +1644,8 @@ def handle_webhook_logic(
                 PSA_TASK_COUNT.labels(type="create", result="success")  # Kept for dynamic registration if needed
                 log_psa_task(task_type="create", result="success")
                 log_entry.action = "create"
+                if defender_delta is not None:
+                    persist_defender_incident_delta(config_id, defender_delta, ticket_id=ticket_id)
 
                 # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
                 if config.ai_rca_enabled:

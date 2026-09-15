@@ -205,6 +205,18 @@ def test_format_cipp_defender_results():
     assert "None" not in result
 
 
+def test_format_cipp_defender_incidents_uses_incident_heading():
+    result = format_cipp_results(
+        {
+            "TaskInfo": {"Command": "Get-CIPPAlertDefenderIncidents"},
+            "Results": [{"IncidentId": 807, "IncidentName": "Suspected account enumeration"}],
+        }
+    )
+
+    assert result.startswith("INCIDENT 1")
+    assert "Incident ID: 807" in result
+
+
 def test_format_cipp_secret_expiry_masks_and_renders_all_results():
     data = {
         "TaskInfo": {"Command": "Get-CIPPAlertAppSecretExpiry"},
