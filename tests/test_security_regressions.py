@@ -488,6 +488,8 @@ def test_ci_uses_latest_python_and_recommended_pr_guards():
     assert "cancel-in-progress: true" in ci
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in ghcr
     assert "Verify runtime image excludes build-only packages" in ghcr
+    assert "RUNTIME_APT_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}" in ghcr
+    assert "ARG RUNTIME_APT_REFRESH=local" in dockerfile.split("AS runtime", maxsplit=1)[1]
     assert "trivyignores: .trivyignore.yaml" in ghcr
     assert "GHSA-6v7p-g79w-8964" in trivyignore
     assert "pkg:pypi/msgpack@1.1.2" in trivyignore
