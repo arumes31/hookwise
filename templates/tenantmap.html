@@ -15,7 +15,36 @@
 </div>
 
 <div class="glass-card p-4 animate-slide-up">
-    <div class="table-responsive" tabindex="0" role="region" aria-label="Tenant mappings">
+    {% if mappings %}
+    <div class="hw-tenantmap-toolbar">
+        <div class="input-group input-group-sm hw-tenantmap-search">
+            <span class="input-group-text bg-dark border-secondary text-secondary">
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg>
+            </span>
+            <input type="search" id="tenantmap-search"
+                class="form-control bg-dark border-secondary text-white"
+                placeholder="Search tenant mappings"
+                aria-label="Search tenant mappings"
+                aria-controls="tenantmap-body" autocomplete="off">
+            <button type="button" id="tenantmap-clear" class="btn btn-outline-secondary" hidden
+                aria-label="Clear tenant mapping filters">
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-x-lg"></use></svg>
+            </button>
+        </div>
+        <select id="tenantmap-field-filter"
+            class="form-select form-select-sm bg-dark border-secondary text-white hw-tenantmap-field-filter"
+            aria-label="Choose tenant mapping field to search">
+            <option value="all">All fields</option>
+            <option value="tenant">Tenant value</option>
+            <option value="company">CW Company ID</option>
+            <option value="description">Description</option>
+        </select>
+        <span id="tenantmap-result-count" class="text-secondary small hw-tenantmap-result-count"
+            aria-live="polite">{{ mappings|length }} mapping{{ '' if mappings|length == 1 else 's' }}</span>
+    </div>
+    {% endif %}
+    <div class="table-responsive" tabindex="0" role="region" aria-label="Tenant mappings"
+        {% if mappings %}aria-describedby="tenantmap-result-count"{% endif %}>
         <table class="table table-dark table-hover align-middle mb-0">
             <thead class="text-secondary small text-uppercase ls-1">
                 <tr>
@@ -25,10 +54,11 @@
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="tenantmap-body">
                 {% if mappings %}
                 {% for m in mappings %}
-                <tr>
+                <tr class="hw-tenantmap-row" data-tenant="{{ m.tenant_value }}"
+                    data-company="{{ m.company_id }}" data-description="{{ m.description or '' }}">
                     <td>
                         <code class="text-info">{{ m.tenant_value }}</code>
                     </td>
@@ -59,6 +89,13 @@
                     </td>
                 </tr>
                 {% endfor %}
+                <tr id="tenantmap-no-results" hidden>
+                    <td colspan="4" class="text-center py-5 text-secondary">
+                        <svg class="hw-icon d-block mx-auto mb-3 opacity-25" width="24" height="24" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg>
+                        <span class="d-block fw-bold text-light mb-1">No matching mappings</span>
+                        <span class="small">Try a different term or search all fields.</span>
+                    </td>
+                </tr>
                 {% else %}
                 <tr>
                     <td colspan="4" class="text-center py-5 text-secondary">

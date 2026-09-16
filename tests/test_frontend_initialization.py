@@ -52,6 +52,82 @@ assert.strictEqual(window.hookwiseTicketUrl('1'.repeat(21)), '');
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_tenantmap_search_filters_rows_immediately():
+    """Filter TenantMap rows on input and expose an accurate live count."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for TenantMap filter coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const filterSource = source.slice(
+    source.indexOf('function initTenantMapFilters'),
+    source.indexOf('// Bulk Actions')
+);
+const listeners = {};
+const search = {
+    value: '', dataset: {},
+    addEventListener(type, handler) { listeners['search:' + type] = handler; },
+    focus() { this.focused = true; }
+};
+const field = {
+    value: 'all',
+    addEventListener(type, handler) { listeners['field:' + type] = handler; }
+};
+const clear = {
+    hidden: true,
+    addEventListener(type, handler) { listeners['clear:' + type] = handler; }
+};
+const count = { textContent: '' };
+const empty = { hidden: true };
+const rows = [
+    { dataset: { tenant: 'alpha.example', company: 'COMPANY-1', description: 'Primary' }, hidden: false },
+    { dataset: { tenant: 'beta.example', company: 'COMPANY-2', description: 'Backup' }, hidden: false }
+];
+const elements = {
+    '#tenantmap-search': search,
+    '#tenantmap-field-filter': field,
+    '#tenantmap-clear': clear,
+    '#tenantmap-result-count': count,
+    '#tenantmap-no-results': empty
+};
+const container = {
+    querySelector(selector) { return elements[selector] || null; },
+    querySelectorAll(selector) { return selector === '.hw-tenantmap-row' ? rows : []; }
+};
+
+eval(filterSource);
+initTenantMapFilters(container);
+assert.strictEqual(count.textContent, '2 mappings');
+
+search.value = 'backup';
+listeners['search:input']();
+assert.deepStrictEqual(rows.map(row => row.hidden), [true, false]);
+assert.strictEqual(count.textContent, '1 of 2 mappings');
+
+field.value = 'company';
+search.value = 'missing';
+listeners['field:change']();
+assert.strictEqual(empty.hidden, false);
+assert.strictEqual(count.textContent, '0 of 2 mappings');
+
+listeners['clear:click']();
+assert.deepStrictEqual(rows.map(row => row.hidden), [false, false]);
+assert.strictEqual(search.focused, true);
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize(
     ("script_name", "expected_lookup"),
     [

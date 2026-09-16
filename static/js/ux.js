@@ -273,6 +273,8 @@ function showToast(message, type = 'info') {
 
 // Endpoint Search
 function initSearch(container = document) {
+    initTenantMapFilters(container);
+
     const searchInput = container.querySelector('#endpoint-search');
     const boardFilter = container.querySelector('#board-filter');
     const statusFilter = container.querySelector('#status-filter');
@@ -337,6 +339,59 @@ function initSearch(container = document) {
         opt.textContent = b;
         boardFilter.appendChild(opt);
     });
+}
+
+/** Initialize instant client-side filtering for the TenantMap table. */
+function initTenantMapFilters(container = document) {
+    const searchInput = container.querySelector('#tenantmap-search');
+    const fieldFilter = container.querySelector('#tenantmap-field-filter');
+    const clearButton = container.querySelector('#tenantmap-clear');
+    const resultCount = container.querySelector('#tenantmap-result-count');
+    const noResults = container.querySelector('#tenantmap-no-results');
+    const rows = [...container.querySelectorAll('.hw-tenantmap-row')];
+    if (!searchInput || !fieldFilter || !clearButton || !resultCount || !noResults || !rows.length) return;
+    if (searchInput.dataset.initialized === 'true') return;
+    searchInput.dataset.initialized = 'true';
+
+    const normalize = value => String(value ?? '').normalize('NFKD').toLocaleLowerCase().trim();
+    const update = () => {
+        const terms = normalize(searchInput.value).split(/\s+/).filter(Boolean);
+        const field = fieldFilter.value;
+        let visible = 0;
+
+        rows.forEach(row => {
+            const values = field === 'all'
+                ? [row.dataset.tenant, row.dataset.company, row.dataset.description]
+                : [row.dataset[field]];
+            const haystack = normalize(values.join(' '));
+            const matches = terms.every(term => haystack.includes(term));
+            row.hidden = !matches;
+            if (matches) visible += 1;
+        });
+
+        const filtersActive = terms.length > 0 || field !== 'all';
+        clearButton.hidden = !filtersActive;
+        noResults.hidden = visible !== 0;
+        resultCount.textContent = filtersActive
+            ? `${visible} of ${rows.length} mappings`
+            : `${rows.length} mapping${rows.length === 1 ? '' : 's'}`;
+    };
+
+    searchInput.addEventListener('input', update);
+    fieldFilter.addEventListener('change', update);
+    searchInput.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        searchInput.value = '';
+        fieldFilter.value = 'all';
+        update();
+    });
+    clearButton.addEventListener('click', () => {
+        searchInput.value = '';
+        fieldFilter.value = 'all';
+        update();
+        searchInput.focus();
+    });
+    update();
 }
 
 // Bulk Actions

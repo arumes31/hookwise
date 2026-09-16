@@ -31,9 +31,18 @@ def _authenticate(client):
         session["role"] = "admin"
 
 
-def test_tenantmap_forms_use_interactive_bootstrap_modal_structure(client):
+def test_tenantmap_forms_use_interactive_bootstrap_modal_structure(client, app):
     """Keep mapping forms inside Bootstrap's interactive modal content."""
     _authenticate(client)
+    with app.app_context():
+        db.session.add(
+            GlobalMapping(
+                tenant_value="searchable.example",
+                company_id="COMPANY-SEARCH",
+                description="Search fixture",
+            )
+        )
+        db.session.commit()
 
     response = client.get("/tenantmap")
     html = response.get_data(as_text=True)
@@ -49,6 +58,11 @@ def test_tenantmap_forms_use_interactive_bootstrap_modal_structure(client):
         )
     assert 'label for="add_tenant_value"' in html
     assert 'label for="edit_tenant_value"' in html
+    assert 'id="tenantmap-search"' in html
+    assert 'id="tenantmap-field-filter"' in html
+    assert 'id="tenantmap-result-count"' in html
+    assert 'id="tenantmap-no-results" hidden' in html
+    assert 'class="hw-tenantmap-row"' in html
 
 
 def test_content_modals_are_mounted_above_the_body_level_backdrop():

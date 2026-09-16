@@ -2249,6 +2249,22 @@ input[type="password"]::-ms-clear { display:none; }
 }
 .hw-rate-pair .hw-rate { margin-left:0; }
 
+/* TenantMap: compact live-search controls stay attached to the data they filter. */
+.hw-tenantmap-toolbar {
+    display:flex; align-items:center; flex-wrap:wrap; gap:var(--s-2);
+    padding-bottom:var(--s-3); margin-bottom:var(--s-2);
+    border-bottom:1px solid var(--line);
+}
+.hw-tenantmap-search { flex:1 1 300px; max-width:520px; }
+.hw-tenantmap-field-filter { flex:0 1 190px; }
+.hw-tenantmap-result-count {
+    margin-inline-start:auto; white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+@media (max-width: 575.98px) {
+    .hw-tenantmap-search, .hw-tenantmap-field-filter { flex-basis:100%; max-width:none; }
+    .hw-tenantmap-result-count { margin-inline-start:0; }
+}
+
 /* Nr. 20: Hinweis auf die Suffix-Suche; leuchtet auf, sobald sie greift. */
 /* Standardmaessig unsichtbar -- der Tipp haengt als title am Suchfeld.
    Sichtbar wird der Chip erst als Rueckmeldung, wenn token:... aktiv ist. */
