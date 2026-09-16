@@ -52,12 +52,12 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
     }
 });
 
+/** Reinitialize interactive page features after the initial load or an HTMX swap. */
 function reinitApp(container) {
-    mountContentModals();
-
     // Start autosave first. Its readiness event must not depend on any unrelated
     // page initializer succeeding (browser storage may be denied, for example).
     initAutoSave(container);
+    mountContentModals(container);
     initSearch(container);
     initBulkActions(container);
     initServiceHealth(container);
@@ -77,12 +77,14 @@ function reinitApp(container) {
     setTimeout(() => initTooltips(container), 500);
 }
 
-function mountContentModals() {
+/** Move content dialogs out of the transformed application stacking context. */
+function mountContentModals(container) {
     // The desktop rail animates #main-content with transform, which creates a
     // stacking context below Bootstrap's body-level backdrop. Keep dialogs at
     // body level so the visible controls also receive the pointer events.
-    document.querySelectorAll('#main-content .modal').forEach(modal => {
-        document.body.appendChild(modal);
+    if (!container || typeof container.querySelectorAll !== 'function') return;
+    container.querySelectorAll('#main-content .modal').forEach(modal => {
+        modal.ownerDocument.body.appendChild(modal);
     });
 }
 

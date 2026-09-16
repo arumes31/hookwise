@@ -130,6 +130,7 @@ def test_history_has_page_title_and_active_navigation(client):
 
 
 def test_history_ticket_links_use_configured_connectwise_web_url(app, client, monkeypatch):
+    """Render history ticket links with the configured PSA browser host."""
     _authenticate(client)
     monkeypatch.setenv("CW_URL", "https://api.test.com/v4_6_release/apis/3.0")
     monkeypatch.setenv("CW_WEB_URL", "https://psa.test.com")
@@ -164,6 +165,7 @@ def test_history_ticket_links_use_configured_connectwise_web_url(app, client, mo
 
 
 def test_webhook_rates_show_success_and_failure_semantics(app, client):
+    """Expose distinct successful and failed 24-hour delivery rates."""
     _authenticate(client)
     now = datetime.now(timezone.utc)
 

@@ -2,6 +2,7 @@ from hookwise.connectwise_urls import connectwise_ticket_url, connectwise_ticket
 
 
 def test_ticket_url_uses_configured_api_origin(monkeypatch):
+    """Derive the ticket link from the API origin when no web URL is set."""
     monkeypatch.delenv("CW_WEB_URL", raising=False)
     monkeypatch.setenv("CW_URL", "https://psa.example.at/v4_6_release/apis/3.0")
 
@@ -11,6 +12,7 @@ def test_ticket_url_uses_configured_api_origin(monkeypatch):
 
 
 def test_ticket_url_prefers_explicit_web_host(monkeypatch):
+    """Prefer the explicit PSA browser host over the REST API host."""
     monkeypatch.setenv("CW_URL", "https://api.test.com/v4_6_release/apis/3.0")
     monkeypatch.setenv("CW_WEB_URL", "https://psa.test.com/v4_6_release")
 
@@ -20,6 +22,7 @@ def test_ticket_url_prefers_explicit_web_host(monkeypatch):
 
 
 def test_ticket_url_rejects_invalid_configuration_and_ids(monkeypatch):
+    """Reject unsafe schemes and malformed ticket identifiers."""
     monkeypatch.setenv("CW_WEB_URL", "javascript:alert(1)")
 
     assert connectwise_ticket_url(405505) == ""

@@ -130,6 +130,7 @@ def _register_template_helpers(app: Flask) -> None:
     app.extensions["static_asset_versions"] = MappingProxyType(_build_static_asset_manifest(static_folder))
 
     def static_asset(filename: str) -> str:
+        """Return a cache-busted URL for a known local static asset."""
         version = _static_asset_version(app, filename)
         return url_for("static", filename=filename, v=version)
 

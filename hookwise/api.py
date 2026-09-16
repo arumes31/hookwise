@@ -161,6 +161,7 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
 
 
 def _register() -> None:
+    """Register API, history, health, and administration routes."""
     from .routes import main_bp
 
     # --- History & Logs ---
@@ -243,6 +244,7 @@ def _register() -> None:
     @main_bp.route("/history")
     @auth_required
     def history() -> Any:
+        """Render filtered webhook delivery history or its partial rows."""
         page = request.args.get("page", 1, type=int)
         search = request.args.get("search", "")
         date_from = request.args.get("date_from", "")

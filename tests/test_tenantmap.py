@@ -9,11 +9,13 @@ from hookwise.models import GlobalMapping
 
 @pytest.fixture
 def app():
+    """Create an isolated in-memory HookWise application."""
     return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
 
 
 @pytest.fixture
 def client(app):
+    """Yield a client with a fresh TenantMap schema."""
     with app.app_context():
         db.create_all()
         yield app.test_client()
@@ -22,6 +24,7 @@ def client(app):
 
 
 def _authenticate(client):
+    """Authenticate the test client as a legacy administrator."""
     with client.session_transaction() as session:
         session["user_id"] = "tenantmap-user"
         session["username"] = "admin"
@@ -29,6 +32,7 @@ def _authenticate(client):
 
 
 def test_tenantmap_forms_use_interactive_bootstrap_modal_structure(client):
+    """Keep mapping forms inside Bootstrap's interactive modal content."""
     _authenticate(client)
 
     response = client.get("/tenantmap")
@@ -48,15 +52,17 @@ def test_tenantmap_forms_use_interactive_bootstrap_modal_structure(client):
 
 
 def test_content_modals_are_mounted_above_the_body_level_backdrop():
+    """Mount content dialogs at body level above Bootstrap's backdrop."""
     with open("static/js/ux.js", encoding="utf-8") as ux_script:
         source = ux_script.read()
 
-    assert "mountContentModals();" in source
-    assert "document.querySelectorAll('#main-content .modal')" in source
-    assert "document.body.appendChild(modal)" in source
+    assert "mountContentModals(container);" in source
+    assert "container.querySelectorAll('#main-content .modal')" in source
+    assert "modal.ownerDocument.body.appendChild(modal)" in source
 
 
 def test_tenantmap_create_and_edit_persist(client, app):
+    """Persist normalized values through both mapping write routes."""
     _authenticate(client)
 
     create_response = client.post(

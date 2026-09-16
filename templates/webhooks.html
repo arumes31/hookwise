@@ -966,6 +966,7 @@
     //     toggleView schon und es wird sofort installiert.
     (function () {
         const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        /** Rebuild the endpoint table from the currently visible cards. */
         const bauen = () => {
             const koerper = document.getElementById('hw-endpoint-tabelle-body');
             if (!koerper) return;

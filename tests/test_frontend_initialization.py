@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_browser_ticket_url_uses_configured_template():
+    """Build and validate live ticket URLs with the browser helper."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is required for browser ticket URL coverage")

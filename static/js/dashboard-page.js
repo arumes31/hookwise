@@ -208,6 +208,7 @@
             }
         };
 
+        /** Render one validated activity event in the live dashboard stream. */
         function addLogToStream(data, isInitialHistory = false) {
             if (!isInitialHistory && window.dashboardState.isPaused) return;
             if (window.activityStream && !window.activityStream.accept(data, isInitialHistory)) return;

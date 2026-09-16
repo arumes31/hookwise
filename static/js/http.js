@@ -66,6 +66,7 @@
         return payload;
     };
 })();
+/** Build a safe ConnectWise browser URL from the server-provided template. */
 window.hookwiseTicketUrl = function hookwiseTicketUrl(ticketId) {
     const template = document.querySelector('meta[name="hookwise-ticket-url-template"]')?.content || '';
     const normalized = String(ticketId ?? '').trim();

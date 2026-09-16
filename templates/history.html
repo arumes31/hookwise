@@ -484,6 +484,7 @@
         updatePayloadDisplay();
     });
 
+    /** Initialize history controls after a full page load or HTMX replacement. */
     function runHistoryOnLoad() {
         htmx.onLoad(function (elt) {
             const searchInput = document.getElementById('history-search');

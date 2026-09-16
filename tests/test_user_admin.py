@@ -305,6 +305,7 @@ def test_entra_app_role_werte_nutzen_umgebung_und_default(monkeypatch):
 
 
 def test_identity_seite_zeigt_app_roles_und_override_steuerung():
+    """Render Entra role settings and interactive user dialogs."""
     app = _app()
     with app.app_context():
         chef = _vorbereiten(app)
