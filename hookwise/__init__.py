@@ -14,6 +14,7 @@ from flask_wtf.csrf import CSRFError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from .connectwise_urls import connectwise_ticket_url, connectwise_ticket_url_template
 from .extensions import csrf, db, limiter, migrate
 from .extensions import socketio as socketio
 
@@ -129,10 +130,13 @@ def _register_template_helpers(app: Flask) -> None:
     app.extensions["static_asset_versions"] = MappingProxyType(_build_static_asset_manifest(static_folder))
 
     def static_asset(filename: str) -> str:
+        """Return a cache-busted URL for a known local static asset."""
         version = _static_asset_version(app, filename)
         return url_for("static", filename=filename, v=version)
 
     app.jinja_env.globals["static_asset"] = static_asset
+    app.jinja_env.globals["connectwise_ticket_url"] = connectwise_ticket_url
+    app.jinja_env.globals["connectwise_ticket_url_template"] = connectwise_ticket_url_template
 
 
 def _configure_app(app: Flask) -> None:

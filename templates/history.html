@@ -484,6 +484,7 @@
         updatePayloadDisplay();
     });
 
+    /** Initialize history controls after a full page load or HTMX replacement. */
     function runHistoryOnLoad() {
         htmx.onLoad(function (elt) {
             const searchInput = document.getElementById('history-search');
@@ -557,10 +558,12 @@
                     // Ticket
                     const tdTicket = document.createElement('td');
                     tdTicket.className = 'py-3 font-monospace';
-                    if (data.ticket_id) {
+                    const ticketUrl = window.hookwiseTicketUrl?.(data.ticket_id);
+                    if (data.ticket_id && ticketUrl) {
                         const a = document.createElement('a');
-                        a.href = `{{ cw_url }}/service/tickets/${data.ticket_id}`;
+                        a.href = ticketUrl;
                         a.target = '_blank';
+                        a.rel = 'noopener noreferrer';
                         a.className = 'btn btn-sm btn-primary py-0 px-2 fw-bold hw-t-xs';
                         a.textContent = `#${data.ticket_id}`;
                         tdTicket.appendChild(a);

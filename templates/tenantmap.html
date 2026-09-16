@@ -15,7 +15,36 @@
 </div>
 
 <div class="glass-card p-4 animate-slide-up">
-    <div class="table-responsive" tabindex="0" role="region" aria-label="Tenant mappings">
+    {% if mappings %}
+    <div class="hw-tenantmap-toolbar">
+        <div class="input-group input-group-sm hw-tenantmap-search">
+            <span class="input-group-text bg-dark border-secondary text-secondary">
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg>
+            </span>
+            <input type="search" id="tenantmap-search"
+                class="form-control bg-dark border-secondary text-white"
+                placeholder="Search tenant mappings"
+                aria-label="Search tenant mappings"
+                aria-controls="tenantmap-body" autocomplete="off">
+            <button type="button" id="tenantmap-clear" class="btn btn-outline-secondary" hidden
+                aria-label="Clear tenant mapping filters">
+                <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-x-lg"></use></svg>
+            </button>
+        </div>
+        <select id="tenantmap-field-filter"
+            class="form-select form-select-sm bg-dark border-secondary text-white hw-tenantmap-field-filter"
+            aria-label="Choose tenant mapping field to search">
+            <option value="all">All fields</option>
+            <option value="tenant">Tenant value</option>
+            <option value="company">CW Company ID</option>
+            <option value="description">Description</option>
+        </select>
+        <span id="tenantmap-result-count" class="text-secondary small hw-tenantmap-result-count"
+            aria-live="polite">{{ mappings|length }} mapping{{ '' if mappings|length == 1 else 's' }}</span>
+    </div>
+    {% endif %}
+    <div class="table-responsive" tabindex="0" role="region" aria-label="Tenant mappings"
+        {% if mappings %}aria-describedby="tenantmap-result-count"{% endif %}>
         <table class="table table-dark table-hover align-middle mb-0">
             <thead class="text-secondary small text-uppercase ls-1">
                 <tr>
@@ -25,10 +54,11 @@
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="tenantmap-body">
                 {% if mappings %}
                 {% for m in mappings %}
-                <tr>
+                <tr class="hw-tenantmap-row" data-tenant="{{ m.tenant_value }}"
+                    data-company="{{ m.company_id }}" data-description="{{ m.description or '' }}">
                     <td>
                         <code class="text-info">{{ m.tenant_value }}</code>
                     </td>
@@ -59,6 +89,13 @@
                     </td>
                 </tr>
                 {% endfor %}
+                <tr id="tenantmap-no-results" hidden>
+                    <td colspan="4" class="text-center py-5 text-secondary">
+                        <svg class="hw-icon d-block mx-auto mb-3 opacity-25" width="24" height="24" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg>
+                        <span class="d-block fw-bold text-light mb-1">No matching mappings</span>
+                        <span class="small">Try a different term or search all fields.</span>
+                    </td>
+                </tr>
                 {% else %}
                 <tr>
                     <td colspan="4" class="text-center py-5 text-secondary">
@@ -73,81 +110,82 @@
 </div>
 
 <!-- Add Mapping Modal -->
-<div class="modal fade" id="addMappingModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="addMappingModal" tabindex="-1" aria-labelledby="addMappingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="glass-card shadow-lg border-0 w-100 p-1">
-            <div class="modal-content bg-transparent border-0 p-4">
-                <div class="modal-header border-0 p-0 mb-4">
-                    <h5 class="modal-title fw-bold text-light">Add Global Mapping</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close add mapping dialog"></button>
-                </div>
-                <form action="{{ url_for('main.add_mapping') }}" method="POST">
+        <div class="modal-content glass-card shadow-lg border-0 p-4">
+            <div class="modal-header border-0 p-0 mb-4">
+                <h5 class="modal-title fw-bold text-light" id="addMappingModalLabel">Add Global Mapping</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close add mapping dialog"></button>
+            </div>
+            <form action="{{ url_for('main.add_mapping') }}" method="POST" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
-                        <input type="text" name="tenant_value" class="form-control bg-dark border-secondary text-light"
-                            placeholder="e.g. example.com or 6a1b05..." required>
-                        <div class="form-text text-secondary small-xs mt-1">
+                        <label for="add_tenant_value" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
+                        <input type="text" id="add_tenant_value" name="tenant_value"
+                            class="form-control bg-dark border-secondary text-light"
+                            placeholder="e.g. example.com or 6a1b05..." maxlength="255"
+                            aria-describedby="add_tenant_value_hint" required>
+                        <div class="form-text text-secondary small-xs mt-1" id="add_tenant_value_hint">
                             The value found in the payload that identifies the tenant.
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
+                        <label for="company_search_input" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
                         <input type="text" name="company_id" id="company_search_input" list="company_list"
                             class="form-control bg-dark border-secondary text-light" placeholder="Search Identifier"
-                            required>
+                            maxlength="50" autocomplete="off" required>
                         <datalist id="company_list"></datalist>
                     </div>
                     <div class="mb-4">
-                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Description</label>
-                        <input type="text" name="description" class="form-control bg-dark border-secondary text-light"
-                            placeholder="Friendly name or notes">
+                        <label for="add_description" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Description</label>
+                        <input type="text" id="add_description" name="description"
+                            class="form-control bg-dark border-secondary text-light"
+                            placeholder="Friendly name or notes" maxlength="255">
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary fw-bold py-2">Create Mapping</button>
                     </div>
-                </form>
-            </div>
+            </form>
         </div>
     </div>
 </div>
 
 <!-- Edit Mapping Modal -->
-<div class="modal fade" id="editMappingModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="editMappingModal" tabindex="-1" aria-labelledby="editMappingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="glass-card shadow-lg border-0 w-100 p-1">
-            <div class="modal-content bg-transparent border-0 p-4">
-                <div class="modal-header border-0 p-0 mb-4">
-                    <h5 class="modal-title fw-bold text-light">Edit Global Mapping</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close edit mapping dialog"></button>
-                </div>
-                <form id="editMappingForm" method="POST" action="/tenantmap/edit/0" hx-boost="false">
+        <div class="modal-content glass-card shadow-lg border-0 p-4">
+            <div class="modal-header border-0 p-0 mb-4">
+                <h5 class="modal-title fw-bold text-light" id="editMappingModalLabel">Edit Global Mapping</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close edit mapping dialog"></button>
+            </div>
+            <form id="editMappingForm" method="POST" action="{{ url_for('main.edit_mapping', mapping_id='0') }}" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
+                        <label for="edit_tenant_value" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
                         <input type="text" id="edit_tenant_value" name="tenant_value"
-                            class="form-control bg-dark border-secondary text-light" required>
+                            class="form-control bg-dark border-secondary text-light" maxlength="255" required>
                     </div>
                     <div class="mb-3">
-                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
+                        <label for="edit_company_id" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
                         <input type="text" id="edit_company_id" name="company_id" list="company_list"
-                            class="form-control bg-dark border-secondary text-light" required>
+                            class="form-control bg-dark border-secondary text-light" maxlength="50"
+                            autocomplete="off" required>
                     </div>
                     <div class="mb-4">
-                        <label class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Description</label>
+                        <label for="edit_description" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Description</label>
                         <input type="text" id="edit_description" name="description"
-                            class="form-control bg-dark border-secondary text-light">
+                            class="form-control bg-dark border-secondary text-light" maxlength="255">
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-info fw-bold py-2 text-white">Update Mapping</button>
                     </div>
-                </form>
-            </div>
+            </form>
         </div>
     </div>
 </div>
 
 <script>
+    /** Populate and open the edit dialog for the selected tenant mapping. */
     function openEditModal(btn) {
         const id = btn.getAttribute('data-m-id');
         const tenant = btn.getAttribute('data-m-tenant');
@@ -158,8 +196,16 @@
         document.getElementById('edit_tenant_value').value = tenant;
         document.getElementById('edit_company_id').value = company;
         document.getElementById('edit_description').value = desc;
-        new bootstrap.Modal(document.getElementById('editMappingModal')).show();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('editMappingModal')).show();
     }
+
+    document.getElementById('addMappingModal')?.addEventListener('shown.bs.modal', () => {
+        document.getElementById('add_tenant_value')?.focus();
+    });
+
+    document.getElementById('editMappingModal')?.addEventListener('shown.bs.modal', () => {
+        document.getElementById('edit_tenant_value')?.focus();
+    });
 
     function runOnLoad() {
         htmx.onLoad(function (content) {

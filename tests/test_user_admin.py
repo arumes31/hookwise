@@ -305,6 +305,7 @@ def test_entra_app_role_werte_nutzen_umgebung_und_default(monkeypatch):
 
 
 def test_identity_seite_zeigt_app_roles_und_override_steuerung():
+    """Render Entra role settings and interactive user dialogs."""
     app = _app()
     with app.app_context():
         chef = _vorbereiten(app)
@@ -315,6 +316,12 @@ def test_identity_seite_zeigt_app_roles_und_override_steuerung():
         assert b'id="viewer-app-role"' in antwort.data
         assert b'id="operator-app-role"' in antwort.data
         assert b'id="override-aktiv"' in antwort.data
+        assert (
+            antwort.data.count(
+                b'<div class="modal-dialog modal-dialog-centered">\n        <div class="modal-content glass-card'
+            )
+            >= 2
+        )
         db.session.remove()
         db.drop_all()
 

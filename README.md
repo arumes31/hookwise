@@ -407,6 +407,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | Variable | Usage |
 |----------|-------|
 | `CW_URL` | ConnectWise Manage REST API base URL. |
+| `CW_WEB_URL` | Optional ConnectWise Manage browser URL used for ticket links. Defaults to the origin from `CW_URL`; set it when the PSA web host differs from the API host. |
 | `CW_COMPANY` | Integrator/company identifier used to build ConnectWise authentication. |
 | `CW_PUBLIC_KEY` / `CW_PRIVATE_KEY` | ConnectWise API member credentials. Treat the private key as a secret. |
 | `CW_CLIENT_ID` | ConnectWise integration client ID. |

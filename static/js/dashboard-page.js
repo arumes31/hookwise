@@ -1,4 +1,3 @@
-var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.content || '';
     async function quickUpdate(id, field, value) {
         const select = event.target;
         if (value === 'LOAD') {
@@ -209,6 +208,7 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
             }
         };
 
+        /** Render one validated activity event in the live dashboard stream. */
         function addLogToStream(data, isInitialHistory = false) {
             if (!isInitialHistory && window.dashboardState.isPaused) return;
             if (window.activityStream && !window.activityStream.accept(data, isInitialHistory)) return;
@@ -232,12 +232,13 @@ var hookwiseCwUrl = document.querySelector('meta[name="hookwise-cw-url"]')?.cont
 
             const sevKlasse = data.level === 'error' ? 'crit' : data.level === 'warning' ? 'warn' : 'ok';
             const sevText   = data.level === 'error' ? 'FAIL' : data.level === 'warning' ? 'WARN' : 'OK';
+            const ticketUrl = window.hookwiseTicketUrl?.(data.ticket_id) || '';
             let flowHtml = `
                 <span class="hw-act-time">${timeStr}</span>
                 <span class="hw-act-sev hw-act-sev--${sevKlasse}" title="${escapeHtml(data.level || 'info')}">${sevText}</span>
                 <span class="hw-act-name">${escapeHtml(data.config_name)}</span>
                 <span class="hw-act-msg" title="${escapeHtml(data.message)}">${escapeHtml(data.message)}</span>
-                ${data.ticket_id ? `<a href="${hookwiseCwUrl}/service/tickets/${data.ticket_id}" target="_blank" class="badge bg-primary text-decoration-none hw-t-xs">#${data.ticket_id}</a>` : ''}
+                ${ticketUrl ? `<a href="${escapeHtml(ticketUrl)}" target="_blank" rel="noopener noreferrer" class="badge bg-primary text-decoration-none hw-t-xs">#${escapeHtml(data.ticket_id)}</a>` : ''}
                 <button class="btn btn-sm btn-link text-secondary p-0 log-expand-payload" aria-label="Expand payload">
                     <svg class="hw-icon" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
                 </button>
