@@ -8,6 +8,7 @@ services:
       - "5000:5000"
     environment: &env
       - "CW_URL=https://api-na.myconnectwise.net/v4_6_release/apis/3.0"
+      - "CW_WEB_URL=${CW_WEB_URL:-}"
       - "CW_COMPANY=your_company_id"
       - "CW_PUBLIC_KEY=your_public_key"
       - "CW_PRIVATE_KEY=${CW_PRIVATE_KEY:?Set CW_PRIVATE_KEY in .env}"

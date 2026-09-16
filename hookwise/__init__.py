@@ -14,6 +14,7 @@ from flask_wtf.csrf import CSRFError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from .connectwise_urls import connectwise_ticket_url, connectwise_ticket_url_template
 from .extensions import csrf, db, limiter, migrate
 from .extensions import socketio as socketio
 
@@ -133,6 +134,8 @@ def _register_template_helpers(app: Flask) -> None:
         return url_for("static", filename=filename, v=version)
 
     app.jinja_env.globals["static_asset"] = static_asset
+    app.jinja_env.globals["connectwise_ticket_url"] = connectwise_ticket_url
+    app.jinja_env.globals["connectwise_ticket_url_template"] = connectwise_ticket_url_template
 
 
 def _configure_app(app: Flask) -> None:

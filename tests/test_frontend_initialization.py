@@ -7,6 +7,50 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_browser_ticket_url_uses_configured_template():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for browser ticket URL coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+
+global.window = { fetch: async () => ({ status: 200 }) };
+global.document = {
+    querySelector(selector) {
+        if (selector === 'meta[name="hookwise-ticket-url-template"]') {
+            return {
+                content: 'https://psa.test.com/v4_6_release/services/system_io/Service/' +
+                    'fv_sr100_request.rails?service_recid={ticket_id}'
+            };
+        }
+        return null;
+    }
+};
+
+eval(fs.readFileSync('static/js/http.js', 'utf8'));
+
+assert.strictEqual(
+    window.hookwiseTicketUrl(405505),
+    'https://psa.test.com/v4_6_release/services/system_io/Service/' +
+        'fv_sr100_request.rails?service_recid=405505'
+);
+assert.strictEqual(window.hookwiseTicketUrl('../405505'), '');
+assert.strictEqual(window.hookwiseTicketUrl(0), '');
+assert.strictEqual(window.hookwiseTicketUrl('1'.repeat(21)), '');
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize(
     ("script_name", "expected_lookup"),
     [

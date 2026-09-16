@@ -129,6 +129,72 @@ def test_history_has_page_title_and_active_navigation(client):
     assert re.search(r'href="/history"[^>]*aria-current="page"', html)
 
 
+def test_history_ticket_links_use_configured_connectwise_web_url(app, client, monkeypatch):
+    _authenticate(client)
+    monkeypatch.setenv("CW_URL", "https://api.test.com/v4_6_release/apis/3.0")
+    monkeypatch.setenv("CW_WEB_URL", "https://psa.test.com")
+
+    with app.app_context():
+        endpoint = WebhookConfig(id="ticket-link", name="Ticket link")
+        log = WebhookLog(
+            config_id=endpoint.id,
+            request_id="ticket-link-request",
+            payload="{}",
+            status="processed",
+            ticket_id="405505",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.session.add_all([endpoint, log])
+        db.session.commit()
+
+    response = client.get("/history")
+    html = response.get_data(as_text=True)
+    expected_url = (
+        "https://psa.test.com/v4_6_release/services/system_io/Service/fv_sr100_request.rails?service_recid=405505"
+    )
+
+    assert response.status_code == 200
+    assert expected_url.replace("&", "&amp;") in html
+    assert "/service/tickets/405505" not in html
+    assert (
+        'name="hookwise-ticket-url-template" '
+        'content="https://psa.test.com/v4_6_release/services/system_io/Service/'
+        'fv_sr100_request.rails?service_recid={ticket_id}"'
+    ) in html
+
+
+def test_webhook_rates_show_success_and_failure_semantics(app, client):
+    _authenticate(client)
+    now = datetime.now(timezone.utc)
+
+    with app.app_context():
+        endpoint = WebhookConfig(id="rate-endpoint", name="Rate endpoint")
+        db.session.add(endpoint)
+        db.session.add_all(
+            [
+                WebhookLog(
+                    config_id=endpoint.id,
+                    request_id=f"rate-{status}",
+                    payload="{}",
+                    status=status,
+                    created_at=now,
+                )
+                for status in ("processed", "skipped", "failed")
+            ]
+        )
+        db.session.commit()
+
+    response = client.get("/webhooks")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "SUCCESS / FAILED 24H" in html
+    assert 'data-success-rate24="66.7"' in html
+    assert 'data-failure-rate24="33.3"' in html
+    assert 'class="hw-rate hw-rate--ok"' in html
+    assert 'class="hw-rate hw-rate--crit"' in html
+
+
 def test_login_uses_full_navigation_so_document_title_updates(client):
     response = client.get("/login")
 

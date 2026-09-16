@@ -248,8 +248,6 @@ def _dashboard_context() -> dict[str, Any]:
 
     base_url = request.url_root.rstrip("/")
     debug_mode = os.environ.get("DEBUG_MODE", "false").lower() == "true"
-    cw_url = os.environ.get("CW_URL", "https://api-na.myconnectwise.net/v4_6_release/apis/3.0").rstrip("/")
-
     return dict(
         configs=configs,
         counts=counts,
@@ -261,7 +259,6 @@ def _dashboard_context() -> dict[str, Any]:
         dashboard_kpis=dashboard_kpis,
         base_url=base_url,
         debug_mode=debug_mode,
-        cw_url=cw_url,
         archived_configs=archived_configs,
     )
 

@@ -189,7 +189,7 @@
                 <th class="py-2 text-end" title="Successful deliveries in the last 24 hours">OK 24H</th>
                 <th class="py-2 text-end" title="Failed deliveries in the last 24 hours">FAILED 24H</th>
                 <th class="py-2 text-end" title="Skipped deliveries in the last 24 hours">SKIPPED 24H</th>
-                <th class="py-2 text-end" title="Failure rate over the last 24 hours &ndash; the detail page shows 30 days">RATE 24H</th>
+                <th class="py-2 text-end" title="Successful (processed or skipped) and failed delivery rates over the last 24 hours">SUCCESS / FAILED 24H</th>
                 <th class="py-2">LAST SEEN</th>
                 <th class="pe-4 py-2 text-end"><span class="visually-hidden">Actions</span></th>
             </tr></thead>
@@ -207,8 +207,10 @@
     <div class="col-xxl-4 col-xl-6 col-lg-12 mb-4 draggable-card" draggable="true" data-id="{{ config.id }}">
         {% set z24k = counts.get(config.id, {}) %}
         {% set summe24k = z24k.get('processed', 0) + z24k.get('failed', 0) + z24k.get('skipped', 0) %}
+        {% set erfolgsrate24k = ((z24k.get('processed', 0) + z24k.get('skipped', 0)) / summe24k * 100) | round(1) if summe24k else 0 %}
+        {% set fehlerrate24k = (z24k.get('failed', 0) / summe24k * 100) | round(1) if summe24k else 0 %}
         <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
-            data-rate24="{{ (z24k.get('failed', 0) / summe24k * 100) | round(1) if summe24k else 0 }}"
+            data-rate24="{{ fehlerrate24k }}" data-success-rate24="{{ erfolgsrate24k }}" data-failure-rate24="{{ fehlerrate24k }}"
             data-p24="{{ z24k.get('processed', 0) }}" data-f24="{{ z24k.get('failed', 0) }}" data-s24="{{ z24k.get('skipped', 0) }}"
             data-lastseen="{{ config.last_seen_at.isoformat() if config.last_seen_at else '' }}"
             data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
@@ -373,19 +375,18 @@
                 <!-- Simplified Activity Stats -->
                 <div class="tech-grid mb-4">
                     <div class="tech-item">
-                        <div class="tech-label text-success">SUCCESS</div>
+                        <div class="tech-label text-success">SUCCESS
+                            <span class="hw-rate hw-rate--ok" title="Processed or skipped successfully in the last 24 hours">{{ erfolgsrate24k }}%</span>
+                        </div>
                         <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('processed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('processed', 0) }}</span></div>
                         <div class="small text-secondary opacity-50 text-uppercase ls-1 hw-t-xs">
                             24H / Total</div>
                     </div>
                     <div class="tech-item">
-                        {% set z24 = counts.get(config.id, {}) %}
-                        {% set summe24 = z24.get('processed', 0) + z24.get('failed', 0) + z24.get('skipped', 0) %}
-                        {% set rate24 = (z24.get('failed', 0) / summe24 * 100) | round(1) if summe24 else 0 %}
                         <div class="tech-label text-danger">FAILED
                             {# Die Rate macht Endpoints mit verschiedenem Volumen
                                vergleichbar; "0/10" sagt weniger als "0 %". #}
-                            <span class="hw-rate {{ 'hw-rate--crit' if rate24 > 0 else '' }}">{{ rate24 }}%</span>
+                            <span class="hw-rate hw-rate--crit" title="Failed deliveries in the last 24 hours">{{ fehlerrate24k }}%</span>
                         </div>
                         <div class="h5 mb-0 fw-bold">{{ counts.get(config.id, {}).get('failed', 0) }} <span class="fs-6 text-secondary fw-normal">/ {{ total_counts.get(config.id, {}).get('failed', 0) }}</span></div>
                         <div class="small text-secondary opacity-50 text-uppercase ls-1 hw-t-xs">
@@ -443,7 +444,7 @@
         <div class="card h-100 endpoint-card glass-card shadow-lg" data-name="{{ config.name }}"
             data-id="{{ config.id }}" data-board="{{ config.board or 'Default' }}"
             data-company="{{ config.customer_id_default or '' }}" data-tags="" data-health="{{ config.config_health_status or 'OK' }}" data-pinned="{{ 'true' if config.is_pinned else 'false' }}"
-            data-status="{{ 'enabled' if config.is_enabled else 'paused' }}" data-rate24="0" data-lastseen="">
+            data-status="{{ 'enabled' if config.is_enabled else 'paused' }}" data-rate24="0" data-success-rate24="0" data-failure-rate24="0" data-lastseen="">
             <div class="card-body p-4">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                     <h4 class="mb-0 text-white fw-bold hw-name">{{ config.name }}</h4>
@@ -708,8 +709,6 @@
         </div>
     </div>
 </div>
-
-<meta name="hookwise-cw-url" content="{{ cw_url }}">
 
 <script src="{{ static_asset('js/dashboard.js') }}"></script>
 <script src="{{ static_asset('js/dashboard-page.js') }}"></script>
@@ -979,7 +978,7 @@
             const signatur = karten.map(c => {
                 const d = c.dataset;
                 return [d.id, d.name, d.board, d.status, d.health, d.pinned,
-                    d.p24, d.f24, d.s24, d.rate24, d.lastseen].join('\u0001');
+                    d.p24, d.f24, d.s24, d.successRate24, d.failureRate24, d.lastseen].join('\u0001');
             }).join('\u0002');
             if (koerper.dataset.signatur === signatur) return;
             koerper.dataset.signatur = signatur;
@@ -997,7 +996,8 @@
                         ? '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ACTIVE</span>'
                         : '<span class="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">PAUSED</span>');
                 const gesund = d.health === 'OK' ? 'ok' : (d.health === 'ERROR' ? 'crit' : 'warn');
-                const rate = parseFloat(d.rate24 || '0');
+                const successRate = parseFloat(d.successRate24 || '0');
+                const failureRate = parseFloat(d.failureRate24 || d.rate24 || '0');
                 const kartencheck = c.querySelector('.endpoint-check');
                 return '<tr class="hw-tabzeile">' +
                     '<td class="ps-4 py-2 fw-bold">' +
@@ -1016,7 +1016,9 @@
                     '<td class="py-2 text-end font-monospace">' + esc(d.p24 || '0') + '</td>' +
                     '<td class="py-2 text-end font-monospace">' + esc(d.f24 || '0') + '</td>' +
                     '<td class="py-2 text-end font-monospace">' + esc(d.s24 || '0') + '</td>' +
-                    '<td class="py-2 text-end"><span class="hw-rate ' + (rate > 0 ? 'hw-rate--crit' : '') + '">' + rate + '%</span></td>' +
+                    '<td class="py-2 text-end"><span class="hw-rate-pair" aria-label="Success rate ' + successRate + ' percent; failed rate ' + failureRate + ' percent">' +
+                    '<span class="hw-rate hw-rate--ok" title="Success rate">' + successRate + '%</span>' +
+                    '<span class="hw-rate hw-rate--crit" title="Failed rate">' + failureRate + '%</span></span></td>' +
                     '<td class="py-2 text-secondary hw-t-xs"' +
                     (relzeit && relzeit.title ? ' title="' + esc(relzeit.title) + '"' : '') + '>' +
                     (relzeit ? esc(relzeit.textContent.trim()) : '-') +

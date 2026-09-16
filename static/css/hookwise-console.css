@@ -2224,17 +2224,30 @@ input[type="password"]::-ms-clear { display:none; }
     width:100%; pointer-events:none; z-index:0;
 }
 
-/* Nr. 5: 24h-Fehlerrate an der FAILED-Zelle. */
+/* 24h success/failure rates use the same semantic colors as their counts. */
 .hw-rate {
     margin-left:6px; padding:0 6px; border-radius:var(--radius-pill);
     font-size:9px; font-weight:700; letter-spacing:0;
     border:1px solid var(--line-2); color:var(--text-faint);
+}
+.hw-rate--ok {
+    color:var(--ok);
+    border-color:color-mix(in srgb, var(--ok) 40%, transparent);
+    background:color-mix(in srgb, var(--ok) 10%, transparent);
 }
 .hw-rate--crit {
     color:var(--crit);
     border-color:color-mix(in srgb, var(--crit) 40%, transparent);
     background:color-mix(in srgb, var(--crit) 10%, transparent);
 }
+.hw-rate-pair {
+    display:inline-flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:4px;
+    white-space:nowrap;
+}
+.hw-rate-pair .hw-rate { margin-left:0; }
 
 /* Nr. 20: Hinweis auf die Suffix-Suche; leuchtet auf, sobald sie greift. */
 /* Standardmaessig unsichtbar -- der Tipp haengt als title am Suchfeld.

@@ -53,6 +53,8 @@ document.body.addEventListener('htmx:afterRequest', function (evt) {
 });
 
 function reinitApp(container) {
+    mountContentModals();
+
     // Start autosave first. Its readiness event must not depend on any unrelated
     // page initializer succeeding (browser storage may be denied, for example).
     initAutoSave(container);
@@ -73,6 +75,15 @@ function reinitApp(container) {
 
     // Delay tooltip initialization slightly to ensure layout and animations are stable
     setTimeout(() => initTooltips(container), 500);
+}
+
+function mountContentModals() {
+    // The desktop rail animates #main-content with transform, which creates a
+    // stacking context below Bootstrap's body-level backdrop. Keep dialogs at
+    // body level so the visible controls also receive the pointer events.
+    document.querySelectorAll('#main-content .modal').forEach(modal => {
+        document.body.appendChild(modal);
+    });
 }
 
 // A8: Robust session handling - prevent "Back" button from showing cached protected pages after logout

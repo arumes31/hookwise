@@ -57,8 +57,9 @@
     <td class="py-3 text-secondary font-monospace small">{{ log.source_ip or '-' }}</td>
 
     <td class="py-3 font-monospace">
-        {% if log.ticket_id %}
-        <a href="{{ cw_url }}/service/tickets/{{ log.ticket_id }}" target="_blank"
+        {% set ticket_url = connectwise_ticket_url(log.ticket_id) if log.ticket_id else '' %}
+        {% if ticket_url %}
+        <a href="{{ ticket_url }}" target="_blank" rel="noopener noreferrer"
             class="btn btn-sm btn-primary py-0 px-2 fw-bold hw-t-xs">
             <svg class="hw-icon me-1" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>
             #{{ log.ticket_id }}
@@ -124,7 +125,7 @@
             <dt>Request ID</dt>
             <dd><span class="user-select-all">{{ log.request_id }}</span></dd>
             <dt>Ticket</dt>
-            <dd>{% if log.ticket_id %}<a href="{{ cw_url }}/service/tickets/{{ log.ticket_id }}" target="_blank">#{{
+            <dd>{% if ticket_url %}<a href="{{ ticket_url }}" target="_blank" rel="noopener noreferrer">#{{
                     log.ticket_id }}</a>{% else %}<span class="hw-detail-empty">none created</span>{% endif %}</dd>
         </dl>
     </td>
