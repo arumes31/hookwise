@@ -233,43 +233,68 @@ body {
                     font:600 11px/1 'JetBrains Mono',ui-monospace,monospace; }
 
 @media (min-width: 992px) {
-    body { padding-left: var(--rail-w); }
+    body {
+        padding-left:var(--rail-w);
+        overflow-x:clip;
+    }
     .hw-topbar { display:flex; }
+    .hw-topbar, #main-content, body > .footer {
+        transform:translate3d(var(--rail-page-shift), 0, 0);
+        transition:transform var(--rail-motion-duration) var(--rail-motion-ease) var(--rail-motion-delay);
+    }
 
     /* The navbar becomes the rail. Markup is unchanged; only layout moves. */
     .navbar {
         position:fixed !important; inset:0 auto 0 0;
-        width:var(--rail-w); height:100vh;
+        width:212px; height:100vh;
         flex-direction:column; padding:12px 0 !important;
         background:var(--bg-sunken) !important;
         border-right:1px solid var(--line); border-bottom:0;
         z-index:1035; overflow:visible;
+        transform:translate3d(var(--rail-panel-shift), 0, 0);
+        transition:transform var(--rail-motion-duration) var(--rail-motion-ease) var(--rail-motion-delay);
     }
     .navbar > .container {
-        flex-direction:column; align-items:center;
+        flex-direction:column; align-items:flex-start;
         width:100%; max-width:none; height:100%; padding:0; gap:6px; flex-wrap:nowrap;
+        transform:translate3d(var(--rail-inner-shift), 0, 0);
+        transition:transform var(--rail-motion-duration) var(--rail-motion-ease) var(--rail-motion-delay);
+        /* Der gegenverschobene 212px-Container liegt im geschlossenen Zustand
+           unsichtbar ueber dem Inhalt. Er darf dort keinen Hover ausloesen. */
+        pointer-events:none;
     }
-    .navbar-brand { margin:0 0 10px !important; padding:0 !important; }
+    .navbar-brand {
+        width:42px; margin:0 13px 10px !important; padding:0 !important;
+        justify-content:center;
+        pointer-events:auto;
+    }
     .navbar-page-title { display:none !important; }
 
     .navbar-collapse { flex:1; width:100%; display:flex !important; }
     .navbar-nav {
-        flex-direction:column !important; align-items:center;
+        flex-direction:column !important; align-items:flex-start;
         width:100%; height:100%; gap:3px; margin:0 !important;
     }
 
-    /* Icon-only. Labels stay in the DOM for screen readers. */
+    /* Die Link-Zeile ist bereits breit angelegt; --rail-w gibt ihren Text
+       kontinuierlich frei. So bleiben die Icons beim Oeffnen unbeweglich. */
     .navbar-nav .nav-link {
-        width:42px; height:42px; padding:0 !important;
-        display:grid !important; place-items:center;
+        width:calc(100% - 26px); height:42px; margin-inline:13px;
+        padding:0 12px !important;
+        display:flex !important; align-items:center; justify-content:flex-start; gap:12px;
         /* --text-muted rather than --text-faint: at rest the rail icons are the
            only wayfinding on the page, and faint measured 3.27:1 in light. */
         border-radius:var(--radius-md); color:var(--text-muted);
-        position:relative;
+        position:relative; overflow:hidden;
+        clip-path:inset(0 var(--rail-link-clip) 0 0);
+        transition:clip-path var(--rail-motion-duration) var(--rail-motion-ease) var(--rail-motion-delay);
+        pointer-events:auto;
     }
+    .navbar-nav .nav-link > .nav-icon { flex:none; }
     .navbar-nav .nav-link > span:not(.notification-count) {
-        position:absolute; width:1px; height:1px; margin:-1px;
-        overflow:hidden; clip-path:inset(50%); white-space:nowrap;
+        flex:1; min-width:0;
+        overflow:hidden; white-space:nowrap;
+        font-family:var(--font-mono); font-size:12.5px;
     }
     .navbar-nav .nav-link:hover { color:var(--text); background:var(--bg-raised); }
     .navbar-nav .nav-link.active {
@@ -293,18 +318,23 @@ body {
     /* The greeting moves to the context bar. !important is required because
        .navbar-nav .nav-link above sets display:grid !important. */
     .navbar-nav > .lightgrey                       { display:none !important; }
-    .navbar-nav > .notification-center             { order:20; margin-top:auto; }
+    .navbar-nav > .notification-center             { order:20; margin-top:auto; width:100%; }
     .navbar-nav > [data-bs-target="#docsSidebar"]  { order:21; }
     .navbar-nav > [href*="settings"]               { order:22; }
     .navbar-nav > [href*="logout"]                 { order:23; }
 
-    .notification-center .nav-link { width:42px; height:42px; }
+    .notification-center .nav-link { width:calc(100% - 26px); height:42px; }
+    .navbar-nav .notification-toggle > span.d-lg-none {
+        display:inline !important;
+        text-align:left;
+    }
     /* Popper positions this relative to the toggle; in a 68px rail the default
        right-alignment would run off-screen. */
     .notification-menu {
         left:56px !important; right:auto !important; top:auto !important;
         bottom:8px !important; transform:none !important;
         max-height:70vh; overflow-y:auto;
+        pointer-events:auto;
     }
 }
 
@@ -1917,28 +1947,24 @@ code, pre, .font-monospace, kbd, samp {
    Auf Desktop oeffnet die Rail, sobald Maus oder Tastatur die Navigation
    betritt, und schliesst wieder beim Verlassen. Mobile bleibt unveraendert. */
 @media (min-width: 992px) {
-    :root:has(.navbar-nav:hover, .navbar:focus-within) { --rail-w:212px; }
-    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .nav-link {
-        /* Rail-Basis erzwingt display:grid !important (Icon-only, zentriert)
-           -- im Breit-Modus genauso hart auf Flex-Zeile umstellen. */
-        display:flex !important; flex-direction:row; align-items:center;
-        justify-content:flex-start; gap:10px; width:100%; height:40px;
-        padding-left:14px !important; padding-right:10px !important;
+    :root {
+        --rail-motion-duration:220ms;
+        --rail-motion-delay:120ms;
+        --rail-motion-ease:cubic-bezier(.4,0,.2,1);
+        --rail-panel-shift:-144px;
+        --rail-inner-shift:144px;
+        --rail-page-shift:0px;
+        --rail-link-clip:144px;
     }
-    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav > .notification-center { width:100%; }
-    :root:has(.navbar-nav:hover, .navbar:focus-within) .notification-center .nav-link { width:100%; }
-    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .nav-link > span:not(.notification-count) {
-        position:static; width:auto; height:auto; margin:0; overflow:visible;
-        clip-path:none; white-space:nowrap;
-        font-family:var(--font-mono); font-size:12.5px;
-    }
-    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .nav-link.active::before { left:-14px; }
-    :root:has(.navbar-nav:hover, .navbar:focus-within) .navbar-nav .notification-toggle > span.d-lg-none {
-        display:inline !important;
-        font-family:var(--font-mono); font-size:12.5px; white-space:nowrap;
+    :root:has(.navbar:hover, .navbar:focus-within) {
+        --rail-motion-duration:320ms;
+        --rail-motion-delay:100ms;
+        --rail-panel-shift:0px;
+        --rail-inner-shift:0px;
+        --rail-page-shift:144px;
+        --rail-link-clip:0px;
     }
 }
-
 /* KPI-Kacheln sind Spruenge in die gefilterte Sicht -- der Pfeil macht
    das beim Hover sichtbar. */
 .dashboard-kpi[data-kpi] { cursor:pointer; position:relative; }
@@ -2176,6 +2202,16 @@ input[type="password"]::-ms-clear { display:none; }
         scroll-behavior:auto !important;
     }
     ::view-transition-old(root), ::view-transition-new(root) { animation:none !important; }
+}
+
+/* RDP setzt unter Windows reduced-motion dauerhaft. Die Rail ist eine bewusst
+   angeforderte Zustandsbewegung und behaelt deshalb ihre eigene Dauer; alle
+   anderen Animationen bleiben durch die globale Regel oben reduziert. */
+@media (min-width: 992px) and (prefers-reduced-motion: reduce) {
+    .hw-topbar, #main-content, body > .footer,
+    .navbar, .navbar > .container, .navbar-nav .nav-link {
+        transition-duration:var(--rail-motion-duration) !important;
+    }
 }
 
 /* Hinterlegte Miniverlaeufe auf den Kennzahl-Kacheln: unten angedockt,
