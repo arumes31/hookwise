@@ -191,5 +191,6 @@ def test_global_mapping_to_dict(db_session):
 
     d = mapping.to_dict()
     assert d["id"] == mapping.id
+    assert d["mapping_group_id"] is None
     assert d["tenant_value"] == "tenant2"
     assert d["company_id"] == "COMP2"

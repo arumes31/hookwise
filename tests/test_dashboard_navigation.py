@@ -129,6 +129,28 @@ def test_history_has_page_title_and_active_navigation(client):
     assert re.search(r'href="/history"[^>]*aria-current="page"', html)
 
 
+def test_history_marks_utc_timestamps_for_browser_localization(app, client):
+    """Render the same UTC instant that the endpoint delivery drawer localizes."""
+    _authenticate(client)
+    with app.app_context():
+        endpoint = WebhookConfig(id="timezone-endpoint", name="Timezone endpoint")
+        log = WebhookLog(
+            config_id=endpoint.id,
+            request_id="timezone-request",
+            payload="{}",
+            status="processed",
+            created_at=datetime(2026, 9, 16, 18, 20, 5, tzinfo=timezone.utc),
+        )
+        db.session.add_all([endpoint, log])
+        db.session.commit()
+
+    html = client.get("/history").get_data(as_text=True)
+
+    assert 'class="hw-local-datetime"' in html
+    assert 'datetime="2026-09-16T18:20:05Z"' in html
+    assert 'data-utc-label="2026-09-16 18:20:05 UTC"' in html
+
+
 def test_history_ticket_links_use_configured_connectwise_web_url(app, client, monkeypatch):
     """Render history ticket links with the configured PSA browser host."""
     _authenticate(client)

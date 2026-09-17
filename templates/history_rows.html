@@ -25,7 +25,10 @@
             <svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true" focusable="false">
                 <path d="M2.5 0.5 L8 5 L2.5 9.5 Z" />
             </svg>
-        </button>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+        </button>{% set created_iso = log.created_at.isoformat() %}<time class="hw-local-datetime"
+            datetime="{{ created_iso }}{{ 'Z' if log.created_at.tzinfo is none else '' }}"
+            data-utc-label="{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{
+            log.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>
     </td>
 
     {# config_name existiert nur in to_dict(); die Route liefert ORM-Objekte,

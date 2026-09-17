@@ -6,7 +6,7 @@ import pytest
 
 from hookwise import create_app
 from hookwise.extensions import db
-from hookwise.models import WebhookConfig
+from hookwise.models import GlobalMapping, WebhookConfig
 from hookwise.services.backups import parse_backup
 
 
@@ -162,6 +162,52 @@ def test_backup_is_encrypted_authenticated_and_versioned(client, app):
     )
     assert rejected.status_code == 400
     assert rejected.get_json()["message"] == "Backup validation failed"
+
+
+def test_tenant_mapping_groups_round_trip_through_v2_backup(client, app):
+    """Preserve alias grouping while remaining compatible with backup version 2."""
+    group_id = "tenant-group-1"
+    with app.app_context():
+        db.session.add_all(
+            [
+                GlobalMapping(
+                    id=group_id,
+                    mapping_group_id=group_id,
+                    tenant_value="group.example",
+                    company_id="GROUP",
+                ),
+                GlobalMapping(
+                    mapping_group_id=group_id,
+                    tenant_value="group.onmicrosoft.com",
+                    company_id="GROUP",
+                ),
+            ]
+        )
+        db.session.commit()
+    with client.session_transaction() as sess:
+        sess.update(user_id="admin-id", username="admin", role="admin")
+
+    backup_response = client.get("/admin/backup")
+    document = parse_backup(backup_response.data)
+    assert {record["mapping_group_id"] for record in document["global_mappings"]} == {group_id}
+
+    with app.app_context():
+        GlobalMapping.query.delete()
+        db.session.commit()
+
+    with patch("hookwise.services.backups.bump_mapping_cache_revision") as invalidate:
+        restore_response = client.post(
+            "/admin/restore",
+            data={"backup_file": (io.BytesIO(backup_response.data), "backup.hwbackup")},
+            content_type="multipart/form-data",
+        )
+
+    assert restore_response.status_code == 200
+    invalidate.assert_called_once_with()
+    with app.app_context():
+        restored = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
+        assert [row.tenant_value for row in restored] == ["group.example", "group.onmicrosoft.com"]
+        assert {row.mapping_group_id for row in restored} == {group_id}
 
 
 def test_configuration_auto_link_setting_round_trips_through_backup(client, app):

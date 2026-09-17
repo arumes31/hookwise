@@ -1,45 +1,57 @@
+import logging
 from typing import Any
 
 from flask import flash, redirect, render_template, request, url_for
+from sqlalchemy.exc import SQLAlchemyError
 
 from .extensions import db
-from .models import GlobalMapping
 from .routes import main_bp
+from .services.tenant_mappings import (
+    TenantMappingValidationError,
+    bump_mapping_cache_revision,
+    create_mapping_group,
+    delete_mapping_group,
+    list_mapping_groups,
+    mapping_alias_summary,
+    replace_mapping_group,
+)
 from .utils import auth_required, log_audit
+
+logger = logging.getLogger(__name__)
 
 
 @main_bp.route("/tenantmap")
 @auth_required
 def tenantmap() -> Any:
-    mappings = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
+    """Render one administrative row per logical TenantMap group."""
+    mappings = list_mapping_groups()
     return render_template("tenantmap.html", mappings=mappings)
 
 
 @main_bp.route("/tenantmap/add", methods=["POST"])
 @auth_required
 def add_mapping() -> Any:
-    tenant_value = request.form.get("tenant_value")
+    """Create a logical mapping containing one or more tenant aliases."""
+    tenant_values = request.form.get("tenant_values") or request.form.get("tenant_value")
     company_id = request.form.get("company_id")
     description = request.form.get("description")
 
-    if not tenant_value or not company_id:
-        flash("Tenant Value and Company ID are required.")
-        return redirect(url_for("main.tenantmap"))
-
-    mapping = GlobalMapping(
-        tenant_value=tenant_value.strip(),
-        company_id=company_id.strip(),
-        description=description.strip() if description else None,
-    )
-
     try:
-        db.session.add(mapping)
+        mapping = create_mapping_group(tenant_values, company_id, description)
         db.session.commit()
-        log_audit("create_mapping", details=f"Added global mapping: {tenant_value} -> {company_id}")
-        flash(f"Mapping for {tenant_value} added successfully.")
-    except Exception as e:
+        bump_mapping_cache_revision()
+        aliases = mapping_alias_summary(mapping.tenant_values)
+        log_audit(
+            "create_mapping", config_id=mapping.id, details=f"Added global mapping: {aliases} -> {mapping.company_id}"
+        )
+        flash(f"Mapping with {len(mapping.tenant_values)} tenant value(s) added successfully.")
+    except TenantMappingValidationError as error:
         db.session.rollback()
-        flash(f"Error adding mapping: {str(e)}")
+        flash(str(error))
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.exception("Failed to add TenantMap group")
+        flash("The mapping could not be added. Check for duplicate tenant values and try again.")
 
     return redirect(url_for("main.tenantmap"))
 
@@ -47,35 +59,32 @@ def add_mapping() -> Any:
 @main_bp.route("/tenantmap/edit/<mapping_id>", methods=["POST"])
 @auth_required
 def edit_mapping(mapping_id: str) -> Any:
-    mapping = GlobalMapping.query.get(mapping_id)
-    if not mapping:
-        flash("Global mapping not found.")
-        return redirect(url_for("main.tenantmap"))
-
-    tenant_value = request.form.get("tenant_value")
+    """Replace the aliases and shared metadata of one logical mapping."""
+    tenant_values = request.form.get("tenant_values") or request.form.get("tenant_value")
     company_id = request.form.get("company_id")
     description = request.form.get("description")
 
-    if not tenant_value or not company_id:
-        flash("Tenant Value and Company ID are required.")
-        return redirect(url_for("main.tenantmap"))
-
     try:
-        old_val = f"{mapping.tenant_value} -> {mapping.company_id}"
-        mapping.tenant_value = tenant_value.strip()
-        mapping.company_id = company_id.strip()
-        mapping.description = description.strip() if description else None
-
+        mapping = replace_mapping_group(mapping_id, tenant_values, company_id, description)
+        if mapping is None:
+            flash("Global mapping not found.")
+            return redirect(url_for("main.tenantmap"))
         db.session.commit()
+        bump_mapping_cache_revision()
+        aliases = mapping_alias_summary(mapping.tenant_values)
         log_audit(
             "update_mapping",
-            config_id=mapping_id,
-            details=f"Updated global mapping: {old_val} to {tenant_value} -> {company_id}",
+            config_id=mapping.id,
+            details=f"Updated global mapping: {aliases} -> {mapping.company_id}",
         )
-        flash(f"Mapping for {tenant_value} updated successfully.")
-    except Exception as e:
+        flash(f"Mapping with {len(mapping.tenant_values)} tenant value(s) updated successfully.")
+    except TenantMappingValidationError as error:
         db.session.rollback()
-        flash(f"Error updating mapping: {str(e)}")
+        flash(str(error))
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.exception("Failed to update TenantMap group %s", mapping_id)
+        flash("The mapping could not be updated. Check for duplicate tenant values and try again.")
 
     return redirect(url_for("main.tenantmap"))
 
@@ -83,19 +92,20 @@ def edit_mapping(mapping_id: str) -> Any:
 @main_bp.route("/tenantmap/delete/<mapping_id>", methods=["POST"])
 @auth_required
 def delete_mapping(mapping_id: str) -> Any:
-    mapping = GlobalMapping.query.get(mapping_id)
-    if not mapping:
-        flash("Global mapping not found.")
-        return redirect(url_for("main.tenantmap"))
-
-    tenant = mapping.tenant_value
+    """Delete a logical mapping and every flat alias it contains."""
     try:
-        db.session.delete(mapping)
+        mapping = delete_mapping_group(mapping_id)
+        if mapping is None:
+            flash("Global mapping not found.")
+            return redirect(url_for("main.tenantmap"))
         db.session.commit()
-        log_audit("delete_mapping", config_id=mapping_id, details=f"Deleted global mapping for: {tenant}")
-        flash(f"Mapping for {tenant} deleted.")
-    except Exception as e:
+        bump_mapping_cache_revision()
+        aliases = mapping_alias_summary(mapping.tenant_values)
+        log_audit("delete_mapping", config_id=mapping.id, details=f"Deleted global mapping for: {aliases}")
+        flash(f"Mapping with {len(mapping.tenant_values)} tenant value(s) deleted.")
+    except SQLAlchemyError:
         db.session.rollback()
-        flash(f"Error deleting mapping: {str(e)}")
+        logger.exception("Failed to delete TenantMap group %s", mapping_id)
+        flash("The mapping could not be deleted. Try again.")
 
     return redirect(url_for("main.tenantmap"))

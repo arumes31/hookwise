@@ -9,6 +9,7 @@ from cryptography.fernet import InvalidToken
 from ..extensions import db
 from ..models import EndpointTag, GlobalMapping, User, UserPreference, WebhookConfig
 from ..utils import get_fernet
+from .tenant_mappings import bump_mapping_cache_revision
 
 BACKUP_FORMAT = "hookwise-config"
 BACKUP_VERSION = 2
@@ -220,6 +221,11 @@ def restore_backup(document: dict[str, Any]) -> int:
         if not isinstance(company, str) or not company or len(company) > 50:
             raise BackupValidationError("Global mapping company is invalid")
         row = GlobalMapping.query.filter_by(tenant_value=tenant).first() or GlobalMapping(tenant_value=tenant)
+        mapping_group_id = mapping.get("mapping_group_id")
+        if mapping_group_id is not None:
+            if not isinstance(mapping_group_id, str) or not mapping_group_id or len(mapping_group_id) > 36:
+                raise BackupValidationError("Global mapping group id is invalid")
+            row.mapping_group_id = mapping_group_id
         row.company_id = company
         row.description = str(mapping.get("description") or "")[:255] or None
         db.session.add(row)
@@ -248,4 +254,6 @@ def restore_backup(document: dict[str, Any]) -> int:
                 setattr(preference, field, record[field])
         db.session.add(preference)
     db.session.commit()
+    if mappings:
+        bump_mapping_cache_revision()
     return len(configs)

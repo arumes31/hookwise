@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -5,6 +6,63 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_history_timestamps_use_the_browser_timezone():
+    """Convert the History UTC fallback to the same local time as the drawer."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for browser timestamp coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const localTimeSource = source.slice(
+    source.indexOf('function initLocalDateTimes'),
+    source.indexOf('// A8: Robust session handling')
+);
+const timestamp = {
+    dateTime: '2026-09-16T18:20:05Z',
+    dataset: { utcLabel: '2026-09-16 18:20:05 UTC' },
+    textContent: '', title: ''
+};
+const container = {
+    matches() { return false; },
+    querySelectorAll() { return [timestamp]; }
+};
+
+eval(localTimeSource);
+initLocalDateTimes(container);
+
+assert(timestamp.textContent.includes('20:20:05'), timestamp.textContent);
+assert(timestamp.title.includes('Europe/Vienna'), timestamp.title);
+assert.strictEqual(timestamp.dataset.localized, 'true');
+"""
+    environment = {**os.environ, "TZ": "Europe/Vienna"}
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_endpoint_selection_and_sidebar_are_overlays():
+    """Keep selection and navigation state changes out of document flow."""
+    css = (ROOT / "static/css/hookwise-console.css").read_text(encoding="utf-8")
+    template = (ROOT / "templates/webhooks.html").read_text(encoding="utf-8")
+
+    bulk_rule = css[css.index("#bulk-controls.hw-bulk-bar") : css.index(".hw-bulk-actions")]
+    assert "position:fixed" in bulk_rule
+    assert 'class="hw-bulk-bar d-none' in template
+    assert 'id="bulk-selection-count"' in template
+    assert "--rail-page-shift:144px" not in css
+    assert "transform:translate3d(var(--rail-page-shift)" not in css
 
 
 def test_browser_ticket_url_uses_configured_template():
