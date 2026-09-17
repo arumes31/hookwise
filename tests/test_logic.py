@@ -105,7 +105,7 @@ def test_cipp_defender_baselines_history_and_skips_unchanged_payload(mock_cw, mo
         created = mock_cw.create_ticket.call_args.kwargs
         assert "Incident ID: 901" in created["description"]
         assert "Incident ID: 807" not in created["description"]
-        assert created["summary"].endswith("[Defender 20260914-0000Z]")
+        assert created["summary"].endswith("[Defender eworx.at #901]")
 
         states = {
             state.incident_key: state
@@ -113,6 +113,7 @@ def test_cipp_defender_baselines_history_and_skips_unchanged_payload(mock_cw, mo
         }
         assert states["id:807"].ticket_id is None
         assert states["id:901"].ticket_id == 700
+        assert states["id:901"].bundle_key is None
         assert json.loads(states["id:901"].seen_alert_ids) == ["new-alert"]
 
         mock_cw.reset_mock()
@@ -129,11 +130,123 @@ def test_cipp_defender_baselines_history_and_skips_unchanged_payload(mock_cw, mo
 @patch("hookwise.services.cipp_defender._utcnow")
 @patch("hookwise.tasks.redis_client")
 @patch("hookwise.tasks.cw_client")
-def test_cipp_defender_merges_new_alerts_and_incidents_only_inside_bundle(mock_cw, mock_redis, mock_now, app):
+def test_cipp_defender_creates_one_ticket_per_incident_and_merges_alerts_without_time_limit(
+    mock_cw, mock_redis, mock_now, app
+):
     mock_now.return_value = datetime(2026, 9, 15, 12, tzinfo=timezone.utc)
     mock_redis.get.return_value = None
     mock_cw.find_open_ticket.return_value = None
-    mock_cw.create_ticket.return_value = {"id": 700}
+    mock_cw.create_ticket.side_effect = [{"id": 700}, {"id": 701}, {"id": 702}]
+    mock_cw.add_ticket_note.return_value = True
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Defender",
+            description_template="{{ cipp_results }}",
+            trigger_field="status",
+            open_value="down",
+            board="Monitoring",
+            customer_id_default="EWORX",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        first = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-a", "alert-b")
+        second = _defender_incident(902, "2026-09-15T13:00:00Z", "alert-c")
+        handle_webhook_logic(config.id, _cipp_defender_payload(first, second), "req-defender-first")
+
+        assert mock_cw.create_ticket.call_count == 2
+        created = mock_cw.create_ticket.call_args_list
+        assert created[0].kwargs["summary"].endswith("[Defender eworx.at #901]")
+        assert created[1].kwargs["summary"].endswith("[Defender eworx.at #902]")
+        assert "alert-a" in created[0].kwargs["description"]
+        assert "alert-b" in created[0].kwargs["description"]
+        assert CippDefenderIncidentState.query.filter_by(incident_key="id:901").one().ticket_id == 700
+        assert CippDefenderIncidentState.query.filter_by(incident_key="id:902").one().ticket_id == 701
+
+        # A new alert still updates incident 901 after more than 48 hours.
+        mock_now.return_value = datetime(2026, 9, 22, 12, tzinfo=timezone.utc)
+        mock_cw.reset_mock()
+        mock_cw.get_ticket.return_value = {"id": 700, "closedFlag": False, "status": {"name": "New"}}
+        changed = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-a", "alert-b", "alert-d")
+        handle_webhook_logic(config.id, _cipp_defender_payload(changed, second), "req-defender-update")
+
+        mock_cw.create_ticket.assert_not_called()
+        mock_cw.get_ticket.assert_called_once_with(700)
+        note = mock_cw.add_ticket_note.call_args.args[1]
+        assert "New Defender alert(s) for incident 901: alert-d" in note
+        assert "Incident ID: 901" in note
+        assert "Incident ID: 902" not in note
+        state_901 = CippDefenderIncidentState.query.filter_by(incident_key="id:901").one()
+        assert json.loads(state_901.seen_alert_ids) == ["alert-a", "alert-b", "alert-d"]
+        assert state_901.ticket_id == 700
+
+        # A distinct incident always receives a distinct ticket, regardless of arrival time.
+        mock_cw.reset_mock()
+        mock_cw.find_open_ticket.return_value = None
+        third = _defender_incident(903, "2026-09-22T11:00:00Z", "alert-e")
+        handle_webhook_logic(config.id, _cipp_defender_payload(changed, second, third), "req-defender-next-window")
+
+        created = mock_cw.create_ticket.call_args.kwargs
+        assert created["summary"].endswith("[Defender eworx.at #903]")
+        assert "Incident ID: 903" in created["description"]
+        assert "Incident ID: 901" not in created["description"]
+        assert CippDefenderIncidentState.query.filter_by(incident_key="id:903").one().ticket_id == 702
+
+
+@patch("hookwise.services.cipp_defender._utcnow")
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_cipp_defender_replaces_legacy_bundle_state_with_incident_ticket(mock_cw, mock_redis, mock_now, app):
+    mock_now.return_value = datetime(2026, 9, 17, 12, tzinfo=timezone.utc)
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.return_value = {"id": 810}
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Defender",
+            description_template="{{ cipp_results }}",
+            trigger_field="status",
+            open_value="down",
+            board="Monitoring",
+            customer_id_default="EWORX",
+        )
+        db.session.add(config)
+        db.session.flush()
+        db.session.add(
+            CippDefenderIncidentState(
+                config_id=config.id,
+                tenant_key="eworx.at",
+                incident_key="id:901",
+                payload_hash="legacy-hash",
+                seen_alert_ids=json.dumps(["alert-a"]),
+                ticket_id=700,
+                bundle_key="20260916-0000Z",
+            )
+        )
+        db.session.commit()
+
+        incident = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-a")
+        handle_webhook_logic(config.id, _cipp_defender_payload(incident), "req-defender-migrate")
+
+        mock_cw.get_ticket.assert_not_called()
+        mock_cw.create_ticket.assert_called_once()
+        state = CippDefenderIncidentState.query.filter_by(incident_key="id:901").one()
+        assert state.ticket_id == 810
+        assert state.bundle_key is None
+
+
+@patch("hookwise.services.cipp_defender._utcnow")
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_cipp_defender_creates_new_actionable_ticket_when_correlated_ticket_is_closed(
+    mock_cw, mock_redis, mock_now, app
+):
+    mock_now.return_value = datetime(2026, 9, 15, 12, tzinfo=timezone.utc)
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.side_effect = [{"id": 700}, {"id": 701}]
 
     with app.app_context():
         config = WebhookConfig(
@@ -150,35 +263,14 @@ def test_cipp_defender_merges_new_alerts_and_incidents_only_inside_bundle(mock_c
         first = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-a")
         handle_webhook_logic(config.id, _cipp_defender_payload(first), "req-defender-first")
 
-        # A new alert on incident 901 and a new incident 902 stay in the same 48-hour bundle.
         mock_cw.reset_mock()
-        mock_cw.find_open_ticket.return_value = {"id": 700}
-        changed = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-b")
-        second = _defender_incident(902, "2026-09-15T13:00:00Z", "alert-c")
-        handle_webhook_logic(config.id, _cipp_defender_payload(changed, second), "req-defender-update")
+        mock_cw.get_ticket.return_value = {"id": 700, "closedFlag": True, "status": {"name": "Closed"}}
+        changed = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-a", "alert-b")
+        handle_webhook_logic(config.id, _cipp_defender_payload(changed), "req-defender-after-close")
 
-        mock_cw.create_ticket.assert_not_called()
-        note = mock_cw.add_ticket_note.call_args.args[1]
-        assert "New or changed CIPP Defender incidents" in note
-        assert "Incident ID: 901" in note
-        assert "Incident ID: 902" in note
-        state_901 = CippDefenderIncidentState.query.filter_by(incident_key="id:901").one()
-        assert json.loads(state_901.seen_alert_ids) == ["alert-a", "alert-b"]
-        assert state_901.ticket_id == 700
-
-        # The next fixed UTC window gets a distinct summary and therefore a new ticket.
-        mock_now.return_value = datetime(2026, 9, 18, 12, tzinfo=timezone.utc)
-        mock_cw.reset_mock()
-        mock_cw.find_open_ticket.return_value = None
-        mock_cw.create_ticket.return_value = {"id": 701}
-        third = _defender_incident(903, "2026-09-18T11:00:00Z", "alert-d")
-        handle_webhook_logic(config.id, _cipp_defender_payload(changed, second, third), "req-defender-next-window")
-
-        created = mock_cw.create_ticket.call_args.kwargs
-        assert created["summary"].endswith("[Defender 20260918-0000Z]")
-        assert "Incident ID: 903" in created["description"]
-        assert "Incident ID: 901" not in created["description"]
-        assert CippDefenderIncidentState.query.filter_by(incident_key="id:903").one().ticket_id == 701
+        mock_cw.add_ticket_note.assert_not_called()
+        mock_cw.create_ticket.assert_called_once()
+        assert CippDefenderIncidentState.query.filter_by(incident_key="id:901").one().ticket_id == 701
 
 
 GREENBONE_DESCRIPTION = """Site2Nite Boat Classifieds Multiple SQLi Vulnerabilities - Active Check

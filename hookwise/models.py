@@ -411,7 +411,7 @@ class WebhookRetryAttempt(Base):
 
 
 class CippDefenderIncidentState(Base):
-    """Durable correlation state for CIPP Defender incident bundles."""
+    """Durable tenant/incident correlation state for CIPP Defender tickets."""
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     config_id = db.Column(
@@ -422,6 +422,8 @@ class CippDefenderIncidentState(Base):
     payload_hash = db.Column(db.String(64), nullable=False)
     seen_alert_ids = db.Column(db.Text, nullable=False, default="[]")
     ticket_id = db.Column(db.Integer, nullable=True, index=True)
+    # Retained for rolling upgrades. A non-null value marks state written by
+    # the former time-window bundling implementation and triggers re-correlation.
     bundle_key = db.Column(db.String(32), nullable=True)
     first_seen_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     last_seen_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
