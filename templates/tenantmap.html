@@ -35,7 +35,7 @@
             class="form-select form-select-sm bg-dark border-secondary text-white hw-tenantmap-field-filter"
             aria-label="Choose tenant mapping field to search">
             <option value="all">All fields</option>
-            <option value="tenant">Tenant value</option>
+            <option value="tenant">Tenant values</option>
             <option value="company">CW Company ID</option>
             <option value="description">Description</option>
         </select>
@@ -48,7 +48,7 @@
         <table class="table table-dark table-hover align-middle mb-0">
             <thead class="text-secondary small text-uppercase ls-1">
                 <tr>
-                    <th>Tenant Value</th>
+                    <th>Tenant Values</th>
                     <th>CW Company ID</th>
                     <th>Description</th>
                     <th class="text-end">Actions</th>
@@ -57,10 +57,14 @@
             <tbody id="tenantmap-body">
                 {% if mappings %}
                 {% for m in mappings %}
-                <tr class="hw-tenantmap-row" data-tenant="{{ m.tenant_value }}"
+                <tr class="hw-tenantmap-row" data-tenant="{{ m.tenant_values|join(' ') }}"
                     data-company="{{ m.company_id }}" data-description="{{ m.description or '' }}">
                     <td>
-                        <code class="text-info">{{ m.tenant_value }}</code>
+                        <div class="hw-tenantmap-aliases" aria-label="{{ m.tenant_values|length }} tenant values">
+                            {% for tenant_value in m.tenant_values %}
+                            <code class="hw-tenantmap-alias">{{ tenant_value }}</code>
+                            {% endfor %}
+                        </div>
                     </td>
                     <td>
                         <span
@@ -73,13 +77,14 @@
                     </td>
                     <td class="text-end">
                         <button class="btn btn-sm btn-link text-info p-0 text-decoration-none me-3" data-braucht="tenantmap:write"
-                            data-tooltip="Edit Mapping" aria-label="Edit mapping" data-m-id="{{ m.id }}" data-m-tenant="{{ m.tenant_value }}"
+                            data-tooltip="Edit Mapping" aria-label="Edit mapping" data-m-id="{{ m.id }}"
+                            data-m-tenants="{{ m.tenant_values|tojson|forceescape }}"
                             data-m-company="{{ m.company_id }}" data-m-desc="{{ m.description or '' }}"
                             onclick="openEditModal(this)">
                             <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pencil-square"></use></svg>
                         </button>
                         <form action="{{ url_for('main.delete_mapping', mapping_id=m.id) }}" method="POST" class="d-inline"
-                            onsubmit="return confirm('Delete mapping for {{ m.tenant_value }}?')">
+                            onsubmit="return confirm('Delete this mapping and all of its tenant values?')">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" data-braucht="tenantmap:write"
                                 data-tooltip="Delete Mapping" aria-label="Delete mapping">
@@ -120,13 +125,13 @@
             <form action="{{ url_for('main.add_mapping') }}" method="POST" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label for="add_tenant_value" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
-                        <input type="text" id="add_tenant_value" name="tenant_value"
+                        <label for="add_tenant_values" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Values</label>
+                        <textarea id="add_tenant_values" name="tenant_values" rows="6"
                             class="form-control bg-dark border-secondary text-light"
-                            placeholder="e.g. example.com or 6a1b05..." maxlength="255"
-                            aria-describedby="add_tenant_value_hint" required>
-                        <div class="form-text text-secondary small-xs mt-1" id="add_tenant_value_hint">
-                            The value found in the payload that identifies the tenant.
+                            placeholder="example.com&#10;example.onmicrosoft.com&#10;*.example.net"
+                            aria-describedby="add_tenant_values_hint" required></textarea>
+                        <div class="form-text text-secondary small-xs mt-1" id="add_tenant_values_hint">
+                            One domain, tenant ID, name, or wildcard per line. Up to 50 values.
                         </div>
                     </div>
                     <div class="mb-3">
@@ -161,9 +166,13 @@
             <form id="editMappingForm" method="POST" action="{{ url_for('main.edit_mapping', mapping_id='0') }}" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label for="edit_tenant_value" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Value</label>
-                        <input type="text" id="edit_tenant_value" name="tenant_value"
-                            class="form-control bg-dark border-secondary text-light" maxlength="255" required>
+                        <label for="edit_tenant_values" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">Tenant Values</label>
+                        <textarea id="edit_tenant_values" name="tenant_values" rows="6"
+                            class="form-control bg-dark border-secondary text-light"
+                            aria-describedby="edit_tenant_values_hint" required></textarea>
+                        <div class="form-text text-secondary small-xs mt-1" id="edit_tenant_values_hint">
+                            One domain, tenant ID, name, or wildcard per line. Up to 50 values.
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label for="edit_company_id" class="small text-secondary fw-bold text-uppercase ls-1 mb-2">CW Company ID</label>
@@ -188,23 +197,23 @@
     /** Populate and open the edit dialog for the selected tenant mapping. */
     function openEditModal(btn) {
         const id = btn.getAttribute('data-m-id');
-        const tenant = btn.getAttribute('data-m-tenant');
+        const tenants = JSON.parse(btn.getAttribute('data-m-tenants') || '[]');
         const company = btn.getAttribute('data-m-company');
         const desc = btn.getAttribute('data-m-desc');
 
         document.getElementById('editMappingForm').setAttribute('action', `/tenantmap/edit/${encodeURIComponent(id)}`);
-        document.getElementById('edit_tenant_value').value = tenant;
+        document.getElementById('edit_tenant_values').value = tenants.join('\n');
         document.getElementById('edit_company_id').value = company;
         document.getElementById('edit_description').value = desc;
         bootstrap.Modal.getOrCreateInstance(document.getElementById('editMappingModal')).show();
     }
 
     document.getElementById('addMappingModal')?.addEventListener('shown.bs.modal', () => {
-        document.getElementById('add_tenant_value')?.focus();
+        document.getElementById('add_tenant_values')?.focus();
     });
 
     document.getElementById('editMappingModal')?.addEventListener('shown.bs.modal', () => {
-        document.getElementById('edit_tenant_value')?.focus();
+        document.getElementById('edit_tenant_values')?.focus();
     });
 
     function runOnLoad() {

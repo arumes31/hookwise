@@ -238,11 +238,6 @@ body {
         overflow-x:clip;
     }
     .hw-topbar { display:flex; }
-    .hw-topbar, #main-content, body > .footer {
-        transform:translate3d(var(--rail-page-shift), 0, 0);
-        transition:transform var(--rail-motion-duration) var(--rail-motion-ease) var(--rail-motion-delay);
-    }
-
     /* The navbar becomes the rail. Markup is unchanged; only layout moves. */
     .navbar {
         position:fixed !important; inset:0 auto 0 0;
@@ -749,6 +744,26 @@ code { color:var(--accent); }
    Bloecke mit je 16px Aussenabstand. */
 #endpoint-dashboard > .mb-3:has(#check-all) { margin-bottom:var(--s-2) !important; }
 #endpoint-count, .endpoint-count { margin-bottom:var(--s-1) !important; }
+
+/* Selection actions float above the endpoint list instead of inserting a new
+   document row and moving the table whenever a checkbox changes state. */
+#bulk-controls.hw-bulk-bar {
+    position:fixed; inset-inline:calc(var(--rail-w) + var(--s-3)) var(--s-3);
+    bottom:max(var(--s-3), env(safe-area-inset-bottom)); z-index:1032;
+    min-height:60px; margin:0; padding:var(--s-2) var(--s-3);
+    gap:var(--s-3); border-radius:var(--radius-lg);
+    background:var(--bg-raised); box-shadow:var(--shadow-2);
+}
+.hw-bulk-actions { align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+.hw-bulk-board { width:150px; }
+.hw-bulk-priority { width:130px; }
+@media (max-width: 991.98px) {
+    #bulk-controls.hw-bulk-bar {
+        inset-inline:var(--s-2); flex-direction:column; align-items:stretch !important;
+        max-height:min(50vh, 320px); overflow:auto;
+    }
+    .hw-bulk-actions { justify-content:flex-start; }
+}
 
 
 
@@ -1953,7 +1968,6 @@ code, pre, .font-monospace, kbd, samp {
         --rail-motion-ease:cubic-bezier(.4,0,.2,1);
         --rail-panel-shift:-144px;
         --rail-inner-shift:144px;
-        --rail-page-shift:0px;
         --rail-link-clip:144px;
     }
     :root:has(.navbar:hover, .navbar:focus-within) {
@@ -1961,7 +1975,6 @@ code, pre, .font-monospace, kbd, samp {
         --rail-motion-delay:100ms;
         --rail-panel-shift:0px;
         --rail-inner-shift:0px;
-        --rail-page-shift:144px;
         --rail-link-clip:0px;
     }
 }
@@ -2208,7 +2221,6 @@ input[type="password"]::-ms-clear { display:none; }
    angeforderte Zustandsbewegung und behaelt deshalb ihre eigene Dauer; alle
    anderen Animationen bleiben durch die globale Regel oben reduziert. */
 @media (min-width: 992px) and (prefers-reduced-motion: reduce) {
-    .hw-topbar, #main-content, body > .footer,
     .navbar, .navbar > .container, .navbar-nav .nav-link {
         transition-duration:var(--rail-motion-duration) !important;
     }
@@ -2260,9 +2272,20 @@ input[type="password"]::-ms-clear { display:none; }
 .hw-tenantmap-result-count {
     margin-inline-start:auto; white-space:nowrap; font-variant-numeric:tabular-nums;
 }
+.hw-tenantmap-aliases {
+    display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+    max-width:min(560px, 48vw);
+}
+.hw-tenantmap-alias {
+    display:inline-flex; min-width:0; max-width:100%;
+    padding:3px 7px; border:1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    border-radius:6px; background:color-mix(in srgb, var(--accent) 8%, transparent);
+    color:var(--accent); overflow-wrap:anywhere;
+}
 @media (max-width: 575.98px) {
     .hw-tenantmap-search, .hw-tenantmap-field-filter { flex-basis:100%; max-width:none; }
     .hw-tenantmap-result-count { margin-inline-start:0; }
+    .hw-tenantmap-aliases { max-width:none; }
 }
 
 /* Nr. 20: Hinweis auf die Suffix-Suche; leuchtet auf, sobald sie greift. */

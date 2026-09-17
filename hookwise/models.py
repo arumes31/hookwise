@@ -546,6 +546,7 @@ class AuditLog(Base):
 
 class GlobalMapping(Base):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    mapping_group_id = db.Column(db.String(36), nullable=True, index=True)
     tenant_value = db.Column(db.String(255), nullable=False, unique=True, index=True)
     company_id = db.Column(db.String(50), nullable=False)
     description = db.Column(db.String(255))
@@ -555,8 +556,10 @@ class GlobalMapping(Base):
     )
 
     def to_dict(self) -> Dict[str, Any]:
+        """Serialize one flat tenant alias for workers and backups."""
         return {
             "id": self.id,
+            "mapping_group_id": self.mapping_group_id,
             "tenant_value": self.tenant_value,
             "company_id": self.company_id,
             "description": self.description,

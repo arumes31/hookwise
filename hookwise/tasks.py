@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, cast
 from celery import Celery, Task
 from celery.exceptions import Retry as CeleryRetry
 from prometheus_client import Counter, Histogram
+from redis.exceptions import RedisError
 
 from .client import (
     ConfigurationRequestError,
@@ -35,6 +36,7 @@ from .services.configuration_matching import (
     select_configuration,
 )
 from .services.routing import evaluate_routing
+from .services.tenant_mappings import TENANT_MAPPING_REVISION_KEY
 from .services.ticket_operations import (
     TicketOperationInProgress,
     complete,
@@ -205,6 +207,7 @@ def _add_ticket_note_once(
 
 cw_client = ConnectWiseClient()
 _cached_mappings = None
+_cached_mapping_revision = None
 _last_cache_update = 0.0
 CACHE_REFRESH_INTERVAL = 300  # 5 minutes
 
@@ -406,12 +409,22 @@ def _link_matching_configuration(
 
 
 def get_all_global_mappings() -> list[dict[str, Any]]:
-    """Retrieve all GlobalMapping records as dicts, cached with TTL to avoid N+1 queries."""
-    global _cached_mappings, _last_cache_update
+    """Retrieve flat match records, refreshing on TTL or a committed admin write."""
+    global _cached_mappings, _cached_mapping_revision, _last_cache_update
     now = time.time()
-    if _cached_mappings is None or (now - _last_cache_update) > CACHE_REFRESH_INTERVAL:
+    try:
+        revision = redis_client.get(TENANT_MAPPING_REVISION_KEY)
+    except RedisError:
+        logger.warning("TenantMap cache revision could not be read; retaining TTL fallback", exc_info=True)
+        revision = _cached_mapping_revision
+    if (
+        _cached_mappings is None
+        or revision != _cached_mapping_revision
+        or (now - _last_cache_update) > CACHE_REFRESH_INTERVAL
+    ):
         mappings = GlobalMapping.query.all()
         _cached_mappings = [m.to_dict() for m in mappings]
+        _cached_mapping_revision = revision
         _last_cache_update = now
     return _cached_mappings
 

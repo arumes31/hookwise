@@ -58,6 +58,7 @@ function reinitApp(container) {
     // page initializer succeeding (browser storage may be denied, for example).
     initAutoSave(container);
     mountContentModals(container);
+    initLocalDateTimes(container);
     initSearch(container);
     initBulkActions(container);
     initServiceHealth(container);
@@ -77,14 +78,32 @@ function reinitApp(container) {
     setTimeout(() => initTooltips(container), 500);
 }
 
-/** Move content dialogs out of the transformed application stacking context. */
+/** Keep content dialogs at body level so Bootstrap backdrops and focus agree. */
 function mountContentModals(container) {
-    // The desktop rail animates #main-content with transform, which creates a
-    // stacking context below Bootstrap's body-level backdrop. Keep dialogs at
-    // body level so the visible controls also receive the pointer events.
     if (!container || typeof container.querySelectorAll !== 'function') return;
     container.querySelectorAll('#main-content .modal').forEach(modal => {
         modal.ownerDocument.body.appendChild(modal);
+    });
+}
+
+/** Render UTC timestamps in the browser's local timezone on every page load. */
+function initLocalDateTimes(container = document) {
+    if (!container || typeof container.querySelectorAll !== 'function') return;
+    const timestamps = [...container.querySelectorAll('time.hw-local-datetime[datetime]')];
+    if (container.matches?.('time.hw-local-datetime[datetime]')) timestamps.unshift(container);
+    const localFormatter = new Intl.DateTimeFormat(undefined, {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    });
+    const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time';
+
+    timestamps.forEach(element => {
+        if (element.dataset.localized === 'true') return;
+        const timestamp = new Date(element.dateTime);
+        if (Number.isNaN(timestamp.getTime())) return;
+        element.textContent = localFormatter.format(timestamp);
+        element.title = `${element.dataset.utcLabel || timestamp.toISOString()} · ${timezoneName}`;
+        element.dataset.localized = 'true';
     });
 }
 
@@ -398,7 +417,7 @@ function initTenantMapFilters(container = document) {
 function initBulkActions(container = document) {
     const mainCheck = container.querySelector('#check-all');
     const bulkControls = container.querySelector('#bulk-controls');
-    if (!mainCheck) return;
+    if (!mainCheck || !bulkControls) return;
 
     if (mainCheck.dataset.initBulk) return;
     mainCheck.dataset.initBulk = 'true';
@@ -406,6 +425,9 @@ function initBulkActions(container = document) {
     const updateControls = () => {
         const checked = document.querySelectorAll('.endpoint-check:checked').length;
         bulkControls.classList.toggle('d-none', checked === 0);
+        bulkControls.setAttribute('aria-hidden', checked === 0 ? 'true' : 'false');
+        const count = bulkControls.querySelector('#bulk-selection-count');
+        if (count) count.textContent = `${checked} selected`;
     };
 
     mainCheck.addEventListener('change', () => {
@@ -416,6 +438,14 @@ function initBulkActions(container = document) {
     document.querySelectorAll('.endpoint-check').forEach(c => {
         c.addEventListener('change', updateControls);
     });
+    bulkControls.querySelector('#clear-endpoint-selection')?.addEventListener('click', () => {
+        mainCheck.checked = false;
+        document.querySelectorAll('.endpoint-check, .hw-zeilencheck').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        updateControls();
+    });
+    updateControls();
 }
 
 // Service Health Monitoring

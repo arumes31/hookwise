@@ -82,22 +82,24 @@
 </div>
 
 <div id="bulk-controls"
-    class="alert alert-dark border-secondary d-none mb-4 d-flex justify-content-between align-items-center py-2">
-    <span class="small text-secondary fw-bold">SELECTED ACTIONS</span>
-    <div class="d-flex gap-2">
+    class="hw-bulk-bar d-none d-flex justify-content-between align-items-center" role="region"
+    aria-label="Actions for selected endpoints" aria-hidden="true">
+    <span id="bulk-selection-count" class="small text-secondary fw-bold" aria-live="polite">0 selected</span>
+    <div class="hw-bulk-actions d-flex gap-2">
         {# Nr. 11: Board/Prioritaet fuer die Auswahl setzen. Die Datalist wird
            beim Laden aus den vorhandenen Karten gefuellt. #}
-        <input list="hw-boards" id="hw-bulk-board" class="form-control form-control-sm bg-dark border-secondary text-white"
-               style="width:150px" placeholder="Set board&hellip;" aria-label="Set board for selected endpoints">
+        <input list="hw-boards" id="hw-bulk-board" class="form-control form-control-sm bg-dark border-secondary text-white hw-bulk-board"
+               placeholder="Set board&hellip;" aria-label="Set board for selected endpoints">
         <datalist id="hw-boards"></datalist>
-        <input id="hw-bulk-prio" class="form-control form-control-sm bg-dark border-secondary text-white"
-               style="width:130px" placeholder="Priority&hellip;" aria-label="Set priority for selected endpoints">
+        <input id="hw-bulk-prio" class="form-control form-control-sm bg-dark border-secondary text-white hw-bulk-priority"
+               placeholder="Priority&hellip;" aria-label="Set priority for selected endpoints">
         <button class="btn btn-sm btn-outline-primary" data-braucht="endpoint:write" onclick="bulkFieldUpdate()">Apply</button>
         <span class="vr opacity-25"></span>
         <button class="btn btn-sm btn-outline-warning" data-braucht="endpoint:archive" onclick="bulkArchive()">Archive Selected</button>
         <button class="btn btn-sm btn-outline-warning" data-braucht="endpoint:write" onclick="bulkPause()">Pause Selected</button>
         <button class="btn btn-sm btn-outline-success" data-braucht="endpoint:write" onclick="bulkResume()">Resume Selected</button>
         <button class="btn btn-sm btn-outline-info" onclick="bulkExport()">Export Selected</button>
+        <button id="clear-endpoint-selection" type="button" class="btn btn-sm btn-dark text-secondary">Clear</button>
     </div>
 </div>
 

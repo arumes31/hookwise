@@ -1,4 +1,5 @@
 import re
+from unittest.mock import patch
 
 import pytest
 
@@ -21,6 +22,13 @@ def client(app):
         yield app.test_client()
         db.session.remove()
         db.drop_all()
+
+
+@pytest.fixture(autouse=True)
+def disable_mapping_cache_revision():
+    """Keep route tests independent from a running Redis service."""
+    with patch("hookwise.tenantmap.bump_mapping_cache_revision"):
+        yield
 
 
 def _authenticate(client):
@@ -56,8 +64,8 @@ def test_tenantmap_forms_use_interactive_bootstrap_modal_structure(client, app):
             html,
             re.DOTALL,
         )
-    assert 'label for="add_tenant_value"' in html
-    assert 'label for="edit_tenant_value"' in html
+    assert 'label for="add_tenant_values"' in html
+    assert 'label for="edit_tenant_values"' in html
     assert 'id="tenantmap-search"' in html
     assert 'id="tenantmap-field-filter"' in html
     assert 'id="tenantmap-result-count"' in html
@@ -112,3 +120,90 @@ def test_tenantmap_create_and_edit_persist(client, app):
         assert mapping.tenant_value == "renamed.example"
         assert mapping.company_id == "COMPANY-2"
         assert mapping.description == "Updated mapping"
+
+
+def test_tenantmap_group_create_edit_and_delete_are_atomic(client, app):
+    """Manage several aliases as one row while retaining flat match records."""
+    _authenticate(client)
+    created = client.post(
+        "/tenantmap/add",
+        data={
+            "tenant_values": "alpha.example\nalpha.onmicrosoft.com\n*.alpha.example\nalpha.example",
+            "company_id": "ALPHA",
+            "description": "Alpha group",
+        },
+    )
+    assert created.status_code == 302
+
+    with app.app_context():
+        rows = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
+        assert [row.tenant_value for row in rows] == ["*.alpha.example", "alpha.example", "alpha.onmicrosoft.com"]
+        assert len({row.mapping_group_id for row in rows}) == 1
+        group_id = rows[0].mapping_group_id
+        assert group_id is not None
+        assert any(row.id == group_id for row in rows)
+
+    page = client.get("/tenantmap").get_data(as_text=True)
+    assert page.count('class="hw-tenantmap-row"') == 1
+    rendered_aliases = set(re.findall(r'<code class="hw-tenantmap-alias">([^<]+)</code>', page))
+    assert rendered_aliases == {"*.alpha.example", "alpha.example", "alpha.onmicrosoft.com"}
+
+    updated = client.post(
+        f"/tenantmap/edit/{group_id}",
+        data={
+            "tenant_values": "alpha.example\nnew.alpha.example",
+            "company_id": "ALPHA-NEW",
+            "description": "Updated group",
+        },
+    )
+    assert updated.status_code == 302
+
+    with app.app_context():
+        rows = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
+        assert [row.tenant_value for row in rows] == ["alpha.example", "new.alpha.example"]
+        assert {row.mapping_group_id for row in rows} == {group_id}
+        assert {row.company_id for row in rows} == {"ALPHA-NEW"}
+        assert {row.description for row in rows} == {"Updated group"}
+
+    deleted = client.post(f"/tenantmap/delete/{group_id}")
+    assert deleted.status_code == 302
+    with app.app_context():
+        assert GlobalMapping.query.count() == 0
+
+
+def test_tenantmap_duplicate_alias_rejects_the_complete_group(client, app):
+    """Do not partially create a group when any alias already belongs elsewhere."""
+    _authenticate(client)
+    first = client.post(
+        "/tenantmap/add",
+        data={"tenant_values": "shared.example", "company_id": "FIRST"},
+    )
+    second = client.post(
+        "/tenantmap/add",
+        data={"tenant_values": "free.example\nshared.example", "company_id": "SECOND"},
+        follow_redirects=True,
+    )
+
+    assert first.status_code == 302
+    assert second.status_code == 200
+    assert b"Tenant value already mapped: shared.example." in second.data
+    with app.app_context():
+        assert [row.tenant_value for row in GlobalMapping.query.all()] == ["shared.example"]
+
+
+def test_tenantmap_worker_cache_refreshes_when_revision_changes(client, app):
+    """Refresh worker aliases immediately after the Redis revision advances."""
+    from hookwise import tasks
+
+    with app.app_context(), patch.object(tasks.redis_client, "get", side_effect=[b"1", b"1", b"2"]):
+        tasks._cached_mappings = None
+        tasks._cached_mapping_revision = None
+        tasks._last_cache_update = 0.0
+        db.session.add(GlobalMapping(tenant_value="first.example", company_id="FIRST"))
+        db.session.commit()
+        assert len(tasks.get_all_global_mappings()) == 1
+
+        db.session.add(GlobalMapping(tenant_value="second.example", company_id="SECOND"))
+        db.session.commit()
+        assert len(tasks.get_all_global_mappings()) == 1
+        assert len(tasks.get_all_global_mappings()) == 2
