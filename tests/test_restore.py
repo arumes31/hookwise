@@ -7,7 +7,7 @@ import pytest
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import GlobalMapping, WebhookConfig
-from hookwise.services.backups import parse_backup
+from hookwise.services.backups import parse_backup, restore_backup
 
 
 @pytest.fixture
@@ -208,6 +208,36 @@ def test_tenant_mapping_groups_round_trip_through_v2_backup(client, app):
         restored = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
         assert [row.tenant_value for row in restored] == ["group.example", "group.onmicrosoft.com"]
         assert {row.mapping_group_id for row in restored} == {group_id}
+
+
+def test_null_tenant_mapping_group_restore_clears_existing_group(app, client):
+    """Treat a restored null group ID as an explicit ungrouped value."""
+    with app.app_context():
+        mapping = GlobalMapping(
+            mapping_group_id="current-group",
+            tenant_value="legacy.example",
+            company_id="CURRENT",
+        )
+        db.session.add(mapping)
+        db.session.commit()
+
+        with patch("hookwise.services.backups.bump_mapping_cache_revision"):
+            restore_backup(
+                {
+                    "configs": [],
+                    "global_mappings": [
+                        {
+                            "tenant_value": "legacy.example",
+                            "company_id": "RESTORED",
+                            "mapping_group_id": None,
+                        }
+                    ],
+                }
+            )
+
+        db.session.refresh(mapping)
+        assert mapping.mapping_group_id is None
+        assert mapping.company_id == "RESTORED"
 
 
 def test_configuration_auto_link_setting_round_trips_through_backup(client, app):

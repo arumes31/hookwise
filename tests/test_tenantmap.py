@@ -145,8 +145,8 @@ def test_tenantmap_group_create_edit_and_delete_are_atomic(client, app):
 
     page = client.get("/tenantmap").get_data(as_text=True)
     assert page.count('class="hw-tenantmap-row"') == 1
-    assert "alpha.onmicrosoft.com" in page
-    assert "*.alpha.example" in page
+    rendered_aliases = set(re.findall(r'<code class="hw-tenantmap-alias">([^<]+)</code>', page))
+    assert rendered_aliases == {"*.alpha.example", "alpha.example", "alpha.onmicrosoft.com"}
 
     updated = client.post(
         f"/tenantmap/edit/{group_id}",

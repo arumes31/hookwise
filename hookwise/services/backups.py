@@ -225,7 +225,7 @@ def restore_backup(document: dict[str, Any]) -> int:
         if mapping_group_id is not None:
             if not isinstance(mapping_group_id, str) or not mapping_group_id or len(mapping_group_id) > 36:
                 raise BackupValidationError("Global mapping group id is invalid")
-            row.mapping_group_id = mapping_group_id
+        row.mapping_group_id = mapping_group_id
         row.company_id = company
         row.description = str(mapping.get("description") or "")[:255] or None
         db.session.add(row)
