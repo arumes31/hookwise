@@ -295,6 +295,9 @@ def register_entra_routes(main_bp: Blueprint) -> None:
         from .auth import anmeldung_abschliessen
 
         anmeldung_abschliessen(nutzer)
+        from .user_sessions import start_user_session
+
+        start_user_session(nutzer)
         log_audit(
             "entra_login",
             None,

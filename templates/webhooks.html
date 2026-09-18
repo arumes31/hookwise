@@ -9,10 +9,13 @@
    damit alle Skripte und Tests weiter greifen. #}
 <div id="endpoint-dashboard">
 <div id="endpoint-list" class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center gap-3 mb-4 scroll-target">
-    <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
-    {% if debug_mode %}
-    <span class="badge bg-danger ms-3">DEBUG MODE ACTIVE</span>
-    {% endif %}
+    <div class="hw-page-heading">
+        <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
+        <p>Live routing and delivery control</p>
+        {% if debug_mode %}
+        <span class="badge bg-danger hw-debug-badge" title="Development mode: a temporary session key is allowed when SECRET_KEY is missing, and webhook replay skips its confirmation prompt.">DEBUG MODE ACTIVE</span>
+        {% endif %}
+    </div>
     <div class="d-flex flex-wrap gap-2 endpoint-toolbar">
         <select id="board-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
             style="width: 150px;" aria-label="Filter endpoints by board">
@@ -71,6 +74,40 @@
         </a>
     </div>
 </div>
+
+{% set hw_signal = namespace(active=0, processed=0, failed=0, skipped=0) %}
+{% for config in configs %}
+    {% if config.is_enabled and not config.is_draft %}{% set hw_signal.active = hw_signal.active + 1 %}{% endif %}
+    {% set hw_counts = counts.get(config.id, {}) %}
+    {% set hw_signal.processed = hw_signal.processed + hw_counts.get('processed', 0) %}
+    {% set hw_signal.failed = hw_signal.failed + hw_counts.get('failed', 0) %}
+    {% set hw_signal.skipped = hw_signal.skipped + hw_counts.get('skipped', 0) %}
+{% endfor %}
+{% set hw_live_total = configs|rejectattr('is_draft')|list|length %}
+{% set hw_total = hw_signal.processed + hw_signal.failed + hw_signal.skipped %}
+{% set hw_success_rate = (((hw_signal.processed + hw_signal.skipped) / hw_total * 100) | round(1)) if hw_total else 0 %}
+<section class="hw-signal-band" aria-label="Endpoint delivery summary">
+    <div class="hw-signal-metric">
+        <span>Active endpoints</span>
+        <strong>{{ hw_signal.active }} / {{ hw_live_total }}</strong>
+        <small>{{ hw_live_total - hw_signal.active }} paused</small>
+    </div>
+    <div class="hw-signal-metric">
+        <span>Processed 24h</span>
+        <strong>{{ hw_signal.processed }}</strong>
+        <small>delivered successfully</small>
+    </div>
+    <div class="hw-signal-metric{% if hw_signal.failed %} is-critical{% endif %}">
+        <span>Failed 24h</span>
+        <strong>{{ hw_signal.failed }}</strong>
+        <small>{{ ((hw_signal.failed / hw_total * 100) | round(1)) if hw_total else 0 }}% of deliveries</small>
+    </div>
+    <div class="hw-signal-metric">
+        <span>Success rate 24h</span>
+        <strong>{{ hw_success_rate }}%</strong>
+        <small>{{ hw_signal.skipped }} skipped</small>
+    </div>
+</section>
 
 <div class="endpoint-filter-status mb-3" aria-live="polite">
     <span id="endpoint-result-count" class="text-secondary small">Loading endpoints…</span>
@@ -161,8 +198,9 @@
 
 </div>
 
-
-<div class="mb-3 d-flex justify-content-between align-items-center">
+<div class="hw-endpoint-table-stage">
+<div class="hw-endpoint-table-main">
+<div class="mb-3 d-flex justify-content-between align-items-center hw-view-controls">
     <div class="form-check">
         <input class="form-check-input" type="checkbox" id="check-all">
         <label class="form-check-label small text-secondary fw-bold" for="check-all">SELECT ALL</label>
@@ -198,6 +236,19 @@
             <tbody id="hw-endpoint-tabelle-body"></tbody>
         </table>
     </div>
+</div>
+</div>
+<aside class="hw-recent-deliveries" aria-labelledby="hw-recent-deliveries-title">
+    <div class="hw-recent-deliveries-head">
+        <h2 id="hw-recent-deliveries-title">Recent Deliveries</h2>
+        <a href="{{ url_for('main.history') }}">View all</a>
+    </div>
+    <div id="hw-recent-deliveries-list" class="hw-recent-deliveries-list" aria-live="polite" aria-busy="true">
+        {% for i in range(6) %}
+        <div class="hw-delivery-skeleton" aria-hidden="true"></div>
+        {% endfor %}
+    </div>
+</aside>
 </div>
 
 <div class="row" id="endpoint-grid">
@@ -1072,11 +1123,17 @@
                     const zeile = knopf.closest('tr');
                     if (knopf.getAttribute('aria-expanded') === 'true') {
                         knopf.setAttribute('aria-expanded', 'false');
-                        const alteZeile = zeile.nextElementSibling;
-                        if (alteZeile && alteZeile.classList.contains('hw-tabdetail')) alteZeile.remove();
+                        zeile.classList.remove('is-selected');
+                        koerper.querySelector('.hw-tabdetail')?.remove();
                         return;
                     }
+                    koerper.querySelectorAll('.hw-rowtoggle[aria-expanded="true"]').forEach(toggle => {
+                        toggle.setAttribute('aria-expanded', 'false');
+                        toggle.closest('tr')?.classList.remove('is-selected');
+                    });
+                    koerper.querySelector('.hw-tabdetail')?.remove();
                     knopf.setAttribute('aria-expanded', 'true');
+                    zeile.classList.add('is-selected');
                     const karte = document.querySelector(
                         '.endpoint-card[data-id="' + CSS.escape(knopf.dataset.kid || '') + '"]');
                     const det = document.createElement('tr');
@@ -1086,6 +1143,34 @@
                     const innen = document.createElement('div');
                     innen.className = 'hw-tabdetail-inner';
                     if (karte) {
+                        const signalPath = document.createElement('div');
+                        signalPath.className = 'hw-signal-path';
+                        const signalNode = (label, value) => {
+                            const node = document.createElement('div');
+                            node.className = 'hw-signal-node';
+                            const caption = document.createElement('span');
+                            caption.textContent = label;
+                            const content = document.createElement('strong');
+                            content.textContent = value;
+                            node.append(caption, content);
+                            return node;
+                        };
+                        const signalArrow = () => {
+                            const arrow = document.createElement('span');
+                            arrow.className = 'hw-signal-arrow';
+                            arrow.setAttribute('aria-hidden', 'true');
+                            arrow.textContent = '→';
+                            return arrow;
+                        };
+                        const sourceName = (karte.dataset.name || 'Webhook').split(' - ')[0];
+                        signalPath.append(
+                            signalNode('Source', sourceName),
+                            signalArrow(),
+                            signalNode('Route', karte.dataset.board || 'Default'),
+                            signalArrow(),
+                            signalNode('ConnectWise', 'Create / update ticket'),
+                        );
+                        innen.appendChild(signalPath);
                         const url = karte.querySelector('.copyable-field');
                         if (url) innen.appendChild(url.cloneNode(true));
                         const tele = karte.querySelector('.endpoint-summary-grid');
@@ -1093,7 +1178,7 @@
                     }
                     zelle.appendChild(innen);
                     det.appendChild(zelle);
-                    zeile.after(det);
+                    koerper.appendChild(det);
                 });
             }
         };

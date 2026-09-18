@@ -9,12 +9,12 @@ from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Dict, Tuple, cast
 
-from flask import Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from sqlalchemy.orm import joinedload
 
 from .extensions import csrf, db, limiter
-from .models import AuditLog, User, WebhookConfig, WebhookLog
+from .models import AuditLog, WebhookConfig, WebhookLog
 from .services.delivery_queue import commit_and_dispatch, stage_delivery
 from .services.routing import routing_regex_matches
 from .tasks import celery, cw_client, process_webhook_task, redis_client
@@ -754,14 +754,12 @@ def _register() -> None:
         )
         api_key = redis_client.get("hookwise_master_api_key")
         api_key = cast(bytes, api_key).decode() if api_key else "Not Generated"
-        user = User.query.get(session["user_id"])
         return render_template(
             "settings.html",
             log_retention_days=retention,
             master_api_key=api_key,
             health_webhook=health_webhook,
             cipp_app_certificate_exclude_names=cipp_app_certificate_exclude_names,
-            user_2fa_enabled=user.is_2fa_enabled,
         )
 
     @auth_required

@@ -14,6 +14,23 @@ from hookwise.rbac.routes import ENDPUNKT_RECHTE
 from hookwise.rbac.schema_bridge import seed_builtin_roles
 
 
+@pytest.fixture(autouse=True)
+def isolate_connectwise_lookups(monkeypatch):
+    """Keep the route matrix deterministic and independent of a live PSA."""
+    from hookwise import api
+
+    for method_name in (
+        "get_boards",
+        "get_priorities",
+        "get_board_statuses",
+        "get_board_types",
+        "get_board_subtypes",
+        "get_board_items",
+        "get_companies",
+    ):
+        monkeypatch.setattr(api.cw_client, method_name, lambda *args, **kwargs: [])
+
+
 def _app(modus):
     app = create_app()
     app.config["TESTING"] = True

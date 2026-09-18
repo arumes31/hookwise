@@ -108,7 +108,15 @@ def auth_required(f: Any) -> Any:
 
         # 2. Session Check (Primary for GUI)
         if "user_id" in session:
-            return f(*args, **kwargs)
+            from .user_sessions import ensure_user_session
+
+            if ensure_user_session():
+                return f(*args, **kwargs)
+            session.clear()
+            accepts_json = request.accept_mimetypes.best == "application/json"
+            if request.path.startswith("/api/") or request.headers.get("Sec-Fetch-Dest") == "empty" or accepts_json:
+                return jsonify({"status": "error", "message": "Session has ended"}), 401
+            return redirect(url_for("main.login"))
 
         # 3. Basic Auth Check (Fallback for API/Headless)
         auth = request.authorization
@@ -134,6 +142,9 @@ def auth_required(f: Any) -> Any:
                 from .rbac.resolver import sitzung_setzen
 
                 sitzung_setzen(user)
+                from .user_sessions import start_user_session
+
+                start_user_session(user)
                 return f(*args, **kwargs)
             else:
                 # Client sent invalid Basic Auth credentials

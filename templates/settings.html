@@ -3,7 +3,13 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-10 col-xl-8">
-        <h1 class="accent-gradient fw-bold mb-4">System Settings</h1>
+        <div class="hw-settings-heading">
+            <div>
+                <h1>System settings</h1>
+                <p>Configure shared retention, integrations, backups, and operational controls.</p>
+            </div>
+            <a class="btn btn-outline-secondary" href="{{ url_for('main.account_settings') }}">Account settings</a>
+        </div>
         {% if not hw_kann('settings:write') %}
         <div class="alert alert-info small">Read-only &mdash; changing system settings requires
             <code>settings:write</code>. Ask an administrator for changes.</div>
@@ -201,69 +207,6 @@
             </div>
         </div>
 
-        <!-- Security (2FA & Session) -->
-        <div class="row g-4 mb-5">
-            <div class="col-md-6">
-                <div class="glass-card h-100 anime-slide-up" style="animation-delay: 0.4s;">
-                    <div class="card-body p-4 d-flex flex-column justify-content-between h-100">
-                        <div>
-                            <div class="d-flex align-items-center mb-3">
-                                <div class="bg-success bg-opacity-10 rounded p-2 me-3">
-                                    <svg class="hw-icon text-success fa-lg" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>
-                                </div>
-                                <h3 class="h5 fw-bold text-light mb-0">Two-Factor Auth</h3>
-                            </div>
-                            <p class="text-secondary small">Status:
-                                {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
-                                <span
-                                    class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-25">ENABLED</span>
-                                {% else %}
-                                <span
-                                    class="badge bg-secondary bg-opacity-20 text-white border border-secondary border-opacity-25">DISABLED</span>
-                                {% endif %}
-                            </p>
-                        </div>
-                        <div class="mt-3">
-                            {% if session.get('is_2fa_enabled') or user_2fa_enabled %}
-                            <form id="disable-2fa-form" action="{{ url_for('main.disable_2fa') }}" method="POST">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                                <button type="button" class="btn btn-outline-danger w-100"
-                                    onclick="confirmDisable2FA()">Disable 2FA</button>
-                            </form>
-                            {% else %}
-                            <a href="{{ url_for('main.setup_2fa') }}" class="btn btn-primary w-100">Set Up 2FA</a>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="glass-card h-100 anime-slide-up" style="animation-delay: 0.5s;">
-                    <div class="card-body p-4 d-flex flex-column justify-content-between h-100">
-                        <div>
-                            <div class="d-flex align-items-center mb-3">
-                                <div class="bg-primary bg-opacity-10 rounded p-2 me-3">
-                                    <svg class="hw-icon text-primary fa-lg" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>
-                                </div>
-                                <h3 class="h5 fw-bold text-light mb-0">Active Session</h3>
-                            </div>
-                            <div
-                                class="d-flex align-items-center justify-content-between bg-dark bg-opacity-50 p-2 rounded">
-                                <span class="text-light fw-bold">{{ session.username }}</span>
-                                <span class="badge bg-info text-dark">{{ session.role }}</span>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <a href="{{ url_for('main.logout') }}"
-                                class="btn btn-outline-secondary w-100 text-light border-secondary">
-                                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>Sign Out
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Danger Zone -->
         <div class="glass-card border-danger border-opacity-25 anime-slide-up" style="animation-delay: 0.6s;"
             data-braucht="history:delete">
@@ -343,12 +286,6 @@
                 showToast('Failed: ' + (data.message || data.error || 'unknown error'), 'danger');
             }
         } catch (e) { showToast('Error deleting logs: ' + e.message, 'danger'); }
-    }
-
-    async function confirmDisable2FA() {
-        if (await hwConfirm('Disable 2FA? This will reduce your account security.', { title: 'Security Warning', okText: 'Disable' })) {
-            document.getElementById('disable-2fa-form').submit();
-        }
     }
 
     async function clearCache() {

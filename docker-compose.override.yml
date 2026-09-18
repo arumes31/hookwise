@@ -62,7 +62,9 @@ services:
       # - "LOG_RETENTION_DAYS=30"
 
       # ── Debug ───────────────────────────────────────────────────────────────
-      # Enable verbose Flask debug mode. NEVER use in production.
+      # Enable HookWise development conveniences. This does not enable Flask's
+      # interactive debugger; it allows a temporary SECRET_KEY and skips the
+      # webhook replay confirmation. NEVER use in production.
       # - "DEBUG_MODE=false"
 
   hookwise-worker:

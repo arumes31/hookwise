@@ -1,0 +1,157 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="hw-settings-page">
+    <header class="hw-settings-heading">
+        <div>
+            <h1>Account settings</h1>
+            <p>Manage how you sign in and review the browsers currently connected to your account.</p>
+        </div>
+        {% if hw_kann('settings:read') %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('main.settings') }}">
+            System settings
+        </a>
+        {% endif %}
+    </header>
+
+    <section class="hw-account-identity" aria-labelledby="account-identity-title">
+        <div class="hw-account-avatar" aria-hidden="true">{{ (user.username or '??')[:2]|upper }}</div>
+        <div class="hw-account-identity-copy">
+            <h2 id="account-identity-title">{{ user.username }}</h2>
+            <span>{{ user.upn or ('Local HookWise account' if user.quelle == 'local' else 'Microsoft Entra account') }}</span>
+        </div>
+        <span class="badge {{ 'bg-info text-dark' if user.quelle == 'entra' else 'bg-secondary' }}">
+            {{ 'MICROSOFT ENTRA' if user.quelle == 'entra' else 'LOCAL' }}
+        </span>
+    </section>
+
+    <div class="hw-account-grid">
+        <section class="hw-account-panel" aria-labelledby="account-security-title">
+            <div class="hw-account-panel-head">
+                <div>
+                    <h2 id="account-security-title">Sign-in security</h2>
+                    <p>Controls that protect this HookWise account.</p>
+                </div>
+                <svg class="hw-icon" width="20" height="20" aria-hidden="true" focusable="false"><use href="#i-shield-check"></use></svg>
+            </div>
+
+            {% if user.quelle == 'entra' %}
+            <div class="hw-managed-security">
+                <strong>Managed by Microsoft 365</strong>
+                <p>Your password, multifactor authentication methods, and sign-in policy are controlled by your organization in Microsoft Entra. HookWise does not store a local password or 2FA secret for this account.</p>
+                <a class="hw-inline-link" href="https://mysignins.microsoft.com/security-info" rel="noopener noreferrer" target="_blank">
+                    Open Microsoft security info
+                    <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>
+                </a>
+            </div>
+            {% else %}
+            <div class="hw-security-row">
+                <div>
+                    <span class="hw-setting-label">Two-factor authentication</span>
+                    <strong>{{ 'Enabled' if user.is_2fa_enabled else 'Not enabled' }}</strong>
+                    <small>{{ 'Authenticator codes are required after your password.' if user.is_2fa_enabled else 'Add an authenticator app to protect this account.' }}</small>
+                </div>
+                {% if user.is_2fa_enabled %}
+                <form action="{{ url_for('main.disable_2fa') }}" method="POST" id="disable-2fa-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="button" class="btn btn-outline-danger" onclick="confirmDisable2FA()">Disable 2FA</button>
+                </form>
+                {% else %}
+                <a class="btn btn-primary" href="{{ url_for('main.setup_2fa') }}">Set up 2FA</a>
+                {% endif %}
+            </div>
+
+            <form class="hw-password-form" action="{{ url_for('main.change_own_password') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="hw-password-form-head">
+                    <span class="hw-setting-label">Change password</span>
+                    <small>Changing your password also signs out every other browser session.</small>
+                </div>
+                <div class="hw-field-stack">
+                    <label for="current-password">Current password</label>
+                    <input class="form-control" id="current-password" name="current_password" type="password"
+                        autocomplete="current-password" required>
+                </div>
+                <div class="hw-password-columns">
+                    <div class="hw-field-stack">
+                        <label for="new-password">New password</label>
+                        <input class="form-control" id="new-password" name="new_password" type="password"
+                            autocomplete="new-password" minlength="8" required aria-describedby="password-requirement">
+                    </div>
+                    <div class="hw-field-stack">
+                        <label for="confirm-password">Confirm new password</label>
+                        <input class="form-control" id="confirm-password" name="confirm_password" type="password"
+                            autocomplete="new-password" minlength="8" required>
+                    </div>
+                </div>
+                <div class="hw-form-action">
+                    <small id="password-requirement">Use at least 8 characters.</small>
+                    <button class="btn btn-primary" type="submit">Change password</button>
+                </div>
+            </form>
+            {% endif %}
+        </section>
+
+        <section class="hw-account-panel hw-session-panel" aria-labelledby="active-sessions-title">
+            <div class="hw-account-panel-head">
+                <div>
+                    <h2 id="active-sessions-title">Active sessions</h2>
+                    <p>Browsers signed in to your account during the last 30 days.</p>
+                </div>
+                <span class="hw-session-count">{{ active_sessions|length }}</span>
+            </div>
+
+            <div class="hw-session-list">
+                {% for active_session in active_sessions %}
+                <article class="hw-session-row{% if active_session.current %} is-current{% endif %}">
+                    <div class="hw-session-device" aria-hidden="true">
+                        <svg class="hw-icon" width="18" height="18" focusable="false"><use href="#i-desktop"></use></svg>
+                    </div>
+                    <div class="hw-session-copy">
+                        <div class="hw-session-title">
+                            <strong>{{ 'This browser' if active_session.current else 'Browser session' }}</strong>
+                            {% if active_session.current %}<span class="badge bg-info text-dark">CURRENT</span>{% endif %}
+                        </div>
+                        <span class="hw-session-agent" title="{{ active_session.user_agent }}">{{ active_session.user_agent }}</span>
+                        <small>
+                            {{ active_session.ip_address }} · Last active
+                            <time class="hw-local-datetime" datetime="{{ active_session.last_seen_at }}">{{ active_session.last_seen_at }}</time>
+                        </small>
+                    </div>
+                    {% if active_session.current %}
+                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.logout') }}" hx-boost="false">Sign out</a>
+                    {% else %}
+                    <form action="{{ url_for('main.revoke_own_session', session_id=active_session.id) }}" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Sign out</button>
+                    </form>
+                    {% endif %}
+                </article>
+                {% else %}
+                <div class="hw-account-empty">No registered browser sessions are available.</div>
+                {% endfor %}
+            </div>
+
+            {% if active_sessions|rejectattr('current')|list|length %}
+            <form class="hw-session-footer" action="{{ url_for('main.revoke_other_own_sessions') }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger" type="submit">Sign out all other sessions</button>
+            </form>
+            {% endif %}
+        </section>
+    </div>
+</div>
+
+{% if user.quelle == 'local' and user.is_2fa_enabled %}
+<script>
+    function confirmDisable2FA() {
+        hwConfirm('Disable two-factor authentication for this account?', {
+            title: 'Disable two-factor authentication',
+            okText: 'Disable 2FA'
+        }).then(confirmed => {
+            if (confirmed) document.getElementById('disable-2fa-form').submit();
+        });
+    }
+</script>
+{% endif %}
+{% endblock %}

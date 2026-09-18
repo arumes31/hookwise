@@ -351,6 +351,16 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @auth_required
     def user_reset_mfa(user_id: str) -> Any:
         nutzer = User.query.get_or_404(user_id)
+        if nutzer.quelle == "entra":
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Entra accounts manage multifactor authentication in Microsoft 365.",
+                    }
+                ),
+                409,
+            )
         if not nutzer.is_2fa_enabled and not nutzer.otp_secret:
             return jsonify({"status": "error", "message": "No MFA is set up for this account."}), 409
         nutzer.otp_secret = None

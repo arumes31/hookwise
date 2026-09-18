@@ -37,6 +37,10 @@ EIGENE_DATEN: FrozenSet[str] = frozenset(
     {
         "main.setup_2fa",
         "main.disable_2fa",
+        "main.account_settings",
+        "main.change_own_password",
+        "main.revoke_own_session",
+        "main.revoke_other_own_sessions",
         "main.dashboard_preferences",
         "main.saved_history_searches",
         "main.delete_saved_history_search",

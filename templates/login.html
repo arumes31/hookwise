@@ -94,7 +94,11 @@
 </div>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    (() => {
+        const page = document.querySelector('.hw-login-split');
+        if (!page || page.dataset.initialized === 'true') return;
+        page.dataset.initialized = 'true';
+
         // Live terminal feed: new lines append at the bottom in random
         // intervals and push the stream upward; the DOM stays capped.
         const term = document.getElementById('hw-login-term');
@@ -133,7 +137,11 @@
             fuelleSpalte();
             new ResizeObserver(fuelleSpalte).observe(term);
             (function tick() {
-                window.setTimeout(() => { neueZeile(); tick(); }, 600 + Math.random() * 1200);
+                window.setTimeout(() => {
+                    if (!term.isConnected) return;
+                    neueZeile();
+                    tick();
+                }, 600 + Math.random() * 1200);
             })();
         }
 
@@ -164,6 +172,6 @@
                 }
             });
         }
-    });
+    })();
 </script>
 {% endblock %}
