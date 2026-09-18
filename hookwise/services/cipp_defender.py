@@ -58,7 +58,7 @@ def baseline_hours() -> int:
     )
     try:
         return max(1, min(int(raw_value), MAX_BASELINE_HOURS))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return DEFAULT_BASELINE_HOURS
 
 
@@ -166,7 +166,7 @@ def _stored_alert_ids(row: CippDefenderIncidentState | None) -> set[str]:
         return set()
     try:
         values = json.loads(row.seen_alert_ids or "[]")
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return set()
     return {str(value) for value in values} if isinstance(values, list) else set()
 
