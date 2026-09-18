@@ -2,6 +2,13 @@
    Die CSP erlaubt nur 'self'; Google Fonts war dadurch blockiert und die
    Typografie hing von lokal installierten Schriften ab. */
 @font-face {
+    font-family: 'Chivo';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('../fonts/chivo-latin.woff2?v=499c79a165e6') format('woff2');
+}
+@font-face {
     font-family: 'Geist';
     font-style: normal;
     font-weight: 100 900;
@@ -52,7 +59,7 @@
 
     --radius-sm:3px; --radius-md:6px; --radius-lg:8px; --radius-pill:999px;
     --font-mono:'JetBrains Mono','Cascadia Code',Consolas,ui-monospace,SFMono-Regular,monospace;
-    --font-head:'Geist','Inter','Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;
+    --font-head:'Chivo','Geist','Inter','Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,sans-serif;
     --rail-w:68px; --topbar-h:58px;
 
     --focus-color:var(--accent); --focus-width:2px;
@@ -2344,7 +2351,7 @@ samp,
     white-space:nowrap;
 }
 .table tbody tr { background:var(--bg-surface); }
-.table-hover > tbody > tr:hover > * { --bs-table-accent-bg:var(--bg-raised); }
+.table-hover > tbody > tr:hover > * { --bs-table-bg-state:var(--bg-raised); }
 .table tbody tr:focus-within { box-shadow:inset 3px 0 var(--accent); }
 
 .badge {

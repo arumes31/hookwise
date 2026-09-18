@@ -226,11 +226,19 @@ def _register_account_routes(bp: Any) -> None:
             flash("Choose a password different from your current password.", "danger")
             return redirect(url_for("main.account_settings"))
 
+        from .user_sessions import SessionRevocationError, revoke_other_sessions
+
+        try:
+            revoked = revoke_other_sessions(str(user.id), str(session.get("session_id") or ""))
+        except SessionRevocationError:
+            flash(
+                "Password was not changed because other sessions could not be signed out. Try again.",
+                "danger",
+            )
+            return redirect(url_for("main.account_settings"))
+
         user.password_hash = generate_password_hash(new_password)
         db.session.commit()
-        from .user_sessions import revoke_other_sessions
-
-        revoked = revoke_other_sessions(str(user.id), str(session.get("session_id") or ""))
         log_audit("user_password_change", None, f"User {user.username} changed their password")
         flash(
             f"Password changed. {revoked} other session{'s' if revoked != 1 else ''} signed out.",
@@ -256,9 +264,13 @@ def _register_account_routes(bp: Any) -> None:
     @bp.route("/settings/account/sessions/revoke-others", methods=["POST"])
     @auth_required
     def revoke_other_own_sessions() -> Any:
-        from .user_sessions import revoke_other_sessions
+        from .user_sessions import SessionRevocationError, revoke_other_sessions
 
-        count = revoke_other_sessions(str(session["user_id"]), str(session.get("session_id") or ""))
+        try:
+            count = revoke_other_sessions(str(session["user_id"]), str(session.get("session_id") or ""))
+        except SessionRevocationError:
+            flash("Other sessions could not be signed out. Try again.", "danger")
+            return redirect(url_for("main.account_settings"))
         log_audit("user_sessions_revoke", None, f"User {session.get('username')} revoked {count} other sessions")
         flash(f"Signed out {count} other session{'s' if count != 1 else ''}.", "success")
         return redirect(url_for("main.account_settings"))

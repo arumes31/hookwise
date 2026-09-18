@@ -140,7 +140,8 @@
             if (errorEl) { errorEl.hidden = false; errorEl.textContent = 'Endpoint telemetry is temporarily unavailable. You can still use endpoint actions.'; }
         } finally { dashboard.classList.remove('is-loading'); delete dashboard.dataset.loading; }
     }
-    function deliveryStatus(level) {
+    function deliveryStatus(status, level) {
+        if (status === 'skipped') return ['SKIPPED', 'is-warning'];
         if (level === 'error') return ['FAILED', 'is-failed'];
         if (level === 'warning') return ['CREATED', 'is-warning'];
         return ['PROCESSED', 'is-processed'];
@@ -189,7 +190,7 @@
                 }
                 source.append(sourceName, outcome);
 
-                const [label, stateClass] = deliveryStatus(delivery.level);
+                const [label, stateClass] = deliveryStatus(delivery.status, delivery.level);
                 const status = document.createElement('span');
                 status.className = `hw-delivery-status ${stateClass}`;
                 status.textContent = label;

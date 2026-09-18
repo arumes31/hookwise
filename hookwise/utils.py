@@ -142,9 +142,6 @@ def auth_required(f: Any) -> Any:
                 from .rbac.resolver import sitzung_setzen
 
                 sitzung_setzen(user)
-                from .user_sessions import start_user_session
-
-                start_user_session(user)
                 return f(*args, **kwargs)
             else:
                 # Client sent invalid Basic Auth credentials

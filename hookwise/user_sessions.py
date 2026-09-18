@@ -14,6 +14,10 @@ _SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
 _TOUCH_INTERVAL_SECONDS = 60
 
 
+class SessionRevocationError(RuntimeError):
+    """Raised when the session registry cannot prove a requested revocation."""
+
+
 def _redis() -> Any:
     """Resolve the shared client lazily so tests can replace it safely."""
     from .extensions import redis_client
@@ -190,13 +194,60 @@ def revoke_user_session(user_id: str, session_id: str) -> bool:
 
 
 def revoke_other_sessions(user_id: str, current_session_id: str) -> int:
-    """Revoke every registered session for a user except the current one."""
-    revoked = 0
-    for record in list_user_sessions(user_id):
-        session_id = str(record.get("id") or "")
-        if session_id and session_id != current_session_id and revoke_user_session(user_id, session_id):
-            revoked += 1
-    return revoked
+    """Revoke and verify every registered session except the current one.
+
+    Unlike the presentation-oriented session listing, this security-sensitive
+    path must surface Redis and decoding failures to its caller.
+    """
+    try:
+        client = _redis()
+        user_key = _user_set_key(user_id)
+        members = client.smembers(user_key) or set()
+        targets: list[str] = []
+        stale: list[str] = []
+
+        for raw_id in members:
+            session_id = _decode(raw_id)
+            if session_id == current_session_id:
+                continue
+            raw = client.get(_session_key(session_id))
+            if raw is None:
+                stale.append(session_id)
+                continue
+            record = json.loads(_decode(raw))
+            if str(record.get("user_id")) != str(user_id):
+                raise SessionRevocationError("Session registry ownership mismatch")
+            targets.append(session_id)
+
+        if not targets and not stale:
+            return 0
+
+        pipeline = client.pipeline()
+        for session_id in stale:
+            pipeline.srem(user_key, session_id)
+        for session_id in targets:
+            pipeline.setex(_revoked_key(session_id), _SESSION_TTL_SECONDS, "1")
+            pipeline.delete(_session_key(session_id))
+            pipeline.srem(user_key, session_id)
+        pipeline.execute()
+
+        remaining = {_decode(raw_id) for raw_id in (client.smembers(user_key) or set())}
+        for session_id in targets:
+            if (
+                client.get(_session_key(session_id)) is not None
+                or not client.get(_revoked_key(session_id))
+                or session_id in remaining
+            ):
+                raise SessionRevocationError("Session revocation could not be verified")
+        if any(session_id in remaining for session_id in stale):
+            raise SessionRevocationError("Stale session registry entries could not be removed")
+        return len(targets)
+    except SessionRevocationError:
+        current_app.logger.exception("Unable to revoke all other user sessions")
+        raise
+    except Exception as exc:
+        current_app.logger.exception("Unable to revoke all other user sessions")
+        raise SessionRevocationError("Session registry is unavailable") from exc
 
 
 def revoke_current_session() -> None:

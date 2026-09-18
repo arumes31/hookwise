@@ -1,5 +1,6 @@
 """Account-security separation and revocable-session regression tests."""
 
+import base64
 from typing import Any
 from unittest.mock import patch
 
@@ -55,8 +56,13 @@ class MemoryRedis:
 
 @pytest.fixture
 def account_app():
-    app = create_app()
-    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:")
+    app = create_app(
+        {
+            "TESTING": True,
+            "WTF_CSRF_ENABLED": False,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        }
+    )
     with app.app_context():
         db.create_all()
         yield app
@@ -173,6 +179,51 @@ def test_password_change_revokes_other_registered_sessions(account_app, account_
     assert session_redis.get(f"hookwise:user-session:{other_id}") is None
     assert session_redis.get(f"hookwise:revoked-session:{other_id}") == "1"
     assert session_redis.get(f"hookwise:user-session:{current_id}") is not None
+
+
+def test_password_change_fails_closed_when_session_revocation_is_unavailable(
+    account_app, account_client, session_redis, monkeypatch
+):
+    user_id = _user(account_app, "password-failure-user")
+    _login(account_client, "password-failure-user")
+
+    def unavailable(_key: str) -> set[str]:
+        raise OSError("Redis unavailable")
+
+    monkeypatch.setattr(session_redis, "smembers", unavailable)
+    response = account_client.post(
+        "/settings/account/password",
+        data={
+            "current_password": "old-password",
+            "new_password": "new-password",
+            "confirm_password": "new-password",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Password was not changed because other sessions could not be signed out" in response.data
+    with account_app.app_context():
+        refreshed = db.session.get(User, user_id)
+        assert refreshed is not None
+        assert check_password_hash(refreshed.password_hash, "old-password")
+        assert not check_password_hash(refreshed.password_hash, "new-password")
+
+
+def test_basic_auth_does_not_register_a_persistent_browser_session(account_app, account_client, session_redis):
+    _user(account_app, "admin")
+    credentials = base64.b64encode(b"admin:test-password").decode("ascii")
+
+    with patch("hookwise.user_sessions.start_user_session") as start_user_session:
+        response = account_client.get(
+            "/api/activity/history",
+            headers={"Authorization": f"Basic {credentials}"},
+        )
+
+    assert response.status_code == 200
+    start_user_session.assert_not_called()
+    with account_client.session_transaction() as browser_session:
+        assert "session_id" not in browser_session
 
 
 def test_revoked_current_session_is_rejected(account_app, account_client, session_redis):

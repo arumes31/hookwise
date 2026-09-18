@@ -219,6 +219,7 @@ def _register() -> None:
                     "timestamp": log.created_at.isoformat(),
                     "message": message,
                     "level": level,
+                    "status": log.status,
                     "config_name": log.config.name if log.config else "System",
                     "payload": payload_data,
                     "ticket_id": log.ticket_id,
