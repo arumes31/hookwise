@@ -1,4 +1,4 @@
-"""CIPP Defender incident correlation and bounded ticket bundling."""
+"""CIPP Defender incident correlation and per-incident ticket state."""
 
 from __future__ import annotations
 
@@ -14,43 +14,52 @@ from typing import Any
 from ..extensions import db
 from ..models import CippDefenderIncidentState
 
-DEFAULT_BUNDLE_HOURS = 48
-MAX_BUNDLE_HOURS = 24 * 30
+DEFAULT_BASELINE_HOURS = 48
+MAX_BASELINE_HOURS = 24 * 30
 _INCIDENT_ID_FIELDS = ("IncidentId", "IncidentID", "incidentId", "incident_id")
 _ALERT_ID_FIELDS = ("AlertId", "AlertID", "alertId", "alert_id")
 _CREATED_FIELDS = ("CreatedAt", "CreatedDateTime", "Created", "FirstActivityDateTime")
 
 
 @dataclass(frozen=True)
-class DefenderIncidentSnapshot:
+class DefenderIncidentChange:
+    """One Defender incident and the durable state needed to route it."""
+
     incident_key: str
+    display_id: str
+    data: dict[str, Any]
     payload_hash: str
     alert_ids: tuple[str, ...]
+    new_alert_ids: tuple[str, ...]
     actionable: bool
+    ticket_id: int | None
+    legacy_bundle: bool = False
 
 
 @dataclass(frozen=True)
 class DefenderIncidentDelta:
-    data: dict[str, Any]
     tenant_key: str
-    bundle_key: str
-    snapshots: tuple[DefenderIncidentSnapshot, ...]
+    incidents: tuple[DefenderIncidentChange, ...]
 
     @property
     def actionable_count(self) -> int:
-        return sum(snapshot.actionable for snapshot in self.snapshots)
+        return sum(incident.actionable for incident in self.incidents)
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def bundle_hours() -> int:
-    raw_value = os.environ.get("CIPP_DEFENDER_BUNDLE_HOURS", str(DEFAULT_BUNDLE_HOURS))
+def baseline_hours() -> int:
+    """Return the first-run history cutoff; it never limits ticket correlation."""
+    raw_value = os.environ.get(
+        "CIPP_DEFENDER_BASELINE_HOURS",
+        os.environ.get("CIPP_DEFENDER_BUNDLE_HOURS", str(DEFAULT_BASELINE_HOURS)),
+    )
     try:
-        return max(1, min(int(raw_value), MAX_BUNDLE_HOURS))
+        return max(1, min(int(raw_value), MAX_BASELINE_HOURS))
     except TypeError, ValueError:
-        return DEFAULT_BUNDLE_HOURS
+        return DEFAULT_BASELINE_HOURS
 
 
 def is_defender_incident_payload(data: dict[str, Any]) -> bool:
@@ -112,6 +121,13 @@ def _incident_key(item: dict[str, Any]) -> str:
     return f"hash:{digest}"
 
 
+def _display_id(incident_key: str) -> str:
+    kind, _, value = incident_key.partition(":")
+    if kind == "hash":
+        return value[:12]
+    return value or incident_key[:24]
+
+
 def _collect_alert_ids(value: Any) -> set[str]:
     found: set[str] = set()
     if isinstance(value, dict):
@@ -127,9 +143,20 @@ def _collect_alert_ids(value: Any) -> set[str]:
     return found
 
 
+def _canonicalize(value: Any) -> Any:
+    """Normalize unordered provider collections before hashing a snapshot."""
+    if isinstance(value, dict):
+        return {key: _canonicalize(nested) for key, nested in sorted(value.items())}
+    if isinstance(value, list):
+        normalized = [_canonicalize(nested) for nested in value]
+        return sorted(normalized, key=lambda nested: json.dumps(nested, sort_keys=True, default=str))
+    return value
+
+
 def _payload_hash(items: list[dict[str, Any]]) -> str:
     canonical_items = sorted(
-        (json.dumps(item, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str) for item in items)
+        json.dumps(_canonicalize(item), sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+        for item in items
     )
     return hashlib.sha256("\n".join(canonical_items).encode("utf-8")).hexdigest()
 
@@ -159,27 +186,19 @@ def _parse_created_at(item: dict[str, Any]) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _bundle_key(now: datetime, hours: int) -> str:
-    window_seconds = hours * 3600
-    window_start = datetime.fromtimestamp((int(now.timestamp()) // window_seconds) * window_seconds, timezone.utc)
-    return window_start.strftime("%Y%m%d-%H%MZ")
-
-
 def prepare_defender_incident_delta(
     config_id: str,
     data: dict[str, Any],
     *,
     now: datetime | None = None,
 ) -> DefenderIncidentDelta | None:
-    """Return only new or changed incidents, while retaining a durable baseline plan."""
+    """Split a CIPP payload into independently actionable Defender incidents."""
     if not is_defender_incident_payload(data):
         return None
 
     current_time = now or _utcnow()
-    hours = bundle_hours()
     tenant = _tenant_key(data)
     raw_results = [item for item in data.get("Results", []) if isinstance(item, dict)]
-
     grouped_items: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in raw_results:
         grouped_items[_incident_key(item)].append(item)
@@ -191,22 +210,24 @@ def prepare_defender_incident_delta(
         tenant_query.filter(CippDefenderIncidentState.incident_key.in_(incident_keys)).all() if incident_keys else []
     )
     existing_by_key = {row.incident_key: row for row in existing_rows}
-    historical_cutoff = current_time - timedelta(hours=hours)
-    actionable_items: list[dict[str, Any]] = []
-    snapshots: list[DefenderIncidentSnapshot] = []
+    historical_cutoff = current_time - timedelta(hours=baseline_hours())
+    incidents: list[DefenderIncidentChange] = []
 
     for incident_key, items in grouped_items.items():
         payload_hash = _payload_hash(items)
         existing = existing_by_key.get(incident_key)
         current_alert_ids = {alert_id for item in items for alert_id in _collect_alert_ids(item)}
         previous_alert_ids = _stored_alert_ids(existing)
-        alert_ids = tuple(sorted(previous_alert_ids | current_alert_ids))
+        legacy_bundle = existing is not None and bool(existing.bundle_key)
         changed = (
-            existing is None or existing.payload_hash != payload_hash or bool(current_alert_ids - previous_alert_ids)
+            existing is None
+            or legacy_bundle
+            or existing.payload_hash != payload_hash
+            or bool(current_alert_ids - previous_alert_ids)
         )
 
-        # On first deployment, seed old incidents without opening dozens of historical tickets.
-        # Missing/unparseable timestamps remain actionable so security data cannot be silently lost.
+        # Seed old incidents on a brand-new installation without opening a backlog.
+        # This cutoff is only for the first delivery and never expires a ticket association.
         created_values = [created for item in items if (created := _parse_created_at(item)) is not None]
         is_historical_baseline = (
             is_initial_delivery
@@ -214,76 +235,77 @@ def prepare_defender_incident_delta(
             and bool(created_values)
             and max(created_values) < historical_cutoff
         )
-        actionable = changed and not is_historical_baseline
-        if actionable:
-            actionable_items.extend(items)
-        snapshots.append(
-            DefenderIncidentSnapshot(
+        incident_data = dict(data)
+        incident_data["Results"] = items
+        incidents.append(
+            DefenderIncidentChange(
                 incident_key=incident_key,
+                display_id=_display_id(incident_key),
+                data=incident_data,
                 payload_hash=payload_hash,
-                alert_ids=alert_ids,
-                actionable=actionable,
+                alert_ids=tuple(sorted(previous_alert_ids | current_alert_ids)),
+                new_alert_ids=tuple(sorted(current_alert_ids - previous_alert_ids)),
+                actionable=changed and not is_historical_baseline,
+                ticket_id=None if legacy_bundle or existing is None else existing.ticket_id,
+                legacy_bundle=legacy_bundle,
             )
         )
 
-    filtered_data = dict(data)
-    filtered_data["Results"] = actionable_items
-    return DefenderIncidentDelta(
-        data=filtered_data,
-        tenant_key=tenant,
-        bundle_key=_bundle_key(current_time, hours),
-        snapshots=tuple(snapshots),
-    )
+    return DefenderIncidentDelta(tenant_key=tenant, incidents=tuple(incidents))
 
 
-def persist_defender_incident_delta(
+def persist_defender_incident(
     config_id: str,
-    delta: DefenderIncidentDelta,
+    tenant_key: str,
+    incident: DefenderIncidentChange,
     *,
     ticket_id: int | None,
     now: datetime | None = None,
 ) -> None:
-    """Apply a prepared delta only after its ConnectWise side effect succeeded."""
+    """Persist one incident after its ConnectWise side effect has succeeded."""
     current_time = now or _utcnow()
-    keys = [snapshot.incident_key for snapshot in delta.snapshots]
-    existing_rows = (
-        CippDefenderIncidentState.query.filter(
-            CippDefenderIncidentState.config_id == config_id,
-            CippDefenderIncidentState.tenant_key == delta.tenant_key,
-            CippDefenderIncidentState.incident_key.in_(keys),
-        ).all()
-        if keys
-        else []
-    )
-    existing_by_key = {row.incident_key: row for row in existing_rows}
+    row = CippDefenderIncidentState.query.filter_by(
+        config_id=config_id,
+        tenant_key=tenant_key,
+        incident_key=incident.incident_key,
+    ).one_or_none()
+    if row is None:
+        row = CippDefenderIncidentState(
+            config_id=config_id,
+            tenant_key=tenant_key,
+            incident_key=incident.incident_key,
+            payload_hash=incident.payload_hash,
+            seen_alert_ids=json.dumps(incident.alert_ids),
+            first_seen_at=current_time,
+            last_seen_at=current_time,
+            last_changed_at=current_time,
+        )
+        db.session.add(row)
+    else:
+        row.last_seen_at = current_time
 
-    for snapshot in delta.snapshots:
-        row = existing_by_key.get(snapshot.incident_key)
-        if row is None:
-            row = CippDefenderIncidentState(
-                config_id=config_id,
-                tenant_key=delta.tenant_key,
-                incident_key=snapshot.incident_key,
-                payload_hash=snapshot.payload_hash,
-                seen_alert_ids=json.dumps(snapshot.alert_ids),
-                first_seen_at=current_time,
-                last_seen_at=current_time,
-                last_changed_at=current_time,
-            )
-            db.session.add(row)
-        else:
-            row.last_seen_at = current_time
-
-        if snapshot.actionable:
-            row.payload_hash = snapshot.payload_hash
-            row.seen_alert_ids = json.dumps(snapshot.alert_ids)
-            row.ticket_id = ticket_id
-            row.bundle_key = delta.bundle_key
-            row.last_changed_at = current_time
+    if incident.actionable:
+        row.payload_hash = incident.payload_hash
+        row.seen_alert_ids = json.dumps(incident.alert_ids)
+        row.ticket_id = ticket_id
+        row.bundle_key = None
+        row.last_changed_at = current_time
 
 
-def defender_bundle_summary(summary: str, bundle_key: str, *, limit: int = 99) -> str:
-    marker = f"[Defender {bundle_key}]"
+def defender_incident_summary(
+    summary: str,
+    tenant_key: str,
+    incident: DefenderIncidentChange,
+    *,
+    limit: int = 99,
+) -> str:
+    """Build a readable title with a stable tenant/incident correlation marker."""
+    results = incident.data.get("Results")
+    first = next((item for item in results if isinstance(item, dict)), {}) if isinstance(results, list) else {}
+    name = first.get("IncidentName") or first.get("Title") or first.get("Name")
+    tenant = re.sub(r"\s+", " ", tenant_key).strip()[:30]
+    marker = f"[Defender {tenant} #{incident.display_id[:24]}]"
+    readable = f"{summary}: {str(name).strip()}" if name else summary
     available = max(0, limit - len(marker) - 1)
-    base = summary[:available].rstrip()
+    base = readable[:available].rstrip(" :-")
     return f"{base} {marker}".strip()

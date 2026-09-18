@@ -485,12 +485,14 @@ Matching is case-insensitive and supports `*` and `?` wildcards. Excluded items 
 webhook containing only excluded applications is recorded as skipped and does not create or update a ConnectWise
 ticket.
 
-CIPP Defender incident payloads are correlated by tenant and `IncidentId`. HookWise records all alert IDs contained
-in each incident and writes only new or changed incidents to ConnectWise. Incidents received in the same fixed UTC
-window are bundled into one ticket; unchanged webhook repetitions are recorded as skipped without adding noise to
-the ticket. The window defaults to 48 hours and can be changed with `CIPP_DEFENDER_BUNDLE_HOURS`. On the first run
-after enabling this feature, incidents older than the window are stored as a baseline instead of creating historical
-tickets. Incidents without a usable creation timestamp remain actionable so they cannot be silently discarded.
+CIPP Defender incident payloads are correlated by tenant and `IncidentId`. HookWise creates one ConnectWise ticket
+per incident and records every alert ID contained in that incident. New alerts or changed incident data are appended
+to the same open ticket without a time limit; unchanged webhook repetitions are recorded as skipped without adding
+noise. If the associated ConnectWise ticket is closed, later changes create a new actionable ticket instead of being
+hidden on a completed ticket. On the first run after enabling this feature, incidents older than 48 hours are stored
+as a baseline instead of creating historical tickets. Change that first-run cutoff with
+`CIPP_DEFENDER_BASELINE_HOURS`. Incidents without a usable creation timestamp remain actionable so they cannot be
+silently discarded.
 
 Example universal CIPP template:
 ```text

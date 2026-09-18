@@ -140,7 +140,7 @@ username; the account's roles decide what the client may call.
 | `CELERY_TASK_SOFT_TIME_LIMIT` | `120` | soft task limit (seconds) |
 | `CELERY_TASK_TIME_LIMIT` | `300` | hard task limit (seconds) |
 | `VIABILITY_TTL` | `300` | ticket-dedup viability window (seconds) |
-| `CIPP_DEFENDER_BUNDLE_HOURS` | `48` | UTC window for bundling new CIPP Defender incidents into one ticket |
+| `CIPP_DEFENDER_BASELINE_HOURS` | `48` | First-run cutoff for baselining old CIPP Defender incidents; ticket correlation does not expire |
 | `LOG_RETENTION_DAYS` | `30` | history retention for the daily cleanup task |
 
 ---

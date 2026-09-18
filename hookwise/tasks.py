@@ -25,9 +25,10 @@ from .extensions import build_redis_uri, db, redis_client
 from .metrics import log_psa_task, log_webhook_processed
 from .models import GlobalMapping, WebhookConfig, WebhookLog, WebhookRetryAttempt
 from .services.cipp_defender import (
+    DefenderIncidentChange,
     DefenderIncidentDelta,
-    defender_bundle_summary,
-    persist_defender_incident_delta,
+    defender_incident_summary,
+    persist_defender_incident,
     prepare_defender_incident_delta,
 )
 from .services.configuration_matching import (
@@ -282,12 +283,236 @@ def _duplicate_ticket_note(
     alert_type: str,
     message: Any,
     request_id: str,
-    description: str,
-    defender_delta: DefenderIncidentDelta | None,
 ) -> str:
-    if defender_delta is not None:
-        return f"New or changed CIPP Defender incidents:\n\n{description}"
     return f"Duplicate {alert_type} alert detected. Updated details:\nMessage: {message}\nRequest ID: {request_id}"
+
+
+def _ticket_is_open(ticket: object, config: WebhookConfig) -> bool:
+    if not isinstance(ticket, Mapping):
+        return False
+    status = ticket.get("status")
+    status_name = str(status.get("name", "")) if isinstance(status, Mapping) else ""
+    closed_statuses = {"Completed", "Cancelled", "Closed"}
+    if cw_client.status_closed:
+        closed_statuses.add(cw_client.status_closed)
+    if config.close_status:
+        closed_statuses.add(config.close_status)
+    return not bool(ticket.get("closedFlag", False)) and status_name not in closed_statuses
+
+
+def _defender_operation_name(prefix: str, incident: DefenderIncidentChange) -> str:
+    suffix = hashlib.sha256(incident.incident_key.encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}_{suffix}"
+
+
+def _defender_note_text(incident: DefenderIncidentChange, description: str) -> str:
+    if incident.new_alert_ids:
+        alert_list = ", ".join(incident.new_alert_ids)
+        heading = f"New Defender alert(s) for incident {incident.display_id}: {alert_list}"
+    else:
+        heading = f"Changed Defender incident {incident.display_id}"
+    return f"{heading}:\n\n{description}"
+
+
+def _process_defender_incidents(
+    *,
+    config: WebhookConfig,
+    log_entry: WebhookLog,
+    delta: DefenderIncidentDelta,
+    base_summary: str,
+    mapped_description: Any,
+    description_template: str | None,
+    monitor_name: str,
+    message: Any,
+    request_id: str,
+    company_id: str | None,
+    board: str | None,
+    status: str | None,
+    ticket_type: str | None,
+    subtype: str | None,
+    item: str | None,
+    priority: str | None,
+    mapped_values: Mapping[str, Any],
+    extra: Mapping[str, str],
+) -> tuple[int | None, str | None]:
+    """Create or update one ConnectWise ticket for each actionable incident."""
+    outcomes: list[tuple[str, int, str]] = []
+    actionable = [incident for incident in delta.incidents if incident.actionable]
+
+    for incident in delta.incidents:
+        if not incident.actionable:
+            persist_defender_incident(
+                config.id,
+                delta.tenant_key,
+                incident,
+                ticket_id=incident.ticket_id,
+            )
+
+    for incident in actionable:
+        incident_summary = defender_incident_summary(base_summary, delta.tenant_key, incident)
+        incident_description = _render_ticket_description(
+            mapped_description=mapped_description if len(actionable) == 1 else None,
+            description_template=description_template,
+            monitor_name=monitor_name,
+            message=message,
+            request_id=request_id,
+            data=incident.data,
+        )
+        ticket_id = incident.ticket_id
+        ticket_data: dict[str, Any] | None = None
+
+        if ticket_id is not None:
+            try:
+                candidate = cw_client.get_ticket(ticket_id)
+            except TicketNotFoundError:
+                candidate = None
+            if _ticket_is_open(candidate, config):
+                ticket_data = candidate
+            else:
+                ticket_id = None
+
+        if ticket_id is None and company_id:
+            candidate = cw_client.find_open_ticket(
+                incident_summary,
+                close_status=config.close_status,
+                company_identifier=company_id,
+            )
+            if candidate:
+                ticket_id = int(candidate["id"])
+                ticket_data = candidate
+
+        action = "update"
+        if ticket_id is not None:
+            note_added = _add_ticket_note_once(
+                log_entry,
+                ticket_id,
+                _defender_note_text(incident, incident_description),
+                operation_name=_defender_operation_name("def_note", incident),
+            )
+            if not note_added:
+                raise ConnectWiseError(f"Unable to add Defender incident note to ticket {ticket_id}")
+            log_psa_task(task_type="create", result="updated")
+            log_to_web(
+                f"Defender incident {incident.display_id}: Updated existing ticket (ID: {ticket_id})",
+                "warning",
+                config.name,
+                data=incident.data,
+                ticket_id=ticket_id,
+            )
+        else:
+            operation_name = _defender_operation_name("def_create", incident)
+            operation, acquired = reserve(log_entry.id, operation_name)
+            new_ticket: dict[str, Any] | None = None
+            if not acquired and operation.status == "completed" and operation.ticket_id:
+                new_ticket = {"id": operation.ticket_id}
+            elif not acquired:
+                recovered = (
+                    cw_client.find_open_ticket(
+                        incident_summary,
+                        close_status=config.close_status,
+                        company_identifier=company_id,
+                    )
+                    if company_id
+                    else None
+                )
+                if recovered:
+                    recovered_id = int(recovered["id"])
+                    complete(operation, recovered_id)
+                    new_ticket = recovered
+                elif may_take_over(operation):
+                    acquired = True
+                else:
+                    message = (
+                        f"Ticket creation for Defender incident {incident.display_id} "
+                        "is already owned by another worker"
+                    )
+                    raise TicketOperationInProgress(
+                        message,
+                        retry_after_seconds=seconds_until_takeover(operation),
+                    )
+
+            if acquired:
+                try:
+                    new_ticket = cw_client.create_ticket(
+                        summary=incident_summary,
+                        description=incident_description,
+                        monitor_name=monitor_name,
+                        company_id=company_id,
+                        board=board,
+                        status=status,
+                        ticket_type=ticket_type,
+                        subtype=subtype,
+                        item=item,
+                        priority=priority,
+                        severity=mapped_values.get("severity"),
+                        impact=mapped_values.get("impact"),
+                    )
+                except TicketCreationRejected:
+                    release(operation)
+                    raise
+            if not new_ticket:
+                release(operation)
+                raise TicketCreationRejected(
+                    f"ConnectWise rejected ticket creation for Defender incident {incident.display_id}",
+                    retryable=True,
+                )
+
+            ticket_id = int(new_ticket["id"])
+            ticket_data = new_ticket
+            if operation.status != "completed":
+                complete(operation, ticket_id)
+            action = "create"
+            log_psa_task(task_type="create", result="success")
+            log_to_web(
+                f"Defender incident {incident.display_id}: Created NEW ticket (ID: {ticket_id})",
+                "warning",
+                config.name,
+                data=incident.data,
+                ticket_id=ticket_id,
+            )
+
+        persist_defender_incident(
+            config.id,
+            delta.tenant_key,
+            incident,
+            ticket_id=ticket_id,
+        )
+        _link_matching_configuration(
+            config=config,
+            log_entry=log_entry,
+            ticket_id=ticket_id,
+            ticket=ticket_data,
+            data=incident.data,
+            mapped_values=mapped_values,
+            title=incident_summary,
+            description=incident_description,
+            extra=extra,
+        )
+
+        if action == "create" and config.ai_rca_enabled:
+            from .utils import call_llm
+
+            rca_prompt = (
+                "Analyze this technical alert and suggest 3 possible root causes and 3 troubleshooting "
+                f"steps. Be concise and technical. Payload: {json.dumps(incident.data)}"
+            )
+            rca_response = call_llm(rca_prompt)
+            if rca_response:
+                _add_ticket_note_once(
+                    log_entry,
+                    ticket_id,
+                    f"--- AI AUTOMATED RCA & TROUBLESHOOTING ---\n\n{rca_response}",
+                    operation_name=_defender_operation_name("def_rca", incident),
+                    is_internal=True,
+                )
+                log_entry.matched_rule = (log_entry.matched_rule or "") + " [AI RCA]"
+
+        outcomes.append((action, ticket_id, incident.display_id))
+
+    created_ids = [ticket_id for action, ticket_id, _display_id in outcomes if action == "create"]
+    primary_ticket_id = created_ids[0] if created_ids else (outcomes[0][1] if outcomes else None)
+    log_action = "create" if created_ids else ("update" if outcomes else None)
+    return primary_ticket_id, log_action
 
 
 def _configuration_searches(hints: ConfigurationHints) -> list[tuple[str, int | str]] | None:
@@ -1351,7 +1576,13 @@ def handle_webhook_logic(
             )
             if defender_delta is not None:
                 if defender_delta.actionable_count == 0:
-                    persist_defender_incident_delta(config_id, defender_delta, ticket_id=None)
+                    for incident in defender_delta.incidents:
+                        persist_defender_incident(
+                            config_id,
+                            defender_delta.tenant_key,
+                            incident,
+                            ticket_id=incident.ticket_id,
+                        )
                     log_entry.status = "skipped"
                     log_entry.action = None
                     log_entry.error_message = "Skipped: No new or changed CIPP Defender incidents"
@@ -1365,8 +1596,6 @@ def handle_webhook_logic(
                         data=data,
                     )
                     return
-                data = defender_delta.data
-                ticket_summary = defender_bundle_summary(ticket_summary, defender_delta.bundle_key)
 
             if len(ticket_summary) > 99:
                 ticket_summary = ticket_summary[:96] + "..."
@@ -1454,6 +1683,38 @@ def handle_webhook_logic(
             if company_id is not None:
                 company_id = str(company_id).strip() or None
 
+            if defender_delta is not None:
+                ticket_id, defender_action = _process_defender_incidents(
+                    config=config,
+                    log_entry=log_entry,
+                    delta=defender_delta,
+                    base_summary=ticket_summary,
+                    mapped_description=mapped_description,
+                    description_template=description_template,
+                    monitor_name=monitor_name,
+                    message=msg,
+                    request_id=request_id,
+                    company_id=company_id,
+                    board=board,
+                    status=status,
+                    ticket_type=ticket_type,
+                    subtype=subtype,
+                    item=item,
+                    priority=priority,
+                    mapped_values=mapped_vals,
+                    extra=extra,
+                )
+                PSA_TASK_DURATION.labels(type=alert_type).observe(time.time() - start_time)
+                log_webhook_processed(config_id=config_id, status="processed")
+                log_entry.status = "processed"
+                log_entry.action = defender_action
+                log_entry.ticket_id = ticket_id
+                log_entry.processing_time = time.time() - start_time
+                log_entry.connectwise_responded_at = datetime.now(timezone.utc)
+                log_entry.completed_at = datetime.now(timezone.utc)
+                db.session.commit()
+                return
+
             company_cache_token = _company_cache_token(company_id)
             cache_key = f"{CACHE_PREFIX}{config_id}:{company_cache_token}:{ticket_summary}"
 
@@ -1495,8 +1756,6 @@ def handle_webhook_logic(
                             alert_type=alert_type,
                             message=msg,
                             request_id=request_id,
-                            description=description,
-                            defender_delta=defender_delta,
                         )
                         _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                         _link_matching_configuration(
@@ -1522,8 +1781,6 @@ def handle_webhook_logic(
                         log_entry.status = "processed"
                         log_entry.action = "update"
                         log_entry.ticket_id = ticket_id
-                        if defender_delta is not None:
-                            persist_defender_incident_delta(config_id, defender_delta, ticket_id=ticket_id)
                         db.session.commit()
                         return
                     else:
@@ -1547,8 +1804,6 @@ def handle_webhook_logic(
                         alert_type=alert_type,
                         message=msg,
                         request_id=request_id,
-                        description=description,
-                        defender_delta=defender_delta,
                     )
                     _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
                     _link_matching_configuration(
@@ -1575,8 +1830,6 @@ def handle_webhook_logic(
                     log_entry.status = "processed"
                     log_entry.action = "update"
                     log_entry.ticket_id = ticket_id
-                    if defender_delta is not None:
-                        persist_defender_incident_delta(config_id, defender_delta, ticket_id=ticket_id)
                     db.session.commit()
                     return
 
@@ -1657,8 +1910,6 @@ def handle_webhook_logic(
                 PSA_TASK_COUNT.labels(type="create", result="success")  # Kept for dynamic registration if needed
                 log_psa_task(task_type="create", result="success")
                 log_entry.action = "create"
-                if defender_delta is not None:
-                    persist_defender_incident_delta(config_id, defender_delta, ticket_id=ticket_id)
 
                 # 4. Automated RCA Notes (Only triggered for NEW tickets to optimize LLM usage)
                 if config.ai_rca_enabled:
