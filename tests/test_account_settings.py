@@ -210,8 +210,12 @@ def test_password_change_fails_closed_when_session_revocation_is_unavailable(
         assert not check_password_hash(refreshed.password_hash, "new-password")
 
 
-def test_basic_auth_does_not_register_a_persistent_browser_session(account_app, account_client, session_redis):
+def test_basic_auth_does_not_register_a_persistent_browser_session(
+    account_app, account_client, session_redis, monkeypatch
+):
     _user(account_app, "admin")
+    monkeypatch.delenv("GUI_USERNAME", raising=False)
+    monkeypatch.setenv("GUI_PASSWORD", "test-password")
     credentials = base64.b64encode(b"admin:test-password").decode("ascii")
 
     with patch("hookwise.user_sessions.start_user_session") as start_user_session:

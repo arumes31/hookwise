@@ -120,7 +120,7 @@ def auth_required(f: Any) -> Any:
 
         # 3. Basic Auth Check (Fallback for API/Headless)
         auth = request.authorization
-        gui_user = os.environ.get("GUI_USERNAME")
+        gui_user = os.environ.get("GUI_USERNAME", "admin")
         gui_pass = os.environ.get("GUI_PASSWORD")
 
         if auth and gui_user and gui_pass:
