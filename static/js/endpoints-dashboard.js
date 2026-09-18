@@ -140,6 +140,73 @@
             if (errorEl) { errorEl.hidden = false; errorEl.textContent = 'Endpoint telemetry is temporarily unavailable. You can still use endpoint actions.'; }
         } finally { dashboard.classList.remove('is-loading'); delete dashboard.dataset.loading; }
     }
+    function deliveryStatus(status, level) {
+        if (status === 'skipped') return ['SKIPPED', 'is-warning'];
+        if (level === 'error') return ['FAILED', 'is-failed'];
+        if (level === 'warning') return ['CREATED', 'is-warning'];
+        return ['PROCESSED', 'is-processed'];
+    }
+    async function loadRecentDeliveries() {
+        const list = document.getElementById('hw-recent-deliveries-list');
+        if (!list) return;
+        try {
+            const response = await fetch('/api/activity/history');
+            if (!response.ok) throw new Error('Recent delivery request failed');
+            const deliveries = (await response.json()).slice(0, 7);
+            list.replaceChildren();
+            if (!deliveries.length) {
+                const empty = document.createElement('p');
+                empty.className = 'hw-recent-deliveries-empty';
+                empty.textContent = 'No deliveries recorded yet.';
+                list.append(empty);
+            }
+            deliveries.forEach(delivery => {
+                const row = document.createElement('div');
+                row.className = 'hw-delivery-row';
+
+                const time = document.createElement('time');
+                time.className = 'mono';
+                const timestamp = new Date(delivery.timestamp);
+                time.dateTime = delivery.timestamp || '';
+                time.textContent = Number.isNaN(timestamp.getTime())
+                    ? '—'
+                    : timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                const source = document.createElement('span');
+                source.className = 'hw-delivery-source';
+                const sourceName = document.createElement('strong');
+                sourceName.textContent = delivery.config_name || 'System';
+                const outcome = document.createElement('small');
+                const ticketUrl = window.hookwiseTicketUrl?.(delivery.ticket_id);
+                if (delivery.ticket_id && ticketUrl) {
+                    const ticket = document.createElement('a');
+                    ticket.href = ticketUrl;
+                    ticket.target = '_blank';
+                    ticket.rel = 'noopener noreferrer';
+                    ticket.textContent = `Ticket #${delivery.ticket_id}`;
+                    outcome.append(ticket);
+                } else {
+                    outcome.textContent = delivery.message || 'Request routed';
+                }
+                source.append(sourceName, outcome);
+
+                const [label, stateClass] = deliveryStatus(delivery.status, delivery.level);
+                const status = document.createElement('span');
+                status.className = `hw-delivery-status ${stateClass}`;
+                status.textContent = label;
+                row.append(time, source, status);
+                list.append(row);
+            });
+        } catch (_) {
+            list.replaceChildren();
+            const error = document.createElement('p');
+            error.className = 'hw-recent-deliveries-empty';
+            error.textContent = 'Recent deliveries are temporarily unavailable.';
+            list.append(error);
+        } finally {
+            list.setAttribute('aria-busy', 'false');
+        }
+    }
     function init() {
         const dashboard = root(); if (!dashboard || dashboard.dataset.endpointDashboardInit) return;
         dashboard.dataset.endpointDashboardInit = 'true';
@@ -154,6 +221,7 @@
         document.getElementById('endpoint-filter-chips')?.addEventListener('click', event => { const key = event.target.closest('[data-remove-filter]')?.dataset.removeFilter; if (!key) return; const control = key === 'q' ? search : key === 'board' ? board : key === 'status' ? status : quick; if (control) control.value = ''; applyFilters(); });
         document.getElementById('refresh-endpoints')?.addEventListener('click', refreshSummaries);
         refreshSummaries();
+        loadRecentDeliveries();
     }
     document.addEventListener('DOMContentLoaded', init);
     document.addEventListener('htmx:load', init);

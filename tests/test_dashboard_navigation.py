@@ -217,6 +217,8 @@ def test_webhook_rates_show_success_and_failure_semantics(app, client):
     assert 'data-failure-rate24="33.3"' in html
     assert 'class="hw-rate hw-rate--ok"' in html
     assert 'class="hw-rate hw-rate--crit"' in html
+    assert "zeile.insertAdjacentElement('afterend', det);" in html
+    assert "koerper.appendChild(det);" not in html
 
 
 def test_login_uses_full_navigation_so_document_title_updates(client):

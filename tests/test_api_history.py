@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -74,6 +75,7 @@ def test_get_activity_history_processed(client, auth_session, app):
             assert len(data) == 1
             assert data[0]["message"] == "Created NEW ticket (ID: 123)"
             assert data[0]["level"] == "warning"
+            assert data[0]["status"] == "processed"
             assert data[0]["payload"] == {"key": "***"}
             assert data[0]["config_name"] == "Test Config"
 
@@ -96,6 +98,7 @@ def test_get_activity_history_failed(client, auth_session, app):
             data = response.json
             assert data[0]["message"] == "Something went wrong"
             assert data[0]["level"] == "error"
+            assert data[0]["status"] == "failed"
             assert data[0]["payload"] == {"raw": "raw data"}
             assert data[0]["config_name"] == "System"
 
@@ -118,3 +121,11 @@ def test_get_activity_history_skipped(client, auth_session, app):
             data = response.json
             assert data[0]["message"] == "Skipped: already exists"
             assert data[0]["level"] == "info"
+            assert data[0]["status"] == "skipped"
+
+
+def test_recent_deliveries_use_authoritative_skipped_status():
+    script = Path("static/js/endpoints-dashboard.js").read_text(encoding="utf-8")
+
+    assert "if (status === 'skipped') return ['SKIPPED', 'is-warning'];" in script
+    assert "deliveryStatus(delivery.status, delivery.level)" in script

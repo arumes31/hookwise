@@ -35,6 +35,7 @@ _PAGE_TITLES = {
     "main.history": "History",
     "main.audit_logs": "Audit Log",
     "main.settings": "Settings",
+    "main.account_settings": "Account Settings",
     "main.identity_settings": "Identity",
     "main.new_endpoint": "New Endpoint",
     "main.edit_endpoint": "Edit Endpoint",
@@ -289,7 +290,7 @@ def favicon_ico() -> Any:
     static_ordner = current_app.static_folder or "static"
     return send_from_directory(
         _os.path.join(static_ordner, "img"),
-        "favicon-hook-32.png",
+        "favicon-hook-cyan-32.png",
         mimetype="image/png",
     )
 

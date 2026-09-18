@@ -423,7 +423,8 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 
 | Variable | Usage |
 |----------|-------|
-| `SECRET_KEY` | Flask session-signing secret. Required outside debug mode. |
+| `SECRET_KEY` | Flask session-signing secret. Always set a stable value outside disposable local development. |
+| `DEBUG_MODE` | Development conveniences only: permits a temporary random `SECRET_KEY` when none is configured, shows the red UI badge, and skips the confirmation before replaying a webhook. It does **not** enable Flask's interactive debugger or verbose logging and must remain `false` in production. |
 | `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** |
 | `RBAC_ENFORCE` | Role enforcement: `on` (default), `log` (check + log only), `off`. See [Identity & Access](#-identity--access-rbac--entra-id). |
 | `ENTRA_*` | Microsoft Entra ID sign-in — see [Identity & Access](#-identity--access-rbac--entra-id). |

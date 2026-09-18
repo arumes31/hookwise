@@ -462,7 +462,8 @@ function initServiceHealth(container = document) {
     // Velocity: das Tab-Icon bleibt die Hook-Marke; der Systemzustand haengt
     // als kleiner Status-Punkt unten rechts dran (vorher uebermalte hier ein
     // "H"-Kreis das Favicon komplett -- daher sprang das Icon zurueck).
-    // Hell/Dunkel folgt dem OS-Schema, auch bei Wechseln zur Laufzeit.
+    // Hell/Dunkel folgt zuerst dem ausdruecklichen App-Theme und sonst dem
+    // OS-Schema, jeweils auch bei Wechseln zur Laufzeit.
     const faviconBilder = { dark: new Image(), light: new Image() };
     // Quellen aus den <link>-Tags uebernehmen: die tragen den ?v=-Parameter,
     // sonst liefert der Browser-Cache ein veraltetes SVG in den Canvas.
@@ -474,9 +475,14 @@ function initServiceHealth(container = document) {
     faviconBilder.light.src = faviconQuelle('light');
     let faviconStatus = 'up';
     const schemaHell = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+    const faviconSchema = () => {
+        const appSchema = document.documentElement.getAttribute('data-theme');
+        if (appSchema === 'light' || appSchema === 'dark') return appSchema;
+        return schemaHell && schemaHell.matches ? 'light' : 'dark';
+    };
     const updateFavicon = (status) => {
         faviconStatus = status || faviconStatus;
-        const hell = !!(schemaHell && schemaHell.matches);
+        const hell = faviconSchema() === 'light';
         const bild = faviconBilder[hell ? 'light' : 'dark'];
         const zeichnen = () => {
             const canvas = document.createElement('canvas');
@@ -487,9 +493,11 @@ function initServiceHealth(container = document) {
             // im Normalfall nur beschaedigen. Er erscheint deshalb nur, wenn
             // wirklich etwas zu melden ist.
             if (faviconStatus !== 'up') {
-                const farbe = faviconStatus === 'warning' ? '#ffdd65' : '#a90219';
+                const farbe = faviconStatus === 'warning'
+                    ? (hell ? '#8b5800' : '#ffb454')
+                    : (hell ? '#b53631' : '#e9655d');
                 ctx.beginPath(); ctx.arc(24.5, 24.5, 7, 0, 2 * Math.PI);
-                ctx.fillStyle = hell ? '#f2f8f4' : '#0b0f0f'; ctx.fill();
+                ctx.fillStyle = hell ? '#f3f7f9' : '#07131b'; ctx.fill();
                 ctx.beginPath(); ctx.arc(24.5, 24.5, 5, 0, 2 * Math.PI);
                 ctx.fillStyle = farbe; ctx.fill();
             }
@@ -502,6 +510,13 @@ function initServiceHealth(container = document) {
     if (schemaHell && schemaHell.addEventListener && !window.hwFaviconSchema) {
         window.hwFaviconSchema = true;
         schemaHell.addEventListener('change', () => updateFavicon(faviconStatus));
+    }
+    if (!window.hwFaviconThemeObserver) {
+        window.hwFaviconThemeObserver = new MutationObserver(() => updateFavicon(faviconStatus));
+        window.hwFaviconThemeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme'],
+        });
     }
 
     const updateHealth = async () => {

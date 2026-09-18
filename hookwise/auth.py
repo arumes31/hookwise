@@ -8,7 +8,7 @@ from typing import Any, cast
 import pyotp
 import segno
 from flask import current_app, flash, redirect, render_template, request, session, url_for
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from .auth_entra import entra_aktiv
 from .extensions import db, limiter
@@ -69,6 +69,9 @@ def _register_login_routes(bp: Any) -> None:
                     session["username"] = user.username
                     session["role"] = user.role
                     anmeldung_abschliessen(user)
+                    from .user_sessions import start_user_session
+
+                    start_user_session(user)
                     session.pop("pending_user_id", None)
                     log_audit("login_2fa", None, f"User {user.username} logged in with 2FA")
                     return redirect(url_for("main.index"))
@@ -92,7 +95,11 @@ def _register_login_routes(bp: Any) -> None:
             password = request.form.get("password")
 
             user = User.query.filter_by(username=username).first()
-            if user and check_password_hash(cast(str, user.password_hash), cast(str, password)):
+            if (
+                user
+                and user.quelle == "local"
+                and check_password_hash(cast(str, user.password_hash), cast(str, password))
+            ):
                 # Ein deaktiviertes Konto authentifiziert sich nicht -- weder in
                 # den 2FA-Schritt hinein noch in eine Sitzung. Die Meldung
                 # bleibt die allgemeine, um kein Konto zu bestaetigen.
@@ -110,6 +117,9 @@ def _register_login_routes(bp: Any) -> None:
                 session["username"] = user.username
                 session["role"] = user.role
                 anmeldung_abschliessen(user)
+                from .user_sessions import start_user_session
+
+                start_user_session(user)
                 log_audit("login", None, f"User {username} logged in")
                 return redirect(url_for("main.index"))
 
@@ -128,9 +138,12 @@ def _register_2fa_routes(bp: Any) -> None:
     @auth_required
     def setup_2fa() -> Any:
         user = User.query.get(session["user_id"])
+        if user.quelle != "local":
+            flash("Two-factor authentication for this account is managed in Microsoft 365.", "info")
+            return redirect(url_for("main.account_settings"))
         if user.is_2fa_enabled:
             flash("2FA is already enabled", "info")
-            return redirect(url_for("main.settings"))
+            return redirect(url_for("main.account_settings"))
 
         if request.method == "POST":
             otp = (request.form.get("otp") or "").strip().replace(" ", "")
@@ -142,7 +155,7 @@ def _register_2fa_routes(bp: Any) -> None:
                 session.pop("pending_otp_secret")
                 log_audit("2fa_enabled", None, f"User {user.username} enabled 2FA")
                 flash("2FA has been enabled successfully!", "success")
-                return redirect(url_for("main.settings"))
+                return redirect(url_for("main.account_settings"))
             flash("Invalid 2FA code", "danger")
 
         # Das pending-Secret ueberlebt Fehlversuche und Seiten-Reloads: die
@@ -164,18 +177,112 @@ def _register_2fa_routes(bp: Any) -> None:
     @auth_required
     def disable_2fa() -> Any:
         user = User.query.get(session["user_id"])
+        if user.quelle != "local":
+            flash("Two-factor authentication for this account is managed in Microsoft 365.", "info")
+            return redirect(url_for("main.account_settings"))
         user.is_2fa_enabled = False
         user.otp_secret = None
         db.session.commit()
         log_audit("2fa_disabled", None, f"User {user.username} disabled 2FA")
         flash("2FA has been disabled.", "warning")
-        return redirect(url_for("main.settings"))
+        return redirect(url_for("main.account_settings"))
+
+
+def _register_account_routes(bp: Any) -> None:
+    @bp.route("/settings/account")
+    @auth_required
+    def account_settings() -> Any:
+        from .user_sessions import list_user_sessions
+
+        user = User.query.get_or_404(session["user_id"])
+        return render_template(
+            "account_settings.html",
+            user=user,
+            active_sessions=list_user_sessions(str(user.id)),
+        )
+
+    @bp.route("/settings/account/password", methods=["POST"])
+    @limiter.limit("5 per minute")
+    @auth_required
+    def change_own_password() -> Any:
+        user = User.query.get_or_404(session["user_id"])
+        if user.quelle != "local":
+            flash("Password changes for this account are managed in Microsoft 365.", "info")
+            return redirect(url_for("main.account_settings"))
+
+        current_password = request.form.get("current_password") or ""
+        new_password = request.form.get("new_password") or ""
+        confirmation = request.form.get("confirm_password") or ""
+        if not check_password_hash(cast(str, user.password_hash), current_password):
+            flash("Current password is incorrect.", "danger")
+            return redirect(url_for("main.account_settings"))
+        if len(new_password) < 8:
+            flash("New password must contain at least 8 characters.", "danger")
+            return redirect(url_for("main.account_settings"))
+        if new_password != confirmation:
+            flash("New password and confirmation do not match.", "danger")
+            return redirect(url_for("main.account_settings"))
+        if check_password_hash(cast(str, user.password_hash), new_password):
+            flash("Choose a password different from your current password.", "danger")
+            return redirect(url_for("main.account_settings"))
+
+        from .user_sessions import SessionRevocationError, revoke_other_sessions
+
+        try:
+            revoked = revoke_other_sessions(str(user.id), str(session.get("session_id") or ""))
+        except SessionRevocationError:
+            flash(
+                "Password was not changed because other sessions could not be signed out. Try again.",
+                "danger",
+            )
+            return redirect(url_for("main.account_settings"))
+
+        user.password_hash = generate_password_hash(new_password)
+        db.session.commit()
+        log_audit("user_password_change", None, f"User {user.username} changed their password")
+        flash(
+            f"Password changed. {revoked} other session{'s' if revoked != 1 else ''} signed out.",
+            "success",
+        )
+        return redirect(url_for("main.account_settings"))
+
+    @bp.route("/settings/account/sessions/<session_id>/revoke", methods=["POST"])
+    @auth_required
+    def revoke_own_session(session_id: str) -> Any:
+        from .user_sessions import revoke_user_session
+
+        user_id = str(session["user_id"])
+        if session_id == str(session.get("session_id") or ""):
+            flash("Use Sign out to end the session on this device.", "info")
+        elif revoke_user_session(user_id, session_id):
+            log_audit("user_session_revoke", None, f"User {session.get('username')} revoked another session")
+            flash("Session signed out.", "success")
+        else:
+            flash("That session has already ended or could not be signed out.", "warning")
+        return redirect(url_for("main.account_settings"))
+
+    @bp.route("/settings/account/sessions/revoke-others", methods=["POST"])
+    @auth_required
+    def revoke_other_own_sessions() -> Any:
+        from .user_sessions import SessionRevocationError, revoke_other_sessions
+
+        try:
+            count = revoke_other_sessions(str(session["user_id"]), str(session.get("session_id") or ""))
+        except SessionRevocationError:
+            flash("Other sessions could not be signed out. Try again.", "danger")
+            return redirect(url_for("main.account_settings"))
+        log_audit("user_sessions_revoke", None, f"User {session.get('username')} revoked {count} other sessions")
+        flash(f"Signed out {count} other session{'s' if count != 1 else ''}.", "success")
+        return redirect(url_for("main.account_settings"))
 
 
 def _register_logout_routes(bp: Any) -> None:
     @bp.route("/logout")
     def logout() -> Any:
         username = session.get("username")
+        from .user_sessions import revoke_current_session
+
+        revoke_current_session()
         session.clear()
         log_audit("logout", None, f"User {username} logged out")
         return redirect(url_for("main.login"))
@@ -186,6 +293,7 @@ def _register() -> None:
 
     _register_login_routes(main_bp)
     _register_2fa_routes(main_bp)
+    _register_account_routes(main_bp)
     _register_logout_routes(main_bp)
 
 
