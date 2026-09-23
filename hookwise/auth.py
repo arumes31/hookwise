@@ -24,8 +24,8 @@ def _bp() -> Any:
     return main_bp
 
 
-def _otp_verbrauchen(user_id: str, otp: str) -> bool:
-    """Redeem a one-time code, returning False when it was already used.
+def _otp_verbrauchen(user_id: str, otp: str) -> bool | None:
+    """Redeem a one-time code, distinguishing replay from store failure.
 
     ``valid_window=1`` accepts a code for a step before and after the current
     one, so verification alone leaves it usable for up to ninety seconds. A
@@ -33,7 +33,9 @@ def _otp_verbrauchen(user_id: str, otp: str) -> bool:
     session -- would otherwise open a second sign-in. The marker is keyed by a
     digest so the code itself never becomes a Redis key.
 
-    An unreachable store refuses the sign-in. That is deliberate: a guard that
+    ``True`` means redeemed, ``False`` means already used, and ``None`` means
+    the replay store was unavailable. An unreachable store refuses the sign-in.
+    That is deliberate: a guard that
     waves everything through when the store is down is no guard, and Redis
     carries the settings, the cache and the session registry anyway, so a
     console that cannot reach it is of little use. The cost is real though --
@@ -46,7 +48,7 @@ def _otp_verbrauchen(user_id: str, otp: str) -> bool:
         return bool(redis_client.set(f"hookwise:otp_used:{abdruck}", "1", nx=True, ex=180))
     except Exception:
         current_app.logger.exception("OTP replay guard unavailable; refusing the sign-in")
-        return False
+        return None
 
 
 def _pending_secret_lesen() -> str | None:
@@ -73,9 +75,13 @@ def _pending_secret_lesen() -> str | None:
 
 
 def _register_login_routes(bp: Any) -> None:
+    """Register local credential and two-factor sign-in routes."""
+
     @bp.route("/login", methods=["GET", "POST"])
     @limiter.limit("5 per minute", methods=["POST"])
     def login() -> Any:
+        """Authenticate a local user and complete an optional TOTP step."""
+
         # If we are already in the 2FA step (from previous credential check)
         pending_user_id = session.get("pending_user_id")
         entra_ready = entra_aktiv()
@@ -109,7 +115,16 @@ def _register_login_routes(bp: Any) -> None:
                     return render_template("login.html", entra_ready=entra_ready)
 
                 if user and otp_secret and otp and pyotp.TOTP(otp_secret).verify(otp, valid_window=1):
-                    if not _otp_verbrauchen(str(user.id), otp):
+                    otp_status = _otp_verbrauchen(str(user.id), otp)
+                    if otp_status is None:
+                        log_audit(
+                            "login_2fa_unavailable",
+                            None,
+                            f"2FA replay guard unavailable for user {user.username}",
+                        )
+                        flash("Two-factor authentication is temporarily unavailable. Please try again.", "danger")
+                        return render_template("login.html", step="2fa", entra_ready=entra_ready), 503
+                    if otp_status is False:
                         log_audit("login_2fa_replay", None, f"Reused 2FA code for user {user.username}")
                         flash("That one-time code has already been used", "danger")
                         return render_template("login.html", step="2fa", entra_ready=entra_ready)
@@ -184,9 +199,13 @@ def _register_login_routes(bp: Any) -> None:
 
 
 def _register_2fa_routes(bp: Any) -> None:
+    """Register local-account two-factor setup and removal routes."""
+
     @bp.route("/settings/2fa/setup", methods=["GET", "POST"])
     @auth_required
     def setup_2fa() -> Any:
+        """Enroll a local account in TOTP after verifying its first code."""
+
         user = User.query.get(session["user_id"])
         if user.quelle != "local":
             flash("Two-factor authentication for this account is managed in Microsoft 365.", "info")
@@ -227,6 +246,8 @@ def _register_2fa_routes(bp: Any) -> None:
     @limiter.limit("5 per minute")
     @auth_required
     def disable_2fa() -> Any:
+        """Disable TOTP for a local account after password confirmation."""
+
         user = User.query.get(session["user_id"])
         if user.quelle != "local":
             flash("Two-factor authentication for this account is managed in Microsoft 365.", "info")

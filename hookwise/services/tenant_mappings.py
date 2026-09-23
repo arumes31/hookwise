@@ -1,9 +1,11 @@
 """Transactional helpers for logical TenantMap groups."""
 
 import logging
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from typing import Iterable, Sequence
+from urllib.parse import urlsplit
 
 from redis.exceptions import RedisError
 from sqlalchemy import or_
@@ -29,6 +31,38 @@ class TenantMappingGroup:
     tenant_values: tuple[str, ...]
     company_id: str
     description: str | None
+
+
+def normalize_tenant_match_value(value: object) -> str:
+    """Canonicalize harmless tenant-value variations for deterministic matching.
+
+    Domains are case-insensitive, may arrive with a trailing DNS dot, and are
+    sometimes embedded in a URL or an email-like identifier. Parsing the host
+    avoids unsafe substring matching such as ``trusted.example@evil.example``.
+    Arbitrary names and tenant UUIDs are still supported through Unicode
+    normalization and case folding.
+    """
+    if value is None:
+        return ""
+    normalized = unicodedata.normalize("NFKC", str(value)).strip()
+    if not normalized:
+        return ""
+
+    if "://" in normalized:
+        try:
+            parsed = urlsplit(normalized)
+            if parsed.hostname:
+                normalized = parsed.hostname
+        except ValueError:
+            # Malformed URL-like payloads remain inert strings and therefore do
+            # not match a valid domain alias.
+            return normalized.casefold()
+    elif normalized.count("@") == 1 and not any(character.isspace() for character in normalized):
+        local_part, domain = normalized.rsplit("@", 1)
+        if local_part and domain and all(separator not in domain for separator in "/?#"):
+            normalized = domain
+
+    return normalized.rstrip(".").casefold()
 
 
 def effective_group_id(mapping: GlobalMapping) -> str:
@@ -82,7 +116,7 @@ def normalize_mapping_input(
     aliases: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
-        alias = str(candidate).strip()
+        alias = normalize_tenant_match_value(candidate)
         if not alias or alias in seen:
             continue
         if len(alias) > 255:
@@ -109,7 +143,10 @@ def normalize_mapping_input(
 
 def _ensure_aliases_available(aliases: Sequence[str], excluded_group_id: str | None = None) -> None:
     """Reject aliases already owned by a different logical mapping."""
-    conflicts = GlobalMapping.query.filter(GlobalMapping.tenant_value.in_(aliases)).all()
+    normalized_aliases = set(aliases)
+    conflicts = [
+        row for row in GlobalMapping.query.all() if normalize_tenant_match_value(row.tenant_value) in normalized_aliases
+    ]
     external = [
         row.tenant_value
         for row in conflicts

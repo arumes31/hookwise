@@ -89,8 +89,12 @@ def parse_ip_network(network_str: str) -> Any:
 
 
 def auth_required(f: Any) -> Any:
+    """Require a valid browser session or request-scoped Basic Auth."""
+
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
+        """Authorize one request before invoking the protected handler."""
+
         # 1. IP Whitelist Check (Global)
         trusted_ips = os.environ.get("GUI_TRUSTED_IPS")
         if trusted_ips:

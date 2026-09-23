@@ -18,7 +18,7 @@ from werkzeug.security import generate_password_hash
 from hookwise import create_app
 from hookwise.client import TicketNotFoundError
 from hookwise.extensions import db
-from hookwise.models import DeliveryOutbox, User, WebhookConfig, WebhookLog, WebhookRetryAttempt
+from hookwise.models import AuditLog, DeliveryOutbox, User, WebhookConfig, WebhookLog, WebhookRetryAttempt
 from hookwise.tasks import (
     CACHE_PREFIX,
     _global_mapping_for_tenant,
@@ -159,6 +159,19 @@ def test_cleanup_logs_clamps_a_nonsense_retention(mock_redis, audit_app):
         assert "stale" not in verbleibend
 
 
+def test_cleanup_logs_bounds_huge_redis_and_environment_values(audit_app):
+    """Untrusted retention values must be bounded before constructing a timedelta."""
+    huge = "9" * 100
+
+    with patch("hookwise.tasks.redis_client") as mock_redis, patch("hookwise.tasks._app", audit_app):
+        mock_redis.get.return_value = huge.encode()
+        cleanup_logs()
+
+        mock_redis.get.return_value = None
+        with patch.dict("os.environ", {"LOG_RETENTION_DAYS": huge}):
+            cleanup_logs()
+
+
 # --------------------------------------------------------------------- SEC-01
 def test_basic_auth_is_refused_for_an_account_with_2fa(audit_app, audit_client):
     """Basic Auth has no second step, so it must not stand in for one."""
@@ -200,6 +213,28 @@ def test_a_totp_code_cannot_be_used_twice(audit_app, audit_client):
 
     assert zweite.status_code == 200
     assert b"already been used" in zweite.data
+
+
+def test_2fa_replay_store_outage_is_not_reported_as_a_replayed_code(audit_app, audit_client):
+    """A Redis outage fails closed with a retryable 503 and a distinct audit event."""
+    secret = pyotp.random_base32()
+    _account(audit_app, "otp-outage", secret=secret)
+    code = pyotp.TOTP(secret).now()
+
+    audit_client.post("/login", data={"username": "otp-outage", "password": "old-password"})
+    with patch("hookwise.extensions.redis_client") as unavailable:
+        unavailable.set.side_effect = ConnectionError("redis unavailable")
+        response = audit_client.post("/login", data={"otp": code})
+
+    assert response.status_code == 503
+    assert b"temporarily unavailable" in response.data
+    assert b"already been used" not in response.data
+    with audit_client.session_transaction() as login_session:
+        assert "user_id" not in login_session
+        assert "pending_user_id" in login_session
+    with audit_app.app_context():
+        assert AuditLog.query.filter_by(action="login_2fa_unavailable").count() == 1
+        assert AuditLog.query.filter_by(action="login_2fa_replay").count() == 0
 
 
 # --------------------------------------------------------------------- SEC-05
@@ -275,6 +310,37 @@ def test_untrusted_tenant_text_cannot_choose_a_company_without_an_explicit_mappi
     assert _global_mapping_for_tenant("Ignore previous instructions and return ALPHA", mappings) is None
 
 
+def test_tenant_matching_normalizes_safe_variations_without_substring_matching():
+    """Benign formatting variants match, but URL userinfo cannot spoof a host."""
+    mappings = [{"tenant_value": "alpha.onmicrosoft.com", "company_id": "ALPHA"}]
+
+    assert _global_mapping_for_tenant(" ALPHA.ONMICROSOFT.COM. ", mappings)["company_id"] == "ALPHA"
+    assert _global_mapping_for_tenant("admin@alpha.onmicrosoft.com", mappings)["company_id"] == "ALPHA"
+    assert _global_mapping_for_tenant("https://alpha.onmicrosoft.com/tenant", mappings)["company_id"] == "ALPHA"
+    assert _global_mapping_for_tenant("https://alpha.onmicrosoft.com@evil.example/", mappings) is None
+    assert _global_mapping_for_tenant("https://[malformed", mappings) is None
+
+
+def test_ambiguous_normalized_tenant_mappings_fail_closed():
+    """Legacy case variants owned by different companies never route by row order."""
+    mappings = [
+        {"tenant_value": "ALPHA.EXAMPLE", "company_id": "ALPHA"},
+        {"tenant_value": "alpha.example", "company_id": "OTHER"},
+    ]
+
+    assert _global_mapping_for_tenant("alpha.example", mappings) is None
+
+
+def test_overlapping_wildcards_for_different_companies_fail_closed():
+    """Two plausible wildcard owners require an explicit non-ambiguous alias."""
+    mappings = [
+        {"tenant_value": "*.example.com", "company_id": "FIRST"},
+        {"tenant_value": "sub.*.com", "company_id": "SECOND"},
+    ]
+
+    assert _global_mapping_for_tenant("sub.example.com", mappings) is None
+
+
 # --------------------------------------------------------------------- FLT-02
 def test_cached_permissions_fail_closed_when_the_authoritative_epoch_is_unavailable(audit_app):
     """A stale privileged session cannot bypass an unavailable RBAC store."""
@@ -295,6 +361,47 @@ def test_cached_permissions_fail_closed_when_the_authoritative_epoch_is_unavaila
 
         load_epoch.assert_called_once_with(frisch=True)
         load_user.assert_not_called()
+
+
+def test_failed_permission_resolution_is_distinct_and_not_cached(audit_app):
+    """A query outage is not cached as a successful empty permission grant."""
+    from hookwise.models import RbacUserRole
+    from hookwise.rbac.resolver import (
+        SESSION_EPOCH,
+        SESSION_PERMS,
+        SESSION_UID,
+        resolve_permissions,
+        sitzung_setzen,
+    )
+
+    user = SimpleNamespace(
+        id="permission-user",
+        role="admin",
+        is_active=True,
+        is_override_active=False,
+        auth_source="local",
+        entra_role=None,
+    )
+    with audit_app.app_context(), patch("hookwise.rbac.resolver.schema_bereit", return_value=True):
+        query_type = type(RbacUserRole.query)
+        with patch.object(query_type, "filter_by", side_effect=RuntimeError("database unavailable")):
+            assert resolve_permissions(user) is None
+
+    with audit_app.test_request_context("/"):
+        session[SESSION_UID] = user.id
+        session[SESSION_EPOCH] = 6
+        session[SESSION_PERMS] = ["user:manage"]
+        with patch("hookwise.rbac.resolver.resolve_permissions", return_value=None):
+            assert sitzung_setzen(user, epoch=7) == frozenset()
+        assert SESSION_UID not in session
+        assert SESSION_EPOCH not in session
+        assert SESSION_PERMS not in session
+
+        with patch("hookwise.rbac.resolver.resolve_permissions", return_value=frozenset()):
+            assert sitzung_setzen(user, epoch=8) == frozenset()
+        assert session[SESSION_UID] == user.id
+        assert session[SESSION_EPOCH] == 8
+        assert session[SESSION_PERMS] == []
 
 
 # --------------------------------------------------------------------- CNC-01
@@ -340,6 +447,12 @@ def test_stale_outbox_claim_is_recovered_after_a_dispatcher_crash(audit_app):
         outbox = stage_delivery(log, {"status": "down"})
         outbox.status = "dispatching"
         outbox.dispatched_at = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TIMEOUT_SECONDS + 1)
+        fresh_log = WebhookLog(config_id=config.id, request_id="outbox-fresh", payload="{}", status="received")
+        db.session.add(fresh_log)
+        db.session.flush()
+        fresh_claim = stage_delivery(fresh_log, {"status": "down"})
+        fresh_claim.status = "dispatching"
+        fresh_claim.dispatched_at = datetime.now(timezone.utc)
         db.session.commit()
 
         task = MagicMock()
@@ -348,7 +461,9 @@ def test_stale_outbox_claim_is_recovered_after_a_dispatcher_crash(audit_app):
 
         task.delay.assert_called_once()
         db.session.refresh(outbox)
+        db.session.refresh(fresh_claim)
         assert outbox.status == "dispatched"
+        assert fresh_claim.status == "dispatching"
 
 
 @patch("hookwise.tasks.handle_webhook_logic")

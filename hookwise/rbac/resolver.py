@@ -147,12 +147,14 @@ def effective_role_key(user: Any) -> Optional[str]:
     return fallback or None
 
 
-def resolve_permissions(user: Any) -> FrozenSet[str]:
+def resolve_permissions(user: Any) -> Optional[FrozenSet[str]]:
     """Effektive Rechte eines Nutzers.
 
     Reihenfolge: manueller Override, Entra App Role, zugewiesene lokale Rollen,
     alter ``role``-String. Override und App Role sind exakte Ersatzrollen; ihre
-    Rechte werden nicht mit lokalen Zuweisungen vereinigt.
+    Rechte werden nicht mit lokalen Zuweisungen vereinigt. ``None`` signalisiert
+    eine fehlgeschlagene autoritative Abfrage; ein erfolgreicher leerer Grant
+    bleibt dagegen ein leeres ``frozenset``.
     """
     if user is None:
         return frozenset()
@@ -189,7 +191,7 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
         return frozenset(rechte & ALL_PERMISSIONS)
     except Exception:  # pragma: no cover
         _logger.exception("Rechteaufloesung fehlgeschlagen; es werden keine Rechte gewaehrt")
-        return frozenset()
+        return None
 
 
 def sitzung_setzen(user: Any, *, epoch: Optional[int] = None) -> FrozenSet[str]:
@@ -202,6 +204,12 @@ def sitzung_setzen(user: Any, *, epoch: Optional[int] = None) -> FrozenSet[str]:
         return frozenset()
 
     rechte = resolve_permissions(user)
+    if rechte is None:
+        session.pop(SESSION_PERMS, None)
+        session.pop(SESSION_EPOCH, None)
+        session.pop(SESSION_UID, None)
+        return frozenset()
+
     rolle, autoritativ, quelle = _authoritative_role(user)
     if autoritativ:
         # ``None`` ist ein kaputter Override und bleibt in den Permissions leer;

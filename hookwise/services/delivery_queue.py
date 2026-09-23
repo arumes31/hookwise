@@ -102,15 +102,13 @@ CLAIM_TIMEOUT_SECONDS = 300
 def _reclaim_stale_claims() -> int:
     """Return claims abandoned by a crashed dispatcher to the pending pool."""
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TIMEOUT_SECONDS)
-    stale = DeliveryOutbox.query.filter(
+    reclaimed = DeliveryOutbox.query.filter(
         DeliveryOutbox.status == "dispatching",
         DeliveryOutbox.dispatched_at < cutoff,
-    ).all()
-    for row in stale:
-        row.status = "pending"
-    if stale:
+    ).update({DeliveryOutbox.status: "pending"}, synchronize_session=False)
+    if reclaimed:
         db.session.commit()
-    return len(stale)
+    return int(reclaimed)
 
 
 def dispatch_pending(limit: int = 100) -> tuple[int, int]:

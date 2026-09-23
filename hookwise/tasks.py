@@ -39,7 +39,7 @@ from .services.configuration_matching import (
     select_configuration,
 )
 from .services.routing import evaluate_routing
-from .services.tenant_mappings import TENANT_MAPPING_REVISION_KEY
+from .services.tenant_mappings import TENANT_MAPPING_REVISION_KEY, normalize_tenant_match_value
 from .services.ticket_operations import (
     TicketOperationInProgress,
     complete,
@@ -72,6 +72,7 @@ CACHE_TTL = 3600 * 24  # 24 hours
 _raw_viability_ttl = os.environ.get("VIABILITY_TTL", "300")
 VIABILITY_TTL = max(1, int(_raw_viability_ttl)) if _raw_viability_ttl.isdigit() else 300
 MAX_CONFIGURATION_LOOKUPS = 16
+MAX_LOG_RETENTION_DAYS = 3650
 
 _ERROR_SECRET_RE = re.compile(r"(?i)(authorization|token|password|secret|api[-_ ]?key)\s*([:=])\s*[^\s,;]+")
 
@@ -812,11 +813,13 @@ def cleanup_logs() -> None:
     from .models import WebhookLog
 
     def _standard_aufbewahrung() -> int:
+        """Return the bounded environment default for log retention."""
+
         try:
             wert = int(os.environ.get("LOG_RETENTION_DAYS", 30))
         except TypeError, ValueError:
             return 30
-        return wert if wert >= 1 else 30
+        return wert if 1 <= wert <= MAX_LOG_RETENTION_DAYS else 30
 
     retention_days_raw = redis_client.get("hookwise_log_retention_days")
     try:
@@ -832,7 +835,7 @@ def cleanup_logs() -> None:
     # und traefe damit jede Zeile der Tabelle. Der Rueckfall geht auf den
     # konfigurierten Standard, nicht auf einen Tag -- ein unbrauchbarer Wert
     # soll nichts loeschen, was eine gesunde Einstellung behalten haette.
-    if retention_days < 1:
+    if not 1 <= retention_days <= MAX_LOG_RETENTION_DAYS:
         ersatz = _standard_aufbewahrung()
         logger.error(
             "Log retention of %s days is out of range; using the configured default of %s days instead.",
@@ -1425,18 +1428,44 @@ def _global_mapping_for_tenant(
     LLM that can select another valid ConnectWise company. Explicit mappings
     keep the routing decision deterministic and auditable.
     """
-    exact = next((mapping for mapping in mappings if mapping.get("tenant_value") == tenant_value), None)
-    if exact is not None:
-        return exact
-    return next(
-        (
-            mapping
-            for mapping in mappings
-            if isinstance(mapping.get("tenant_value"), str)
-            and ("*" in mapping["tenant_value"] or "?" in mapping["tenant_value"])
-            and fnmatch.fnmatchcase(tenant_value, mapping["tenant_value"])
+    normalized_tenant = normalize_tenant_match_value(tenant_value)
+    if not normalized_tenant:
+        return None
+
+    exact_matches = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping.get("tenant_value"), str)
+        and "*" not in mapping["tenant_value"]
+        and "?" not in mapping["tenant_value"]
+        and normalize_tenant_match_value(mapping["tenant_value"]) == normalized_tenant
+    ]
+    if exact_matches:
+        companies = {str(mapping.get("company_id") or "").strip() for mapping in exact_matches}
+        if len(companies) == 1:
+            return exact_matches[0]
+        logger.error("Ambiguous exact TenantMap entries for normalized tenant %s", normalized_tenant)
+        return None
+
+    wildcard_matches = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping.get("tenant_value"), str)
+        and ("*" in mapping["tenant_value"] or "?" in mapping["tenant_value"])
+        and fnmatch.fnmatchcase(normalized_tenant, normalize_tenant_match_value(mapping["tenant_value"]))
+    ]
+    if not wildcard_matches:
+        return None
+    companies = {str(mapping.get("company_id") or "").strip() for mapping in wildcard_matches}
+    if len(companies) != 1:
+        logger.error("Ambiguous wildcard TenantMap entries for normalized tenant %s", normalized_tenant)
+        return None
+    return min(
+        wildcard_matches,
+        key=lambda mapping: (
+            str(mapping["tenant_value"]).count("*") + str(mapping["tenant_value"]).count("?"),
+            -len(str(mapping["tenant_value"])),
         ),
-        None,
     )
 
 

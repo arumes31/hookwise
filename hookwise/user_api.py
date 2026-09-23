@@ -100,7 +100,16 @@ def _nutzer_mit(permission: str) -> List[str]:
     ids = {z.user_id for z in zuweisungen}
     if not ids:
         return []
-    return [u.id for u in User.query.filter(User.id.in_(ids)) if u.aktiv and permission in resolve_permissions(u)]
+    nutzer_ids: List[str] = []
+    for user in User.query.filter(User.id.in_(ids)):
+        if not user.aktiv:
+            continue
+        rechte = resolve_permissions(user)
+        if rechte is None:
+            raise InvariantProtectionUnavailable
+        if permission in rechte:
+            nutzer_ids.append(user.id)
+    return nutzer_ids
 
 
 def _legacy_rolle(rollen_keys: List[str]) -> str:
@@ -289,6 +298,8 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @main_bp.route("/api/users/<user_id>", methods=["PATCH"])
     @auth_required
     def user_update(user_id: str) -> Any:
+        """Update one account while preserving the last-manager invariant."""
+
         nutzer = User.query.get_or_404(user_id)
         daten = request.get_json(silent=True) or {}
 
@@ -346,6 +357,8 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @main_bp.route("/api/users/<user_id>", methods=["DELETE"])
     @auth_required
     def user_delete(user_id: str) -> Any:
+        """Delete one account while preserving the last-manager invariant."""
+
         nutzer = User.query.get_or_404(user_id)
         if session.get("user_id") == user_id:
             return jsonify({"status": "error", "message": "You cannot delete your own account."}), 409
@@ -429,6 +442,8 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @main_bp.route("/api/users/<user_id>/roles", methods=["PUT"])
     @auth_required
     def user_roles_set(user_id: str) -> Any:
+        """Replace an account's roles without removing the last manager."""
+
         if not schema_bereit():
             return jsonify({"status": "error", "message": "RBAC schema not ready"}), 503
         nutzer = User.query.get_or_404(user_id)
