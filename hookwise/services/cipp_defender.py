@@ -298,7 +298,13 @@ def defender_incident_summary(
     *,
     limit: int = 99,
 ) -> str:
-    """Build a compact, readable title for one Defender incident."""
+    """Return a ticket title in ``CIPP Defender: <tenant> #<incident>`` form.
+
+    The first non-empty tenant value in the payload is used; ``tenant_key`` and
+    then ``"unknown"`` are fallbacks. Tenant whitespace is collapsed, tenant
+    and incident identifiers are limited to 30 and 24 characters respectively,
+    and a non-negative ``limit`` caps the complete title length.
+    """
     results = incident.data.get("Results")
     first = next((item for item in results if isinstance(item, dict)), {}) if isinstance(results, list) else {}
     task_info = incident.data.get("TaskInfo")
