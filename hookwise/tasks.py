@@ -316,7 +316,6 @@ def _process_defender_incidents(
     config: WebhookConfig,
     log_entry: WebhookLog,
     delta: DefenderIncidentDelta,
-    base_summary: str,
     mapped_description: Any,
     description_template: str | None,
     monitor_name: str,
@@ -346,7 +345,7 @@ def _process_defender_incidents(
             )
 
     for incident in actionable:
-        incident_summary = defender_incident_summary(base_summary, delta.tenant_key, incident)
+        incident_summary = defender_incident_summary(delta.tenant_key, incident)
         incident_description = _render_ticket_description(
             mapped_description=mapped_description if len(actionable) == 1 else None,
             description_template=description_template,
@@ -1675,7 +1674,6 @@ def handle_webhook_logic(
                     config=config,
                     log_entry=log_entry,
                     delta=defender_delta,
-                    base_summary=ticket_summary,
                     mapped_description=mapped_description,
                     description_template=description_template,
                     monitor_name=monitor_name,
