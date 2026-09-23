@@ -1,3 +1,4 @@
+import fnmatch
 import hashlib
 import json
 import logging
@@ -13,6 +14,7 @@ from celery import Celery, Task
 from celery.exceptions import Retry as CeleryRetry
 from prometheus_client import Counter, Histogram
 from redis.exceptions import RedisError
+from sqlalchemy.exc import IntegrityError
 
 from .client import (
     ConfigurationRequestError,
@@ -809,12 +811,35 @@ def cleanup_logs() -> None:
     from .extensions import db
     from .models import WebhookLog
 
+    def _standard_aufbewahrung() -> int:
+        try:
+            wert = int(os.environ.get("LOG_RETENTION_DAYS", 30))
+        except TypeError, ValueError:
+            return 30
+        return wert if wert >= 1 else 30
+
     retention_days_raw = redis_client.get("hookwise_log_retention_days")
-    retention_days = (
-        int(cast(bytes, retention_days_raw).decode())
-        if retention_days_raw
-        else int(os.environ.get("LOG_RETENTION_DAYS", 30))
-    )
+    try:
+        retention_days = (
+            int(cast(bytes, retention_days_raw).decode()) if retention_days_raw else _standard_aufbewahrung()
+        )
+    except AttributeError, TypeError, ValueError:
+        logger.warning("Log retention setting is not a whole number; falling back to the default.")
+        retention_days = _standard_aufbewahrung()
+
+    # Die Loeschung ist unwiderruflich, deshalb steht der Boden hier und nicht
+    # nur in der Eingabemaske: ein Wert <= 0 schoebe den Stichtag in die Zukunft
+    # und traefe damit jede Zeile der Tabelle. Der Rueckfall geht auf den
+    # konfigurierten Standard, nicht auf einen Tag -- ein unbrauchbarer Wert
+    # soll nichts loeschen, was eine gesunde Einstellung behalten haette.
+    if retention_days < 1:
+        ersatz = _standard_aufbewahrung()
+        logger.error(
+            "Log retention of %s days is out of range; using the configured default of %s days instead.",
+            retention_days,
+            ersatz,
+        )
+        retention_days = ersatz
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
@@ -1218,7 +1243,39 @@ def process_webhook_task(
             status="processing",
         )
         db.session.add(attempt)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError as exc:
+            db.session.rollback()
+
+            # Nur der erwartete Eindeutigkeitskonflikt ist eine bereits laufende
+            # oder abgeschlossene Zustellung. Andere Integritaetsfehler duerfen
+            # nicht als Duplikat verschwinden.
+            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+            message = str(exc.orig).lower()
+            expected_conflict = constraint == "uq_retry_attempt_log_number" or (
+                constraint is None
+                and (
+                    "uq_retry_attempt_log_number" in message
+                    or ("webhook_retry_attempt.log_id" in message and "webhook_retry_attempt.attempt_number" in message)
+                )
+            )
+            if not expected_conflict:
+                raise
+
+            existing_attempt = WebhookRetryAttempt.query.filter_by(
+                log_id=log_entry.id,
+                attempt_number=retries + 1,
+            ).first()
+            if existing_attempt is None:
+                raise
+
+            logger.warning(
+                "Duplicate dispatch for log %s attempt %s; skipping duplicate task",
+                log_entry.id,
+                retries + 1,
+            )
+            return
 
     if config is None:
         now = datetime.now(timezone.utc)
@@ -1356,6 +1413,31 @@ def _check_recurring_window(window: Dict[str, Any], w_type: str, start_str: str,
         return now_time >= start_time or now_time <= end_time
     except ValueError, AttributeError, TypeError:
         return False
+
+
+def _global_mapping_for_tenant(
+    tenant_value: str,
+    mappings: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Resolve a tenant only through explicit exact or wildcard mappings.
+
+    The payload value is untrusted and must never become an instruction to an
+    LLM that can select another valid ConnectWise company. Explicit mappings
+    keep the routing decision deterministic and auditable.
+    """
+    exact = next((mapping for mapping in mappings if mapping.get("tenant_value") == tenant_value), None)
+    if exact is not None:
+        return exact
+    return next(
+        (
+            mapping
+            for mapping in mappings
+            if isinstance(mapping.get("tenant_value"), str)
+            and ("*" in mapping["tenant_value"] or "?" in mapping["tenant_value"])
+            and fnmatch.fnmatchcase(tenant_value, mapping["tenant_value"])
+        ),
+        None,
+    )
 
 
 def _resolve_timeout_alert(config: WebhookConfig) -> None:
@@ -1632,51 +1714,18 @@ def handle_webhook_logic(
 
                 if tenant_val:
                     all_mappings = get_all_global_mappings()
-                    global_mapping = next(
-                        (mapping for mapping in all_mappings if mapping.get("tenant_value") == tenant_val), None
-                    )
-
-                    if not global_mapping:
-                        import fnmatch
-
-                        global_mapping = next(
-                            (
-                                mapping
-                                for mapping in all_mappings
-                                if isinstance(mapping.get("tenant_value"), str)
-                                and ("*" in mapping["tenant_value"] or "?" in mapping["tenant_value"])
-                                and fnmatch.fnmatch(tenant_val, mapping["tenant_value"])
-                            ),
-                            None,
-                        )
-
-                    if not global_mapping:
-                        from .utils import call_llm
-
-                        companies = cw_client.get_companies()
-                        available_companies = [
-                            str(company.get("identifier")) for company in companies if company.get("identifier")
-                        ]
-                        if available_companies:
-                            companies_str = ", ".join(available_companies)
-                            llm_prompt = (
-                                f'Match this incoming tenant string: "{tenant_val}" to the best option '
-                                f"from this list of company identifiers from ConnectWise: {companies_str}. "
-                                "Respond with ONLY the exact string from the list that matches best. "
-                                'If none match reasonably well, reply with exactly "NONE".'
-                            )
-                            llm_resp = call_llm(llm_prompt)
-                            if llm_resp and llm_resp.strip() != "NONE" and llm_resp.strip() in available_companies:
-                                company_id = llm_resp.strip()
-                                logger.info("LLM fallback matched: %s -> %s", tenant_val, company_id, extra=extra)
-                                log_entry.matched_rule = (
-                                    log_entry.matched_rule or ""
-                                ) + f" [LLM Global: {tenant_val} -> {company_id}]"
+                    global_mapping = _global_mapping_for_tenant(tenant_val, all_mappings)
 
                     if global_mapping and not company_id:
                         company_id = global_mapping.get("company_id")
                         logger.info("Global mapping matched: %s -> %s", tenant_val, company_id, extra=extra)
                         log_entry.matched_rule = (log_entry.matched_rule or "") + f" [Global: {tenant_val}]"
+                    elif not global_mapping:
+                        logger.info(
+                            "No explicit global mapping for tenant %s; using the configured default company",
+                            tenant_val,
+                            extra=extra,
+                        )
 
             if not company_id:
                 company_id = customer_id_default or os.environ.get("CW_DEFAULT_COMPANY_ID")
@@ -1733,23 +1782,40 @@ def handle_webhook_logic(
                     if not is_replay and redis_client.get(viable_key):
                         is_usable = True
                     else:
-                        ticket_data = cw_client.get_ticket(ticket_id)
-                        if ticket_data is None:
-                            # Transient failure: do not clear the cache, assume still viable
-                            is_usable = True
+                        try:
+                            ticket_data = cw_client.get_ticket(ticket_id)
+                        except TicketNotFoundError:
+                            # Das Ticket wurde in ConnectWise geloescht oder
+                            # zusammengefuehrt. ``is_usable`` bleibt False, damit
+                            # der Zweig unten Cache- und Viability-Key raeumt und
+                            # der Ablauf ein neues Ticket oeffnet. ``get_ticket``
+                            # liefert bei 404 kein ``None``, sondern wirft --
+                            # ungefangen schlug der Fehler bis in die DLQ durch,
+                            # und weil der Cache-Eintrag dabei stehen blieb, traf
+                            # es jeden weiteren Alarm derselben Signatur ebenso.
+                            logger.info(
+                                "Cached ticket %s no longer exists in ConnectWise; dropping the cache entry",
+                                ticket_id,
+                                extra=extra,
+                            )
+                            ticket_data = None
                         else:
-                            is_closed = ticket_data.get("closedFlag", False)
-                            status_name = ticket_data.get("status", {}).get("name", "")
-                            closed_statuses = {"Completed", "Cancelled", "Closed"}
-                            if cw_client.status_closed:
-                                closed_statuses.add(cw_client.status_closed)
-                            if config.close_status:
-                                closed_statuses.add(config.close_status)
-
-                            if not is_closed and status_name not in closed_statuses:
+                            if ticket_data is None:
+                                # Transient failure: do not clear the cache, assume still viable
                                 is_usable = True
-                                if not is_replay:
-                                    redis_client.set(viable_key, "1", ex=VIABILITY_TTL)
+                            else:
+                                is_closed = ticket_data.get("closedFlag", False)
+                                status_name = ticket_data.get("status", {}).get("name", "")
+                                closed_statuses = {"Completed", "Cancelled", "Closed"}
+                                if cw_client.status_closed:
+                                    closed_statuses.add(cw_client.status_closed)
+                                if config.close_status:
+                                    closed_statuses.add(config.close_status)
+
+                                if not is_closed and status_name not in closed_statuses:
+                                    is_usable = True
+                                    if not is_replay:
+                                        redis_client.set(viable_key, "1", ex=VIABILITY_TTL)
 
                     if is_usable:
                         note_text = _duplicate_ticket_note(

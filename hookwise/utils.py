@@ -136,6 +136,15 @@ def auth_required(f: Any) -> Any:
                 user = User.query.filter_by(username=auth.username).first()
                 if user is None or not user.aktiv:
                     return Response("No active HookWise account for these credentials.", 403)
+                # Basic Auth kennt keinen zweiten Schritt. Ohne diese Sperre
+                # haette der Header den fuer das Konto eingeschalteten zweiten
+                # Faktor vollstaendig umgangen -- die Sitzung entstand hier
+                # ohne jede Pruefung von ``is_2fa_enabled``.
+                if user.is_2fa_enabled:
+                    return Response(
+                        "This account requires two-factor authentication; sign in through the console.",
+                        403,
+                    )
                 session["user_id"] = user.id
                 session["username"] = user.username
                 session["role"] = user.role

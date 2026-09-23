@@ -11,13 +11,14 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Mapping
 
-from flask import Blueprint, jsonify, render_template, request, session
+from flask import Blueprint, g, jsonify, render_template, request, session
 from werkzeug.security import generate_password_hash
 
 from .auth_entra import entra_aktiv
 from .extensions import db
 from .models import (
     EventAnnotation,
+    RbacMeta,
     RbacRole,
     RbacRolePermission,
     RbacUserRole,
@@ -116,6 +117,10 @@ def _legacy_rolle(rollen_keys: List[str]) -> str:
 INVARIANTEN_LOCK_ID = 0x484F_4F4C  # "HOOL"
 
 
+class InvariantProtectionUnavailable(RuntimeError):
+    """Raised when the last-manager invariant cannot be checked safely."""
+
+
 def _invariante_sperren() -> None:
     """Serialisiert Pruefung und Aenderung der user:manage-Invariante.
 
@@ -125,17 +130,41 @@ def _invariante_sperren() -> None:
     weil dort ohnehin eine einzige Schreibtransaktion zur Zeit laeuft.
     """
     try:
-        if db.engine.dialect.name != "postgresql":
-            return
-        db.session.execute(db.text("SELECT pg_advisory_xact_lock(:id)"), {"id": INVARIANTEN_LOCK_ID})
-    except Exception:  # pragma: no cover - Sperre ist Schutz, kein Selbstzweck
+        if db.engine.dialect.name == "postgresql":
+            db.session.execute(db.text("SELECT pg_advisory_xact_lock(:id)"), {"id": INVARIANTEN_LOCK_ID})
+        else:
+            # Dialekte mit FOR UPDATE serialisieren ueber die eine Meta-Zeile.
+            # SQLite ignoriert FOR UPDATE, verhindert aber konkurrierende
+            # Schreib-Commits selbst.
+            meta = RbacMeta.query.filter_by(id=1).with_for_update().one_or_none()
+            if meta is None:
+                db.session.add(RbacMeta(id=1, permissions_epoch=1))
+                db.session.flush()
+    except Exception as exc:  # pragma: no cover - Infrastrukturfehler
+        db.session.rollback()
         _logger.exception("Beratungssperre fuer die user:manage-Invariante nicht erhalten")
+        raise InvariantProtectionUnavailable from exc
+
+
+def _invariante_verletzt() -> bool:
+    """Prueft nach der Aenderung, ob ``user:manage`` noch jemand haelt.
+
+    Die Nachpruefung laeuft in derselben gesperrten Transaktion wie die
+    Aenderung. Ein System, das schon vorher keinen Halter hatte, bleibt
+    unberuehrt -- dort gibt es keine Invariante zu wahren.
+    """
+    if not getattr(g, "manage_halter_vorher", None):
+        return False
+    db.session.flush()
+    return not _nutzer_mit("user:manage")
 
 
 def _wuerde_aussperren(user_id: str, neue_rollen: List[str] | None = None, deaktivieren: bool = False) -> bool:
     """Bleibt nach der Aenderung noch jemand mit ``user:manage`` uebrig?"""
     _invariante_sperren()
     halter = set(_nutzer_mit("user:manage"))
+    # Der Stand vor der Aenderung, gemerkt fuer ``_invariante_verletzt``.
+    g.manage_halter_vorher = halter
     if user_id not in halter:
         return False  # der Nutzer haelt es ohnehin nicht
     if deaktivieren:
@@ -149,6 +178,12 @@ def _wuerde_aussperren(user_id: str, neue_rollen: List[str] | None = None, deakt
 
 def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[..., Any]] | None = None) -> None:
     """Registriert die Verwaltungs-Routen am Haupt-Blueprint."""
+
+    @main_bp.errorhandler(InvariantProtectionUnavailable)
+    def invariant_protection_unavailable(_error: InvariantProtectionUnavailable) -> Any:
+        """Fail closed when the last-manager invariant cannot be serialized."""
+        db.session.rollback()
+        return jsonify({"status": "error", "message": "Authorization safety check is unavailable."}), 503
 
     # ---------------- Ansichten ------------------------------------------
     @main_bp.route("/settings/identity")
@@ -292,6 +327,17 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
                     409,
                 )
             nutzer.upn = (daten.get("upn") or "").strip() or None
+        if _invariante_verletzt():
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "This is the last account holding user:manage.",
+                    }
+                ),
+                409,
+            )
         db.session.commit()
         log_audit("user_update", None, f"User {nutzer.username} updated")
         bump_epoch()
@@ -320,6 +366,17 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         for modell in (UserPreference, SavedHistorySearch, EventAnnotation):
             modell.query.filter_by(user_id=user_id).delete(synchronize_session=False)
         db.session.delete(nutzer)
+        if _invariante_verletzt():
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "This is the last account holding user:manage.",
+                    }
+                ),
+                409,
+            )
         db.session.commit()
         log_audit("user_delete", None, f"User {name} deleted")
         bump_epoch()
@@ -391,6 +448,17 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             )
         _rollen_setzen(user_id, gewuenscht)
         nutzer.role = _legacy_rolle(gewuenscht)
+        if _invariante_verletzt():
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "This is the last account holding user:manage.",
+                    }
+                ),
+                409,
+            )
         db.session.commit()
         log_audit("role_grant", None, f"{nutzer.username} -> {', '.join(sorted(gewuenscht)) or 'none'}")
         bump_epoch()
@@ -529,6 +597,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
     @main_bp.route("/api/roles/<role_id>", methods=["PATCH"])
     @auth_required
     def role_update(role_id: str) -> Any:
+        """Update a custom role without removing the final user manager."""
         rolle = RbacRole.query.get_or_404(role_id)
         if rolle.is_builtin:
             return jsonify({"status": "error", "message": "built-in roles are read-only"}), 409
@@ -548,6 +617,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
                 _invariante_sperren()
                 betroffen = [z.user_id for z in RbacUserRole.query.filter_by(role_id=role_id)]
                 halter = set(_nutzer_mit("user:manage"))
+                g.manage_halter_vorher = halter
                 if halter and halter <= set(betroffen):
                     return (
                         jsonify(
@@ -561,6 +631,17 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
             RbacRolePermission.query.filter_by(role_id=role_id).delete(synchronize_session=False)
             for recht in sorted(neu):
                 db.session.add(RbacRolePermission(role_id=role_id, permission=recht))
+        if _invariante_verletzt():
+            db.session.rollback()
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "This role change would remove the last user:manage assignment.",
+                    }
+                ),
+                409,
+            )
         db.session.commit()
         log_audit("role_update", None, f"Role {rolle.key} updated")
         bump_epoch()
