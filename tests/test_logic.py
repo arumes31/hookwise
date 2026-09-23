@@ -77,6 +77,7 @@ def _defender_incident(incident_id, created_at, *alert_ids):
 
 
 def test_cipp_defender_ticket_title_uses_readable_tenant_name():
+    tenant_key = "7f7c555b-c06c-4701-bc7d-0f3235"
     incident = DefenderIncidentChange(
         incident_key="id:1637",
         display_id="1637",
@@ -92,7 +93,8 @@ def test_cipp_defender_ticket_title_uses_readable_tenant_name():
         ticket_id=None,
     )
 
-    assert defender_incident_summary("7f7c555b-c06c-4701-bc7d-0f3235", incident) == "CIPP Defender: mibag.at #1637"
+    assert defender_incident_summary(tenant_key, incident) == "CIPP Defender: mibag.at #1637 @3d22a5"
+    assert defender_incident_summary(tenant_key, incident, limit=30) == "CIPP Defender: m #1637 @3d22a5"
 
 
 @patch("hookwise.services.cipp_defender._utcnow")
@@ -125,7 +127,7 @@ def test_cipp_defender_baselines_history_and_skips_unchanged_payload(mock_cw, mo
         created = mock_cw.create_ticket.call_args.kwargs
         assert "Incident ID: 901" in created["description"]
         assert "Incident ID: 807" not in created["description"]
-        assert created["summary"] == "CIPP Defender: eworx.at #901"
+        assert created["summary"] == "CIPP Defender: eworx.at #901 @bfbcd0"
 
         states = {
             state.incident_key: state
@@ -177,8 +179,8 @@ def test_cipp_defender_creates_one_ticket_per_incident_and_merges_alerts_without
 
         assert mock_cw.create_ticket.call_count == 2
         created = mock_cw.create_ticket.call_args_list
-        assert created[0].kwargs["summary"] == "CIPP Defender: eworx.at #901"
-        assert created[1].kwargs["summary"] == "CIPP Defender: eworx.at #902"
+        assert created[0].kwargs["summary"] == "CIPP Defender: eworx.at #901 @bfbcd0"
+        assert created[1].kwargs["summary"] == "CIPP Defender: eworx.at #902 @bfbcd0"
         assert "alert-a" in created[0].kwargs["description"]
         assert "alert-b" in created[0].kwargs["description"]
         assert CippDefenderIncidentState.query.filter_by(incident_key="id:901").one().ticket_id == 700
@@ -208,7 +210,7 @@ def test_cipp_defender_creates_one_ticket_per_incident_and_merges_alerts_without
         handle_webhook_logic(config.id, _cipp_defender_payload(changed, second, third), "req-defender-next-window")
 
         created = mock_cw.create_ticket.call_args.kwargs
-        assert created["summary"] == "CIPP Defender: eworx.at #903"
+        assert created["summary"] == "CIPP Defender: eworx.at #903 @bfbcd0"
         assert "Incident ID: 903" in created["description"]
         assert "Incident ID: 901" not in created["description"]
         assert CippDefenderIncidentState.query.filter_by(incident_key="id:903").one().ticket_id == 702
