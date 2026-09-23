@@ -52,8 +52,14 @@
                     <small>{{ 'Authenticator codes are required after your password.' if user.is_2fa_enabled else 'Add an authenticator app to protect this account.' }}</small>
                 </div>
                 {% if user.is_2fa_enabled %}
-                <form action="{{ url_for('main.disable_2fa') }}" method="POST" id="disable-2fa-form">
+                <form action="{{ url_for('main.disable_2fa') }}" method="POST" id="disable-2fa-form"
+                    class="hw-disable-2fa-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="hw-field-stack">
+                        <label for="disable-2fa-password">Current password</label>
+                        <input class="form-control" id="disable-2fa-password" name="current_password" type="password"
+                            autocomplete="current-password" required>
+                    </div>
                     <button type="button" class="btn btn-outline-danger" onclick="confirmDisable2FA()">Disable 2FA</button>
                 </form>
                 {% else %}
@@ -145,11 +151,13 @@
 {% if user.quelle == 'local' and user.is_2fa_enabled %}
 <script>
     function confirmDisable2FA() {
+        const form = document.getElementById('disable-2fa-form');
+        if (!form.reportValidity()) return;
         hwConfirm('Disable two-factor authentication for this account?', {
             title: 'Disable two-factor authentication',
             okText: 'Disable 2FA'
         }).then(confirmed => {
-            if (confirmed) document.getElementById('disable-2fa-form').submit();
+            if (confirmed) form.submit();
         });
     }
 </script>

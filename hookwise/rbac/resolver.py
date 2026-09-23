@@ -9,9 +9,9 @@ Wartezeit bis zum naechsten Login.
 
 import logging
 import time
-from typing import Any, FrozenSet, Optional, Set, Tuple
+from typing import Any, FrozenSet, Optional, Set, Tuple, cast
 
-from flask import current_app, session
+from flask import current_app, request, session
 from sqlalchemy.exc import IntegrityError
 
 from .catalog import ALL_PERMISSIONS, permissions_for_legacy_role
@@ -66,7 +66,7 @@ def schema_bereit() -> bool:
     return False
 
 
-def aktueller_epoch(frisch: bool = False) -> int:
+def aktueller_epoch(frisch: bool = False) -> Optional[int]:
     """Aktueller Stand des Rechte-Zaehlers."""
     if not schema_bereit():
         return 0
@@ -79,7 +79,8 @@ def aktueller_epoch(frisch: bool = False) -> int:
         zeile = RbacMeta.query.get(1)
         wert = int(zeile.permissions_epoch) if zeile else 1
     except Exception:  # pragma: no cover
-        wert = int(_EPOCH_CACHE["wert"])
+        _logger.exception("Permissions-Epoch konnte nicht autoritativ gelesen werden")
+        return None
     _EPOCH_CACHE["wert"] = wert
     _EPOCH_CACHE["bis"] = jetzt + _EPOCH_TTL
     return wert
@@ -146,12 +147,14 @@ def effective_role_key(user: Any) -> Optional[str]:
     return fallback or None
 
 
-def resolve_permissions(user: Any) -> FrozenSet[str]:
+def resolve_permissions(user: Any) -> Optional[FrozenSet[str]]:
     """Effektive Rechte eines Nutzers.
 
     Reihenfolge: manueller Override, Entra App Role, zugewiesene lokale Rollen,
     alter ``role``-String. Override und App Role sind exakte Ersatzrollen; ihre
-    Rechte werden nicht mit lokalen Zuweisungen vereinigt.
+    Rechte werden nicht mit lokalen Zuweisungen vereinigt. ``None`` signalisiert
+    eine fehlgeschlagene autoritative Abfrage; ein erfolgreicher leerer Grant
+    bleibt dagegen ein leeres ``frozenset``.
     """
     if user is None:
         return frozenset()
@@ -187,13 +190,26 @@ def resolve_permissions(user: Any) -> FrozenSet[str]:
         # Nur Rechte, die der Code auch kennt (ADR-004).
         return frozenset(rechte & ALL_PERMISSIONS)
     except Exception:  # pragma: no cover
-        _logger.exception("Rechteaufloesung fehlgeschlagen, Legacy-Fallback")
-        return permissions_for_legacy_role(autoritative_rolle if autoritativ else getattr(user, "role", None))
+        _logger.exception("Rechteaufloesung fehlgeschlagen; es werden keine Rechte gewaehrt")
+        return None
 
 
-def sitzung_setzen(user: Any) -> FrozenSet[str]:
+def sitzung_setzen(user: Any, *, epoch: Optional[int] = None) -> FrozenSet[str]:
     """Rechte in die Session schreiben; beim Login und bei Epoch-Wechsel."""
+    stand = aktueller_epoch(frisch=True) if epoch is None else epoch
+    if stand is None:
+        session.pop(SESSION_PERMS, None)
+        session.pop(SESSION_EPOCH, None)
+        session.pop(SESSION_UID, None)
+        return frozenset()
+
     rechte = resolve_permissions(user)
+    if rechte is None:
+        session.pop(SESSION_PERMS, None)
+        session.pop(SESSION_EPOCH, None)
+        session.pop(SESSION_UID, None)
+        return frozenset()
+
     rolle, autoritativ, quelle = _authoritative_role(user)
     if autoritativ:
         # ``None`` ist ein kaputter Override und bleibt in den Permissions leer;
@@ -204,7 +220,7 @@ def sitzung_setzen(user: Any) -> FrozenSet[str]:
         session["role"] = getattr(user, "role", None)
         session["authz_source"] = "local"
     session[SESSION_PERMS] = sorted(rechte)
-    session[SESSION_EPOCH] = aktueller_epoch(frisch=True)
+    session[SESSION_EPOCH] = stand
     session[SESSION_UID] = getattr(user, "id", None)
     return rechte
 
@@ -227,15 +243,31 @@ def _aktueller_nutzer() -> Tuple[Optional[Any], bool]:
         return None, True
 
 
+def _request_epoch() -> Optional[int]:
+    """Read the authoritative epoch once per request, never across requests."""
+    cache_key = "hookwise.permissions_epoch"
+    if cache_key not in request.environ:
+        request.environ[cache_key] = aktueller_epoch(frisch=True)
+    return cast(Optional[int], request.environ[cache_key])
+
+
 def current_permissions() -> FrozenSet[str]:
     """Rechte der laufenden Session, bei Bedarf neu aufgeloest."""
     if "user_id" not in session:
         return frozenset()
 
+    # Fuer Autorisierung ist ein Prozesscache keine autoritative Quelle: bei
+    # Rollenentzug in einer anderen Instanz oder Datenbankausfall koennte eine
+    # alte Session sonst weiter privilegiert bleiben.
+    epoch = _request_epoch()
+    if epoch is None:
+        _logger.error("Permissions-Epoch nicht verfuegbar; es werden keine Rechte gewaehrt")
+        return frozenset()
+
     stand = session.get(SESSION_EPOCH)
     if (
         stand is not None
-        and stand == aktueller_epoch()
+        and stand == epoch
         and SESSION_PERMS in session
         and session.get(SESSION_UID) == session.get("user_id")
     ):
@@ -243,10 +275,15 @@ def current_permissions() -> FrozenSet[str]:
 
     nutzer, stoerung = _aktueller_nutzer()
     if nutzer is not None:
-        return sitzung_setzen(nutzer)
+        return sitzung_setzen(nutzer, epoch=epoch)
     if stoerung:
-        # Datenbank nicht erreichbar: nicht mehr gewaehren als die Legacy-Rolle.
-        return permissions_for_legacy_role(session.get("role"))
+        # Datenbank nicht erreichbar. Die Legacy-Rolle in der Sitzung stammt aus
+        # der Anmeldung und altert nicht mit: ein zwischenzeitlich degradiertes
+        # Konto haette waehrend der Stoerung seine alten Rechte behalten. Ein
+        # Ausfall ist kein Grund, Rechte zu vergeben -- ohne Datenbank kann
+        # ohnehin kaum eine Route arbeiten.
+        _logger.error("Datenbank waehrend der Rechtepruefung nicht erreichbar; es werden keine Rechte gewaehrt")
+        return frozenset()
     if session.get(SESSION_UID) and session.get(SESSION_UID) == session.get("user_id"):
         # Diese Sitzung entstand aus einer echten Anmeldung an genau diesem
         # Konto -- und das Konto gibt es nicht mehr. Ohne den Schnitt behielte

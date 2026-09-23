@@ -17,7 +17,7 @@ from .extensions import csrf, db, limiter
 from .models import AuditLog, WebhookConfig, WebhookLog
 from .services.delivery_queue import commit_and_dispatch, stage_delivery
 from .services.routing import routing_regex_matches
-from .tasks import celery, cw_client, process_webhook_task, redis_client
+from .tasks import MAX_LOG_RETENTION_DAYS, celery, cw_client, process_webhook_task, redis_client
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
     auth_required,
@@ -765,11 +765,31 @@ def _register() -> None:
 
     @auth_required
     def update_settings() -> Any:
+        """Validate and persist administrative runtime settings."""
+
         retention = request.form.get("log_retention_days")
         health_webhook = request.form.get("health_webhook")
         cipp_app_certificate_exclude_names = request.form.get("cipp_app_certificate_exclude_names", "")
+
+        # Der Wert landet ungeprueft im Stichtag von ``cleanup_logs``. Bei 0 oder
+        # negativ liegt der Stichtag in der Zukunft und die Aufraeumung traefe
+        # jede Zeile -- unwiderruflich. Die Grenzen im Formular sind nur die
+        # halbe Miete, ein direkter POST umgeht sie.
+        retention_tage: int | None = None
         if retention:
-            redis_client.set("hookwise_log_retention_days", retention)
+            try:
+                retention_tage = int(str(retention).strip())
+            except TypeError, ValueError:
+                retention_tage = None
+            if retention_tage is None or not 1 <= retention_tage <= MAX_LOG_RETENTION_DAYS:
+                flash(
+                    f"Log retention must be a whole number of days between 1 and {MAX_LOG_RETENTION_DAYS}.",
+                    "danger",
+                )
+                return redirect(url_for("main.settings"))
+
+        if retention_tage is not None:
+            redis_client.set("hookwise_log_retention_days", str(retention_tage))
         if health_webhook:
             redis_client.set("hookwise_health_webhook", health_webhook)
         exclude_patterns = parse_cipp_app_certificate_exclude_patterns(cipp_app_certificate_exclude_names)

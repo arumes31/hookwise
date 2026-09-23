@@ -36,9 +36,14 @@ limiter = Limiter(
 
 @limiter.request_filter
 def header_whitelist():
-    from flask import session
+    """Exempt normal signed-in traffic, but never sensitive account actions."""
+    from flask import request, session
 
-    return "user_id" in session
+    sensitive_endpoints = {
+        "main.change_own_password",
+        "main.disable_2fa",
+    }
+    return "user_id" in session and request.endpoint not in sensitive_endpoints
 
 
 _socketio_message_queue = (

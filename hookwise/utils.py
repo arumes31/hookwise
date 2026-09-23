@@ -89,8 +89,12 @@ def parse_ip_network(network_str: str) -> Any:
 
 
 def auth_required(f: Any) -> Any:
+    """Require a valid browser session or request-scoped Basic Auth."""
+
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
+        """Authorize one request before invoking the protected handler."""
+
         # 1. IP Whitelist Check (Global)
         trusted_ips = os.environ.get("GUI_TRUSTED_IPS")
         if trusted_ips:
@@ -136,6 +140,15 @@ def auth_required(f: Any) -> Any:
                 user = User.query.filter_by(username=auth.username).first()
                 if user is None or not user.aktiv:
                     return Response("No active HookWise account for these credentials.", 403)
+                # Basic Auth kennt keinen zweiten Schritt. Ohne diese Sperre
+                # haette der Header den fuer das Konto eingeschalteten zweiten
+                # Faktor vollstaendig umgangen -- die Sitzung entstand hier
+                # ohne jede Pruefung von ``is_2fa_enabled``.
+                if user.is_2fa_enabled:
+                    return Response(
+                        "This account requires two-factor authentication; sign in through the console.",
+                        403,
+                    )
                 session["user_id"] = user.id
                 session["username"] = user.username
                 session["role"] = user.role

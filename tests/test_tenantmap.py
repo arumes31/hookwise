@@ -128,7 +128,7 @@ def test_tenantmap_group_create_edit_and_delete_are_atomic(client, app):
     created = client.post(
         "/tenantmap/add",
         data={
-            "tenant_values": "alpha.example\nalpha.onmicrosoft.com\n*.alpha.example\nalpha.example",
+            "tenant_values": "alpha.example\nALPHA.ONMICROSOFT.COM.\n*.alpha.example\nalpha.example",
             "company_id": "ALPHA",
             "description": "Alpha group",
         },
@@ -180,7 +180,7 @@ def test_tenantmap_duplicate_alias_rejects_the_complete_group(client, app):
     )
     second = client.post(
         "/tenantmap/add",
-        data={"tenant_values": "free.example\nshared.example", "company_id": "SECOND"},
+        data={"tenant_values": "free.example\nSHARED.EXAMPLE.", "company_id": "SECOND"},
         follow_redirects=True,
     )
 
