@@ -293,19 +293,33 @@ def persist_defender_incident(
 
 
 def defender_incident_summary(
-    summary: str,
     tenant_key: str,
     incident: DefenderIncidentChange,
     *,
     limit: int = 99,
 ) -> str:
-    """Build a readable title with a stable tenant/incident correlation marker."""
+    """Build a compact, readable title for one Defender incident."""
     results = incident.data.get("Results")
     first = next((item for item in results if isinstance(item, dict)), {}) if isinstance(results, list) else {}
-    name = first.get("IncidentName") or first.get("Title") or first.get("Name")
-    tenant = re.sub(r"\s+", " ", tenant_key).strip()[:30]
-    marker = f"[Defender {tenant} #{incident.display_id[:24]}]"
-    readable = f"{summary}: {str(name).strip()}" if name else summary
-    available = max(0, limit - len(marker) - 1)
-    base = readable[:available].rstrip(" :-")
-    return f"{base} {marker}".strip()
+    task_info = incident.data.get("TaskInfo")
+    task_info = task_info if isinstance(task_info, dict) else {}
+    candidates = (
+        incident.data.get("Tenant"),
+        incident.data.get("tenant"),
+        incident.data.get("TenantName"),
+        task_info.get("Tenant"),
+        task_info.get("tenant"),
+        task_info.get("TenantName"),
+        first.get("Tenant"),
+        first.get("TenantName"),
+        tenant_key,
+    )
+    tenant = next(
+        (re.sub(r"\s+", " ", str(candidate)).strip() for candidate in candidates if str(candidate or "").strip()),
+        "unknown",
+    )
+    discriminator = hashlib.sha256(tenant_key.encode("utf-8")).hexdigest()[:6]
+    prefix = "CIPP Defender: "
+    suffix = f" #{incident.display_id[:24]} @{discriminator}"
+    tenant_limit = min(30, max(0, limit - len(prefix) - len(suffix)))
+    return f"{prefix}{tenant[:tenant_limit].rstrip()}{suffix}"[:limit]
