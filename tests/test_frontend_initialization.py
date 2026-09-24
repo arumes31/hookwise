@@ -52,6 +52,40 @@ assert.strictEqual(timestamp.dataset.localized, 'true');
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_shared_datetime_formatter_treats_offsetless_iso_values_as_utc():
+    """Avoid interpreting server-generated offset-less timestamps as browser-local time."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for browser timestamp coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const formatterSource = source.slice(
+    source.indexOf('function formatLocalDateTime'),
+    source.indexOf('window.hwFormatLocalDateTime')
+);
+const localDateTimeFormatter = { format: value => value.toISOString() };
+
+eval(formatterSource);
+
+assert.strictEqual(formatLocalDateTime('2026-09-16T18:20:05'), '2026-09-16T18:20:05.000Z');
+assert.strictEqual(formatLocalDateTime('2026-09-16T18:20:05+02:00'), '2026-09-16T16:20:05.000Z');
+assert.strictEqual(formatLocalDateTime(new Date('2026-09-16T18:20:05Z')), '2026-09-16T18:20:05.000Z');
+assert.strictEqual(formatLocalDateTime('not-a-date'), '');
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_endpoint_selection_and_sidebar_are_overlays():
     """Keep selection and navigation state changes out of document flow."""
     css = (ROOT / "static/css/hookwise-console.css").read_text(encoding="utf-8")

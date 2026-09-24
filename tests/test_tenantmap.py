@@ -6,6 +6,7 @@ import pytest
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import GlobalMapping
+from hookwise.services.tenant_mappings import TenantMappingUndoSnapshot
 
 
 @pytest.fixture
@@ -31,7 +32,15 @@ def disable_mapping_cache_revision():
 
     def store_snapshot(mapping, owner_id):
         token = f"undo-{len(snapshots) + 1}"
-        snapshots[token] = (mapping, owner_id)
+        snapshots[token] = (
+            TenantMappingUndoSnapshot(
+                original_mapping_id=mapping.id,
+                tenant_values=mapping.tenant_values,
+                company_id=mapping.company_id,
+                description=mapping.description,
+            ),
+            owner_id,
+        )
         return token
 
     def load_snapshot(token, owner_id):
@@ -231,6 +240,8 @@ def test_tenantmap_delete_requires_confirmation_and_can_be_undone(client, app):
     with app.app_context():
         rows = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
         assert [row.tenant_value for row in rows] == ["one.example", "two.example"]
+        assert {row.mapping_group_id for row in rows} == {group_id}
+        assert db.session.get(GlobalMapping, group_id) is not None
         assert {row.company_id for row in rows} == {"UNDO-COMPANY"}
         assert {row.description for row in rows} == {"Undo fixture"}
 

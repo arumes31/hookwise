@@ -177,7 +177,12 @@ def undo_delete_mapping() -> Any:
             _clear_undo_session()
             flash("The undo period has expired. The mapping was not restored.")
             return redirect(url_for("main.tenantmap"))
-        mapping = create_mapping_group(snapshot.tenant_values, snapshot.company_id, snapshot.description)
+        mapping = create_mapping_group(
+            snapshot.tenant_values,
+            snapshot.company_id,
+            snapshot.description,
+            group_id=snapshot.original_mapping_id,
+        )
         aliases = mapping_alias_summary(mapping.tenant_values)
         log_audit(
             "restore_mapping",

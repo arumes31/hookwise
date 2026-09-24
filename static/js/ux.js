@@ -94,7 +94,13 @@ const localDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 
 /** Format one UTC timestamp with the same local-time contract used across Hookwise. */
 function formatLocalDateTime(value) {
-    const timestamp = value instanceof Date ? value : new Date(value);
+    let timestampValue = value;
+    if (typeof value === 'string') {
+        const trimmedValue = value.trim();
+        const offsetlessIsoDateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(trimmedValue);
+        timestampValue = offsetlessIsoDateTime ? `${trimmedValue}Z` : trimmedValue;
+    }
+    const timestamp = value instanceof Date ? value : new Date(timestampValue);
     return Number.isNaN(timestamp.getTime()) ? '' : localDateTimeFormatter.format(timestamp);
 }
 

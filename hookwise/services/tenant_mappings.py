@@ -200,13 +200,15 @@ def create_mapping_group(
     raw_tenant_values: str | Sequence[str] | None,
     company_id: str | None,
     description: str | None,
+    *,
+    group_id: str | None = None,
 ) -> TenantMappingGroup:
     """Stage a new logical mapping group in the current transaction."""
     aliases, normalized_company, normalized_description = normalize_mapping_input(
         raw_tenant_values, company_id, description
     )
     _ensure_aliases_available(aliases)
-    group_id = str(uuid.uuid4())
+    group_id = group_id if group_id is not None else str(uuid.uuid4())
     _add_group_rows(group_id, aliases, normalized_company, normalized_description)
     return TenantMappingGroup(group_id, tuple(aliases), normalized_company, normalized_description)
 

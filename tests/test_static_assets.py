@@ -105,6 +105,25 @@ def test_high_impact_ui_actions_keep_explicit_confirmations():
     assert "bootstrap.Modal.getOrCreateInstance" in sources["ux"]
 
 
+def test_error_page_retries_do_not_repeat_unsafe_requests(app):
+    """Offer reload only when it cannot repeat a state-changing request."""
+    with app.test_request_context("/settings", method="GET"):
+        bad_request_get = flask.render_template("400.html")
+        server_error_get = flask.render_template("500.html")
+    assert "window.location.reload()" in bad_request_get
+    assert "window.location.reload()" in server_error_get
+
+    with app.test_request_context("/settings", method="POST"):
+        bad_request_post = flask.render_template("400.html")
+        server_error_post = flask.render_template("500.html")
+    assert "window.location.reload()" not in bad_request_post
+    assert 'href="/settings"' in bad_request_post
+    assert "Open a fresh form" in bad_request_post
+    assert "window.location.reload()" not in server_error_post
+    assert "Check operation status" in server_error_post
+    assert "may already have completed" in server_error_post
+
+
 def test_stylesheet_local_assets_use_their_content_digest():
     local_url = re.compile(r"url\(\s*['\"]?(?!data:)([^'\")]+)")
 
