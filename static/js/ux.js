@@ -86,6 +86,26 @@ function mountContentModals(container) {
     });
 }
 
+const localDateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+    timeZoneName: 'short'
+});
+
+/** Format one UTC timestamp with the same local-time contract used across Hookwise. */
+function formatLocalDateTime(value) {
+    let timestampValue = value;
+    if (typeof value === 'string') {
+        const trimmedValue = value.trim();
+        const offsetlessIsoDateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(trimmedValue);
+        timestampValue = offsetlessIsoDateTime ? `${trimmedValue}Z` : trimmedValue;
+    }
+    const timestamp = value instanceof Date ? value : new Date(timestampValue);
+    return Number.isNaN(timestamp.getTime()) ? '' : localDateTimeFormatter.format(timestamp);
+}
+
+window.hwFormatLocalDateTime = formatLocalDateTime;
+
 /** Render UTC timestamps in the browser's local timezone on every page load. */
 function initLocalDateTimes(container = document) {
     if (!container || typeof container.querySelectorAll !== 'function') return;
@@ -93,7 +113,8 @@ function initLocalDateTimes(container = document) {
     if (container.matches?.('time.hw-local-datetime[datetime]')) timestamps.unshift(container);
     const localFormatter = new Intl.DateTimeFormat(undefined, {
         year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+        timeZoneName: 'short'
     });
     const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time';
 
@@ -119,17 +140,20 @@ window.addEventListener('pageshow', (event) => {
 /**
  * Modern Confirmation Prompt Wrapper
  * @param {string} message 
- * @param {object} options { title, okText, cancelText }
+ * @param {object} options { title, okText, cancelText, danger }
  * @returns {Promise<boolean>}
  */
+let hwConfirmPending = false;
 window.hwConfirm = function (message, options = {}) {
+    if (hwConfirmPending) return Promise.resolve(false);
     return new Promise((resolve) => {
         const modalEl = document.getElementById('hw-confirm-modal');
         if (!modalEl) {
             resolve(confirm(message));
             return;
         }
-        const modal = new bootstrap.Modal(modalEl);
+        hwConfirmPending = true;
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
 
         document.getElementById('hw-confirm-message').textContent = message;
         document.getElementById('hw-confirm-title').textContent = options.title || 'Confirm Action';
@@ -138,29 +162,31 @@ window.hwConfirm = function (message, options = {}) {
 
         const btnOk = document.getElementById('hw-confirm-ok');
         const btnCancel = document.getElementById('hw-confirm-cancel');
+        btnOk.classList.toggle('btn-danger', options.danger === true);
+        btnOk.classList.toggle('btn-primary', options.danger !== true);
 
-        let handled = false;
+        let result = false;
 
         const onHidden = () => {
-            if (!handled) {
-                handled = true;
-                resolve(false);
-            }
-        };
-
-        const cleanup = (result) => {
-            if (handled) return;
-            handled = true;
-            modalEl.removeEventListener('hidden.bs.modal', onHidden);
             btnOk.onclick = null;
             btnCancel.onclick = null;
-            modal.hide();
+            btnOk.disabled = false;
+            btnOk.removeAttribute('aria-busy');
+            hwConfirmPending = false;
             resolve(result);
         };
 
-        btnOk.onclick = () => cleanup(true);
-        btnCancel.onclick = () => cleanup(false);
+        const finish = (confirmed) => {
+            result = confirmed;
+            btnOk.disabled = true;
+            btnOk.setAttribute('aria-busy', 'true');
+            modal.hide();
+        };
+
+        btnOk.onclick = () => finish(true);
+        btnCancel.onclick = () => finish(false);
         modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
+        modalEl.addEventListener('shown.bs.modal', () => btnCancel.focus(), { once: true });
 
         modal.show();
     });
@@ -600,6 +626,8 @@ window.bulkArchive = async function () {
 window.bulkPause = async function () {
     const checked = Array.from(document.querySelectorAll('.endpoint-check:checked')).map(c => c.dataset.id);
     if (!checked.length) return;
+    if (!await hwConfirm(`Pause ${checked.length} selected endpoints? They stop accepting new events until resumed.`,
+        { title: 'Pause selected endpoints', okText: 'Pause selected', danger: true })) return;
 
     try {
         const resp = await fetch('/endpoint/bulk/pause', {
@@ -660,7 +688,15 @@ window.bulkExport = async function () {
     }
 };
 
-window.toggleEndpoint = async function (id) {
+window.toggleEndpoint = async function (id, isEnabled, name, trigger) {
+    if (isEnabled && !await hwConfirm(
+        `Pause "${name || 'this endpoint'}"? It stops accepting new events until resumed.`,
+        { title: 'Pause endpoint', okText: 'Pause endpoint', danger: true }
+    )) return;
+    if (trigger) {
+        trigger.disabled = true;
+        trigger.setAttribute('aria-busy', 'true');
+    }
     try {
         const resp = await fetch(`/endpoint/toggle/${id}`, { method: 'POST' });
         const data = await resp.json();
@@ -670,6 +706,11 @@ window.toggleEndpoint = async function (id) {
         }
     } catch (e) {
         showToast('Error toggling endpoint', 'error');
+    } finally {
+        if (trigger) {
+            trigger.disabled = false;
+            trigger.removeAttribute('aria-busy');
+        }
     }
 };
 
@@ -852,11 +893,21 @@ window.escapeHtml = function (text) {
 
 // Nr. 14: Duplizieren aus dem Kartenmenue. Nutzt dieselbe POST-Form wie das
 // Rechtsklick-Kontextmenue -- eine Route, zwei Wege dorthin.
-// Nr. 12: Archivieren -- umkehrbar, deshalb ohne Rueckfrage.
-window.archiveEndpoint = function (id) {
+// Nr. 12: Archivieren ist umkehrbar, stoppt aber sofort den Event-Empfang.
+// Deshalb bleibt die Rueckfrage ueber alle Einstiegspunkte konsistent.
+window.archiveEndpoint = async function (id, name, trigger) {
+    const label = name ? ` "${name}"` : '';
+    if (!await hwConfirm(`Archive endpoint${label}? It stops receiving events and can be restored anytime.`,
+        { title: 'Archive Endpoint', okText: 'Archive' })) return;
+    if (trigger) {
+        trigger.disabled = true;
+        trigger.setAttribute('aria-busy', 'true');
+    }
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = '/endpoint/archive/' + id;
+    form.action = '/endpoint/archive/' + encodeURIComponent(String(id));
+    form.hidden = true;
+    form.setAttribute('hx-boost', 'false');
     const csrfInput = document.createElement('input');
     csrfInput.type = 'hidden';
     csrfInput.name = 'csrf_token';
@@ -864,7 +915,17 @@ window.archiveEndpoint = function (id) {
     form.appendChild(csrfInput);
     document.body.appendChild(form);
     window.hwMerkeScroll();
-    form.submit();
+    try {
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.submit();
+    } catch (error) {
+        form.remove();
+        if (trigger) {
+            trigger.disabled = false;
+            trigger.removeAttribute('aria-busy');
+        }
+        showToast('The endpoint could not be archived. Try again.', 'danger');
+    }
 };
 
 window.cloneEndpoint = function (id) {
@@ -984,22 +1045,10 @@ function initContextMenu(container = document) {
                 document.body.appendChild(form);
                 form.submit();
             };
-            document.getElementById('ctx-archive').onclick = async () => {
-                if (await hwConfirm('Archive endpoint ' + name + '? It stops receiving events and can be restored anytime.',
-                    { title: 'Archive Endpoint', okText: 'Archive' })) {
-                    setTimeout(() => {
-                        const form = document.createElement('form');
-                        form.method = 'POST';
-                        form.action = '/endpoint/archive/' + id;
-                        const csrfInput = document.createElement('input');
-                        csrfInput.type = 'hidden';
-                        csrfInput.name = 'csrf_token';
-                        csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-                        form.appendChild(csrfInput);
-                        document.body.appendChild(form);
-                        form.submit();
-                    }, 300);
-                }
+            document.getElementById('ctx-archive').onclick = (event) => {
+                event.preventDefault();
+                menu.style.display = 'none';
+                window.archiveEndpoint(id, name, event.currentTarget);
             };
         } else {
             menu.style.display = 'none';

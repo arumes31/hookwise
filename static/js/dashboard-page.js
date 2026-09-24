@@ -193,7 +193,9 @@
                         const timeSpan = entry.querySelector('.text-secondary');
                         if (timeSpan) {
                             const date = new Date(ts);
-                            timeSpan.textContent = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
+                            timeSpan.textContent = window.dashboardState.absoluteTime
+                                ? `[${window.hwFormatLocalDateTime(date)}]`
+                                : `[${getRelativeTime(date)}]`;
                         }
                     }
                 });
@@ -228,7 +230,9 @@
             const statusColor = isError ? 'danger' : 'success';
 
             const date = new Date(data.timestamp);
-            const timeStr = window.dashboardState.absoluteTime ? `[${date.toLocaleTimeString()}]` : `[${getRelativeTime(date)}]`;
+            const timeStr = window.dashboardState.absoluteTime
+                ? `[${window.hwFormatLocalDateTime(date)}]`
+                : `[${getRelativeTime(date)}]`;
 
             const sevKlasse = data.level === 'error' ? 'crit' : data.level === 'warning' ? 'warn' : 'ok';
             const sevText   = data.level === 'error' ? 'FAIL' : data.level === 'warning' ? 'WARN' : 'OK';
@@ -349,7 +353,14 @@
         showToast('Payload copied to clipboard!', 'success');
     }
 
-    function testEndpoint(id) {
+    async function testEndpoint(id) {
+        const card = Array.from(document.querySelectorAll('.endpoint-card[data-id]'))
+            .find(candidate => candidate.dataset.id === id);
+        const name = card?.dataset.name || 'this endpoint';
+        if (!await hwConfirm(
+            `Send a test webhook through "${name}"? It follows the live routing path and may create or update a downstream ticket.`,
+            { title: 'Send test webhook', okText: 'Send test webhook', danger: true }
+        )) return;
         fetch(`/endpoint/test/${id}`, { method: 'POST' })
             .then(response => response.json())
             .then(data => {
@@ -426,13 +437,27 @@
             });
     }
 
-    async function toggleMaintenance() {
+    async function toggleMaintenance(toggle) {
+        const previousState = !toggle.checked;
+        if (toggle.checked && !await hwConfirm(
+            'Enable maintenance mode? Normal UI and webhook requests will receive a service-unavailable response until it is disabled.',
+            { title: 'Enable maintenance mode', okText: 'Enable maintenance', danger: true }
+        )) {
+            toggle.checked = previousState;
+            return;
+        }
+        toggle.disabled = true;
         try {
             const res = await fetch('/admin/maintenance', { method: 'POST' });
+            if (!res.ok) throw new Error(`Request failed (${res.status})`);
             const data = await res.json();
+            toggle.checked = Boolean(data.maintenance_mode);
             showToast('Maintenance mode ' + (data.maintenance_mode ? 'ENABLED' : 'DISABLED'), data.maintenance_mode ? 'warning' : 'success');
         } catch (e) {
+            toggle.checked = previousState;
             showToast('Error toggling maintenance mode', 'danger');
+        } finally {
+            toggle.disabled = false;
         }
     }
 

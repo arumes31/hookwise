@@ -15,7 +15,7 @@ import logging
 from functools import wraps
 from typing import Any, Callable, Dict, List, Set
 
-from flask import current_app, jsonify, render_template, request, session
+from flask import current_app, g, jsonify, render_template, request, session
 
 from .resolver import current_permissions
 
@@ -67,7 +67,7 @@ def _verweigern(permission: str) -> Any:
     # Seitenaufrufe bekommen eine echte 403-Seite statt einer Umleitung: eine
     # Umleitung waere von der Login-Umleitung nicht zu unterscheiden -- weder
     # fuer Nutzer noch fuer Tests.
-    return render_template("403.html", required=permission), 403
+    return render_template("403.html", required=permission, request_id=getattr(g, "request_id", None)), 403
 
 
 def requires(permission: str) -> Callable[..., Any]:

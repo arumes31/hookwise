@@ -67,6 +67,63 @@ def test_runtime_javascript_does_not_bypass_versioned_asset_urls():
         assert "/static/" not in script.read_text(encoding="utf-8"), f"{script} contains an unversioned asset URL"
 
 
+def test_high_impact_ui_actions_keep_explicit_confirmations():
+    """Guard destructive and externally visible actions against one-click execution."""
+    sources = {
+        "account": (TEMPLATE_ROOT / "account_settings.html").read_text(encoding="utf-8"),
+        "history": (TEMPLATE_ROOT / "history.html").read_text(encoding="utf-8"),
+        "identity": (TEMPLATE_ROOT / "identity.html").read_text(encoding="utf-8"),
+        "index": (TEMPLATE_ROOT / "index.html").read_text(encoding="utf-8"),
+        "webhooks": (TEMPLATE_ROOT / "webhooks.html").read_text(encoding="utf-8"),
+        "dashboard": (STATIC_ROOT / "js" / "dashboard-page.js").read_text(encoding="utf-8"),
+        "history_operations": (STATIC_ROOT / "js" / "history-operations.js").read_text(encoding="utf-8"),
+        "ux": (STATIC_ROOT / "js" / "ux.js").read_text(encoding="utf-8"),
+    }
+
+    assert "confirmSessionRevoke(this, false)" in sources["account"]
+    assert "confirmSessionRevoke(this, true)" in sources["account"]
+    assert 'class="hw-session-footer hw-session-revoke-form"' in sources["account"]
+    assert "Replay selected webhooks" in sources["history"]
+    assert "!SERVER_DATA.debugMode" not in sources["history"]
+    assert "Retry this failed request now?" in sources["history_operations"]
+    assert "Replay edited request" in sources["history_operations"]
+    assert "Set a new password for " in sources["identity"]
+    assert "Enable automatic Entra provisioning?" in sources["identity"]
+    assert "toggleMaintenance(this)" in sources["index"]
+    assert "Enable maintenance mode?" in sources["dashboard"]
+    assert "Send a test webhook through" in sources["dashboard"]
+    assert "archiveEndpoint(this.dataset.endpointId, this.dataset.endpointName, this)" in sources["webhooks"]
+    assert (
+        '<button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:archive"'
+        in sources["webhooks"]
+    )
+    assert "toggleEndpoint(this.dataset.endpointId, this.dataset.endpointEnabled === 'true'" in sources["webhooks"]
+    assert "Future webhook deliveries use these routing values immediately." in sources["webhooks"]
+    assert "window.archiveEndpoint = async" in sources["ux"]
+    assert "Pause ${checked.length} selected endpoints?" in sources["ux"]
+    assert "hwConfirmPending" in sources["ux"]
+    assert "bootstrap.Modal.getOrCreateInstance" in sources["ux"]
+
+
+def test_error_page_retries_do_not_repeat_unsafe_requests(app):
+    """Offer reload only when it cannot repeat a state-changing request."""
+    with app.test_request_context("/settings", method="GET"):
+        bad_request_get = flask.render_template("400.html")
+        server_error_get = flask.render_template("500.html")
+    assert "window.location.reload()" in bad_request_get
+    assert "window.location.reload()" in server_error_get
+
+    with app.test_request_context("/settings", method="POST"):
+        bad_request_post = flask.render_template("400.html")
+        server_error_post = flask.render_template("500.html")
+    assert "window.location.reload()" not in bad_request_post
+    assert 'href="/settings"' in bad_request_post
+    assert "Open a fresh form" in bad_request_post
+    assert "window.location.reload()" not in server_error_post
+    assert "Check operation status" in server_error_post
+    assert "may already have completed" in server_error_post
+
+
 def test_stylesheet_local_assets_use_their_content_digest():
     local_url = re.compile(r"url\(\s*['\"]?(?!data:)([^'\")]+)")
 

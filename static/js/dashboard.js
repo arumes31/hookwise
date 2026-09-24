@@ -95,7 +95,7 @@
             card.hidden = state.hidden.includes(key);
         });
         byId('dashboard-updated').dateTime = data.updated_at;
-        byId('dashboard-updated').textContent = new Date(data.updated_at).toLocaleString();
+        byId('dashboard-updated').textContent = window.hwFormatLocalDateTime(data.updated_at) || data.updated_at;
         state.kpis = data.kpis;
         state.filters = data.filters || {};
     }

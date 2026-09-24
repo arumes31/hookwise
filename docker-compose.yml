@@ -80,7 +80,7 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "celery -A worker.celery inspect ping --timeout 5 | grep -q pong"]
       interval: 30s
-      timeout: 10s
+      timeout: 20s
       retries: 5
       start_period: 30s
     depends_on:

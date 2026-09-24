@@ -52,6 +52,42 @@ assert.strictEqual(timestamp.dataset.localized, 'true');
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_shared_datetime_formatter_treats_offsetless_iso_values_as_utc():
+    """Avoid interpreting server-generated offset-less timestamps as browser-local time."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for browser timestamp coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const formatterSource = source.slice(
+    source.indexOf('function formatLocalDateTime'),
+    source.indexOf('window.hwFormatLocalDateTime')
+);
+const localDateTimeFormatter = { format: value => value.toISOString() };
+
+eval(formatterSource);
+
+assert.strictEqual(formatLocalDateTime('2026-09-16T18:20:05'), '2026-09-16T18:20:05.000Z');
+assert.strictEqual(formatLocalDateTime('2026-09-16T18:20:05+02:00'), '2026-09-16T16:20:05.000Z');
+assert.strictEqual(formatLocalDateTime(new Date('2026-09-16T18:20:05Z')), '2026-09-16T18:20:05.000Z');
+assert.strictEqual(formatLocalDateTime('not-a-date'), '');
+"""
+    environment = {**os.environ, "TZ": "Europe/Vienna"}
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_endpoint_selection_and_sidebar_are_overlays():
     """Keep selection and navigation state changes out of document flow."""
     css = (ROOT / "static/css/hookwise-console.css").read_text(encoding="utf-8")
@@ -174,6 +210,90 @@ assert.strictEqual(count.textContent, '0 of 2 mappings');
 listeners['clear:click']();
 assert.deepStrictEqual(rows.map(row => row.hidden), [false, false]);
 assert.strictEqual(search.focused, true);
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_archive_endpoint_requires_confirmation_and_submits_one_native_post():
+    """Exercise cancel and confirm paths of the browser archive helper."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for endpoint archive coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const archiveSource = source.slice(
+    source.indexOf('window.archiveEndpoint = async'),
+    source.indexOf('window.cloneEndpoint')
+);
+let confirmed = false;
+let submitCount = 0;
+let submittedForm = null;
+
+global.window = global;
+global.hwConfirm = async () => confirmed;
+global.showToast = () => { throw new Error('Unexpected archive error'); };
+global.hwMerkeScroll = () => {};
+global.document = {
+    querySelector(selector) {
+        return selector === 'meta[name="csrf-token"]' ? { content: 'csrf-value' } : null;
+    },
+    createElement(tag) {
+        const element = {
+            tagName: tag.toUpperCase(),
+            attributes: {},
+            children: [],
+            setAttribute(name, value) { this.attributes[name] = value; },
+            appendChild(child) { this.children.push(child); },
+            remove() { this.removed = true; }
+        };
+        if (tag === 'form') {
+            element.requestSubmit = () => { submitCount += 1; submittedForm = element; };
+        }
+        return element;
+    },
+    body: { appendChild() {} }
+};
+
+eval(archiveSource);
+
+(async () => {
+    const trigger = {
+        disabled: false,
+        attributes: {},
+        setAttribute(name, value) { this.attributes[name] = value; },
+        removeAttribute(name) { delete this.attributes[name]; }
+    };
+
+    await window.archiveEndpoint('endpoint/id', 'NOC', trigger);
+    assert.strictEqual(submitCount, 0);
+    assert.strictEqual(trigger.disabled, false);
+
+    confirmed = true;
+    await window.archiveEndpoint('endpoint/id', 'NOC', trigger);
+    assert.strictEqual(submitCount, 1);
+    assert.strictEqual(submittedForm.method, 'POST');
+    assert.strictEqual(submittedForm.action, '/endpoint/archive/endpoint%2Fid');
+    assert.strictEqual(submittedForm.attributes['hx-boost'], 'false');
+    assert.strictEqual(submittedForm.children.length, 1);
+    assert.strictEqual(submittedForm.children[0].name, 'csrf_token');
+    assert.strictEqual(submittedForm.children[0].value, 'csrf-value');
+    assert.strictEqual(trigger.disabled, true);
+    assert.strictEqual(trigger.attributes['aria-busy'], 'true');
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
 """
     result = subprocess.run(
         [node, "-e", harness],

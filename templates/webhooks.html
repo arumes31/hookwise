@@ -13,10 +13,10 @@
         <h1 class="accent-gradient fw-bold mb-0">Webhook Endpoints</h1>
         <p>Live routing and delivery control</p>
         {% if debug_mode %}
-        <span class="badge bg-danger hw-debug-badge" title="Development mode: a temporary session key is allowed when SECRET_KEY is missing, and webhook replay skips its confirmation prompt.">DEBUG MODE ACTIVE</span>
+        <span class="badge bg-danger hw-debug-badge" title="Development mode: a temporary session key is allowed when SECRET_KEY is missing. Safety confirmations remain active.">DEBUG MODE ACTIVE</span>
         {% endif %}
     </div>
-    <div class="d-flex flex-wrap gap-2 endpoint-toolbar">
+    <div class="d-flex flex-wrap gap-2 endpoint-toolbar" role="group" aria-label="Endpoint list controls">
         <select id="board-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
             style="width: 150px;" aria-label="Filter endpoints by board">
             <option value="">All Boards</option>
@@ -27,17 +27,6 @@
             <option value="enabled">Enabled</option>
             <option value="paused">Paused</option>
         </select>
-        <select id="endpoint-quick-filter" class="form-select form-select-sm bg-dark border-secondary text-white"
-            style="width: 200px;" aria-label="Quick endpoint filters">
-            <option value="">All endpoint health</option>
-            <option value="recent_failures">Recent failures</option>
-            <option value="stale">Stale endpoints</option>
-            <option value="unhealthy">Unhealthy services</option>
-            <option value="high_latency">High latency</option>
-            <option value="drafts">Draft endpoints</option>
-            <option value="pinned">Pinned endpoints</option>
-            <option value="inactive">No activity</option>
-        </select>
         <div class="input-group input-group-sm" style="width: 250px;">
             <span class="input-group-text bg-dark border-secondary text-secondary">
                 <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-search"></use></svg>
@@ -47,27 +36,39 @@
                 aria-label="Search endpoints by URL, board, company or token"
                 title="Tip: token:abc4 matches by token ending (full token works too). Also searches URL, board and company.">
         </div>
-        <button id="clear-endpoint-filters" type="button" class="btn btn-outline-secondary" aria-label="Clear all endpoint filters">Clear</button>
         <span id="hw-token-hinweis" class="hw-token-hinweis">Tip: token:abc4 matches by token ending (full token works too)</span>
-        {# Nr. 2: Sortierung als Ansicht. "Eigene Reihenfolge" ist die per
-           Drag gepflegte Server-Reihenfolge; alles andere sortiert nur die
-           Darstellung und wird je Browser gemerkt. #}
-        <select id="hw-sortierung" class="form-select form-select-sm bg-dark border-secondary text-white"
-                style="width: 190px;" aria-label="Sort endpoints">
-            <option value="">Custom order</option>
-            <option value="name">Name A&ndash;Z</option>
-            <option value="rate">Failure rate 24h &darr;</option>
-            <option value="lastseen">Last seen &darr;</option>
-            <option value="board">Board A&ndash;Z</option>
-            <option value="boardgruppen">Grouped by board</option>
-        </select>
-        <button id="refresh-endpoints" type="button" class="btn btn-outline-info" aria-label="Refresh endpoint telemetry">Refresh</button>
-        {# Nr. 13: Import aus einer Export-Datei; das Dateifeld bleibt
-           unsichtbar, der Knopf oeffnet den Dateidialog. #}
-        <button type="button" id="hw-import-knopf" class="btn btn-outline-secondary" data-braucht="endpoint:write"
-                aria-label="Import endpoint from JSON file">Import</button>
-        <input type="file" id="hw-import-datei" accept=".json,application/json" hidden
-               aria-label="Choose a HookWise endpoint file">
+        <details class="hw-more hw-endpoint-tools">
+            <summary class="hw-menu-summary">View &amp; tools</summary>
+            <div class="hw-more-menu">
+                <label class="hw-field"><span>Health</span>
+                    <select id="endpoint-quick-filter" class="form-select form-select-sm bg-dark border-secondary text-white">
+                        <option value="">All endpoint health</option>
+                        <option value="recent_failures">Recent failures</option>
+                        <option value="stale">Stale endpoints</option>
+                        <option value="unhealthy">Unhealthy services</option>
+                        <option value="high_latency">High latency</option>
+                        <option value="drafts">Draft endpoints</option>
+                        <option value="pinned">Pinned endpoints</option>
+                        <option value="inactive">No activity</option>
+                    </select>
+                </label>
+                <label class="hw-field"><span>Sort</span>
+                    <select id="hw-sortierung" class="form-select form-select-sm bg-dark border-secondary text-white">
+                        <option value="">Custom order</option>
+                        <option value="name">Name A&ndash;Z</option>
+                        <option value="rate">Failure rate 24h &darr;</option>
+                        <option value="lastseen">Last seen &darr;</option>
+                        <option value="board">Board A&ndash;Z</option>
+                        <option value="boardgruppen">Grouped by board</option>
+                    </select>
+                </label>
+                <button id="refresh-endpoints" type="button" class="hw-more-row" aria-label="Refresh endpoint telemetry">Refresh telemetry</button>
+                <button type="button" id="hw-import-knopf" class="hw-more-row" data-braucht="endpoint:write"
+                        aria-label="Import endpoint from JSON file">Import endpoint</button>
+                <button id="clear-endpoint-filters" type="button" class="hw-more-row" aria-label="Clear all endpoint filters">Clear filters</button>
+            </div>
+        </details>
+        <input type="file" id="hw-import-datei" accept=".json,application/json" hidden aria-label="Choose a HookWise endpoint file">
         <a href="{{ url_for('main.new_endpoint') }}" class="btn btn-primary d-flex align-items-center" data-braucht="endpoint:write">
             <svg class="hw-icon me-2" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>
             Create New
@@ -131,12 +132,16 @@
         <input id="hw-bulk-prio" class="form-control form-control-sm bg-dark border-secondary text-white hw-bulk-priority"
                placeholder="Priority&hellip;" aria-label="Set priority for selected endpoints">
         <button class="btn btn-sm btn-outline-primary" data-braucht="endpoint:write" onclick="bulkFieldUpdate()">Apply</button>
-        <span class="vr opacity-25"></span>
-        <button class="btn btn-sm btn-outline-warning" data-braucht="endpoint:archive" onclick="bulkArchive()">Archive Selected</button>
-        <button class="btn btn-sm btn-outline-warning" data-braucht="endpoint:write" onclick="bulkPause()">Pause Selected</button>
-        <button class="btn btn-sm btn-outline-success" data-braucht="endpoint:write" onclick="bulkResume()">Resume Selected</button>
-        <button class="btn btn-sm btn-outline-info" onclick="bulkExport()">Export Selected</button>
         <button id="clear-endpoint-selection" type="button" class="btn btn-sm btn-dark text-secondary">Clear</button>
+        <details class="hw-more hw-bulk-more">
+            <summary class="hw-menu-summary">More actions</summary>
+            <div class="hw-more-menu">
+                <button class="hw-more-row" data-braucht="endpoint:write" onclick="bulkPause()">Pause selected</button>
+                <button class="hw-more-row" data-braucht="endpoint:write" onclick="bulkResume()">Resume selected</button>
+                <button class="hw-more-row" onclick="bulkExport()">Export selected</button>
+                <button class="hw-more-row hw-more-danger" data-braucht="endpoint:archive" onclick="bulkArchive()">Archive selected</button>
+            </div>
+        </details>
     </div>
 </div>
 
@@ -276,7 +281,9 @@
                        Token-Rotation wandern ins Overflow-Menue: Rotation macht den
                        Sender-Token sofort ungueltig und gehoert nicht einen Klick weit
                        weg. Alle onclick-Handler und aria-labels sind unveraendert. #}
-                    <button data-braucht="endpoint:write" onclick="toggleEndpoint('{{ config.id }}')"
+                    <button data-braucht="endpoint:write" data-endpoint-id="{{ config.id }}"
+                        data-endpoint-name="{{ config.name }}" data-endpoint-enabled="{{ 'true' if config.is_enabled else 'false' }}"
+                        onclick="toggleEndpoint(this.dataset.endpointId, this.dataset.endpointEnabled === 'true', this.dataset.endpointName, this)"
                         class="btn btn-sm btn-link p-0 text-secondary hover-{{ 'success' if not config.is_enabled else 'warning' }}"
                         data-tooltip="{{ 'Resume' if not config.is_enabled else 'Pause' }}" aria-label="{{ 'Resume' if not config.is_enabled else 'Pause' }} endpoint">
                         {% if config.is_enabled %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pause-circle"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-play-circle"></use></svg>{% endif %}
@@ -293,57 +300,61 @@
                             </svg>
                         </summary>
                         <div class="hw-more-menu">
-                        <span class="hw-more-row" data-braucht="endpoint:write">
-                        <button onclick="togglePin('{{ config.id }}')"
-                            class="btn btn-sm btn-link p-0 text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning"
+                        <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:write"
+                            onclick="togglePin('{{ config.id }}')"
                             data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
-                            {% if config.is_pinned %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pin-fill"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pin"></use></svg>{% endif %}
-                        </button>
+                            <span class="hw-more-icon text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning" aria-hidden="true">
+                                {% if config.is_pinned %}<svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-pin-fill"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-pin"></use></svg>{% endif %}
+                            </span>
                             <span class="hw-more-text">{{ 'Unpin' if config.is_pinned else 'Pin' }}</span>
-                        </span>
-                        <span class="hw-more-row">
-                        <button onclick="openEndpointDetail('{{ config.id }}')"
-                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Open details" aria-label="Open details">
-                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
                         </button>
+                        <button type="button" class="hw-more-row hw-endpoint-action-row"
+                            onclick="openEndpointDetail('{{ config.id }}')" data-tooltip="Open details" aria-label="Open details">
+                            <span class="hw-more-icon" aria-hidden="true">
+                                <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
+                            </span>
                             <span class="hw-more-text">Open details</span>
-                        </span>
-                        <span class="hw-more-row">
+                        </button>
                         <a href="{{ url_for('main.export_endpoint', config_id=config.id) }}"
                             hx-boost="false" download
-                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Export as JSON" aria-label="Export endpoint as JSON">
-                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>
-                        </a>
+                            class="hw-more-row hw-endpoint-action-row" data-tooltip="Export as JSON" aria-label="Export endpoint as JSON">
+                            <span class="hw-more-icon" aria-hidden="true">
+                                <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-box-arrow-up-right"></use></svg>
+                            </span>
                             <span class="hw-more-text">Export as JSON</span>
-                        </span>
-                        <span class="hw-more-row" data-braucht="endpoint:archive">
-                        <button onclick="archiveEndpoint('{{ config.id }}')"
-                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Archive endpoint" aria-label="Archive endpoint">
-                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-archive"></use></svg>
-                        </button>
+                        </a>
+                        <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:archive"
+                            data-endpoint-id="{{ config.id }}" data-endpoint-name="{{ config.name }}"
+                            onclick="archiveEndpoint(this.dataset.endpointId, this.dataset.endpointName, this)"
+                            data-tooltip="Archive endpoint" aria-label="Archive endpoint">
+                            <span class="hw-more-icon" aria-hidden="true">
+                                <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-archive"></use></svg>
+                            </span>
                             <span class="hw-more-text">Archive</span>
-                        </span>
-                        <span class="hw-more-row" data-braucht="endpoint:write">
-                        <button onclick="cloneEndpoint('{{ config.id }}')"
-                            class="btn btn-sm btn-link p-0 text-secondary" data-tooltip="Duplicate endpoint" aria-label="Duplicate endpoint">
-                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg>
                         </button>
+                        <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:write"
+                            onclick="cloneEndpoint('{{ config.id }}')" data-tooltip="Duplicate endpoint" aria-label="Duplicate endpoint">
+                            <span class="hw-more-icon" aria-hidden="true">
+                                <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-copy"></use></svg>
+                            </span>
                             <span class="hw-more-text">Duplicate</span>
-                        </span>
-                        <span class="hw-more-row" data-braucht="endpoint:test">
-                        <button onclick="testEndpoint('{{ config.id }}')"
-                            class="btn btn-sm btn-link p-0 text-secondary hover-info" data-tooltip="Test Webhook" aria-label="Test webhook">
-                            <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-play-fill"></use></svg>
                         </button>
+                        <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:test"
+                            onclick="testEndpoint('{{ config.id }}')" data-tooltip="Test Webhook" aria-label="Test webhook">
+                            <span class="hw-more-icon hover-info" aria-hidden="true">
+                                <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-play-fill"></use></svg>
+                            </span>
                             <span class="hw-more-text">Send test webhook</span>
-                        </span>
-                        <span class="hw-more-row" data-braucht="secret:rotate" data-braucht-modus="sperren">
-                        <button onclick="confirmRotate('{{ config.id }}', {{ config.name | tojson }})"
-                            class="btn btn-sm btn-link p-0 text-secondary hover-warning" data-tooltip="Rotate Token" aria-label="Rotate endpoint token">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" /></svg>
                         </button>
+                        <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="secret:rotate"
+                            data-braucht-modus="sperren" data-endpoint-id="{{ config.id }}" data-endpoint-name="{{ config.name }}"
+                            onclick="confirmRotate(this.dataset.endpointId, this.dataset.endpointName)"
+                            data-tooltip="Rotate Token" aria-label="Rotate endpoint token">
+                            <span class="hw-more-icon hover-warning" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2V.5L5.5 3 8 5.5V4a4 4 0 1 0 4 4h-1a3 3 0 1 1-3-3v3.25l2.25 1.35.5-.86L9 7.69V3H8z" /></svg>
+                            </span>
                             <span class="hw-more-text">Rotate token</span>
-                        </span>
+                        </button>
                         </div>
                     </details>
                 </div>
@@ -454,20 +465,18 @@
                     <div class="tech-item">
                         <div class="tech-label text-primary">LAST SEEN</div>
                         <div class="small fw-bold text-white text-truncate hw-t-xs">
-                            {# Relativ lesen, absolut im Tooltip -- ein Skript unten
-                               rechnet um; ohne JS bleibt der Absolutwert stehen. #}
                             {% if config.last_seen_at %}
-                            <span class="hw-relzeit" data-ts="{{ config.last_seen_at.isoformat() }}Z"
-                                  title="{{ config.last_seen_at.strftime('%d.%m.%Y %H:%M') }} UTC">{{ config.last_seen_at.strftime('%H:%M %m/%d') }}</span>
+                            <time class="hw-local-datetime hw-last-seen" datetime="{{ config.last_seen_at.isoformat() }}Z"
+                                  data-utc-label="{{ config.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ config.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>
                             {% else %}NEVER{% endif %}
                         </div>
-                        <div class="small text-secondary opacity-50 text-uppercase ls-1 {{ 'mb-2' if config.timeout_alerts_enabled else 'mb-1' }} hw-t-xs">UTC
-                            Time</div>
+                        <div class="small text-secondary opacity-50 text-uppercase ls-1 {{ 'mb-2' if config.timeout_alerts_enabled else 'mb-1' }} hw-t-xs">Browser local time</div>
                         
                         {% if config.timeout_alerts_enabled and next_stale_times.get(config.id) %}
                         <div class="tech-label text-warning mt-1 hw-t-xs">NEXT STALE</div>
                         <div class="small fw-bold text-warning opacity-75 text-truncate hw-t-xs hw-nextstale">
-                            {{ next_stale_times[config.id].strftime('%H:%M %m/%d') }}
+                            <time class="hw-local-datetime" datetime="{{ next_stale_times[config.id].isoformat() }}Z"
+                                data-utc-label="{{ next_stale_times[config.id].strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ next_stale_times[config.id].strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>
                         </div>
                         {% endif %}
                     </div>
@@ -599,11 +608,11 @@
 </aside>
 
 <!-- Payload Modal -->
-<div class="modal fade" id="payloadModal" tabindex="-1">
+<div class="modal fade" id="payloadModal" tabindex="-1" aria-labelledby="webhook-payload-title" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark border-secondary">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title">Webhook Payload</h5>
+                <h2 id="webhook-payload-title" class="modal-title h5">Webhook payload</h2>
                 <div class="ms-auto me-2">
                     <button id="pretty-toggle" class="btn btn-sm btn-outline-info me-2">Minified</button>
                     <button class="btn btn-sm btn-outline-primary" onclick="copyModalPayload()">Copy JSON</button>
@@ -1040,8 +1049,14 @@
             const pinsvg = '<svg class="hw-icon hw-tabpin" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-pin-fill"></use></svg>';
             koerper.innerHTML = karten.map((c, i) => {
                 const d = c.dataset;
-                const relzeit = c.querySelector('.hw-relzeit');
-                const nstale = (c.querySelector('.hw-nextstale')?.textContent || '').trim();
+                const relzeit = c.querySelector('.hw-last-seen');
+                const lastSeenText = relzeit
+                    ? (window.hwFormatLocalDateTime?.(relzeit.dateTime) || relzeit.textContent.trim())
+                    : '';
+                const nextStaleTime = c.querySelector('.hw-nextstale time');
+                const nstale = nextStaleTime
+                    ? (window.hwFormatLocalDateTime?.(nextStaleTime.dateTime) || nextStaleTime.textContent.trim())
+                    : '';
                 const spalte = c.closest('.draggable-card');
                 const istEntwurf = d.draft === 'true' || (spalte && spalte.classList.contains('hw-draftkarte'));
                 const status = istEntwurf
@@ -1075,7 +1090,7 @@
                     '<span class="hw-rate hw-rate--crit" title="Failed rate">' + failureRate + '%</span></span></td>' +
                     '<td class="py-2 text-secondary hw-t-xs"' +
                     (relzeit && relzeit.title ? ' title="' + esc(relzeit.title) + '"' : '') + '>' +
-                    (relzeit ? esc(relzeit.textContent.trim()) : '-') +
+                    (lastSeenText ? esc(lastSeenText) : '-') +
                     (nstale ? '<span class="d-block text-warning opacity-75" ' +
                         'title="Timeout monitor: next stale threshold">next stale ' + esc(nstale) + '</span>' : '') +
                     '</td>' +
@@ -1243,6 +1258,11 @@
             if (board) auftraege.push(['board', board]);
             if (prio) auftraege.push(['priority', prio]);
             if (!auftraege.length) { window.showToast?.('Enter a board or priority', 'warning'); return; }
+            const beschreibung = auftraege.map(([field, value]) => `${field}: ${value}`).join(' and ');
+            if (!await window.hwConfirm(
+                `Apply ${beschreibung} to ${ids.length} selected endpoints? Future webhook deliveries use these routing values immediately.`,
+                { title: 'Update selected endpoints', okText: 'Apply changes', danger: true }
+            )) return;
             try {
                 for (const [field, value] of auftraege) {
                     const r = await fetch('/endpoint/bulk/update', {
@@ -1354,25 +1374,6 @@
         });
     })();
 
-    // Nr. 6: Zeitstempel relativ anzeigen; der Absolutwert steht im title.
-    (function () {
-        const relativ = (iso) => {
-            const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-            if (!isFinite(diff) || diff < 0) return null;
-            if (diff < 90) return 'just now';
-            if (diff < 5400) return Math.round(diff / 60) + ' min ago';
-            if (diff < 129600) return Math.round(diff / 3600) + ' h ago';
-            return Math.round(diff / 86400) + ' days ago';
-        };
-        const alle = () => document.querySelectorAll('.hw-relzeit[data-ts]').forEach(el => {
-            const r = relativ(el.dataset.ts);
-            if (r) el.textContent = r;
-        });
-        alle();
-        // hx-boost fuehrt dieses Skript bei jedem Swap erneut aus -- der
-        // Ticker darf sich nicht stapeln.
-        if (!window.hwRelzeitTicker) window.hwRelzeitTicker = setInterval(alle, 60000);
-    })();
 </script>
 
 

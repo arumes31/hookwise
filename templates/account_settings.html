@@ -127,9 +127,11 @@
                     {% if active_session.current %}
                     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.logout') }}" hx-boost="false">Sign out</a>
                     {% else %}
-                    <form action="{{ url_for('main.revoke_own_session', session_id=active_session.id) }}" method="POST">
+                    <form action="{{ url_for('main.revoke_own_session', session_id=active_session.id) }}" method="POST"
+                        hx-boost="false" class="hw-session-revoke-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="btn btn-outline-danger btn-sm" type="submit">Sign out</button>
+                        <button class="btn btn-outline-danger btn-sm" type="button"
+                            onclick="confirmSessionRevoke(this, false)">Sign out</button>
                     </form>
                     {% endif %}
                 </article>
@@ -139,27 +141,49 @@
             </div>
 
             {% if active_sessions|rejectattr('current')|list|length %}
-            <form class="hw-session-footer" action="{{ url_for('main.revoke_other_own_sessions') }}" method="POST">
+            <form class="hw-session-footer hw-session-revoke-form"
+                action="{{ url_for('main.revoke_other_own_sessions') }}" method="POST" hx-boost="false">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-outline-danger" type="submit">Sign out all other sessions</button>
+                <button class="btn btn-outline-danger" type="button"
+                    onclick="confirmSessionRevoke(this, true)">Sign out all other sessions</button>
             </form>
             {% endif %}
         </section>
     </div>
 </div>
 
-{% if user.quelle == 'local' and user.is_2fa_enabled %}
 <script>
+    async function confirmSessionRevoke(button, allSessions) {
+        const form = button.closest('.hw-session-revoke-form');
+        if (!form || button.disabled) return;
+        const confirmed = await hwConfirm(
+            allSessions
+                ? 'Sign out all other browser sessions? This browser stays signed in.'
+                : 'Sign out this browser session? Any unsaved work in that browser will be lost.',
+            {
+                title: allSessions ? 'Sign out other sessions' : 'Sign out browser session',
+                okText: allSessions ? 'Sign out all others' : 'Sign out session',
+                danger: true
+            }
+        );
+        if (!confirmed) return;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        form.submit();
+    }
+
+    {% if user.quelle == 'local' and user.is_2fa_enabled %}
     function confirmDisable2FA() {
         const form = document.getElementById('disable-2fa-form');
         if (!form.reportValidity()) return;
         hwConfirm('Disable two-factor authentication for this account?', {
             title: 'Disable two-factor authentication',
-            okText: 'Disable 2FA'
+            okText: 'Disable 2FA',
+            danger: true
         }).then(confirmed => {
             if (confirmed) form.submit();
         });
     }
+    {% endif %}
 </script>
-{% endif %}
 {% endblock %}

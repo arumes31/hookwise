@@ -324,7 +324,7 @@ def _register_request_handlers(app: Flask) -> None:
         if mode and cast(bytes, mode).decode() == "true":
             if request.path.startswith("/w/"):
                 return jsonify({"status": "error", "message": "Service under maintenance"}), 503
-            return render_template("maintenance.html"), 503
+            return render_template("maintenance.html", request_id=getattr(g, "request_id", None)), 503
 
 
 def _register_blueprints(app: Flask) -> None:
@@ -366,33 +366,54 @@ def _register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(404)
     def page_not_found(e: Any) -> Any:
-        return render_template("404.html"), 404
+        return render_template("404.html", request_id=getattr(g, "request_id", None)), 404
 
     @app.errorhandler(500)
     def internal_server_error(e: Any) -> Any:
-        return render_template("500.html"), 500
+        return render_template("500.html", request_id=getattr(g, "request_id", None)), 500
 
     @app.errorhandler(400)
     def bad_request(e: Any) -> Any:
         if request.path.startswith("/w/") or request.path.startswith("/api/"):
             return jsonify({"status": "error", "message": "Bad Request or CSRF Error"}), 400
-        return render_template("500.html"), 400
+        return (
+            render_template(
+                "400.html",
+                message="Check the submitted information, then try again.",
+                request_id=getattr(g, "request_id", None),
+            ),
+            400,
+        )
 
     @app.errorhandler(429)
     def rate_limit_error(e: Any) -> Any:
-        return render_template("429.html"), 429
+        return render_template("429.html", request_id=getattr(g, "request_id", None)), 429
 
     @app.errorhandler(413)
     def payload_too_large(e: Any) -> Any:
         if request.path.startswith("/w/") or request.path.startswith("/api/"):
             return jsonify({"status": "error", "message": "Payload too large"}), 413
-        return render_template("500.html"), 413
+        return (
+            render_template(
+                "400.html",
+                message="The selected file or request body is too large. Reduce its size and try again.",
+                request_id=getattr(g, "request_id", None),
+            ),
+            413,
+        )
 
     @app.errorhandler(CSRFError)
     def csrf_error(error: CSRFError) -> Any:
         if request.path.startswith("/api/") or request.headers.get("Sec-Fetch-Dest") == "empty":
             return jsonify({"status": "error", "message": f"CSRF validation failed: {error.description}"}), 400
-        return render_template("400.html", message="The page security token expired. Please try again."), 400
+        return (
+            render_template(
+                "400.html",
+                message="The page security token expired. Refresh the page and try again.",
+                request_id=getattr(g, "request_id", None),
+            ),
+            400,
+        )
 
 
 def _register_commands(app: Flask) -> None:

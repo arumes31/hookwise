@@ -44,8 +44,8 @@
             lastFailure: summary.last_failure_at || '',
         }).forEach(([key, value]) => { card.dataset[key] = String(value || ''); });
         setMetric(card, 'token-age', humanAge(summary.token_age_days));
-        setMetric(card, 'last-success', summary.last_success_at ? new Date(summary.last_success_at).toLocaleString() : 'Never');
-        setMetric(card, 'last-failure', summary.last_failure_at ? new Date(summary.last_failure_at).toLocaleString() : 'None');
+        setMetric(card, 'last-success', summary.last_success_at ? window.hwFormatLocalDateTime(summary.last_success_at) : 'Never');
+        setMetric(card, 'last-failure', summary.last_failure_at ? window.hwFormatLocalDateTime(summary.last_failure_at) : 'None');
         setMetric(card, 'latency', summary.last_response_time == null ? '—' : `${summary.last_response_time}s`);
         setMetric(card, 'queue', String(summary.queue_depth));
         setMetric(card, 'retries', String(summary.retry_count));
@@ -166,11 +166,9 @@
 
                 const time = document.createElement('time');
                 time.className = 'mono';
-                const timestamp = new Date(delivery.timestamp);
                 time.dateTime = delivery.timestamp || '';
-                time.textContent = Number.isNaN(timestamp.getTime())
-                    ? '—'
-                    : timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                time.textContent = window.hwFormatLocalDateTime(delivery.timestamp) || '\u2014';
+                if (delivery.timestamp) time.title = `${delivery.timestamp} UTC`;
 
                 const source = document.createElement('span');
                 source.className = 'hw-delivery-source';

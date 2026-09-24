@@ -41,7 +41,8 @@
     <div class="col-md-3"><div class="card bg-dark border-0 hw-kpi p-3">
         <div class="dashboard-kpi-label">LAST SEEN</div>
         <div class="dashboard-kpi-value hw-t-lg">
-            {{ config.last_seen_at.strftime('%d.%m. %H:%M') if config.last_seen_at else 'never' }}</div></div></div>
+            {% if config.last_seen_at %}<time class="hw-local-datetime" datetime="{{ config.last_seen_at.isoformat() }}Z"
+                data-utc-label="{{ config.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ config.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>{% else %}never{% endif %}</div></div></div>
 </div>
 
 <div class="card bg-dark border-0 glass-card mb-4">

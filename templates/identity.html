@@ -299,6 +299,7 @@
         }).then(async r => ({ ok: r.ok, daten: await r.json().catch(() => ({})) }));
 
         let NUTZER = [], ROLLEN = [], GRUPPEN = [], aktiveRolle = null;
+        let initialAutoProvision = {{ auto_provision | tojson }};
 
         // ---------------- Nutzer ----------------
         const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
@@ -488,8 +489,12 @@
             }
             const passwortKnopf = ev.target.closest('[data-passwort]');
             if (passwortKnopf) {
+                const u = NUTZER.find(x => x.id === passwortKnopf.dataset.passwort);
                 const pw = document.getElementById('detail-passwort').value;
                 if (pw.length < 8) { showToast('Password needs at least 8 characters.', 'error'); return; }
+                if (!await hwConfirm('Set a new password for ' + u.username + '? The previous password stops working immediately; existing signed-in sessions remain active.', {
+                    title: 'Reset local password', okText: 'Set new password', danger: true
+                })) return;
                 const a = await senden('/api/users/' + passwortKnopf.dataset.passwort + '/password', 'POST', { password: pw });
                 if (!a.ok) { showToast(a.daten.message || 'Could not set password', 'error'); return; }
                 document.getElementById('detail-passwort').value = '';
@@ -500,7 +505,7 @@
             if (mfaKnopf) {
                 const u = NUTZER.find(x => x.id === mfaKnopf.dataset.mfa);
                 if (!await hwConfirm('Reset MFA for ' + u.username + '? They sign in with the password alone '
-                    + 'until they enrol again.', { title: 'Reset MFA', okText: 'Reset' })) return;
+                    + 'until they enrol again.', { title: 'Reset MFA', okText: 'Reset MFA', danger: true })) return;
                 const a = await senden('/api/users/' + u.id + '/mfa', 'DELETE');
                 if (!a.ok) { showToast(a.daten.message || 'Could not reset MFA', 'error'); return; }
                 showToast('MFA reset', 'success');
@@ -511,7 +516,7 @@
             if (bindungKnopf) {
                 const u = NUTZER.find(x => x.id === bindungKnopf.dataset.bindung);
                 if (!await hwConfirm('Clear the Entra binding for ' + u.username + '? The account re-binds on '
-                    + 'the next sign-in that matches the UPN.', { title: 'Clear Entra binding', okText: 'Clear' })) return;
+                    + 'the next sign-in that matches the UPN.', { title: 'Clear Entra binding', okText: 'Clear binding', danger: true })) return;
                 const a = await senden('/api/users/' + u.id + '/entra-binding', 'DELETE');
                 if (!a.ok) { showToast(a.daten.message || 'Could not clear binding', 'error'); return; }
                 showToast('Entra binding cleared', 'success');
@@ -522,7 +527,7 @@
             if (loeschenKnopf) {
                 const u = NUTZER.find(x => x.id === loeschenKnopf.dataset.loeschen);
                 if (!await hwConfirm('Delete ' + u.username + ' permanently? Role assignments and personal '
-                    + 'settings are removed; this cannot be undone.', { title: 'Delete user', okText: 'Delete' })) return;
+                    + 'settings are removed; this cannot be undone.', { title: 'Delete user', okText: 'Delete user', danger: true })) return;
                 const a = await senden('/api/users/' + u.id, 'DELETE');
                 if (!a.ok) { showToast(a.daten.message || 'Could not delete user', 'error'); return; }
                 offenDetail = null;
@@ -610,6 +615,10 @@
 
         document.getElementById('prov-speichern').addEventListener('click', async () => {
             const auto = document.querySelector('#pane-entra .hw-prov-karte.an').dataset.modus === 'auto';
+            if (auto && !initialAutoProvision && !await hwConfirm(
+                'Enable automatic Entra provisioning? Any assigned user with a recognized Viewer or Operator App Role can receive a HookWise account on first sign-in.',
+                { title: 'Enable auto-provisioning', okText: 'Enable auto-provisioning', danger: true }
+            )) return;
             const a = await senden('/api/entra/settings', 'POST', {
                 auto_provision: auto,
                 viewer_app_role: document.getElementById('viewer-app-role').value.trim(),
@@ -617,6 +626,7 @@
             });
             const status = document.getElementById('prov-status');
             if (!a.ok) { status.textContent = a.daten.message || 'Could not save'; showToast(a.daten.message || 'Could not save', 'error'); return; }
+            initialAutoProvision = auto;
             status.textContent = 'Saved.';
             showToast('Provisioning updated', 'success');
         });

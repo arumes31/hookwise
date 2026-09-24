@@ -1,22 +1,14 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<canvas id="bg-animation"></canvas>
-<div class="row min-vh-100 justify-content-center align-items-center">
-    <div class="col-md-6 col-lg-5 text-center">
-        <div class="glass-card p-5">
-            <h1 class="display-4 fw-bold text-light mb-3">429</h1>
-            <h2 class="h4 text-uppercase ls-2 mb-4 text-warning">Too Many Requests</h2>
-            <p class="mb-5" style="color: lightgrey;">
-                Whoa there, speedy! You've hit the rate limit. <br>
-                Please wait a moment before trying again.
-            </p>
-            <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg fw-bold px-5 shadow-lg">
-                Back to Dashboard
-            </a>
-        </div>
+<main class="hw-state-page" aria-labelledby="rate-limit-title">
+    <div class="hw-state-code" aria-hidden="true">429</div>
+    <h1 id="rate-limit-title">Request limit reached</h1>
+    <p>Hookwise is protecting the service from too many requests. Wait a moment, then retry.</p>
+    <div class="hw-state-actions">
+        <button type="button" class="btn btn-primary" onclick="window.location.reload()">Try again</button>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">Return to dashboard</a>
     </div>
-</div>
-
-<script src="{{ static_asset('js/login-animation.js') }}"></script>
+    {% if request_id %}<p class="hw-state-reference">Reference <code>{{ request_id }}</code></p>{% endif %}
+</main>
 {% endblock %}
