@@ -1691,6 +1691,13 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
 }
 .hw-more-row:hover { background:var(--bg-raised); }
 .hw-more-row .btn { width:22px; height:22px; display:grid; place-items:center; flex:none; }
+.hw-endpoint-action-row {
+    display:grid; grid-template-columns:22px minmax(0, 1fr); align-items:center;
+    column-gap:var(--s-2);
+}
+.hw-endpoint-action-row .hw-more-icon {
+    width:22px; height:22px; display:grid; place-items:center; color:var(--text-muted);
+}
 .hw-more-text { color:var(--text); }
 
 /* ---- Offene Kartenmenues: Beschnitt, Stapelung, Aufklapprichtung ----
@@ -1714,7 +1721,8 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
     display:flex; flex-direction:column; align-items:flex-end; gap:var(--s-1);
     max-width:min(420px, calc(100vw - 32px)); pointer-events:none;
 }
-#toast-container .alert {
+#toast-container .alert,
+#toast-container .toast {
     pointer-events:auto; margin:0;
     animation:hw-toast-ein .18s ease-out;
 }
@@ -2924,7 +2932,21 @@ input[type="password"]::-ms-clear { display:none; }
 }
 .hw-rate-pair .hw-rate { margin-left:0; }
 
-/* TenantMap: compact live-search controls stay attached to the data they filter. */
+/* TenantMap: a deletion undo stays transient and out of the page flow. */
+.hw-tenantmap-undo {
+    width:min(420px, calc(100vw - 32px)); padding:0;
+    border:1px solid color-mix(in srgb, var(--warn) 42%, var(--line));
+    border-radius:var(--radius-md); background:var(--warn-soft); color:var(--text);
+    box-shadow:var(--shadow-1);
+}
+.hw-tenantmap-undo .toast-body {
+    display:flex; align-items:center; gap:var(--s-3); padding:var(--s-3) var(--s-4);
+}
+.hw-tenantmap-undo-copy { display:flex; flex:1 1 auto; min-width:0; flex-direction:column; }
+.hw-tenantmap-undo-copy span { color:color-mix(in srgb, var(--warn) 55%, var(--text)); }
+.hw-tenantmap-undo form { flex:0 0 auto; }
+.hw-tenantmap-undo .btn-close { flex:0 0 auto; }
+.hw-tenantmap-undo[hidden] { display:none; }
 .hw-tenantmap-toolbar {
     display:flex; align-items:center; flex-wrap:wrap; gap:var(--s-2);
     padding-bottom:var(--s-3); margin-bottom:var(--s-2);
@@ -2946,6 +2968,8 @@ input[type="password"]::-ms-clear { display:none; }
     color:var(--accent); overflow-wrap:anywhere;
 }
 @media (max-width: 575.98px) {
+    .hw-tenantmap-undo { width:100%; }
+    .hw-tenantmap-undo .toast-body { align-items:flex-start; }
     .hw-tenantmap-search, .hw-tenantmap-field-filter { flex-basis:100%; max-width:none; }
     .hw-tenantmap-result-count { margin-inline-start:0; }
     .hw-tenantmap-aliases { max-width:none; }
@@ -3036,3 +3060,60 @@ input[type="password"]::-ms-clear { display:none; }
         animation:hw-puls-crit 1.2s infinite !important;
     }
 }
+
+/* Browser chrome belongs to the console palette too. */
+::selection { background:color-mix(in srgb, var(--accent) 32%, transparent); color:var(--text); }
+html { scrollbar-color:var(--line-2) var(--bg-sunken); scrollbar-width:thin; }
+*::-webkit-scrollbar { width:10px; height:10px; }
+*::-webkit-scrollbar-track { background:var(--bg-sunken); }
+*::-webkit-scrollbar-thumb { background:var(--line-2); border:2px solid var(--bg-sunken); border-radius:var(--radius-pill); }
+*::-webkit-scrollbar-thumb:hover { background:var(--text-faint); }
+body, input, textarea, [contenteditable="true"] { caret-color:var(--accent); }
+time, .font-monospace { font-variant-numeric:tabular-nums; }
+
+/* Keep the endpoint command plane focused; secondary controls remain one click away. */
+.hw-endpoint-tools > summary.hw-menu-summary { min-height:38px; }
+.hw-endpoint-tools .hw-more-menu { top:calc(100% + 6px); min-width:264px; padding:var(--s-2); }
+.hw-endpoint-tools .hw-field { grid-template-columns:54px 1fr; padding:3px 0; }
+.hw-endpoint-tools :is(#endpoint-quick-filter, #hw-sortierung) { width:100% !important; }
+.hw-endpoint-tools .hw-more-row { min-height:34px; }
+.hw-bulk-more .hw-more-menu { top:auto; bottom:calc(100% + 6px); min-width:190px; }
+.hw-bulk-more > summary.hw-menu-summary { white-space:nowrap; }
+@media (max-width:575.98px) {
+    .hw-endpoint-tools > summary.hw-menu-summary { width:100%; justify-content:space-between; }
+    .hw-endpoint-tools .hw-more-menu { left:0; right:auto; width:min(92vw, 320px); }
+    .hw-bulk-actions > * { flex:1 1 140px; }
+    .hw-bulk-more > summary.hw-menu-summary { width:100%; justify-content:space-between; }
+}
+
+/* Operational error and maintenance states share one recovery-first layout. */
+.hw-state-page {
+    min-height:calc(100vh - 180px); max-width:680px; margin:0 auto;
+    display:flex; flex-direction:column; align-items:flex-start; justify-content:center;
+    padding:clamp(40px, 8vh, 88px) var(--s-4);
+}
+.hw-state-page h1 {
+    max-width:18ch; margin:0 0 var(--s-2); font-family:var(--font-head);
+    font-size:clamp(28px, 4vw, 44px); line-height:1.08; letter-spacing:-.025em;
+}
+.hw-state-page > p:not(.hw-state-reference):not(.hw-state-detail) {
+    max-width:64ch; margin:0 0 var(--s-4); color:var(--text-muted); font-size:var(--t-md);
+}
+.hw-state-code {
+    margin-bottom:var(--s-3); color:var(--accent); font-family:var(--font-mono);
+    font-size:clamp(48px, 8vw, 76px); font-weight:700; line-height:1; letter-spacing:-.03em;
+}
+.hw-state-code.is-critical { color:var(--crit); }
+.hw-state-icon { margin-bottom:var(--s-4); color:var(--warn); }
+.hw-state-detail {
+    margin:calc(-1 * var(--s-2)) 0 var(--s-4); padding:var(--s-2) var(--s-3);
+    border:1px solid var(--line); border-radius:var(--radius-md); color:var(--text-muted);
+    background:var(--bg-sunken); font-size:var(--t-sm);
+}
+.hw-state-actions { display:flex; flex-wrap:wrap; gap:var(--s-2); }
+.hw-state-reference { margin:var(--s-5) 0 0; color:var(--text-faint); font-size:var(--t-xs); }
+.hw-state-reference code { color:var(--text-muted); user-select:all; }
+
+/* Recent delivery times include the date and zone so they reconcile with History. */
+.hw-delivery-row { grid-template-columns:112px minmax(0,1fr) auto; }
+.hw-delivery-row time { line-height:1.25; overflow-wrap:anywhere; }

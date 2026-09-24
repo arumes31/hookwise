@@ -14,6 +14,25 @@
     </div>
 </div>
 
+{% if undo_available %}
+<div id="tenantmap-undo-toast" class="toast hw-tenantmap-undo" role="status" aria-live="polite" aria-atomic="true"
+    data-bs-autohide="true" data-bs-delay="8000" hidden>
+    <div class="toast-body">
+        <div class="hw-tenantmap-undo-copy">
+            <strong>Mapping deleted</strong>
+            <span>Undo this action?</span>
+        </div>
+        <form action="{{ url_for('main.undo_delete_mapping') }}" method="POST" hx-boost="false">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-warning fw-bold" data-braucht="tenantmap:write">
+                <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-counterclockwise"></use></svg>Undo
+            </button>
+        </form>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Dismiss undo notification"></button>
+    </div>
+</div>
+{% endif %}
+
 <div class="glass-card p-4 animate-slide-up">
     {% if mappings %}
     <div class="hw-tenantmap-toolbar">
@@ -83,11 +102,12 @@
                             onclick="openEditModal(this)">
                             <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-pencil-square"></use></svg>
                         </button>
-                        <form action="{{ url_for('main.delete_mapping', mapping_id=m.id) }}" method="POST" class="d-inline"
-                            onsubmit="return confirm('Delete this mapping and all of its tenant values?')">
+                        <form action="{{ url_for('main.delete_mapping', mapping_id=m.id) }}" method="POST" hx-boost="false"
+                            class="d-inline hw-confirm-mapping-delete"
+                            data-mapping-label="{{ m.tenant_values|join(', ') }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" data-braucht="tenantmap:write"
-                                data-tooltip="Delete Mapping" aria-label="Delete mapping">
+                            <button type="button" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" data-braucht="tenantmap:write"
+                                data-tooltip="Delete Mapping" aria-label="Delete mapping" onclick="confirmMappingDelete(this)">
                                 <svg class="hw-icon" width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-trash-fill"></use></svg>
                             </button>
                         </form>
@@ -105,7 +125,10 @@
                 <tr>
                     <td colspan="4" class="text-center py-5 text-secondary">
                         <svg class="hw-icon d-block mb-3 fs-2 opacity-25" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-bezier2"></use></svg>
-                        No global mappings defined yet.
+                        <span class="d-block fw-bold text-light mb-1">No global mappings yet</span>
+                        <span class="d-block small mb-3">Connect a tenant value to its ConnectWise company.</span>
+                        <button type="button" class="btn btn-sm btn-primary" data-braucht="tenantmap:write"
+                            data-bs-toggle="modal" data-bs-target="#addMappingModal">Create first mapping</button>
                     </td>
                 </tr>
                 {% endif %}
@@ -186,7 +209,7 @@
                             class="form-control bg-dark border-secondary text-light" maxlength="255">
                     </div>
                     <div class="d-grid">
-                        <button type="submit" class="btn btn-info fw-bold py-2 text-white">Update Mapping</button>
+                        <button type="submit" class="btn btn-primary fw-bold py-2">Update Mapping</button>
                     </div>
             </form>
         </div>
@@ -214,6 +237,30 @@
 
     document.getElementById('editMappingModal')?.addEventListener('shown.bs.modal', () => {
         document.getElementById('edit_tenant_values')?.focus();
+    });
+
+    async function confirmMappingDelete(button) {
+        const form = button.closest('.hw-confirm-mapping-delete');
+        if (!form || button.disabled) return;
+        const label = form.dataset.mappingLabel || 'this mapping';
+        const confirmed = await window.hwConfirm(
+            `Delete ${label} and all tenant values in this mapping? A brief undo option will appear.`,
+            { title: 'Delete tenant mapping', okText: 'Delete mapping', danger: true }
+        );
+        if (!confirmed) return;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        form.submit();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const toast = document.getElementById('tenantmap-undo-toast');
+        const container = document.getElementById('toast-container');
+        if (!toast || !container) return;
+        container.appendChild(toast);
+        toast.hidden = false;
+        toast.addEventListener('hidden.bs.toast', () => toast.remove(), { once: true });
+        bootstrap.Toast.getOrCreateInstance(toast).show();
     });
 
     function runOnLoad() {

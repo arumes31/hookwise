@@ -101,23 +101,8 @@
         document.getElementById('endpoint-form').submit();
     }
 
-    async function confirmArchive(id, name) {
-        if (await hwConfirm(`Archive "${name}"? It stops receiving events and can be restored anytime from the archive.`,
-            { title: 'Archive Endpoint', okText: 'Archive' })) {
-            // Add a tiny delay to let the modal finish hiding before navigation
-            setTimeout(() => {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = `/endpoint/archive/${id}`;
-                const csrfInput = document.createElement('input');
-                csrfInput.type = 'hidden';
-                csrfInput.name = 'csrf_token';
-                csrfInput.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
-                form.appendChild(csrfInput);
-                document.body.appendChild(form);
-                form.submit();
-            }, 300);
-        }
+    async function confirmArchive(id, name, trigger) {
+        return window.archiveEndpoint(id, name, trigger);
     }
 
     // Das Auge war eine Font-Awesome-Klasse, die nie geladen wurde -- der
@@ -169,7 +154,7 @@
     }
 
     async function rotateBearerToken(id) {
-        if (!await hwConfirm('Are you sure you want to regenerate the bearer token? Existing integrations using the old token will break immediately.', { title: 'Regenerate Token', okText: 'Regenerate' })) return;
+        if (!await hwConfirm('Regenerate the bearer token? Existing integrations using the old token will fail immediately until updated.', { title: 'Regenerate token', okText: 'Regenerate token', danger: true })) return;
 
         const btn = document.getElementById('rotate-btn');
         const input = document.getElementById('bearer-token-display');

@@ -186,6 +186,90 @@ assert.strictEqual(search.focused, true);
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_archive_endpoint_requires_confirmation_and_submits_one_native_post():
+    """Exercise cancel and confirm paths of the browser archive helper."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for endpoint archive coverage")
+
+    harness = r"""
+const assert = require('assert');
+const fs = require('fs');
+const source = fs.readFileSync('static/js/ux.js', 'utf8');
+const archiveSource = source.slice(
+    source.indexOf('window.archiveEndpoint = async'),
+    source.indexOf('window.cloneEndpoint')
+);
+let confirmed = false;
+let submitCount = 0;
+let submittedForm = null;
+
+global.window = global;
+global.hwConfirm = async () => confirmed;
+global.showToast = () => { throw new Error('Unexpected archive error'); };
+global.hwMerkeScroll = () => {};
+global.document = {
+    querySelector(selector) {
+        return selector === 'meta[name="csrf-token"]' ? { content: 'csrf-value' } : null;
+    },
+    createElement(tag) {
+        const element = {
+            tagName: tag.toUpperCase(),
+            attributes: {},
+            children: [],
+            setAttribute(name, value) { this.attributes[name] = value; },
+            appendChild(child) { this.children.push(child); },
+            remove() { this.removed = true; }
+        };
+        if (tag === 'form') {
+            element.requestSubmit = () => { submitCount += 1; submittedForm = element; };
+        }
+        return element;
+    },
+    body: { appendChild() {} }
+};
+
+eval(archiveSource);
+
+(async () => {
+    const trigger = {
+        disabled: false,
+        attributes: {},
+        setAttribute(name, value) { this.attributes[name] = value; },
+        removeAttribute(name) { delete this.attributes[name]; }
+    };
+
+    await window.archiveEndpoint('endpoint/id', 'NOC', trigger);
+    assert.strictEqual(submitCount, 0);
+    assert.strictEqual(trigger.disabled, false);
+
+    confirmed = true;
+    await window.archiveEndpoint('endpoint/id', 'NOC', trigger);
+    assert.strictEqual(submitCount, 1);
+    assert.strictEqual(submittedForm.method, 'POST');
+    assert.strictEqual(submittedForm.action, '/endpoint/archive/endpoint%2Fid');
+    assert.strictEqual(submittedForm.attributes['hx-boost'], 'false');
+    assert.strictEqual(submittedForm.children.length, 1);
+    assert.strictEqual(submittedForm.children[0].name, 'csrf_token');
+    assert.strictEqual(submittedForm.children[0].value, 'csrf-value');
+    assert.strictEqual(trigger.disabled, true);
+    assert.strictEqual(trigger.attributes['aria-busy'], 'true');
+})().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
+"""
+    result = subprocess.run(
+        [node, "-e", harness],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize(
     ("script_name", "expected_lookup"),
     [

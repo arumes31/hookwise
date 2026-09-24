@@ -1,12 +1,14 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row justify-content-center py-5">
-    <div class="col-md-6 text-center">
-        <h1 class="display-1 fw-bold text-danger">500</h1>
-        <h2 class="mb-4">Internal Server Error</h2>
-        <p class="text-secondary mb-5">Something went wrong on our end. Please try again later or contact support if the issue persists.</p>
-        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary px-5">Back to Dashboard</a>
+<main class="hw-state-page" aria-labelledby="server-error-title">
+    <div class="hw-state-code is-critical" aria-hidden="true">500</div>
+    <h1 id="server-error-title">Hookwise could not complete the request</h1>
+    <p>The service hit an unexpected error. Retry once; if it persists, share the reference below with your administrator.</p>
+    <div class="hw-state-actions">
+        <button type="button" class="btn btn-primary" onclick="window.location.reload()">Retry request</button>
+        <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">Return to dashboard</a>
     </div>
-</div>
+    {% if request_id %}<p class="hw-state-reference">Reference <code>{{ request_id }}</code></p>{% endif %}
+</main>
 {% endblock %}

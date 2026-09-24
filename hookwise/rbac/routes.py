@@ -115,6 +115,7 @@ ENDPUNKT_RECHTE: Dict[str, str] = {
     "main.add_mapping": "tenantmap:write",
     "main.edit_mapping": "tenantmap:write",
     "main.delete_mapping": "tenantmap:write",
+    "main.undo_delete_mapping": "tenantmap:write",
     # ---- Audit -----------------------------------------------------------
     "main.audit_logs": "audit:read",
     # ---- Einstellungen ---------------------------------------------------

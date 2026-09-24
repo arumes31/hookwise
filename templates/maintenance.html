@@ -1,16 +1,13 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row justify-content-center py-5">
-    <div class="col-md-6 text-center">
-        <div class="mb-4 text-warning">
-            <svg class="hw-icon" width="64" height="64" aria-hidden="true" focusable="false"><use href="#i-tools"></use></svg>
-        </div>
-        <h1 class="fw-bold">Scheduled Maintenance</h1>
-        <p class="text-secondary mb-5 h5">HookWise is currently undergoing scheduled maintenance. We'll be back online shortly.</p>
-        <div class="card bg-dark border-warning border-opacity-25 py-3">
-            <p class="mb-0 small text-warning">System administrators can still access the dashboard by appending /admin to the URL if authorized.</p>
-        </div>
+<main class="hw-state-page" aria-labelledby="maintenance-title">
+    <svg class="hw-state-icon" width="48" height="48" aria-hidden="true" focusable="false"><use href="#i-tools"></use></svg>
+    <h1 id="maintenance-title">Scheduled maintenance</h1>
+    <p>Hookwise is temporarily unavailable while maintenance is in progress. Existing webhook requests receive a service-unavailable response.</p>
+    <div class="hw-state-actions">
+        <button type="button" class="btn btn-primary" onclick="window.location.reload()">Check status again</button>
     </div>
-</div>
+    {% if request_id %}<p class="hw-state-reference">Reference <code>{{ request_id }}</code></p>{% endif %}
+</main>
 {% endblock %}

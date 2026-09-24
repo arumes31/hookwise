@@ -21,8 +21,12 @@
                 <tbody>
                     {% for log in logs %}
                     <tr class="border-bottom border-light border-opacity-5">
-                        <td class="ps-4 py-3 text-secondary font-monospace">{{ log.created_at.strftime('%Y-%m-%d
-                            %H:%M:%S') }}</td>
+                        <td class="ps-4 py-3 text-secondary font-monospace">
+                            <time class="hw-local-datetime" datetime="{{ log.created_at.isoformat() }}Z"
+                                data-utc-label="{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">
+                                {{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC
+                            </time>
+                        </td>
                         <td class="py-3">
                             <span
                                 class="badge bg-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} bg-opacity-10 text-{{ 'primary' if log.action == 'create' else 'warning' if log.action == 'update' else 'danger' if log.action == 'delete' else 'info' }} border border-opacity-25 uppercase">{{

@@ -1,6 +1,8 @@
 """Transactional helpers for logical TenantMap groups."""
 
+import json
 import logging
+import secrets
 import unicodedata
 import uuid
 from dataclasses import dataclass
@@ -15,6 +17,8 @@ from ..models import GlobalMapping
 
 MAX_TENANT_VALUES = 50
 TENANT_MAPPING_REVISION_KEY = "hookwise:tenantmap:revision"
+TENANT_MAPPING_UNDO_PREFIX = "hookwise:tenantmap:undo:"
+TENANT_MAPPING_UNDO_TTL_SECONDS = 15
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +27,25 @@ class TenantMappingValidationError(ValueError):
     """A mapping group contains missing, conflicting, or oversized values."""
 
 
+class TenantMappingUndoUnavailable(RuntimeError):
+    """The short-lived undo store could not be reached safely."""
+
+
 @dataclass(frozen=True)
 class TenantMappingGroup:
     """A logical mapping shown as one row while retaining flat match records."""
 
     id: str
+    tenant_values: tuple[str, ...]
+    company_id: str
+    description: str | None
+
+
+@dataclass(frozen=True)
+class TenantMappingUndoSnapshot:
+    """A deleted mapping that may be restored by its originating user."""
+
+    original_mapping_id: str
     tenant_values: tuple[str, ...]
     company_id: str
     description: str | None
@@ -231,6 +249,81 @@ def mapping_alias_summary(aliases: Sequence[str]) -> str:
     """Return a bounded alias summary suitable for flashes and audit logs."""
     shown = ", ".join(aliases[:3])
     return shown if len(aliases) <= 3 else f"{shown} (+{len(aliases) - 3} more)"
+
+
+def store_mapping_undo_snapshot(mapping: TenantMappingGroup, owner_id: str) -> str:
+    """Persist a user-bound deletion snapshot and return its opaque token."""
+    payload = json.dumps(
+        {
+            "version": 1,
+            "owner_id": owner_id,
+            "original_mapping_id": mapping.id,
+            "tenant_values": mapping.tenant_values,
+            "company_id": mapping.company_id,
+            "description": mapping.description,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    try:
+        for _ in range(3):
+            token = secrets.token_urlsafe(24)
+            if redis_client.set(
+                f"{TENANT_MAPPING_UNDO_PREFIX}{token}",
+                payload,
+                ex=TENANT_MAPPING_UNDO_TTL_SECONDS,
+                nx=True,
+            ):
+                return token
+    except RedisError as error:
+        raise TenantMappingUndoUnavailable("TenantMap undo storage is unavailable") from error
+    raise TenantMappingUndoUnavailable("A unique TenantMap undo token could not be created")
+
+
+def load_mapping_undo_snapshot(token: str, owner_id: str) -> TenantMappingUndoSnapshot | None:
+    """Load a valid, unexpired deletion snapshot owned by the current user."""
+    if not token or len(token) > 128:
+        return None
+    try:
+        raw_payload = redis_client.get(f"{TENANT_MAPPING_UNDO_PREFIX}{token}")
+    except RedisError as error:
+        raise TenantMappingUndoUnavailable("TenantMap undo storage is unavailable") from error
+    if raw_payload is None:
+        return None
+
+    try:
+        payload = json.loads(raw_payload)
+        tenant_values = payload["tenant_values"]
+        description = payload.get("description")
+        if (
+            payload.get("version") != 1
+            or payload.get("owner_id") != owner_id
+            or not isinstance(payload.get("original_mapping_id"), str)
+            or not isinstance(tenant_values, list)
+            or not all(isinstance(value, str) for value in tenant_values)
+            or not isinstance(payload.get("company_id"), str)
+            or (description is not None and not isinstance(description, str))
+        ):
+            return None
+        return TenantMappingUndoSnapshot(
+            original_mapping_id=payload["original_mapping_id"],
+            tenant_values=tuple(tenant_values),
+            company_id=payload["company_id"],
+            description=description,
+        )
+    except (KeyError, TypeError, ValueError, UnicodeDecodeError):  # fmt: skip
+        logger.warning("TenantMap undo snapshot %s is invalid", token)
+        return None
+
+
+def discard_mapping_undo_snapshot(token: str) -> None:
+    """Best-effort removal of a consumed or abandoned undo snapshot."""
+    if not token or len(token) > 128:
+        return
+    try:
+        redis_client.delete(f"{TENANT_MAPPING_UNDO_PREFIX}{token}")
+    except RedisError:
+        logger.warning("TenantMap undo snapshot %s could not be removed", token, exc_info=True)
 
 
 def bump_mapping_cache_revision() -> None:

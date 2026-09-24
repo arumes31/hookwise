@@ -27,7 +27,26 @@ def client(app):
 @pytest.fixture(autouse=True)
 def disable_mapping_cache_revision():
     """Keep route tests independent from a running Redis service."""
-    with patch("hookwise.tenantmap.bump_mapping_cache_revision"):
+    snapshots = {}
+
+    def store_snapshot(mapping, owner_id):
+        token = f"undo-{len(snapshots) + 1}"
+        snapshots[token] = (mapping, owner_id)
+        return token
+
+    def load_snapshot(token, owner_id):
+        stored = snapshots.get(token)
+        return stored[0] if stored and stored[1] == owner_id else None
+
+    def discard_snapshot(token):
+        snapshots.pop(token, None)
+
+    with (
+        patch("hookwise.tenantmap.bump_mapping_cache_revision"),
+        patch("hookwise.tenantmap.store_mapping_undo_snapshot", side_effect=store_snapshot),
+        patch("hookwise.tenantmap.load_mapping_undo_snapshot", side_effect=load_snapshot),
+        patch("hookwise.tenantmap.discard_mapping_undo_snapshot", side_effect=discard_snapshot),
+    ):
         yield
 
 
@@ -169,6 +188,107 @@ def test_tenantmap_group_create_edit_and_delete_are_atomic(client, app):
     assert deleted.status_code == 302
     with app.app_context():
         assert GlobalMapping.query.count() == 0
+
+
+def test_tenantmap_delete_requires_confirmation_and_can_be_undone(client, app):
+    """Keep deletion behind an explicit dialog and restore its complete group."""
+    _authenticate(client)
+    client.post(
+        "/tenantmap/add",
+        data={
+            "tenant_values": "one.example\ntwo.example",
+            "company_id": "UNDO-COMPANY",
+            "description": "Undo fixture",
+        },
+    )
+    with app.app_context():
+        group_id = GlobalMapping.query.first().mapping_group_id
+
+    page = client.get("/tenantmap").get_data(as_text=True)
+    delete_form = re.search(
+        rf'<form action="/tenantmap/delete/{group_id}".*?</form>',
+        page,
+        re.DOTALL,
+    )
+    assert delete_form is not None
+    assert 'hx-boost="false"' in delete_form.group(0)
+    assert 'type="button"' in delete_form.group(0)
+    assert 'onclick="confirmMappingDelete(this)"' in delete_form.group(0)
+    assert "form.addEventListener('submit'" not in page
+
+    deleted = client.post(f"/tenantmap/delete/{group_id}", follow_redirects=True)
+    assert deleted.status_code == 200
+    assert b'id="tenantmap-undo-toast"' in deleted.data
+    assert b"</svg>Undo" in deleted.data
+    assert b'data-bs-delay="8000"' in deleted.data
+    assert b"5 minutes" not in deleted.data
+    with app.app_context():
+        assert GlobalMapping.query.count() == 0
+
+    restored = client.post("/tenantmap/delete/undo", follow_redirects=True)
+    assert restored.status_code == 200
+    assert b"Mapping with 2 tenant value(s) restored." in restored.data
+    with app.app_context():
+        rows = GlobalMapping.query.order_by(GlobalMapping.tenant_value).all()
+        assert [row.tenant_value for row in rows] == ["one.example", "two.example"]
+        assert {row.company_id for row in rows} == {"UNDO-COMPANY"}
+        assert {row.description for row in rows} == {"Undo fixture"}
+
+
+def test_tenantmap_delete_fails_closed_when_undo_storage_is_unavailable(client, app):
+    """Retain the mapping when the required undo snapshot cannot be persisted."""
+    from hookwise.services.tenant_mappings import TenantMappingUndoUnavailable
+
+    _authenticate(client)
+    client.post(
+        "/tenantmap/add",
+        data={"tenant_values": "safe.example", "company_id": "SAFE"},
+    )
+    with app.app_context():
+        group_id = GlobalMapping.query.one().mapping_group_id
+
+    with patch(
+        "hookwise.tenantmap.store_mapping_undo_snapshot",
+        side_effect=TenantMappingUndoUnavailable("Redis unavailable"),
+    ):
+        response = client.post(f"/tenantmap/delete/{group_id}", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert b"safe undo snapshot could not be created" in response.data
+    with app.app_context():
+        assert GlobalMapping.query.count() == 1
+
+
+def test_tenantmap_undo_snapshot_is_short_lived_and_owner_bound():
+    """Persist only an expiring opaque snapshot that another user cannot load."""
+    from hookwise.services import tenant_mappings
+
+    assert tenant_mappings.TENANT_MAPPING_UNDO_TTL_SECONDS == 15
+
+    mapping = tenant_mappings.TenantMappingGroup(
+        id="group-id",
+        tenant_values=("one.example", "two.example"),
+        company_id="COMPANY",
+        description="Snapshot fixture",
+    )
+    with patch.object(tenant_mappings.redis_client, "set", return_value=True) as redis_set:
+        token = tenant_mappings.store_mapping_undo_snapshot(mapping, "user:owner")
+
+    redis_set.assert_called_once()
+    _, payload = redis_set.call_args.args
+    assert redis_set.call_args.kwargs == {
+        "ex": tenant_mappings.TENANT_MAPPING_UNDO_TTL_SECONDS,
+        "nx": True,
+    }
+    with patch.object(tenant_mappings.redis_client, "get", return_value=payload):
+        restored = tenant_mappings.load_mapping_undo_snapshot(token, "user:owner")
+        denied = tenant_mappings.load_mapping_undo_snapshot(token, "user:other")
+
+    assert restored is not None
+    assert restored.tenant_values == mapping.tenant_values
+    assert restored.company_id == mapping.company_id
+    assert restored.description == mapping.description
+    assert denied is None
 
 
 def test_tenantmap_duplicate_alias_rejects_the_complete_group(client, app):

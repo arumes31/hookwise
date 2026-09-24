@@ -38,7 +38,7 @@
                         <div class="input-group">
                             <input type="number" class="form-control bg-dark border-secondary text-light"
                                 id="log_retention_days" name="log_retention_days" value="{{ log_retention_days }}"
-                                min="1" max="365">
+                                min="1" max="3650">
                             <span class="input-group-text bg-dark border-secondary text-secondary">Days</span>
                         </div>
                         <div class="form-text text-light opacity-50">Older logs will be automatically purged.</div>
@@ -119,10 +119,10 @@
                         <input type="text" id="master-api-key"
                             class="form-control bg-dark border-secondary text-warning font-monospace"
                             value="{{ master_api_key }}" readonly>
-                        <button class="btn btn-outline-warning" data-braucht="settings:write" data-braucht-modus="sperren" onclick="generateApiKey()">
+                        <button type="button" class="btn btn-outline-warning" data-braucht="settings:write" data-braucht-modus="sperren" onclick="generateApiKey()">
                             <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg> Regenerate
                         </button>
-                        <button class="btn btn-primary"
+                        <button type="button" class="btn btn-primary"
                             onclick="copyToClipboard(document.getElementById('master-api-key').value)">
                             <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg> Copy
                         </button>
@@ -159,12 +159,12 @@
                     </div>
                     <div class="col-md-6 ps-md-4">
                         <h3 class="h6 text-light fw-bold mb-3">Restore Configuration</h3>
-                        <p class="text-secondary small mb-3">Restore settings from a previously backup file.</p>
+                        <p class="text-secondary small mb-3">Restore settings from a previous backup file. Current configuration is replaced.</p>
                         <div class="input-group" data-braucht="settings:write" data-braucht-modus="sperren">
                             <input type="file" id="backup-file" class="form-control bg-dark border-secondary text-light"
                                 aria-label="Choose configuration backup file"
                                 accept=".json">
-                            <button class="btn btn-primary" onclick="restoreConfig()">
+                            <button type="button" class="btn btn-primary" onclick="restoreConfig()">
                                 <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-up"></use></svg>Restore
                             </button>
                         </div>
@@ -215,7 +215,7 @@
                     <h3 class="h5 fw-bold text-danger mb-1">Danger Zone</h3>
                     <p class="text-secondary small mb-0">Irreversible actions. Tread lightly.</p>
                 </div>
-                <button class="btn btn-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"
+                <button type="button" class="btn btn-danger bg-danger bg-opacity-10 text-danger border-danger border-opacity-25"
                     onclick="deleteAllLogs()">
                     <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-trash-fill"></use></svg>Purge All Logs
                 </button>
@@ -229,7 +229,7 @@
     const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     async function generateApiKey() {
-        if (!await hwConfirm('Are you sure you want to generate a new master API key?', { title: 'Regenerate API Key', okText: 'Regenerate' })) return;
+        if (!await hwConfirm('Regenerating immediately invalidates the current master API key. Integrations using it will fail until they are updated.', { title: 'Regenerate API key', okText: 'Regenerate key', danger: true })) return;
         try {
             const res = await fetch('/admin/generate-api-key', {
                 method: 'POST',
@@ -249,6 +249,9 @@
     async function restoreConfig() {
         const file = document.getElementById('backup-file').files[0];
         if (!file) return showToast('Please select a file', 'danger');
+        if (!await hwConfirm(`Restore ${file.name}? This replaces the current Hookwise configuration.`, {
+            title: 'Restore configuration', okText: 'Restore backup', danger: true
+        })) return;
 
         const formData = new FormData();
         formData.append('backup_file', file);
@@ -275,7 +278,7 @@
     }
 
     async function deleteAllLogs() {
-        if (!await hwConfirm('Are you SURE you want to delete ALL history logs? This cannot be undone.', { title: 'Purge All Logs', okText: 'Purge' })) return;
+        if (!await hwConfirm('Delete all retained webhook history across every endpoint? This cannot be undone.', { title: 'Purge all logs', okText: 'Purge logs', danger: true })) return;
         try {
             const res = await fetch('/history/delete-all', { method: 'POST', headers: { 'X-CSRFToken': CSRF_TOKEN } });
             if (!res.ok) throw new Error(`Server error ${res.status}`);

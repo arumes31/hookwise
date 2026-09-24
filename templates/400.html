@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="text-center py-5" aria-labelledby="bad-request-title">
-    <h1 id="bad-request-title" class="display-5">Request expired</h1>
-    <p class="text-secondary">{{ message }}</p>
-    <a class="btn btn-primary" href="{{ request.referrer or url_for('main.index') }}">Return and retry</a>
-</section>
+<main class="hw-state-page" aria-labelledby="bad-request-title">
+    <div class="hw-state-code" aria-hidden="true">400</div>
+    <h1 id="bad-request-title">Request could not be completed</h1>
+    <p>{{ message or 'Check the submitted information, then try again.' }}</p>
+    <div class="hw-state-actions">
+        <button type="button" class="btn btn-primary" onclick="window.location.reload()">Try again</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('main.index') }}">Return to dashboard</a>
+    </div>
+    {% if request_id %}<p class="hw-state-reference">Reference <code>{{ request_id }}</code></p>{% endif %}
+</main>
 {% endblock %}

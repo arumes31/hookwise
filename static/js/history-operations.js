@@ -58,7 +58,7 @@
     async function deleteSearch() {
         const select = document.getElementById('history-saved-searches');
         const id = select?.value;
-        if (!id || !await window.hwConfirm?.('Delete this saved history search?', { title: 'Delete saved search', okText: 'Delete' })) return;
+        if (!id || !await window.hwConfirm?.('Delete this saved history search? This does not delete webhook history.', { title: 'Delete saved search', okText: 'Delete search', danger: true })) return;
         try {
             await api(`/api/history/saved-searches/${encodeURIComponent(id)}`, { method: 'DELETE' });
             await loadSaved();
@@ -67,6 +67,9 @@
         } catch (error) { notice(error.message, 'danger'); }
     }
     async function retry(id) {
+        if (!await window.hwConfirm?.('Retry this failed request now? It may repeat external actions if the previous attempt completed partially.', {
+            title: 'Retry request', okText: 'Retry request', danger: true
+        })) return;
         try { await api(`/api/history/${encodeURIComponent(id)}/retry`, { method: 'POST' }); notice('Retry queued.', 'success'); }
         catch (error) { notice(error.message, 'danger'); }
     }
@@ -81,7 +84,7 @@
             diagnostic = await api(`/api/history/${encodeURIComponent(id)}/diagnostics`);
             const log = diagnostic.log || {};
             document.getElementById('diagnostics-summary').textContent = `Request ${log.request_id || id} · correlation ${log.correlation_id || 'not recorded'} · received ${log.received_at || log.created_at || 'unknown'}`;
-            replaceList('diagnostics-timeline', diagnostic.timeline, item => `${item.event}: ${new Date(item.at).toLocaleString()}`);
+            replaceList('diagnostics-timeline', diagnostic.timeline, item => `${item.event}: ${window.hwFormatLocalDateTime(item.at) || item.at}`);
             replaceList('diagnostics-retries', diagnostic.retry_attempts, item => `Attempt ${item.attempt_number}: ${item.status} · ${item.retry_interval_seconds || 0}s interval`);
             document.getElementById('diagnostics-errors').textContent = JSON.stringify(diagnostic.error_chain || [], null, 2);
             document.getElementById('diagnostics-retry').dataset.logId = id;
@@ -99,13 +102,16 @@
         if (raw === null) return;
         let payload; try { payload = JSON.parse(raw); } catch (_) { return notice('Replacement JSON is invalid.', 'danger'); }
         if (!payload || typeof payload !== 'object') return notice('Replacement JSON must be an object or array.', 'danger');
+        if (!await window.hwConfirm?.('Replay this request with the replacement payload? It follows the live routing path and may repeat external actions.', {
+            title: 'Replay edited request', okText: 'Replay with edits', danger: true
+        })) return;
         try { await api(`/api/history/${encodeURIComponent(id)}/replay-edits`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payload }) }); notice('Edited replay queued.', 'success'); }
         catch (error) { notice(error.message, 'danger'); }
     }
     async function replayDlq() {
         const ids = [...document.querySelectorAll('tr[data-history-status="dlq"] .log-check:checked')].map(box => box.dataset.id);
         if (!ids.length) return notice('Select dead-lettered requests first.');
-        if (!await window.hwConfirm?.(`Replay ${ids.length} dead-lettered request(s)?`, { title: 'Replay dead letters', okText: 'Replay' })) return;
+        if (!await window.hwConfirm?.(`Replay ${ids.length} dead-lettered request(s)? This may repeat external actions.`, { title: 'Replay dead letters', okText: 'Replay', danger: true })) return;
         try { const result = await api('/api/history/dlq/replay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }); notice(`${result.queued.length} replay(s) queued.`, 'success'); }
         catch (error) { notice(error.message, 'danger'); }
     }
