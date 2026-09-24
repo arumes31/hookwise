@@ -2658,7 +2658,10 @@ samp,
 
 /* ---- Login "Split Signal": Formular links, synthetischer Delivery-Feed
    mit Wasserzeichen rechts. Alles token-basiert, traegt beide Themes. ---- */
-.hw-login-main { max-width:none; padding:0 !important; margin:0; }
+#main-content.hw-login-main { width:100%; max-width:none; padding:0 !important; margin:0; }
+@media (min-width: 992px) {
+    body.hw-login-body { padding-left:0; }
+}
 .hw-login-main .alert {
     position:fixed; top:16px; left:50%; transform:translateX(-50%);
     z-index:20; min-width:min(360px, 92vw);

@@ -69,7 +69,8 @@
     <script src="{{ static_asset('js/history-operations.js') }}" defer></script>
 </head>
 
-<body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
+<body class="{% if request.endpoint == 'main.login' %}hw-login-body{% endif %}" hx-boost="true"
+    hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
     {# Icon-Sprite, genau einmal pro Seite. Alle <use href="#i-...">
        im Dokument beziehen sich hierauf. #}
     {% include '_icons.html' %}
