@@ -101,6 +101,18 @@ def test_endpoint_selection_and_sidebar_are_overlays():
     assert "transform:translate3d(var(--rail-page-shift)" not in css
 
 
+def test_login_layout_does_not_exceed_the_viewport():
+    """Remove authenticated-shell spacing from the full-height login layout."""
+    css = (ROOT / "static/css/hookwise-console.css").read_text(encoding="utf-8")
+    template = (ROOT / "templates/base.html").read_text(encoding="utf-8")
+
+    login_rule = css[css.index("#main-content.hw-login-main") : css.index(".hw-login-main .alert")]
+    assert "request.endpoint == 'main.login'" in template
+    assert "hw-login-body" in template
+    assert "padding:0 !important" in login_rule
+    assert "body.hw-login-body { padding-left:0; }" in login_rule
+
+
 def test_browser_ticket_url_uses_configured_template():
     """Build and validate live ticket URLs with the browser helper."""
     node = shutil.which("node")
