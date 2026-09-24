@@ -75,9 +75,11 @@ assert.strictEqual(formatLocalDateTime('2026-09-16T18:20:05+02:00'), '2026-09-16
 assert.strictEqual(formatLocalDateTime(new Date('2026-09-16T18:20:05Z')), '2026-09-16T18:20:05.000Z');
 assert.strictEqual(formatLocalDateTime('not-a-date'), '');
 """
+    environment = {**os.environ, "TZ": "Europe/Vienna"}
     result = subprocess.run(
         [node, "-e", harness],
         cwd=ROOT,
+        env=environment,
         text=True,
         capture_output=True,
         check=False,
