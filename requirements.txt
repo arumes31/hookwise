@@ -684,9 +684,9 @@ markupsafe==3.0.3 \
     #   mako
     #   werkzeug
     #   wtforms
-msal==1.38.0 \
-    --hash=sha256:4f10ff1257bacfd1781f22e85bd2b8d43ad1b490f3b6aafd7906671cadedd464 \
-    --hash=sha256:765b9b98b6aa380ee8b8f1c75636e08863edaf0a953498955bd668650dde5d49
+msal==1.39.0 \
+    --hash=sha256:2d2577886906cd7293850dffa2da29119966c213bfc6ec0cecf8bf7621e1ca77 \
+    --hash=sha256:6ab7de335e6d7f5717e2c7e1dbf86e4dda2f6acf3c56773b78dc53ebc6395b5f
     # via hookwise (pyproject.toml)
 ordered-set==4.1.0 \
     --hash=sha256:046e1132c71fcf3330438a539928932caf51ddbc582496833e23de611de14562 \
