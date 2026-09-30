@@ -318,8 +318,7 @@ def defender_incident_summary(
         (re.sub(r"\s+", " ", str(candidate)).strip() for candidate in candidates if str(candidate or "").strip()),
         "unknown",
     )
-    discriminator = hashlib.sha256(tenant_key.encode("utf-8")).hexdigest()[:6]
     prefix = "CIPP Defender: "
-    suffix = f" #{incident.display_id[:24]} @{discriminator}"
+    suffix = f" #{incident.display_id[:24]}"
     tenant_limit = min(30, max(0, limit - len(prefix) - len(suffix)))
     return f"{prefix}{tenant[:tenant_limit].rstrip()}{suffix}"[:limit]
