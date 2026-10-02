@@ -93,7 +93,7 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.publish == 'true' && format('{0}@{1}', steps.image.outputs.image, steps.build.outputs.digest) || steps.build.outputs.imageid }}
         run: |
-          packages=$(docker run --rm --entrypoint sh "$IMAGE" -c "find /usr/local -depth \( -name 'msgpack*' -o -name 'setuptools*' -o -name '_distutils_hack' -o -name 'distutils-precedence.pth' \) -print")
+          packages=$(docker run --rm --entrypoint sh "$IMAGE" -c "find /usr/local -depth \( -name 'pip' -o -name 'pip-*.dist-info' -o -name 'pip3' -o -name 'pip3.*' -o -name 'msgpack*' -o -name 'setuptools*' -o -name '_distutils_hack' -o -name 'distutils-precedence.pth' \) -print")
           if [ -n "$packages" ]; then
             printf '%s\n' "$packages"
             exit 1

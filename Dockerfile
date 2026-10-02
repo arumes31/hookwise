@@ -34,8 +34,13 @@ RUN apt-get update \
 RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
 COPY --from=builder /install /usr/local
 # These base-image packaging modules are not runtime dependencies. Remove every
-# known vulnerable package location and the setuptools startup shim before copying app code.
+# known vulnerable package location, pip's vendored dependencies, and the
+# setuptools startup shim before copying app code.
 RUN find /usr/local -depth \( \
+    -name 'pip' -o \
+    -name 'pip-*.dist-info' -o \
+    -name 'pip3' -o \
+    -name 'pip3.*' -o \
     -name 'msgpack*' -o \
     -name 'setuptools*' -o \
     -name '_distutils_hack' -o \
