@@ -644,7 +644,7 @@ HookWise looks for exact identifiers in explicit mappings, common payload fields
 - IP address, including addresses found inside URLs or written with a port/protocol suffix
 - Configuration, host, or device name
 
-For example, both `10.70.10.20:7090/tcp` and `http://10.70.10.20:7090/products/...` produce the IP candidate `10.70.10.20`. If exactly one active configuration belonging to the ticket's assigned company has that IP, HookWise attaches it to the new or existing ticket. The port is intentionally not part of the configuration match.
+For example, both `192.0.2.20:7090/tcp` and `http://192.0.2.20:7090/products/...` produce the IP candidate `192.0.2.20`. If exactly one active configuration belonging to the ticket's assigned company has that IP, HookWise attaches it to the new or existing ticket. The port is intentionally not part of the configuration match.
 
 Use these optional JSON mapping destinations when a payload has known authoritative fields:
 

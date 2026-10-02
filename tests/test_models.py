@@ -138,14 +138,14 @@ def test_webhook_log_configuration_link_result_to_dict(db_session):
         payload="{}",
         status="processed",
         configuration_link_status="attached",
-        configuration_id=137,
+        configuration_id=201,
     )
     db_session.add(log)
     db_session.commit()
 
     d = log.to_dict()
     assert d["configuration_link_status"] == "attached"
-    assert d["configuration_id"] == 137
+    assert d["configuration_id"] == 201
 
 
 def test_audit_log_creation(db_session):

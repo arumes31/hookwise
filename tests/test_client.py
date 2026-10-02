@@ -129,22 +129,22 @@ def test_find_open_ticket_error(mock_get, client):
 def test_find_configurations_uses_bounded_company_scoped_exact_query(mock_get, client):
     configurations = [
         {
-            "id": 137,
-            "name": "DEXTER",
+            "id": 201,
+            "name": "SERVER-01",
             "company": {"id": 42},
-            "ipAddress": "10.70.10.20",
+            "ipAddress": "192.0.2.20",
             "activeFlag": True,
         }
     ]
     mock_get.return_value.status_code = 200
     mock_get.return_value.json.return_value = configurations
 
-    result = client.find_configurations(42, "ipAddress", "10.70.10.20", page_size=500)
+    result = client.find_configurations(42, "ipAddress", "192.0.2.20", page_size=500)
 
     assert result == configurations
     assert mock_get.call_args.args[0] == "https://api-test.com/company/configurations"
     params = mock_get.call_args.kwargs["params"]
-    assert params["conditions"] == ("company/id = 42 AND activeFlag = true AND ipAddress = '10.70.10.20'")
+    assert params["conditions"] == ("company/id = 42 AND activeFlag = true AND ipAddress = '192.0.2.20'")
     assert params["pageSize"] == 2
     assert params["fields"] == (
         "id,name,company,deviceIdentifier,serialNumber,macAddress,tagNumber,ipAddress,activeFlag"
@@ -167,21 +167,21 @@ def test_find_configurations_parses_configuration_id_as_positive_integer(mock_ge
     mock_get.return_value.status_code = 200
     mock_get.return_value.json.return_value = []
 
-    client.find_configurations(42, "id", "137")
+    client.find_configurations(42, "id", "201")
 
     conditions = mock_get.call_args.kwargs["params"]["conditions"]
-    assert conditions.endswith("id = 137")
+    assert conditions.endswith("id = 201")
 
 
 @patch("requests.Session.get")
 def test_find_matching_configurations_combines_criteria_in_one_bounded_request(mock_get, client):
     configurations = [
         {
-            "id": 137,
-            "name": "DEXTER",
+            "id": 201,
+            "name": "SERVER-01",
             "company": {"id": 42},
             "activeFlag": True,
-            "ipAddress": "10.70.10.20",
+            "ipAddress": "192.0.2.20",
         }
     ]
     mock_get.return_value.status_code = 200
@@ -190,8 +190,8 @@ def test_find_matching_configurations_combines_criteria_in_one_bounded_request(m
     result = client.find_matching_configurations(
         42,
         [
-            ("ipAddress", "10.70.10.20"),
-            ("macAddress", "00-15-5d-65-66-88"),
+            ("ipAddress", "192.0.2.20"),
+            ("macAddress", "02-00-00-00-00-20"),
         ],
     )
 
@@ -199,7 +199,7 @@ def test_find_matching_configurations_combines_criteria_in_one_bounded_request(m
     mock_get.assert_called_once()
     params = mock_get.call_args.kwargs["params"]
     assert params["conditions"] == (
-        "company/id = 42 AND activeFlag = true AND (ipAddress = '10.70.10.20' OR macAddress = '00-15-5d-65-66-88')"
+        "company/id = 42 AND activeFlag = true AND (ipAddress = '192.0.2.20' OR macAddress = '02-00-00-00-00-20')"
     )
     assert params["pageSize"] == 129
 
@@ -208,9 +208,9 @@ def test_find_matching_configurations_combines_criteria_in_one_bounded_request(m
     "searches",
     [
         [],
-        [("ipAddress", "10.70.10.20")] * 17,
+        [("ipAddress", "192.0.2.20")] * 17,
         [("manufacturer", "Microsoft")],
-        [("id", "137 OR 1=1")],
+        [("id", "201 OR 1=1")],
     ],
 )
 def test_find_matching_configurations_rejects_unsafe_or_unbounded_criteria(client, searches):
@@ -225,10 +225,10 @@ def test_find_matching_configurations_rejects_unsafe_or_unbounded_criteria(clien
 @pytest.mark.parametrize(
     ("company_id", "field", "value"),
     [
-        (0, "ipAddress", "10.70.10.20"),
-        (True, "ipAddress", "10.70.10.20"),
+        (0, "ipAddress", "192.0.2.20"),
+        (True, "ipAddress", "192.0.2.20"),
         (42, "manufacturer", "Microsoft"),
-        (42, "id", "137 OR 1=1"),
+        (42, "id", "201 OR 1=1"),
         (42, "id", 0),
     ],
 )
@@ -244,10 +244,10 @@ def test_find_configurations_rejects_unsafe_query_inputs(client, company_id, fie
 @patch("requests.Session.get")
 def test_find_configurations_rejects_invalid_provider_shape(mock_get, client):
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = [{"id": 137}, "not-an-object"]
+    mock_get.return_value.json.return_value = [{"id": 201}, "not-an-object"]
 
     with pytest.raises(ConfigurationRequestError, match="unexpected response") as raised:
-        client.find_configurations(42, "ipAddress", "10.70.10.20")
+        client.find_configurations(42, "ipAddress", "192.0.2.20")
 
     assert raised.value.operation == "search"
     assert raised.value.retryable is False
@@ -262,7 +262,7 @@ def test_find_configurations_classifies_transient_provider_error(mock_get, clien
     )
 
     with pytest.raises(ConfigurationRequestError) as raised:
-        client.find_configurations(42, "ipAddress", "10.70.10.20")
+        client.find_configurations(42, "ipAddress", "192.0.2.20")
 
     assert raised.value.operation == "search"
     assert raised.value.status_code == 503
@@ -275,10 +275,10 @@ def test_find_configurations_classifies_transient_provider_error(mock_get, clien
 def test_is_configuration_attached_reads_exact_association(mock_get, status_code, expected, client):
     mock_get.return_value.status_code = status_code
 
-    result = client.is_configuration_attached(321, 137)
+    result = client.is_configuration_attached(101, 201)
 
     assert result is expected
-    assert mock_get.call_args.args[0] == "https://api-test.com/service/tickets/321/configurations/137"
+    assert mock_get.call_args.args[0] == "https://api-test.com/service/tickets/101/configurations/201"
 
 
 @patch("requests.Session.get")
@@ -289,7 +289,7 @@ def test_is_configuration_attached_classifies_provider_errors(mock_get, client):
     )
 
     with pytest.raises(ConfigurationRequestError) as raised:
-        client.is_configuration_attached(321, 137)
+        client.is_configuration_attached(101, 201)
 
     assert raised.value.operation == "readback"
     assert raised.value.status_code == 403
@@ -300,17 +300,17 @@ def test_is_configuration_attached_classifies_provider_errors(mock_get, client):
 @pytest.mark.parametrize("status_code", [200, 201])
 @patch("requests.Session.post")
 def test_attach_configuration_posts_reference_and_returns_validated_object(mock_post, status_code, client):
-    association = {"id": 137, "name": "DEXTER"}
+    association = {"id": 201, "name": "SERVER-01"}
     mock_post.return_value.status_code = status_code
     mock_post.return_value.json.return_value = association
 
-    result = client.attach_configuration(321, 137)
+    result = client.attach_configuration(101, 201)
 
     assert result == association
     mock_post.assert_called_once_with(
-        "https://api-test.com/service/tickets/321/configurations",
+        "https://api-test.com/service/tickets/101/configurations",
         headers=client.headers,
-        json={"id": 137},
+        json={"id": 201},
         timeout=client.timeout,
     )
 
@@ -318,10 +318,10 @@ def test_attach_configuration_posts_reference_and_returns_validated_object(mock_
 @patch("requests.Session.post")
 def test_attach_configuration_rejects_invalid_provider_shape(mock_post, client):
     mock_post.return_value.status_code = 201
-    mock_post.return_value.json.return_value = [137]
+    mock_post.return_value.json.return_value = [201]
 
     with pytest.raises(ConfigurationRequestError, match="unexpected response") as raised:
-        client.attach_configuration(321, 137)
+        client.attach_configuration(101, 201)
 
     assert raised.value.operation == "attach"
     assert raised.value.retryable is False
@@ -336,7 +336,7 @@ def test_attach_configuration_classifies_ambiguous_failure_without_retrying(mock
     )
 
     with pytest.raises(ConfigurationRequestError) as raised:
-        client.attach_configuration(321, 137)
+        client.attach_configuration(101, 201)
 
     assert raised.value.operation == "attach"
     assert raised.value.status_code == 503
@@ -350,7 +350,7 @@ def test_attach_configuration_classifies_transport_failure_as_unknown_without_re
     mock_post.side_effect = requests.exceptions.Timeout("timed out")
 
     with pytest.raises(ConfigurationRequestError) as raised:
-        client.attach_configuration(321, 137)
+        client.attach_configuration(101, 201)
 
     assert raised.value.operation == "attach"
     assert raised.value.status_code is None

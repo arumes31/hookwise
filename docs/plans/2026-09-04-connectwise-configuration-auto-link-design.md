@@ -7,7 +7,7 @@ Status: Approved for implementation planning
 
 HookWise will optionally associate a ConnectWise PSA configuration (asset/device) with a ticket created from a webhook. The option is configured per endpoint and is disabled by default for both new and existing endpoints.
 
-The feature uses deterministic, company-scoped matching. It never makes an automatic association from a fuzzy or ambiguous match. For example, if `192.168.100.229` uniquely identifies the active configuration `DEXTER` inside the company actually assigned to the ticket, HookWise attaches `DEXTER` to that ticket.
+The feature uses deterministic, company-scoped matching. It never makes an automatic association from a fuzzy or ambiguous match. For example, if `198.51.100.20` uniquely identifies the active configuration `SERVER-01` inside the company actually assigned to the ticket, HookWise attaches `SERVER-01` to that ticket.
 
 ## Goals
 
@@ -72,7 +72,7 @@ ConnectWise exposes configuration association as a post-create nested resource:
 GET /company/configurations
 POST /service/tickets/{ticketId}/configurations
 
-{"id": 137}
+{"id": 201}
 ```
 
 Configurations are not part of the ticket-create schema, so the association cannot be included in the initial ticket POST.
@@ -135,7 +135,7 @@ The API member is expected to require Configuration Inquire access and Service T
 
 - The option is false after fresh install, upgrade, clone, import without the field, and restore from an older backup.
 - Disabled endpoints make no configuration API calls.
-- A ticket containing `192.168.100.229` for DEXTER's company attaches DEXTER when it is the sole active exact match.
+- A ticket containing `198.51.100.20` for SERVER-01's company attaches SERVER-01 when it is the sole active exact match.
 - The same address at a different company is never considered.
 - Duplicate IPs, conflicting identifiers, inactive configurations, and generic names produce no association and an observable reason.
 - Explicit field mappings override discovery without bypassing company verification.
@@ -149,7 +149,7 @@ The API member is expected to require Configuration Inquire access and Service T
 - Client tests for query escaping, company scoping, pagination limits, association GET/POST, and error classification.
 - Endpoint/model/migration/backup tests for the default-disabled setting.
 - Task tests for disabled, unique, absent, ambiguous, conflicting, already-attached, transient-failure, retry, and reused-ticket paths.
-- A non-production tenant smoke test: create a ticket for DEXTER's company, find configuration ID 137 by exact company and IP, attach it, read the association back, and confirm it in the PSA UI.
+- A non-production tenant smoke test: create a ticket for SERVER-01's company, find configuration ID 201 by exact company and IP, attach it, read the association back, and confirm it in the PSA UI.
 
 ## References
 
