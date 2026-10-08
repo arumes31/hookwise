@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Field mapping editor regression</title>
+    <link rel="stylesheet" href="../../static/css/bootstrap.min.css">
+    <link rel="stylesheet" href="../../static/css/prism.css">
+    <link rel="stylesheet" href="../../static/css/style.css">
+    <link rel="stylesheet" href="../../static/css/hookwise-console.css">
+</head>
+<body>
+    <main style="width: 350px; max-width: 100%; margin: 24px">
+        <label for="json_mapping">Field mapping (JSON)</label>
+        <span id="json-mapping-status" role="status" aria-live="polite" hidden></span>
+        <textarea class="form-control font-monospace small bg-dark border-secondary text-warning"
+            id="json_mapping" name="json_mapping" rows="3" aria-describedby="json-mapping-status"
+            autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" wrap="off">{
+  "summary": "$.monitor.name",
+  "customer_id": "$.company",
+  "description": "$.msg",
+  "status": "$.monitor.status"
+}</textarea>
+    </main>
+    <output id="browser-result" data-result="pending" hidden></output>
+    <script src="../../static/js/prism.js"></script>
+    <script src="../../static/js/endpoint-form-fields.js"></script>
+    <script>
+        (async () => {
+            await document.fonts.ready;
+            const result = document.getElementById('browser-result');
+            const failures = [];
+            const check = (condition, message) => { if (!condition) failures.push(message); };
+            try {
+                const field = document.getElementById('json_mapping');
+                const overlay = document.querySelector('.hw-code-glanz');
+                const code = overlay.querySelector('code');
+                const sample = field.value;
+                const parameters = new URLSearchParams(location.search);
+                document.documentElement.dataset.theme = parameters.get('theme') || 'dark';
+                document.body.style.zoom = parameters.get('zoom') || '1';
+                field.focus();
+                field.select();
+
+                check(overlay.classList.contains('language-js'), 'Real Prism must apply its pre language class');
+                const fieldStyle = getComputedStyle(field);
+                const overlayStyle = getComputedStyle(overlay);
+                const codeStyle = getComputedStyle(code);
+                check(fieldStyle.backgroundColor === 'rgba(0, 0, 0, 0)',
+                    `Textarea background hides syntax highlighting: ${fieldStyle.backgroundColor}`);
+                for (const property of ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) {
+                    check(fieldStyle[property] === overlayStyle[property],
+                        `${property}: textarea=${fieldStyle[property]}, overlay=${overlayStyle[property]}`);
+                }
+                for (const property of ['marginTop', 'marginRight', 'marginBottom', 'marginLeft']) {
+                    check(overlayStyle[property] === '0px', `${property}: overlay=${overlayStyle[property]}`);
+                }
+                for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'whiteSpace']) {
+                    check(fieldStyle[property] === codeStyle[property], `${property} differs between text layers`);
+                }
+                const fieldRect = field.getBoundingClientRect();
+                const overlayRect = overlay.getBoundingClientRect();
+                check(fieldRect.top === overlayRect.top && fieldRect.left === overlayRect.left,
+                    `Layer origins differ: textarea=${fieldRect.x},${fieldRect.y}; overlay=${overlayRect.x},${overlayRect.y}`);
+                check(overlayStyle.overflowX === 'hidden' && overlayStyle.overflowY === 'hidden',
+                    'The overlay must not draw independent scrollbars');
+                const selection = getComputedStyle(field, '::selection');
+                check(selection.color === 'rgba(0, 0, 0, 0)', `Selected textarea glyphs are visible: ${selection.color}`);
+                check(selection.webkitTextFillColor === 'rgba(0, 0, 0, 0)', 'Selected WebKit text fill must stay transparent');
+                check(selection.backgroundColor !== 'rgba(0, 0, 0, 0)', 'Selection must remain visibly highlighted');
+
+                const insertion = field.value.indexOf('$.msg') + '$.msg'.length;
+                field.setSelectionRange(insertion, insertion);
+                field.setRangeText(' test', insertion, insertion, 'end');
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+                check(code.textContent === field.value + '\n', 'Typing must update the highlighted text exactly');
+                check(field.value.includes('$.msg test'), 'Inserted text must stay on the description line');
+
+                field.value = JSON.stringify(Object.fromEntries(
+                    Array.from({ length: 30 }, (_, index) => [`field_${index}`, '$.' + 'long_path_'.repeat(20)])
+                ), null, 2);
+                field.scrollTop = 100;
+                field.scrollLeft = 100;
+                field.dispatchEvent(new Event('scroll'));
+                check(field.scrollTop > 0 && field.scrollLeft > 0, 'Both scroll directions must be exercised');
+                check(overlay.scrollTop === field.scrollTop && overlay.scrollLeft === field.scrollLeft,
+                    'Both text layers must remain synchronized while scrolling');
+
+                field.value = sample;
+                field.scrollTop = 0;
+                field.scrollLeft = 0;
+                field.dispatchEvent(new Event('scroll'));
+                field.select();
+            } catch (error) {
+                failures.push(error.stack || String(error));
+            }
+            result.textContent = JSON.stringify(failures);
+            result.dataset.result = failures.length ? 'fail' : 'pass';
+        })();
+    </script>
+</body>
+</html>

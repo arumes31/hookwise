@@ -1,3 +1,5 @@
+import html
+import os
 import re
 import shutil
 import subprocess
@@ -156,3 +158,50 @@ def test_field_mapping_textarea_uses_code_editor_input_settings() -> None:
     assert 'autocorrect="off"' in markup
     assert 'autocapitalize="off"' in markup
     assert 'wrap="off"' in markup
+
+
+@pytest.mark.parametrize(("theme", "zoom"), [("dark", "1"), ("light", "1"), ("dark", "1.25")])
+def test_field_mapping_selection_in_browser(tmp_path: Path, theme: str, zoom: str) -> None:
+    """Keep selected text, caret geometry, and scrolling aligned with the real Prism CSS."""
+    browser = next(
+        (
+            executable
+            for name in ("google-chrome", "chromium", "chromium-browser", "chrome")
+            if (executable := shutil.which(name))
+        ),
+        None,
+    )
+    if browser is None and os.name == "nt":
+        candidate = Path(os.environ.get("PROGRAMFILES", "C:/Program Files")) / "Google/Chrome/Application/chrome.exe"
+        if candidate.is_file():
+            browser = str(candidate)
+    if browser is None:
+        pytest.skip("Chrome or Chromium is required for the field mapping browser regression")
+
+    fixture = ROOT / "tests/fixtures/field_mapping_editor.html"
+    result = subprocess.run(
+        [
+            browser,
+            "--headless",
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--allow-file-access-from-files",
+            f"--user-data-dir={tmp_path / 'browser-profile'}",
+            "--window-size=900,600",
+            "--virtual-time-budget=2000",
+            f"--screenshot={tmp_path / 'selection.png'}",
+            "--dump-dom",
+            f"{fixture.as_uri()}?theme={theme}&zoom={zoom}",
+        ],
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+        encoding="utf-8",
+        errors="replace",
+    )
+    report = re.search(r'<output id="browser-result"[^>]*>(.*?)</output>', result.stdout, re.DOTALL)
+    assert result.returncode == 0, result.stderr
+    assert report is not None, result.stdout + result.stderr
+    assert 'data-result="pass"' in report.group(0), html.unescape(report.group(0))
