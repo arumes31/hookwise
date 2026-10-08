@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.15.0rc2-slim AS builder
+FROM python:3.15.0rc3-slim AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN pip install --upgrade pip \
     && pip check
 
 # Stage 2: Runtime
-FROM python:3.15.0rc2-slim AS runtime
+FROM python:3.15.0rc3-slim AS runtime
 # CI varies this value so cached builds still fetch current Debian security fixes.
 ARG RUNTIME_APT_REFRESH=local
 

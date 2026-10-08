@@ -587,20 +587,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (status) {
             if (!wert.trim()) {
                 status.hidden = true;
+                status.textContent = '';
                 status.removeAttribute('title');
                 feld.removeAttribute('aria-invalid');
                 feld.setCustomValidity('');
             } else {
                 status.hidden = false;
-                let statusText = 'Invalid JSON';
                 try {
                     const mapping = JSON.parse(wert);
                     if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
-                        statusText = 'Invalid mapping';
                         throw new SyntaxError('Field mapping must be a JSON object.');
                     }
                     if (Object.values(mapping).some((value) => typeof value !== 'string')) {
-                        statusText = 'Invalid mapping';
                         throw new SyntaxError('Every field mapping value must be a string.');
                     }
                     status.textContent = 'Valid JSON';
@@ -610,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     feld.setCustomValidity('');
                 } catch (err) {
                     const message = err instanceof Error ? err.message : 'Invalid field mapping JSON';
-                    status.textContent = statusText;
+                    status.textContent = message;
                     status.dataset.zustand = 'crit';
                     status.title = message;
                     feld.setAttribute('aria-invalid', 'true');

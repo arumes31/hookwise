@@ -5,7 +5,7 @@
 # HookWise
 
 [![CI Status](https://github.com/arumes31/hookwise/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arumes31/hookwise/actions/workflows/ci.yml)
-[![Python Version](https://img.shields.io/badge/python-3.15.0rc2-blue.svg)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.15.0rc3-blue.svg)](https://www.python.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg?logo=docker&logoColor=white)](https://www.docker.com/)
@@ -827,7 +827,7 @@ python -m pip_audit -r requirements.txt
 flask db check
 ```
 
-CI runs these checks with Python 3.15.0 RC2 against PostgreSQL and Redis. Dependencies are installed from the hash-pinned `requirements-dev.txt` file.
+CI runs these checks with Python 3.15.0 RC3 against PostgreSQL and Redis. Dependencies are installed from the hash-pinned `requirements-dev.txt` file.
 
 ### Database Migrations
 

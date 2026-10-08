@@ -433,6 +433,7 @@
                                     <textarea
                                         class="form-control font-monospace small bg-dark border-secondary text-warning"
                                         id="json_mapping" name="json_mapping" rows="3"
+                                        aria-describedby="json-mapping-status"
                                         autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" wrap="off"
                                         placeholder='{"summary": "$.title", "description": "$.msg"}'
                                         data-tooltip="Override CW fields using JSONPath.">{{ config.json_mapping if config else '' }}</textarea>

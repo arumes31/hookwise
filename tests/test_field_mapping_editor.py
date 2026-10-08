@@ -83,14 +83,36 @@ assert.strictEqual(field.validationMessage, '');
 assert.strictEqual(field.wrapper.children[0].children[0].textContent, sample + '\n');
 
 field.value = '[]';
-assert.strictEqual(status.textContent, 'Invalid mapping');
+assert.strictEqual(status.textContent, 'Field mapping must be a JSON object.');
 assert.strictEqual(status.dataset.zustand, 'crit');
 assert.strictEqual(field.attributes['aria-invalid'], 'true');
-assert.match(field.validationMessage, /JSON object/);
+assert.strictEqual(field.validationMessage, status.textContent);
+
+field.value = '{"summary": 123}';
+assert.strictEqual(status.textContent, 'Every field mapping value must be a string.');
+assert.strictEqual(field.validationMessage, status.textContent);
+
+field.value = '{';
+assert.ok(field.validationMessage.length > 0);
+assert.strictEqual(status.textContent, field.validationMessage);
+assert.strictEqual(status.hidden, false);
+
+field.value = sample;
+assert.strictEqual(status.textContent, 'Valid JSON');
+assert.strictEqual(field.validationMessage, '');
+assert.strictEqual(field.attributes['aria-invalid'], 'false');
+
+field.value = '[]';
+field.value = '';
+assert.strictEqual(status.hidden, true);
+assert.strictEqual(status.textContent, '');
+assert.strictEqual(field.validationMessage, '');
+assert.strictEqual(field.attributes['aria-invalid'], undefined);
 """
 
 
 def test_reported_field_mapping_is_valid_and_resolves() -> None:
+    """Verify the reported JSON maps nested monitor fields and the message correctly."""
     raw_mapping = """{
       "summary": "$.monitor.name",
       "description": "$.msg",
@@ -106,6 +128,7 @@ def test_reported_field_mapping_is_valid_and_resolves() -> None:
 
 
 def test_field_mapping_editor_validation_and_overlay_rendering() -> None:
+    """Exercise visible validation feedback, recovery, and overlay text in the editor."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node.js is required for field mapping editor coverage")
@@ -122,11 +145,13 @@ def test_field_mapping_editor_validation_and_overlay_rendering() -> None:
 
 
 def test_field_mapping_textarea_uses_code_editor_input_settings() -> None:
+    """Keep browser text corrections disabled and connect accessible validation feedback."""
     template = (ROOT / "templates" / "form.html").read_text(encoding="utf-8")
     textarea = re.search(r'<textarea\b[^>]*\bid="json_mapping"[^>]*>', template, re.DOTALL)
 
     assert textarea is not None
     markup = textarea.group(0)
+    assert 'aria-describedby="json-mapping-status"' in markup
     assert 'spellcheck="false"' in markup
     assert 'autocorrect="off"' in markup
     assert 'autocapitalize="off"' in markup
