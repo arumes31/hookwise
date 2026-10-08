@@ -472,6 +472,7 @@ def test_all_workflow_actions_use_immutable_shas():
 
 
 def test_ci_uses_latest_python_and_recommended_pr_guards():
+    """Keep the selected Python runtime and CI security guards consistent."""
     root = Path(__file__).parents[1]
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     ghcr = (root / ".github/workflows/ghcr.yml").read_text(encoding="utf-8")
@@ -480,9 +481,9 @@ def test_ci_uses_latest_python_and_recommended_pr_guards():
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     project = (root / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert "python-version: '3.14.7'" in ci
-    assert "python:3.14.7-slim" in dockerfile
-    assert 'requires-python = ">=3.14,<3.15"' in project
+    assert "python-version: '3.15.0-rc.3'" in ci
+    assert "python:3.15.0rc3-slim" in dockerfile
+    assert 'requires-python = ">=3.14,<3.16"' in project
     assert 'target-version = "py314"' in project
     assert 'python_version = "3.14"' in project
     assert "cancel-in-progress: true" in ci
