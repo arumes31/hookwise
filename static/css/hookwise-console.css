@@ -1842,7 +1842,8 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
    line-box metrics. Keeping <code> block-level prevents the pre element's
    inherited line box from accumulating vertical caret drift. */
 .hw-code { position: relative; min-width: 0; }
-.hw-code-glanz {
+/* Prism adds a language class to pre; outrank its margin/padding/overflow rules. */
+.hw-code pre.hw-code-glanz {
     position: absolute; inset: 0; margin: 0; pointer-events: none;
     overflow: hidden; border-radius: var(--radius-md);
     background: var(--bg-surface); border: 1px solid transparent;
@@ -1861,7 +1862,7 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
 .hw-code-glanz code[class*=language-] {
     display: block; min-height: 100%;
 }
-.hw-code textarea.hw-code-feld {
+.hw-code textarea.hw-code-feld.form-control {
     position: relative; background: transparent !important;
     color: transparent !important; -webkit-text-fill-color: transparent;
     caret-color: var(--text);
@@ -1873,7 +1874,12 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
 }
 .hw-code textarea.hw-code-feld::selection {
     background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: transparent; -webkit-text-fill-color: transparent;
 }
+:root[data-theme="light"] .hw-code-glanz code { color: var(--text); }
+:root[data-theme="light"] .hw-code-glanz .token.punctuation { color: var(--text-muted); }
+:root[data-theme="light"] .hw-code-glanz .token.string { color: var(--ok); }
+:root[data-theme="light"] .hw-code-glanz .token.property { color: var(--warn); }
 
 /* Skeleton-Schimmer fuer ladende Selects */
 .hw-lade {
