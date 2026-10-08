@@ -575,22 +575,46 @@ document.addEventListener('DOMContentLoaded', () => {
     huelle.appendChild(feld);
     feld.classList.add('hw-code-feld');
     const status = document.getElementById('json-mapping-status');
+    const scrollAbgleichen = () => {
+        glanz.scrollTop = feld.scrollTop;
+        glanz.scrollLeft = feld.scrollLeft;
+    };
     const rendern = () => {
         const wert = basis.get.call(feld);
         code.textContent = wert + '\n';
         if (window.Prism) Prism.highlightElement(code);
+        scrollAbgleichen();
         if (status) {
             if (!wert.trim()) {
                 status.hidden = true;
+                status.removeAttribute('title');
+                feld.removeAttribute('aria-invalid');
+                feld.setCustomValidity('');
             } else {
                 status.hidden = false;
+                let statusText = 'Invalid JSON';
                 try {
-                    JSON.parse(wert);
+                    const mapping = JSON.parse(wert);
+                    if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
+                        statusText = 'Invalid mapping';
+                        throw new SyntaxError('Field mapping must be a JSON object.');
+                    }
+                    if (Object.values(mapping).some((value) => typeof value !== 'string')) {
+                        statusText = 'Invalid mapping';
+                        throw new SyntaxError('Every field mapping value must be a string.');
+                    }
                     status.textContent = 'Valid JSON';
                     status.dataset.zustand = 'ok';
+                    status.title = 'Valid field mapping JSON';
+                    feld.setAttribute('aria-invalid', 'false');
+                    feld.setCustomValidity('');
                 } catch (err) {
-                    status.textContent = 'Invalid JSON';
+                    const message = err instanceof Error ? err.message : 'Invalid field mapping JSON';
+                    status.textContent = statusText;
                     status.dataset.zustand = 'crit';
+                    status.title = message;
+                    feld.setAttribute('aria-invalid', 'true');
+                    feld.setCustomValidity(message);
                 }
             }
         }
@@ -608,10 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
     });
     feld.addEventListener('input', rendern);
-    feld.addEventListener('scroll', () => {
-        glanz.scrollTop = feld.scrollTop;
-        glanz.scrollLeft = feld.scrollLeft;
-    });
+    feld.addEventListener('scroll', scrollAbgleichen);
     rendern();
     // prism.js laedt defer im Head und ist beim ersten rendern() noch nicht
     // da -- einmal nachziehen, sobald alles geladen ist.

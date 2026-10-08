@@ -1838,27 +1838,35 @@ textarea.hw-dry-code { min-height:160px; resize:vertical; width:100%; }
 .hw-jsonstatus[data-zustand="ok"] { color: var(--ok); background: var(--ok-soft); }
 .hw-jsonstatus[data-zustand="crit"] { color: var(--crit); background: var(--crit-soft); }
 
-/* Overlay-Editor: <pre> und Textarea muessen deckungsgleich sein --
-   identische Schrift, Groesse, Zeilenhoehe, Innenabstand. prism.css setzt
-   auf code[class*=language-] Consolas/1em, darum hier beidseitig fixiert. */
-.hw-code { position: relative; }
+/* Overlay-Editor: <pre>, <code>, and textarea must use the exact same
+   line-box metrics. Keeping <code> block-level prevents the pre element's
+   inherited line box from accumulating vertical caret drift. */
+.hw-code { position: relative; min-width: 0; }
 .hw-code-glanz {
     position: absolute; inset: 0; margin: 0; pointer-events: none;
     overflow: hidden; border-radius: var(--radius-md);
     background: var(--bg-surface); border: 1px solid transparent;
-    padding: .5rem .75rem;
+    padding: .5rem .75rem; box-sizing: border-box;
 }
+.hw-code-glanz,
 .hw-code-glanz code[class*=language-],
 .hw-code textarea.hw-code-feld {
-    font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace !important;
+    font-family: var(--font-mono) !important;
     font-size: var(--t-sm) !important; line-height: 1.5 !important;
-    white-space: pre; tab-size: 4;
+    font-weight: 400 !important; font-variant-ligatures: none;
+    letter-spacing: normal !important; word-spacing: normal !important;
+    white-space: pre; overflow-wrap: normal; word-break: normal; tab-size: 4;
+    text-align: left;
+}
+.hw-code-glanz code[class*=language-] {
+    display: block; min-height: 100%;
 }
 .hw-code textarea.hw-code-feld {
     position: relative; background: transparent !important;
     color: transparent !important; -webkit-text-fill-color: transparent;
     caret-color: var(--text);
     padding: .5rem .75rem; min-height: 140px; overflow: auto; resize: vertical;
+    box-sizing: border-box;
 }
 .hw-code textarea.hw-code-feld::placeholder {
     color: var(--text-faint) !important; -webkit-text-fill-color: var(--text-faint);
