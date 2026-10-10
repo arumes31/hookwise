@@ -481,8 +481,8 @@ def test_ci_uses_latest_python_and_recommended_pr_guards():
     dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
     project = (root / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert "python-version: '3.15.0-rc.3'" in ci
-    assert "python:3.15.0rc3-slim" in dockerfile
+    assert "python-version: '3.14.8'" in ci
+    assert dockerfile.count("python:3.14.8-slim@sha256:") == 2
     assert 'requires-python = ">=3.14,<3.16"' in project
     assert 'target-version = "py314"' in project
     assert 'python_version = "3.14"' in project
