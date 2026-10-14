@@ -28,7 +28,7 @@ def client(app):
 @pytest.fixture(autouse=True)
 def disable_mapping_cache_revision():
     """Keep route tests independent from a running Redis service."""
-    snapshots = {}
+    snapshots: dict[str, tuple[TenantMappingUndoSnapshot, object]] = {}
 
     def store_snapshot(mapping, owner_id):
         token = f"undo-{len(snapshots) + 1}"

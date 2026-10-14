@@ -37,6 +37,7 @@ class TestSecretKeyFix(unittest.TestCase):
         # predictable hardcoded value.
         self.assertTrue(secret_key)
         self.assertNotEqual(secret_key, "dev-secret-key")
+        assert secret_key is not None
         self.assertGreaterEqual(len(secret_key), 32)
 
     @patch.dict(os.environ, {}, clear=True)

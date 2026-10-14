@@ -271,6 +271,7 @@ def test_configuration_auto_link_setting_round_trips_through_backup(client, app)
     assert restore_response.status_code == 200
     with app.app_context():
         restored = db.session.get(WebhookConfig, "configuration-link-enabled")
+        assert restored is not None
         assert restored.auto_link_configuration_enabled is True
 
 
@@ -288,6 +289,7 @@ def test_legacy_restore_without_configuration_auto_link_setting_defaults_disable
     assert response.status_code == 200
     with app.app_context():
         restored = db.session.get(WebhookConfig, "legacy-endpoint")
+        assert restored is not None
         assert restored.auto_link_configuration_enabled is False
 
 
@@ -316,6 +318,7 @@ def test_restore_rejects_non_boolean_configuration_auto_link_setting(client, app
     assert response.status_code == 400
     with app.app_context():
         restored = db.session.get(WebhookConfig, "invalid-auto-link")
+        assert restored is not None
         assert restored.auto_link_configuration_enabled is False
 
 
@@ -345,4 +348,5 @@ def test_older_v2_restore_disables_existing_configuration_auto_link_setting(clie
     assert response.status_code == 200
     with app.app_context():
         restored = db.session.get(WebhookConfig, "existing-auto-link")
+        assert restored is not None
         assert restored.auto_link_configuration_enabled is False

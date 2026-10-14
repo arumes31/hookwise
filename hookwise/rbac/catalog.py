@@ -7,7 +7,7 @@ kann -- Zuweisungen sind Daten, der Katalog nicht (ADR-004).
 Schema: ``ressource:aktion``.
 """
 
-from typing import Dict, FrozenSet, List, Tuple
+from typing import Dict, FrozenSet, List, Tuple, TypedDict
 
 # Gruppen nur fuer die Darstellung in der Rechtematrix; die Reihenfolge ist die
 # der Oberflaeche.
@@ -78,9 +78,16 @@ _OPERATOR: FrozenSet[str] = _VIEWER | frozenset(
     }
 )
 
+
+class RolePreset(TypedDict):
+    name: str
+    description: str
+    permissions: FrozenSet[str]
+
+
 # Eingebaute Rollen. is_builtin verhindert Bearbeiten und Loeschen, damit ein
 # Update nie stillschweigend aendert, was eine Rolle gewaehrt.
-ROLE_PRESETS: Dict[str, Dict[str, object]] = {
+ROLE_PRESETS: Dict[str, RolePreset] = {
     "admin": {
         "name": "Administrator",
         "description": "Full access including secrets, settings and user management.",

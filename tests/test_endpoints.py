@@ -144,7 +144,9 @@ def test_edit_endpoint_enables_configuration_auto_link(client, app):
 
     assert response.status_code == 302
     with app.app_context():
-        assert db.session.get(WebhookConfig, config_id).auto_link_configuration_enabled is True
+        saved = db.session.get(WebhookConfig, config_id)
+        assert saved is not None
+        assert saved.auto_link_configuration_enabled is True
 
 
 def test_edit_endpoint_form_marks_enabled_configuration_auto_link_checked(client, app):
@@ -199,6 +201,7 @@ def test_archive_endpoint_pauses_and_archives_exactly_one_endpoint(client, app):
     with app.app_context():
         archived = db.session.get(WebhookConfig, target_id)
         active = db.session.get(WebhookConfig, untouched_id)
+        assert archived is not None and active is not None
         assert archived.archived_at is not None
         assert archived.is_enabled is False
         assert active.archived_at is None
@@ -258,6 +261,7 @@ def test_bulk_archive_only_changes_requested_unarchived_endpoints(client, app):
     with app.app_context():
         archived = db.session.get(WebhookConfig, first_id)
         active = db.session.get(WebhookConfig, second_id)
+        assert archived is not None and active is not None
         assert archived.archived_at is not None
         assert archived.is_enabled is False
         assert active.archived_at is None

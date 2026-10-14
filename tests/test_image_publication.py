@@ -31,6 +31,7 @@ class ImagePublicationTests(unittest.TestCase):
         self.assertNotEqual(ci_group, image_group)
 
     def run_step(self, name, variables, prefix=""):
+        assert BASH is not None  # the class is skipped without bash
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
             env = dict(os.environ, **variables)

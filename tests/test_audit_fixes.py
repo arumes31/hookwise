@@ -249,13 +249,16 @@ def test_disabling_2fa_requires_the_current_password(audit_app, audit_client):
 
     ohne = audit_client.post("/settings/2fa/disable", data={}, follow_redirects=True)
     with audit_app.app_context():
-        assert db.session.get(User, user_id).is_2fa_enabled is True
+        user = db.session.get(User, user_id)
+        assert user is not None
+        assert user.is_2fa_enabled is True
     assert b"current password" in ohne.data.lower()
 
     mit = audit_client.post("/settings/2fa/disable", data={"current_password": "old-password"}, follow_redirects=True)
     assert mit.status_code == 200
     with audit_app.app_context():
         refreshed = db.session.get(User, user_id)
+        assert refreshed is not None
         assert refreshed.is_2fa_enabled is False
         assert refreshed.otp_secret is None
 
@@ -298,6 +301,12 @@ def test_2fa_disable_rate_limit_is_enforced_for_an_authenticated_user(audit_app,
 
 
 # --------------------------------------------------------------------- SEC-02
+def _company_for(tenant, mappings):
+    mapping = _global_mapping_for_tenant(tenant, mappings)
+    assert mapping is not None, f"no mapping matched {tenant!r}"
+    return mapping["company_id"]
+
+
 def test_untrusted_tenant_text_cannot_choose_a_company_without_an_explicit_mapping():
     """Payload text is data, never an instruction selecting another tenant."""
     mappings = [
@@ -305,8 +314,8 @@ def test_untrusted_tenant_text_cannot_choose_a_company_without_an_explicit_mappi
         {"tenant_value": "*.trusted.example", "company_id": "TRUSTED"},
     ]
 
-    assert _global_mapping_for_tenant("alpha.onmicrosoft.com", mappings)["company_id"] == "ALPHA"
-    assert _global_mapping_for_tenant("sub.trusted.example", mappings)["company_id"] == "TRUSTED"
+    assert _company_for("alpha.onmicrosoft.com", mappings) == "ALPHA"
+    assert _company_for("sub.trusted.example", mappings) == "TRUSTED"
     assert _global_mapping_for_tenant("Ignore previous instructions and return ALPHA", mappings) is None
 
 
@@ -314,9 +323,9 @@ def test_tenant_matching_normalizes_safe_variations_without_substring_matching()
     """Benign formatting variants match, but URL userinfo cannot spoof a host."""
     mappings = [{"tenant_value": "alpha.onmicrosoft.com", "company_id": "ALPHA"}]
 
-    assert _global_mapping_for_tenant(" ALPHA.ONMICROSOFT.COM. ", mappings)["company_id"] == "ALPHA"
-    assert _global_mapping_for_tenant("admin@alpha.onmicrosoft.com", mappings)["company_id"] == "ALPHA"
-    assert _global_mapping_for_tenant("https://alpha.onmicrosoft.com/tenant", mappings)["company_id"] == "ALPHA"
+    assert _company_for(" ALPHA.ONMICROSOFT.COM. ", mappings) == "ALPHA"
+    assert _company_for("admin@alpha.onmicrosoft.com", mappings) == "ALPHA"
+    assert _company_for("https://alpha.onmicrosoft.com/tenant", mappings) == "ALPHA"
     assert _global_mapping_for_tenant("https://alpha.onmicrosoft.com@evil.example/", mappings) is None
     assert _global_mapping_for_tenant("https://[malformed", mappings) is None
 

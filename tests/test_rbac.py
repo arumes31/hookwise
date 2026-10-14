@@ -125,6 +125,7 @@ def test_aufloesung_vereinigt_mehrere_rollen(app, db_bereit):
         db.session.add(RbacUserRole(user_id=u.id, role_id=operator.id))
         db.session.commit()
         rechte = resolve_permissions(u)
+        assert rechte is not None
         assert "endpoint:write" in rechte  # aus operator
         assert "dashboard:read" in rechte  # aus viewer
         assert "user:manage" not in rechte
@@ -141,6 +142,7 @@ def test_entra_app_role_ersetzt_lokale_rollenzuweisungen(app, db_bereit):
         db.session.commit()
 
         rechte = resolve_permissions(u)
+        assert rechte is not None
         assert "dashboard:read" in rechte
         assert "endpoint:write" not in rechte
 
@@ -174,7 +176,9 @@ def test_manueller_override_ersetzt_entra_app_role(app, db_bereit):
         u.override_role = "viewer"
         db.session.commit()
 
-        assert "endpoint:write" not in resolve_permissions(u)
+        rechte = resolve_permissions(u)
+        assert rechte is not None
+        assert "endpoint:write" not in rechte
         with app.test_request_context():
             session["user_id"] = u.id
             sitzung_setzen(u)

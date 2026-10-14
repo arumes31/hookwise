@@ -242,7 +242,7 @@ def test_entra_app_role_werte_sind_laufzeitkonfigurierbar():
         chef = _vorbereiten(app)
         client = app.test_client()
         _anmelden(client, chef)
-        speicher = {}
+        speicher: dict[str, object] = {}
         redis = MagicMock()
         redis.mget.side_effect = lambda keys: [speicher.get(key) for key in keys]
         pipeline = redis.pipeline.return_value.__enter__.return_value

@@ -238,9 +238,11 @@ def test_endpoint_deleted_mid_run_does_not_stop_the_others(app, stale_config):
         stale_config(name="Deleted during run", customer_id_default="ACME")
         stale_config(name="Still monitored", customer_id_default="ACME")
 
+        deleted: list[str] = []
+
         def create_ticket(**kwargs):
-            if create_ticket.calls == 0:
-                create_ticket.calls += 1
+            if not deleted:
+                deleted.append(kwargs["monitor_name"])
                 # Another request deletes the endpoint while its alert fails, so
                 # storing the failure and reloading the endpoint both fail.
                 with db.engine.begin() as conn:
@@ -250,7 +252,6 @@ def test_endpoint_deleted_mid_run_does_not_stop_the_others(app, stale_config):
                 raise RuntimeError("ConnectWise unavailable")
             return {"id": 77}
 
-        create_ticket.calls = 0
         with patch("hookwise.tasks.cw_client") as mock_cw, patch("hookwise.tasks.redis_client"):
             mock_cw.create_ticket.side_effect = create_ticket
             summary = _run_check()
@@ -290,7 +291,7 @@ def test_stale_company_problem(monkeypatch, endpoint_company, env_company, probl
     if problem is None:
         assert result is None
     else:
-        assert problem in result
+        assert result is not None and problem in result
 
 
 def test_last_run_status_reports_fresh_stale_and_missing_runs():
@@ -348,6 +349,7 @@ def test_saving_stale_alerts_without_usable_company_is_refused(app, monkeypatch)
     assert accepted.status_code == 302
     with app.app_context():
         saved = db.session.get(WebhookConfig, config_id)
+        assert saved is not None
         assert saved.timeout_alerts_enabled is True
         assert saved.customer_id_default == "ACME"
 
