@@ -8,9 +8,9 @@ import pytest
 from hookwise import create_app
 from hookwise.extensions import db
 from hookwise.models import AuditLog
-from hookwise.rbac.catalog import ALL_PERMISSIONS, ROLE_PRESETS
+from hookwise.rbac.catalog import ALL_PERMISSIONS, LEGACY_ROLE_MAP
 
-VIEWER = frozenset(ROLE_PRESETS["viewer"]["permissions"])
+VIEWER = LEGACY_ROLE_MAP["viewer"]
 
 
 @pytest.fixture
