@@ -302,6 +302,7 @@ def test_2fa_disable_rate_limit_is_enforced_for_an_authenticated_user(audit_app,
 
 # --------------------------------------------------------------------- SEC-02
 def _company_for(tenant, mappings):
+    """Company of the mapping that matches the tenant; fails if none matches."""
     mapping = _global_mapping_for_tenant(tenant, mappings)
     assert mapping is not None, f"no mapping matched {tenant!r}"
     return mapping["company_id"]

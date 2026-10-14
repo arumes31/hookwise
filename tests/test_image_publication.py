@@ -31,6 +31,7 @@ class ImagePublicationTests(unittest.TestCase):
         self.assertNotEqual(ci_group, image_group)
 
     def run_step(self, name, variables, prefix=""):
+        """Run a workflow step's shell script locally with the given environment."""
         assert BASH is not None  # the class is skipped without bash
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"

@@ -15,6 +15,7 @@ VIEWER = LEGACY_ROLE_MAP["viewer"]
 
 @pytest.fixture
 def app():
+    """App with an in-memory database and enforced RBAC."""
     # Pass the config to create_app: the database engine is configured there,
     # so changing SQLALCHEMY_DATABASE_URI afterwards would have no effect.
     return create_app(
@@ -29,6 +30,7 @@ def app():
 
 @pytest.fixture
 def client(app):
+    """Test client on a fresh schema."""
     with app.app_context():
         db.create_all()
         yield app.test_client()
@@ -51,6 +53,7 @@ def store():
 
 
 def _sign_in(client, permissions):
+    """Sign in and return patches granting the given permissions."""
     with client.session_transaction() as sess:
         sess["user_id"] = "user-1"
         sess["username"] = "viewer@example.com"
@@ -61,10 +64,12 @@ def _sign_in(client, permissions):
 
 
 def _denials():
+    """Details of every PERM_DENIED audit entry."""
     return [a.details for a in AuditLog.query.filter_by(action="perm_denied")]
 
 
 def test_dashboard_no_longer_probes_maintenance_state(client, store):
+    """The dashboard neither requests nor renders the maintenance state, so viewers get no PERM_DENIED."""
     script = Path("static/js/dashboard-page.js").read_text(encoding="utf-8")
     assert "/admin/maintenance" not in script
 
@@ -78,6 +83,7 @@ def test_dashboard_no_longer_probes_maintenance_state(client, store):
 
 
 def test_viewer_reads_state_but_cannot_change_it(client, store):
+    """Viewers can read the state as page or JSON but get 403 when changing it."""
     guard, template_guard = _sign_in(client, VIEWER)
     with guard, template_guard:
         page = client.get("/admin/maintenance")
@@ -94,6 +100,7 @@ def test_viewer_reads_state_but_cannot_change_it(client, store):
 
 
 def test_admin_sets_explicit_state_from_the_page(client, store):
+    """A form POST sets the requested state; submitting twice does not flip it back."""
     guard, template_guard = _sign_in(client, ALL_PERMISSIONS)
     with guard, template_guard:
         first = client.post("/admin/maintenance", data={"enabled": "true"})
@@ -109,6 +116,7 @@ def test_admin_sets_explicit_state_from_the_page(client, store):
 
 
 def test_json_post_without_state_still_toggles(client, store):
+    """Existing API clients that POST without a state still toggle."""
     guard, template_guard = _sign_in(client, ALL_PERMISSIONS)
     with guard, template_guard:
         on = client.post("/admin/maintenance", json={})
@@ -119,6 +127,7 @@ def test_json_post_without_state_still_toggles(client, store):
 
 
 def test_maintenance_keeps_sign_in_and_switch_reachable(app, client, store):
+    """During maintenance, sign-in and the switch stay reachable and admins can turn it off."""
     store["hookwise_maintenance_mode"] = b"true"
 
     anonymous = app.test_client()
@@ -142,6 +151,7 @@ def test_maintenance_keeps_sign_in_and_switch_reachable(app, client, store):
 
 
 def test_route_permissions_are_split():
+    """Reading the state needs settings:read, changing it settings:write."""
     from hookwise.rbac.routes import ENDPUNKT_RECHTE
 
     assert ENDPUNKT_RECHTE["main.admin_maintenance"] == "settings:read"

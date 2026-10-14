@@ -19,6 +19,7 @@ _next_ticket_id = 9000
 
 class Handler(BaseHTTPRequestHandler):
     def _read_body(self) -> Any:
+        """Return the JSON request body, or the raw text if it is not JSON."""
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
         try:
@@ -27,6 +28,7 @@ class Handler(BaseHTTPRequestHandler):
             return raw.decode(errors="replace")
 
     def _reply(self, code: int, body: Any, request_body: Any = None) -> None:
+        """Record the request and send a JSON response."""
         with _lock:
             _recorded.append({"method": self.command, "path": self.path, "status": code, "body": request_body})
         raw = json.dumps(body).encode()
@@ -37,6 +39,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self) -> None:
+        """Serve the request log, a ticket lookup or an empty list."""
         if self.path == "/__requests":
             with _lock:
                 raw = json.dumps(_recorded).encode()
@@ -53,6 +56,7 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(200, [])
 
     def do_POST(self) -> None:
+        """Create a ticket for a known company, otherwise reject it like ConnectWise."""
         global _next_ticket_id
         body = self._read_body()
         if not self.path.split("?")[0].endswith("/service/tickets"):
@@ -80,9 +84,11 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(400, error, body)
 
     def do_PATCH(self) -> None:
+        """Accept ticket updates such as closing."""
         self._reply(200, {"id": 1}, self._read_body())
 
     def log_message(self, format: str, *args: Any) -> None:
+        """Silence the default per-request stderr logging."""
         pass
 
 

@@ -23,6 +23,7 @@ NAV_LINKS = 'nav[aria-label="Primary navigation"] a.nav-link[href^="/"]'
 
 @pytest.fixture(scope="module")
 def accounts() -> dict[str, str]:
+    """Create local viewer, operator and admin accounts with a known password."""
     run_python(
         "hookwise-worker",
         APP_PRELUDE
@@ -47,6 +48,7 @@ print("RESULT {{}}")
 
 @pytest.fixture(scope="module")
 def browser() -> Iterator[Any]:
+    """Launch one Chromium instance for the module."""
     with sync_api.sync_playwright() as playwright:
         instance = playwright.chromium.launch()
         yield instance
@@ -57,6 +59,7 @@ class Session:
     """A signed-in browser page that records failed requests and script errors."""
 
     def __init__(self, browser: Any, username: str) -> None:
+        """Open a new browser context and sign in through the login form."""
         self.context = browser.new_context()
         self.page = self.context.new_page()
         self.problems: list[str] = []
@@ -69,24 +72,29 @@ class Session:
         self.page.wait_for_url(f"{BASE_URL}/")
 
     def _on_response(self, response: Any) -> None:
+        """Record same-origin responses with an error status."""
         if response.url.startswith(BASE_URL) and response.status >= 400:
             self.problems.append(f"{response.status} {response.request.method} {response.url}")
 
     def open(self, path: str) -> None:
+        """Open a console page and wait for its first background requests."""
         self.page.goto(f"{BASE_URL}{path}")
         self.page.wait_for_load_state("load")
         # Give page scripts time to issue their first background requests.
         self.page.wait_for_timeout(1500)
 
     def close(self) -> None:
+        """Close the browser context."""
         self.context.close()
 
 
 @pytest.fixture
 def signed_in(browser: Any, accounts: dict[str, str]) -> Iterator[Any]:
+    """Factory for signed-in sessions that are closed after the test."""
     sessions: list[Session] = []
 
     def sign_in(role: str) -> Session:
+        """Sign in as the given role and keep the session for cleanup."""
         session = Session(browser, accounts[role])
         sessions.append(session)
         return session
@@ -98,6 +106,7 @@ def signed_in(browser: Any, accounts: dict[str, str]) -> Iterator[Any]:
 
 @pytest.mark.parametrize("role", ROLES)
 def test_every_offered_page_loads_without_errors(signed_in: Any, role: str) -> None:
+    """Every navigation page loads for the role without 4xx/5xx responses or script errors."""
     session = signed_in(role)
     links = session.page.eval_on_selector_all(
         NAV_LINKS, "elements => [...new Set(elements.map(element => element.getAttribute('href')))]"
@@ -111,6 +120,7 @@ def test_every_offered_page_loads_without_errors(signed_in: Any, role: str) -> N
 
 
 def test_admin_can_reach_the_maintenance_switch(signed_in: Any) -> None:
+    """Admins find the maintenance switch from System settings and can use it."""
     session = signed_in("admin")
     session.open("/settings")
     assert session.page.get_by_role("link", name="Manage maintenance mode").is_visible()
@@ -120,6 +130,7 @@ def test_admin_can_reach_the_maintenance_switch(signed_in: Any) -> None:
 
 
 def test_viewer_sees_maintenance_state_read_only(signed_in: Any) -> None:
+    """Viewers see the maintenance state without a switch and without errors."""
     session = signed_in("viewer")
     session.open("/admin/maintenance")
     assert session.page.get_by_text("Read-only").is_visible()

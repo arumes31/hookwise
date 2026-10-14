@@ -130,6 +130,7 @@ def test_create_endpoint_persists_configuration_auto_link_opt_in_and_safe_defaul
 
 
 def test_edit_endpoint_enables_configuration_auto_link(client, app):
+    """Editing an endpoint can switch on configuration auto-linking."""
     with app.app_context():
         config = WebhookConfig(name="Editable")
         db.session.add(config)

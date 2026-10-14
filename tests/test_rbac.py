@@ -116,6 +116,7 @@ def test_aufloesung_ohne_zuweisung_nutzt_legacy_rolle(app, db_bereit):
 
 
 def test_aufloesung_vereinigt_mehrere_rollen(app, db_bereit):
+    """Mehrere lokale Rollen ergeben die Vereinigung ihrer Rechte."""
     with app.app_context():
         seed_builtin_roles()
         u = _nutzer("mehrfach", "viewer")
@@ -132,6 +133,7 @@ def test_aufloesung_vereinigt_mehrere_rollen(app, db_bereit):
 
 
 def test_entra_app_role_ersetzt_lokale_rollenzuweisungen(app, db_bereit):
+    """Eine Entra App Role ersetzt lokale Zuweisungen, statt sie zu ergaenzen."""
     with app.app_context():
         seed_builtin_roles()
         u = _nutzer("entra-viewer", "operator")
@@ -163,6 +165,7 @@ def test_entra_none_rolle_bleibt_auch_ohne_rbac_schema_rechtelos(app, db_bereit,
 
 
 def test_manueller_override_ersetzt_entra_app_role(app, db_bereit):
+    """Ein aktiver manueller Override hat Vorrang vor der Entra App Role."""
     from flask import session
 
     from hookwise.rbac.resolver import sitzung_setzen

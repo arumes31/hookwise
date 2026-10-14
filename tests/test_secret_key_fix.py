@@ -23,6 +23,7 @@ class TestSecretKeyFix(unittest.TestCase):
 
     @patch.dict(os.environ, {}, clear=True)
     def test_secret_key_missing_debug_uses_generated_key(self):
+        """Debug mode without SECRET_KEY generates a long random key instead of a fixed one."""
         os.environ["DEBUG_MODE"] = "true"
         if "SECRET_KEY" in os.environ:
             del os.environ["SECRET_KEY"]

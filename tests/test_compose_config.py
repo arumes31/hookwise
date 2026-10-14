@@ -24,6 +24,7 @@ EDITABLE_IN_COMPOSE = {"CW_COMPANY", "CW_PUBLIC_KEY", "CW_CLIENT_ID"}
 
 
 def _connectwise_entries(path: Path) -> list[tuple[int, str, str]]:
+    """Line number, key and value of every CW_* environment entry."""
     entries = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if match := ENV_ENTRY.match(line):
@@ -33,6 +34,7 @@ def _connectwise_entries(path: Path) -> list[tuple[int, str, str]]:
 
 @pytest.mark.parametrize("filename", COMPOSE_FILES)
 def test_connectwise_settings_are_read_from_env(filename: str) -> None:
+    """Every CW_* entry reads its .env variable; only compose-editable credentials keep a sample fallback."""
     path = ROOT / filename
     entries = _connectwise_entries(path)
     assert entries, f"{filename}: no CW_* environment entries found; has the file layout changed?"

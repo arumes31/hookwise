@@ -961,6 +961,7 @@ def verify_endpoint_health() -> None:
 
 
 def _set_stale_check_state(config: WebhookConfig, result: str, error: str | None, checked_at: datetime) -> None:
+    """Record when the endpoint was last checked, the result and any error."""
     config.stale_checked_at = checked_at
     config.stale_check_result = result
     config.stale_check_error = error

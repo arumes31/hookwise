@@ -325,6 +325,7 @@ def test_format_cipp_empty_results():
 
 
 def test_format_cipp_recursively_empty_values():
+    """Results made only of blanks or empty containers produce the 'no results' message."""
     empty_results: dict[str, list[object]] = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
     assert format_cipp_results(empty_results) == "No alert results were returned."
 

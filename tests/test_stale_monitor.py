@@ -16,6 +16,7 @@ os.environ["ENCRYPTION_KEY"] = "vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E="
 
 @pytest.fixture(scope="module")
 def app():
+    """Module-wide app on a temporary SQLite file database."""
     from hookwise import create_app
     from hookwise.extensions import db
 
@@ -50,6 +51,7 @@ def bind_task_app(app):
 
 @pytest.fixture(autouse=True)
 def clean_db(app):
+    """Empty the tables before each test."""
     from hookwise.extensions import db
     from hookwise.models import AuditLog, WebhookConfig, WebhookLog
 
@@ -62,10 +64,12 @@ def clean_db(app):
 
 @pytest.fixture
 def stale_config(app):
+    """Factory for an endpoint that is 61 minutes into a one-hour timeout."""
     from hookwise.extensions import db
     from hookwise.models import WebhookConfig
 
     def make(**overrides):
+        """Create and commit an endpoint with the given overrides."""
         values = {
             "name": "ACME - NAS Monitoring",
             "timeout_alerts_enabled": True,
@@ -97,6 +101,7 @@ def _run_check(config=None):
 
 
 def test_rejected_create_is_recorded_in_history_audit_and_endpoint(app, stale_config, monkeypatch):
+    """A rejected stale ticket shows up in history, audit, the endpoint and the run summary."""
     from hookwise.client import TicketCreationRejected
     from hookwise.models import AuditLog, WebhookLog
 
@@ -136,6 +141,7 @@ def test_rejected_create_is_recorded_in_history_audit_and_endpoint(app, stale_co
 
 
 def test_unknown_create_outcome_is_recorded(app, stale_config):
+    """An unknown create outcome is recorded as a failed history entry."""
     from hookwise.client import TicketCreationOutcomeUnknown
     from hookwise.models import WebhookLog
 
@@ -152,6 +158,7 @@ def test_unknown_create_outcome_is_recorded(app, stale_config):
 
 
 def test_repeat_note_exception_is_recorded(app, stale_config):
+    """An exception while adding the repeat note is recorded, not only logged."""
     from hookwise.models import WebhookLog
 
     with app.app_context():
@@ -176,6 +183,7 @@ def test_repeat_note_exception_is_recorded(app, stale_config):
 
 
 def test_live_notice_failure_keeps_created_ticket(app, stale_config):
+    """A broken live notification does not roll back a ticket that already exists."""
     from hookwise.models import WebhookLog
 
     with app.app_context():
@@ -196,6 +204,7 @@ def test_live_notice_failure_keeps_created_ticket(app, stale_config):
 
 
 def test_alert_fires_exactly_at_threshold(app, stale_config):
+    """The alert fires when the elapsed time equals the timeout."""
     import hookwise.tasks as tasks_module
 
     fixed_now = datetime(2026, 10, 12, 15, 49, 51, tzinfo=timezone.utc)
@@ -203,6 +212,7 @@ def test_alert_fires_exactly_at_threshold(app, stale_config):
     class FrozenDatetime(datetime):
         @classmethod
         def now(cls, tz=None):
+            """Always return the frozen time."""
             return fixed_now
 
     with app.app_context():
@@ -218,6 +228,7 @@ def test_alert_fires_exactly_at_threshold(app, stale_config):
 
 
 def test_healthy_endpoint_records_not_due(app, stale_config):
+    """A healthy endpoint records 'not_due' and the run reports ok."""
     with app.app_context():
         config = stale_config(last_seen_at=datetime.now(timezone.utc) - timedelta(minutes=5))
         with patch("hookwise.tasks.cw_client") as mock_cw, patch("hookwise.tasks.redis_client"):
@@ -241,6 +252,7 @@ def test_endpoint_deleted_mid_run_does_not_stop_the_others(app, stale_config):
         deleted: list[str] = []
 
         def create_ticket(**kwargs):
+            """Delete the first endpoint mid-run and fail; succeed for the next one."""
             if not deleted:
                 deleted.append(kwargs["monitor_name"])
                 # Another request deletes the endpoint while its alert fails, so
@@ -263,6 +275,7 @@ def test_endpoint_deleted_mid_run_does_not_stop_the_others(app, stale_config):
 
 
 def test_check_interval_is_five_minutes():
+    """Beat runs the stale check every five minutes."""
     from hookwise.tasks import celery
 
     entry = celery.conf.beat_schedule["check-timeouts"]
@@ -281,6 +294,7 @@ def test_check_interval_is_five_minutes():
     ],
 )
 def test_stale_company_problem(monkeypatch, endpoint_company, env_company, problem):
+    """The endpoint company wins; a missing or sample company is reported."""
     from hookwise.services.stale_monitor import stale_company_problem
 
     if env_company is None:
@@ -295,18 +309,22 @@ def test_stale_company_problem(monkeypatch, endpoint_company, env_company, probl
 
 
 def test_last_run_status_reports_fresh_stale_and_missing_runs():
+    """The run summary reads as ok, partial failure, stale or unknown."""
     from hookwise.services.stale_monitor import last_run_status
 
     now = datetime(2026, 10, 14, 7, 0, tzinfo=timezone.utc)
 
     class FakeRedis:
         def __init__(self, value):
+            """Hold the value that every get() returns."""
             self.value = value
 
         def get(self, key):
+            """Return the stored value for any key."""
             return self.value
 
     def run(minutes_ago, status="ok"):
+        """Fake Redis holding a run summary that finished the given minutes ago."""
         finished = (now - timedelta(minutes=minutes_ago)).isoformat()
         return FakeRedis(json.dumps({"finished_at": finished, "status": status, "checked": 3, "failed": 0}).encode())
 
@@ -318,6 +336,7 @@ def test_last_run_status_reports_fresh_stale_and_missing_runs():
 
 
 def _authenticate(client):
+    """Mark the test client's session as signed in."""
     with client.session_transaction() as sess:
         sess["user_id"] = "test_user"
         sess["username"] = "testuser"
@@ -325,6 +344,7 @@ def _authenticate(client):
 
 
 def test_saving_stale_alerts_without_usable_company_is_refused(app, monkeypatch):
+    """Saving stale alerts without a real company is refused; drafts and real companies save."""
     from hookwise.extensions import db
     from hookwise.models import WebhookConfig
 
@@ -355,6 +375,7 @@ def test_saving_stale_alerts_without_usable_company_is_refused(app, monkeypatch)
 
 
 def test_health_services_reports_stale_monitor(app):
+    """/health/services reports the stale check, a partial failure as a warning."""
     client = app.test_client()
     _authenticate(client)
     finished = datetime.now(timezone.utc).isoformat()

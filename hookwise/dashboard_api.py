@@ -109,6 +109,7 @@ def _percentile(values: list[float], percent: int) -> float:
 
 
 def _stale_config_ids(now: datetime) -> list[str]:
+    """IDs of monitored endpoints whose timeout has been reached."""
     configs = WebhookConfig.query.filter(
         WebhookConfig.is_draft.is_(False),
         WebhookConfig.timeout_alerts_enabled.is_(True),

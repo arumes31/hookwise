@@ -235,6 +235,7 @@ def test_effektiver_zweiter_verwalter_erlaubt_deaktivierung():
 
 
 def test_entra_app_role_werte_sind_laufzeitkonfigurierbar():
+    """Die App-Role-Namen fuer Viewer und Operator sind zur Laufzeit setzbar; gleiche Namen werden abgelehnt."""
     from hookwise.user_api import entra_app_rollen
 
     app = _app()

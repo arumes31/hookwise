@@ -16,6 +16,7 @@ pytestmark = requires_stack
 
 
 def _endpoint_state(name: str) -> Any:
+    """Stale check state, history entries and audit actions of an endpoint."""
     return run_python(
         "hookwise-worker",
         APP_PRELUDE
@@ -35,6 +36,7 @@ with app.app_context():
 
 
 def test_stale_alert_outcomes_are_recorded_across_the_stack() -> None:
+    """A rejected and an accepted stale ticket both leave a visible trace wherever an operator looks."""
     rejected, accepted = "IT stale rejected", "IT stale accepted"
     setup = run_python(
         "hookwise-worker",
@@ -129,6 +131,7 @@ print("RESULT " + json.dumps(outcome))
 
 
 def test_scheduler_and_worker_report_healthy() -> None:
+    """Beat's schedule-file healthcheck and the worker ping both report healthy."""
     result = subprocess.run(
         [*COMPOSE, "ps", "--format", "json", "hookwise-beat", "hookwise-worker"],
         capture_output=True,

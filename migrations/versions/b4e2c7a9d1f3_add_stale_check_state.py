@@ -15,12 +15,14 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add the per-endpoint stale check columns."""
     op.add_column("webhook_config", sa.Column("stale_checked_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("webhook_config", sa.Column("stale_check_result", sa.String(length=32), nullable=True))
     op.add_column("webhook_config", sa.Column("stale_check_error", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
+    """Drop the per-endpoint stale check columns."""
     op.drop_column("webhook_config", "stale_check_error")
     op.drop_column("webhook_config", "stale_check_result")
     op.drop_column("webhook_config", "stale_checked_at")

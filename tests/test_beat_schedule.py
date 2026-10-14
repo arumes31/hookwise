@@ -9,6 +9,7 @@ import pytest
 
 @pytest.fixture(scope="module")
 def celery_app():
+    """Celery app with every task registered, as in worker.py."""
     # Mirror worker.py: build the Flask app, then import the task module.
     from hookwise import create_app
 
@@ -19,6 +20,7 @@ def celery_app():
 
 
 def test_beat_schedule_only_dispatches_registered_tasks(celery_app):
+    """Beat must not dispatch task names that no worker registers."""
     registered = set(celery_app.tasks)
     schedule = celery_app.conf.beat_schedule
     assert schedule, "beat schedule is empty"
@@ -28,5 +30,6 @@ def test_beat_schedule_only_dispatches_registered_tasks(celery_app):
 
 
 def test_beat_schedule_intervals_are_positive(celery_app):
+    """Every schedule entry runs on a positive interval."""
     for name, entry in celery_app.conf.beat_schedule.items():
         assert float(entry["schedule"]) > 0, f"{name} has a non-positive interval"

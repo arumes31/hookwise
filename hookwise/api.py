@@ -700,6 +700,7 @@ def _register() -> None:
 
     @limiter.exempt
     def health_services() -> Tuple[Response, int]:
+        """Report Redis, database, Celery and stale-check health for the console."""
         health_data = {"redis": "down", "database": "down", "celery": "down", "timestamp": time.time()}
         status_code = 200
 
@@ -746,10 +747,12 @@ def _register() -> None:
     # --- Admin ---
 
     def _maintenance_enabled() -> bool:
+        """Whether maintenance mode is currently switched on."""
         mode = redis_client.get("hookwise_maintenance_mode")
         return bool(mode) and cast(bytes, mode).decode() == "true"
 
     def _wants_json() -> bool:
+        """Whether the caller expects JSON rather than an HTML page."""
         return (
             request.is_json
             or request.accept_mimetypes.best == "application/json"

@@ -241,6 +241,7 @@ def test_null_tenant_mapping_group_restore_clears_existing_group(app, client):
 
 
 def test_configuration_auto_link_setting_round_trips_through_backup(client, app):
+    """The auto-link setting survives a backup and restore."""
     with app.app_context():
         db.session.add(
             WebhookConfig(
@@ -276,6 +277,7 @@ def test_configuration_auto_link_setting_round_trips_through_backup(client, app)
 
 
 def test_legacy_restore_without_configuration_auto_link_setting_defaults_disabled(client, app):
+    """Backups without the auto-link field restore it as disabled."""
     legacy_backup = [{"id": "legacy-endpoint", "name": "Legacy endpoint"}]
     with client.session_transaction() as sess:
         sess.update(user_id="admin-id", username="admin", role="admin")
@@ -295,6 +297,7 @@ def test_legacy_restore_without_configuration_auto_link_setting_defaults_disable
 
 @pytest.mark.parametrize("invalid_value", ["false", 0, None])
 def test_restore_rejects_non_boolean_configuration_auto_link_setting(client, app, invalid_value):
+    """A non-boolean auto-link value rejects the restore and leaves the endpoint unchanged."""
     with app.app_context():
         config = WebhookConfig(id="invalid-auto-link", name="Invalid auto-link")
         db.session.add(config)
@@ -323,6 +326,7 @@ def test_restore_rejects_non_boolean_configuration_auto_link_setting(client, app
 
 
 def test_older_v2_restore_disables_existing_configuration_auto_link_setting(client, app):
+    """Restoring an older v2 backup without the field disables auto-link on an existing endpoint."""
     with app.app_context():
         config = WebhookConfig(
             id="existing-auto-link",

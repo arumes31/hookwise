@@ -7,6 +7,7 @@ from flask import Blueprint
 
 
 def register_admin_routes(blueprint: Blueprint, handlers: Mapping[str, Callable[..., Any]]) -> None:
+    """Register the settings, maintenance and LLM admin routes on the blueprint."""
     routes = (
         # Same URL, separate endpoints: reading the state and changing it need
         # different permissions, and RBAC maps permissions per endpoint.

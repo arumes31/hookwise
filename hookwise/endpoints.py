@@ -61,6 +61,8 @@ def _stale_alert_error(config: WebhookConfig) -> str | None:
 
 
 def _register_crud_routes(main_bp: Any) -> None:
+    """Register the endpoint create, edit, toggle, pin and token routes."""
+
     @main_bp.route("/endpoint/toggle-pin/<config_id>", methods=["POST"])
     @auth_required
     def toggle_pin(config_id: str) -> Any:
@@ -100,6 +102,7 @@ def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
     def new_endpoint() -> Any:
+        """Create an endpoint; refuse missing authentication or an unusable stale-alert company."""
         if request.method == "POST":
             bearer_token = secrets.token_urlsafe(32)
             config = WebhookConfig(
@@ -182,6 +185,7 @@ def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/edit/<config_id>", methods=["GET", "POST"])
     @auth_required
     def edit_endpoint(config_id: str) -> Any:
+        """Update an endpoint with the same validation as creation."""
         config = WebhookConfig.query.get_or_404(config_id)
         if request.method == "POST":
             config.name = request.form.get("name")

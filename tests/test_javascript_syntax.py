@@ -15,11 +15,13 @@ SCRIPTS = sorted(path for path in STATIC_JS.glob("*.js") if not path.name.endswi
 
 
 def test_first_party_scripts_are_found():
+    """The glob finds scripts, so an empty parametrize cannot pass silently."""
     assert SCRIPTS, f"no first-party scripts found in {STATIC_JS}"
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
 def test_script_parses(script: Path) -> None:
+    """The script passes `node --check`."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")

@@ -95,6 +95,7 @@ def _latest_rows(config_ids: list[str], statuses: tuple[str, ...], cutoff: datet
 
 
 def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
+    """Build the dashboard card data for each endpoint, including its stale state."""
     config_ids = [config.id for config in configs]
     if not config_ids:
         return []

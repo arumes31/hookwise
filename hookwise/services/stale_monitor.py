@@ -62,6 +62,7 @@ def stale_company_problem(customer_id_default: str | None) -> str | None:
 
 
 def bounded_error(message: str) -> str:
+    """Cap an error message at MAX_ERROR_LENGTH characters."""
     return message if len(message) <= MAX_ERROR_LENGTH else message[: MAX_ERROR_LENGTH - 1] + "…"
 
 

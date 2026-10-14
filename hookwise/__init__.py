@@ -310,6 +310,7 @@ def _register_request_handlers(app: Flask) -> None:
 
     @app.before_request
     def check_maintenance() -> Any:
+        """Answer 503 during maintenance, except for admin, health, static and sign-in routes."""
         from .tasks import redis_client
 
         # Allow /admin, /health*, and static files during maintenance. Sign-in
