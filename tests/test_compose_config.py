@@ -49,3 +49,12 @@ def test_required_connectwise_credentials_fail_fast() -> None:
         values = {key: value for _, key, value in _connectwise_entries(ROOT / filename)}
         for key in ("CW_COMPANY", "CW_PUBLIC_KEY", "CW_PRIVATE_KEY", "CW_CLIENT_ID"):
             assert values.get(key, "").startswith(f"${{{key}:?"), f"{filename}: {key} must use ${{{key}:?...}}"
+
+
+@pytest.mark.parametrize("filename", COMPOSE_FILES)
+def test_beat_healthcheck_proves_the_scheduler_is_ticking(filename: str) -> None:
+    """`kill -0 1` only proves a process exists; a hung beat stays "healthy"."""
+    text = (ROOT / filename).read_text(encoding="utf-8")
+    beat = text.split("  hookwise-beat:", 1)[1].split("\n  hookwise-", 1)[0]
+    assert "kill -0 1" not in beat
+    assert "celerybeat-schedule" in beat, f"{filename}: beat healthcheck must check the schedule file is updated"
