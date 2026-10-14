@@ -1993,7 +1993,8 @@ def handle_webhook_logic(
                             message=msg,
                             request_id=request_id,
                         )
-                        _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
+                        if not _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note"):
+                            raise ConnectWiseError(f"Unable to add duplicate alert note to ticket {ticket_id}")
                         _link_matching_configuration(
                             config=config,
                             log_entry=log_entry,
@@ -2041,7 +2042,8 @@ def handle_webhook_logic(
                         message=msg,
                         request_id=request_id,
                     )
-                    _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note")
+                    if not _add_ticket_note_once(log_entry, ticket_id, note_text, operation_name="duplicate_note"):
+                        raise ConnectWiseError(f"Unable to add duplicate alert note to ticket {ticket_id}")
                     _link_matching_configuration(
                         config=config,
                         log_entry=log_entry,
