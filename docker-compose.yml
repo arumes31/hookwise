@@ -100,7 +100,9 @@ services:
     command: celery -A worker.celery beat --loglevel=info
     environment: *env
     healthcheck:
-      test: ["CMD-SHELL", "kill -0 1"]
+      # Beat syncs its schedule file every 3 minutes while it keeps ticking; a
+      # file untouched for 7 minutes means no task is being dispatched anymore.
+      test: ["CMD", "python", "-c", "import glob, os, sys, time; m = max((os.path.getmtime(p) for p in glob.glob('celerybeat-schedule*')), default=0); sys.exit(0 if time.time() - m < 420 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3

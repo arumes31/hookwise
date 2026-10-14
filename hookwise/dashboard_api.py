@@ -121,7 +121,7 @@ def _stale_config_ids(now: datetime) -> list[str]:
         if seen is None:
             continue
         seen = seen.replace(tzinfo=timezone.utc) if seen.tzinfo is None else seen.astimezone(timezone.utc)
-        if seen + timedelta(hours=max(config.timeout_hours or 24, 1)) < now:
+        if seen + timedelta(hours=max(config.timeout_hours or 24, 1)) <= now:
             stale.append(config.id)
     return stale
 

@@ -146,7 +146,7 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
             and config.is_enabled
             and not config.is_draft
             and last_activity
-            and now - last_activity > timedelta(hours=timeout_hours)
+            and now - last_activity >= timedelta(hours=timeout_hours)
         )
         token_reference = _as_utc(config.last_rotated_at) or _as_utc(config.created_at)
         outcomes = values["good"] + values["failed"]

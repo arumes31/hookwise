@@ -17,6 +17,7 @@ from .extensions import csrf, db, limiter
 from .models import AuditLog, WebhookConfig, WebhookLog
 from .services.delivery_queue import commit_and_dispatch, stage_delivery
 from .services.routing import routing_regex_matches
+from .services.stale_monitor import last_run_status
 from .tasks import MAX_LOG_RETENTION_DAYS, celery, cw_client, process_webhook_task, redis_client
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
@@ -727,6 +728,18 @@ def _register() -> None:
         except Exception as e:
             current_app.logger.error(f"Celery health check failed: {e}")
             health_data["celery"] = "down"
+
+        # Stale alerts depend on beat dispatching and a worker finishing the
+        # check; neither shows up in the probes above.
+        try:
+            stale_monitor = last_run_status(redis_client)
+        except Exception as e:
+            current_app.logger.error(f"Stale monitor health check failed: {e}")
+            stale_monitor = {"state": "unknown", "message": "Stale monitor status could not be read."}
+        health_data["stale_monitor"] = {"ok": "up", "partial_failed": "warning", "unknown": "warning"}.get(
+            stale_monitor["state"], "down"
+        )
+        health_data["stale_monitor_detail"] = stale_monitor
 
         return jsonify(health_data), status_code
 

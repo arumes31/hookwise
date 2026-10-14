@@ -11,6 +11,7 @@ from flask import Response, flash, jsonify, redirect, render_template, request, 
 from .extensions import db
 from .models import EndpointTag, WebhookConfig
 from .services.endpoint_templates import public_endpoint_templates
+from .services.stale_monitor import stale_company_problem
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 _TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
@@ -50,6 +51,13 @@ def _authentication_error(config: WebhookConfig) -> str | None:
     if config.bearer_auth_enabled or config.hmac_secret or config.allow_unauthenticated:
         return None
     return "Enable bearer authentication, configure HMAC, or explicitly allow an unauthenticated endpoint."
+
+
+def _stale_alert_error(config: WebhookConfig) -> str | None:
+    """Refuse stale alerts that ConnectWise would reject for want of a real company."""
+    if not config.timeout_alerts_enabled or config.is_draft:
+        return None
+    return stale_company_problem(config.customer_id_default)
 
 
 def _register_crud_routes(main_bp: Any) -> None:
@@ -136,13 +144,13 @@ def _register_crud_routes(main_bp: Any) -> None:
                 retry_max_delay_seconds=_get_int_form_value("retry_max_delay_seconds", 300, 1, 86400),
             )
             db.session.add(config)
-            if auth_error := _authentication_error(config):
+            if form_error := _authentication_error(config) or _stale_alert_error(config):
                 db.session.rollback()
                 return (
                     render_template(
                         "form.html",
                         base_url=request.url_root.rstrip("/"),
-                        form_error=auth_error,
+                        form_error=form_error,
                         endpoint_templates=public_endpoint_templates(),
                     ),
                     400,
@@ -218,14 +226,14 @@ def _register_crud_routes(main_bp: Any) -> None:
             if config.retry_max_delay_seconds < config.retry_base_delay_seconds:
                 config.retry_max_delay_seconds = config.retry_base_delay_seconds
 
-            if auth_error := _authentication_error(config):
+            if form_error := _authentication_error(config) or _stale_alert_error(config):
                 db.session.rollback()
                 return (
                     render_template(
                         "form.html",
                         config=config,
                         base_url=request.url_root.rstrip("/"),
-                        form_error=auth_error,
+                        form_error=form_error,
                         endpoint_templates=public_endpoint_templates(),
                     ),
                     400,

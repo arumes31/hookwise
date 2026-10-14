@@ -559,6 +559,12 @@ function initServiceHealth(container = document) {
                 if (el) {
                     el.className = `heartbeat-dot heartbeat-${data[service]}`;
                     el.title = `${service.toUpperCase()}: ${data[service].toUpperCase()}`;
+                    if (service === 'stale_monitor' && data.stale_monitor_detail) {
+                        const detail = data.stale_monitor_detail;
+                        el.title = detail.finished_at
+                            ? `Last stale check ${Math.round(detail.age_seconds / 60)} min ago: ${detail.state}, ${detail.failed} failed of ${detail.checked}`
+                            : (detail.message || detail.state);
+                    }
                 }
                 const dashEl = document.getElementById(`dash-health-${service}`);
                 if (dashEl) {

@@ -212,13 +212,14 @@
                Skript unten spiegelt die Klassen der drei Einzelpunkte,
                die ux.js unveraendert weiterpflegt. #}
             <span class="health-indicators hw-health" tabindex="0"
-                  aria-label="Systemstatus: Redis, Datenbank, Celery">
+                  aria-label="Systemstatus: Redis, Datenbank, Celery, Stale-Pruefung">
                 <span id="hw-health-summary" class="heartbeat-dot heartbeat-warning" aria-hidden="true"></span>
                 <span class="hw-health-label">System health</span>
                 <span class="hw-health-flyout" role="status">
                     <span class="hw-health-item"><span id="health-redis" class="heartbeat-dot heartbeat-warning"></span> Redis</span>
                     <span class="hw-health-item"><span id="health-database" class="heartbeat-dot heartbeat-warning"></span> DB</span>
                     <span class="hw-health-item"><span id="health-celery" class="heartbeat-dot heartbeat-warning"></span> Celery</span>
+                    <span class="hw-health-item"><span id="health-stale_monitor" class="heartbeat-dot heartbeat-warning"></span> Stale check</span>
                 </span>
             </span>
             <button type="button" class="hw-theme-toggle hw-theme-toggle--icon" id="hw-theme-toggle"
@@ -331,7 +332,7 @@
     (function () {
         const summary = document.getElementById('hw-health-summary');
         if (!summary) return;
-        const dots = ['health-redis', 'health-database', 'health-celery']
+        const dots = ['health-redis', 'health-database', 'health-celery', 'health-stale_monitor']
             .map(id => document.getElementById(id)).filter(Boolean);
         const rang = ['heartbeat-error', 'heartbeat-down', 'heartbeat-warning', 'heartbeat-up'];
         const angleichen = () => {
