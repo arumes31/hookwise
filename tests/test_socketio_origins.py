@@ -1,0 +1,23 @@
+"""The live activity connection must work from the address the console is served on."""
+
+import pytest
+
+from hookwise.extensions import socketio_allowed_origins
+
+
+@pytest.mark.parametrize("raw", [None, "", "   ", " , "])
+def test_unset_origins_mean_same_origin(raw: str | None) -> None:
+    # None lets python-engineio accept the page's own origin, including the
+    # public host behind a reverse proxy; a fixed localhost list rejected it.
+    assert socketio_allowed_origins(raw) is None
+
+
+def test_explicit_origins_are_kept() -> None:
+    assert socketio_allowed_origins("https://a.example, https://b.example") == [
+        "https://a.example",
+        "https://b.example",
+    ]
+
+
+def test_wildcard_is_kept() -> None:
+    assert socketio_allowed_origins(" * ") == "*"

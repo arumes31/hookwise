@@ -52,21 +52,23 @@ _socketio_message_queue = (
     else build_redis_uri(_redis_password, _redis_host, _redis_port, db=0)
 )
 
-# SocketIO Security: Read allowed origins from env with a safe default for development
-_allowed_origins_raw = os.environ.get("SOCKETIO_ALLOWED_ORIGINS")
-_allowed_origins: str | list[str]
-if _allowed_origins_raw == "*":
-    _allowed_origins = "*"
-elif _allowed_origins_raw:
-    _allowed_origins = [o.strip() for o in _allowed_origins_raw.split(",") if o.strip()]
-    if not _allowed_origins:
-        _allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
-else:
-    # Default to localhost if nothing is specified
-    _allowed_origins = ["http://localhost:5000", "http://127.0.0.1:5000"]
+
+def socketio_allowed_origins(raw: str | None) -> str | list[str] | None:
+    """Origins allowed to open the live Socket.IO connection.
+
+    Unset or empty means the page's own origin only: python-engineio's default,
+    which also honours X-Forwarded-Proto/-Host behind a reverse proxy. A fixed
+    localhost list used to be the default and rejected every real deployment.
+    """
+    value = (raw or "").strip()
+    if value == "*":
+        return "*"
+    origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+    return origins or None
+
 
 socketio = SocketIO(
-    cors_allowed_origins=_allowed_origins,
+    cors_allowed_origins=socketio_allowed_origins(os.environ.get("SOCKETIO_ALLOWED_ORIGINS")),
     async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"),
     message_queue=_socketio_message_queue,
 )

@@ -436,6 +436,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
 | `HTTPS_ORIGIN` | Trusted public HTTPS origin used for redirects (for example, `https://hookwise.example.com`). |
 | `USE_PROXY` / `PROXY_FIX_COUNT` | Trust reverse-proxy forwarding headers and set the exact trusted proxy hop count. |
+| `SOCKETIO_ALLOWED_ORIGINS` | Origins allowed to open the live activity connection: comma-separated list or `*`. Default: the console's own origin, also behind a reverse proxy that sends `X-Forwarded-Proto`/`X-Forwarded-Host`. |
 | `ENABLE_HSTS` | Emit the one-year HSTS header (Default: `true`; meaningful only over HTTPS). |
 | `CELERY_TASK_SOFT_TIME_LIMIT` / `CELERY_TASK_TIME_LIMIT` | Worker soft/hard task limits in seconds (Defaults: `120` / `300`). |
 | `OLLAMA_HOST` | Ollama API base URL (Compose default: local `hookwise-llm`). |
