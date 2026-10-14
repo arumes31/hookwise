@@ -21,3 +21,9 @@ def test_explicit_origins_are_kept() -> None:
 
 def test_wildcard_is_kept() -> None:
     assert socketio_allowed_origins(" * ") == "*"
+
+
+def test_wildcard_mixed_with_origins_is_rejected() -> None:
+    # python-engineio would read this as "allow every origin".
+    with pytest.raises(ValueError, match="on its own"):
+        socketio_allowed_origins("https://a.example, *")

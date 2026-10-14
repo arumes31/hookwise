@@ -64,6 +64,10 @@ def socketio_allowed_origins(raw: str | None) -> str | list[str] | None:
     if value == "*":
         return "*"
     origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+    if "*" in origins:
+        # python-engineio treats any list containing "*" as "allow every
+        # origin", which would silently void the other entries.
+        raise ValueError("SOCKETIO_ALLOWED_ORIGINS: use '*' on its own or list specific origins, not both")
     return origins or None
 
 

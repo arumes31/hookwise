@@ -15,14 +15,16 @@ VIEWER = LEGACY_ROLE_MAP["viewer"]
 
 @pytest.fixture
 def app():
-    app = create_app()
-    app.config.update(
-        TESTING=True,
-        WTF_CSRF_ENABLED=False,
-        SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
-        RBAC_ENFORCE="on",
+    # Pass the config to create_app: the database engine is configured there,
+    # so changing SQLALCHEMY_DATABASE_URI afterwards would have no effect.
+    return create_app(
+        {
+            "TESTING": True,
+            "WTF_CSRF_ENABLED": False,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "RBAC_ENFORCE": "on",
+        }
     )
-    return app
 
 
 @pytest.fixture
