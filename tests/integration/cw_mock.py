@@ -6,11 +6,18 @@ and listed at GET /__requests so tests can assert what HookWise sent.
 """
 
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 KNOWN_COMPANIES = {"ACME"}
+
+# Write paths HookWise uses; anything else is answered with 404 so a wrong API
+# path fails the test instead of looking like a successful write.
+TICKETS_PATH = re.compile(r"/service/tickets/?$")
+TICKET_PATH = re.compile(r"/service/tickets/\d+/?$")
+NOTES_PATH = re.compile(r"/service/tickets/\d+/notes/?$")
 
 _lock = threading.Lock()
 _recorded: list[dict[str, Any]] = []
@@ -56,11 +63,15 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(200, [])
 
     def do_POST(self) -> None:
-        """Create a ticket for a known company, otherwise reject it like ConnectWise."""
+        """Add notes, create tickets for known companies, reject everything else."""
         global _next_ticket_id
         body = self._read_body()
-        if not self.path.split("?")[0].endswith("/service/tickets"):
+        path = self.path.split("?")[0]
+        if NOTES_PATH.search(path):
             self._reply(200, {"id": 1}, body)
+            return
+        if not TICKETS_PATH.search(path):
+            self._reply(404, {"code": "NotFound", "message": f"mock: unsupported POST {path}"}, body)
             return
         company = ((body or {}).get("company") or {}).get("identifier")
         if company in KNOWN_COMPANIES:
@@ -84,8 +95,13 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(400, error, body)
 
     def do_PATCH(self) -> None:
-        """Accept ticket updates such as closing."""
-        self._reply(200, {"id": 1}, self._read_body())
+        """Accept ticket updates such as closing; reject any other path."""
+        body = self._read_body()
+        path = self.path.split("?")[0]
+        if TICKET_PATH.search(path):
+            self._reply(200, {"id": 1}, body)
+            return
+        self._reply(404, {"code": "NotFound", "message": f"mock: unsupported PATCH {path}"}, body)
 
     def log_message(self, format: str, *args: Any) -> None:
         """Silence the default per-request stderr logging."""
