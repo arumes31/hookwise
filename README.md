@@ -829,6 +829,13 @@ flask db check
 
 CI runs these checks with stable Python 3.14.8 against PostgreSQL and Redis, matching the digest-pinned container runtime. Dependencies are installed from the hash-pinned `requirements-dev.txt` file.
 
+To run the lint, format and type checks automatically on every commit, install the pre-commit hooks once (with the project virtualenv active):
+
+```bash
+uv tool install pre-commit   # or: pipx install pre-commit
+pre-commit install
+```
+
 ### Database Migrations
 
 When changing `models.py`:
