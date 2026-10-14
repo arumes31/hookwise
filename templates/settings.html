@@ -207,6 +207,17 @@
             </div>
         </div>
 
+        <!-- Maintenance Mode -->
+        <div class="glass-card mb-5 anime-slide-up" style="animation-delay: 0.4s;">
+            <div class="card-body p-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <div>
+                    <h2 class="h5 fw-bold text-light mb-1">Maintenance mode</h2>
+                    <p class="text-secondary small mb-0">Pause the console and webhook intake during planned work.</p>
+                </div>
+                <a class="btn btn-outline-warning" href="{{ url_for('main.admin_maintenance') }}">Manage maintenance mode</a>
+            </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="glass-card border-danger border-opacity-25 anime-slide-up" style="animation-delay: 0.6s;"
             data-braucht="history:delete">

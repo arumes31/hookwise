@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10 col-xl-8">
+        <div class="hw-settings-heading">
+            <div>
+                <h1>Maintenance mode</h1>
+                <p>Pause the console and webhook intake during planned work.</p>
+            </div>
+            <a class="btn btn-outline-secondary" href="{{ url_for('main.settings') }}">System settings</a>
+        </div>
+        {% if not hw_kann('settings:write') %}
+        <div class="alert alert-info small">Read-only &mdash; switching maintenance mode requires
+            <code>settings:write</code>. Ask an administrator for changes.</div>
+        {% endif %}
+
+        <div class="glass-card mb-5 {{ 'border-warning border-opacity-50' if maintenance_mode else '' }}">
+            <div class="card-body p-4">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                    <div>
+                        <div class="text-secondary fw-bold text-uppercase small ls-1">Current state</div>
+                        <p class="h4 fw-bold mb-0 {{ 'text-warning' if maintenance_mode else 'text-success' }}" id="maintenance-state">
+                            {{ 'On' if maintenance_mode else 'Off' }}
+                        </p>
+                    </div>
+                    <form id="maintenance-form" action="{{ url_for('main.maintenance_mode') }}" method="POST"
+                        data-braucht="settings:write" data-braucht-modus="sperren"
+                        data-enabling="{{ 'false' if maintenance_mode else 'true' }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="enabled" value="{{ 'false' if maintenance_mode else 'true' }}">
+                        {% if maintenance_mode %}
+                        <button type="submit" class="btn btn-success">Disable maintenance mode</button>
+                        {% else %}
+                        <button type="submit" class="btn btn-warning">Enable maintenance mode</button>
+                        {% endif %}
+                    </form>
+                </div>
+
+                {% if last_change %}
+                <p class="small text-secondary mb-3">
+                    Last changed by {{ last_change.user or 'an unknown user' }} at
+                    <time class="hw-local-datetime" datetime="{{ last_change.created_at.isoformat() }}{{ 'Z' if last_change.created_at.tzinfo is none else '' }}"
+                        data-utc-label="{{ last_change.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ last_change.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>
+                    ({{ last_change.details }}).
+                </p>
+                {% endif %}
+
+                <p class="small text-secondary mb-1">While maintenance mode is on:</p>
+                <ul class="small text-secondary mb-0">
+                    <li>Console pages show a maintenance notice. Sign-in, health checks and admin pages such as this one stay available.</li>
+                    <li>Webhook requests are rejected with HTTP 503 and are not stored. Whether a sender retries depends on the sender.</li>
+                    <li>Stale-endpoint checks keep running, so an endpoint whose timeout is shorter than the maintenance window will raise a stale ticket.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('maintenance-form')?.addEventListener('submit', async (event) => {
+        const form = event.currentTarget;
+        if (form.dataset.enabling !== 'true' || form.dataset.confirmed === 'true') return;
+        event.preventDefault();
+        const confirmed = await hwConfirm(
+            'Enable maintenance mode? Console pages and webhook requests will receive a service-unavailable response until it is disabled.',
+            { title: 'Enable maintenance mode', okText: 'Enable maintenance', danger: true }
+        );
+        if (!confirmed) return;
+        form.dataset.confirmed = 'true';
+        form.requestSubmit();
+    });
+</script>
+{% endblock %}

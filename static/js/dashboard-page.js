@@ -437,30 +437,6 @@
             });
     }
 
-    async function toggleMaintenance(toggle) {
-        const previousState = !toggle.checked;
-        if (toggle.checked && !await hwConfirm(
-            'Enable maintenance mode? Normal UI and webhook requests will receive a service-unavailable response until it is disabled.',
-            { title: 'Enable maintenance mode', okText: 'Enable maintenance', danger: true }
-        )) {
-            toggle.checked = previousState;
-            return;
-        }
-        toggle.disabled = true;
-        try {
-            const res = await fetch('/admin/maintenance', { method: 'POST' });
-            if (!res.ok) throw new Error(`Request failed (${res.status})`);
-            const data = await res.json();
-            toggle.checked = Boolean(data.maintenance_mode);
-            showToast('Maintenance mode ' + (data.maintenance_mode ? 'ENABLED' : 'DISABLED'), data.maintenance_mode ? 'warning' : 'success');
-        } catch (e) {
-            toggle.checked = previousState;
-            showToast('Error toggling maintenance mode', 'danger');
-        } finally {
-            toggle.disabled = false;
-        }
-    }
-
     function showPayloadModal(payloadStr) {
         try {
             // Handle potential double-encoding or already object
@@ -560,12 +536,6 @@
                 MiniChart.renderLine(canvas.id, data);
             }
         });
-
-        // Set maintenance toggle state
-        fetch('/admin/maintenance').then(r => r.json()).then(d => {
-            const toggle = document.getElementById('maintenance-toggle');
-            if (toggle) toggle.checked = d.maintenance_mode;
-        }).catch(() => { });
 
     }
 

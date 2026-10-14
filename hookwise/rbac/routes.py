@@ -131,6 +131,7 @@ ENDPUNKT_RECHTE: Dict[str, str] = {
     "main.backup_config": "settings:write",
     "main.restore_config": "settings:write",
     "main.trigger_timeout_check": "settings:write",
+    "main.admin_maintenance": "settings:read",
     "main.maintenance_mode": "settings:write",
     # ---- Nutzerverwaltung ------------------------------------------------
     "main.users_list": "user:read",

@@ -7,6 +7,17 @@
     <p>Hookwise is temporarily unavailable while maintenance is in progress. Existing webhook requests receive a service-unavailable response.</p>
     <div class="hw-state-actions">
         <button type="button" class="btn btn-primary" onclick="window.location.reload()">Check status again</button>
+        {% if session.get('user_id') and hw_kann('settings:write') %}
+        <form action="{{ url_for('main.maintenance_mode') }}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="enabled" value="false">
+            <button type="submit" class="btn btn-success">Disable maintenance mode</button>
+        </form>
+        {% elif session.get('user_id') and hw_kann('settings:read') %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('main.admin_maintenance') }}">Maintenance status</a>
+        {% elif not session.get('user_id') %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('main.login') }}">Administrator sign-in</a>
+        {% endif %}
     </div>
     {% if request_id %}<p class="hw-state-reference">Reference <code>{{ request_id }}</code></p>{% endif %}
 </main>

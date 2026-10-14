@@ -745,16 +745,47 @@ def _register() -> None:
 
     # --- Admin ---
 
-    @auth_required
-    def maintenance_mode() -> Response:
-        if request.method == "POST":
-            current = redis_client.get("hookwise_maintenance_mode")
-            new_state = "true" if not current or cast(bytes, current).decode() != "true" else "false"
-            redis_client.set("hookwise_maintenance_mode", new_state)
-            log_audit("maintenance_toggle", None, f"Maintenance mode set to {new_state}")
-            return jsonify({"status": "success", "maintenance_mode": new_state == "true"})
+    def _maintenance_enabled() -> bool:
         mode = redis_client.get("hookwise_maintenance_mode")
-        return jsonify({"maintenance_mode": mode and cast(bytes, mode).decode() == "true"})
+        return bool(mode) and cast(bytes, mode).decode() == "true"
+
+    def _wants_json() -> bool:
+        return (
+            request.is_json
+            or request.accept_mimetypes.best == "application/json"
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        )
+
+    @auth_required
+    def admin_maintenance() -> Any:
+        """Maintenance page (settings:read); JSON clients get the bare state."""
+        enabled = _maintenance_enabled()
+        if _wants_json():
+            return jsonify({"maintenance_mode": enabled})
+        last_change = AuditLog.query.filter_by(action="maintenance_toggle").order_by(AuditLog.created_at.desc()).first()
+        return render_template("admin_maintenance.html", maintenance_mode=enabled, last_change=last_change)
+
+    @auth_required
+    def maintenance_mode() -> Any:
+        """Set maintenance mode (settings:write).
+
+        ``enabled`` names the target state, so a double submit or two admins
+        acting at once cannot flip it back. Without it the call toggles, as
+        before, for existing API clients.
+        """
+        source = request.get_json(silent=True) if request.is_json else request.form
+        requested = (source or {}).get("enabled")
+        if requested is None:
+            new_state = not _maintenance_enabled()
+        else:
+            new_state = str(requested).strip().lower() in {"true", "1", "on", "yes"}
+        state_text = "true" if new_state else "false"
+        redis_client.set("hookwise_maintenance_mode", state_text)
+        log_audit("maintenance_toggle", None, f"Maintenance mode set to {state_text}")
+        if _wants_json():
+            return jsonify({"status": "success", "maintenance_mode": new_state})
+        flash(f"Maintenance mode {'enabled' if new_state else 'disabled'}.", "warning" if new_state else "success")
+        return redirect(url_for("main.admin_maintenance"))
 
     @auth_required
     def settings() -> Any:

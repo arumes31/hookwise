@@ -312,11 +312,15 @@ def _register_request_handlers(app: Flask) -> None:
     def check_maintenance() -> Any:
         from .tasks import redis_client
 
-        # Allow /admin, /health*, and static files during maintenance
+        # Allow /admin, /health*, and static files during maintenance. Sign-in
+        # stays open too: an administrator whose session expired must still be
+        # able to reach /admin/maintenance and switch maintenance off.
         if (
             request.path.startswith("/static/")
             or request.path.startswith("/admin")
             or request.path.startswith("/health")
+            or request.path in {"/login", "/logout"}
+            or request.path.startswith("/auth/entra/")
         ):
             return
 
