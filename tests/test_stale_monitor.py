@@ -229,6 +229,38 @@ def test_healthy_endpoint_records_not_due(app, stale_config):
         assert summary == {**summary, "status": "ok", "checked": 1, "due": 0, "failed": 0}
 
 
+def test_endpoint_deleted_mid_run_does_not_stop_the_others(app, stale_config):
+    """A failure that cannot be recorded must not abort the remaining endpoints."""
+    from hookwise.extensions import db
+    from hookwise.models import WebhookConfig
+
+    with app.app_context():
+        stale_config(name="Deleted during run", customer_id_default="ACME")
+        stale_config(name="Still monitored", customer_id_default="ACME")
+
+        def create_ticket(**kwargs):
+            if create_ticket.calls == 0:
+                create_ticket.calls += 1
+                # Another request deletes the endpoint while its alert fails, so
+                # storing the failure and reloading the endpoint both fail.
+                with db.engine.begin() as conn:
+                    conn.execute(
+                        db.text("DELETE FROM webhook_config WHERE name = :name"), {"name": kwargs["monitor_name"]}
+                    )
+                raise RuntimeError("ConnectWise unavailable")
+            return {"id": 77}
+
+        create_ticket.calls = 0
+        with patch("hookwise.tasks.cw_client") as mock_cw, patch("hookwise.tasks.redis_client"):
+            mock_cw.create_ticket.side_effect = create_ticket
+            summary = _run_check()
+
+        assert summary["status"] == "partial_failed"
+        assert summary["checked"] == 2 and summary["created"] == 1 and summary["failed"] == 1
+        remaining = WebhookConfig.query.one()
+        assert remaining.timeout_ticket_id == 77
+
+
 def test_check_interval_is_five_minutes():
     from hookwise.tasks import celery
 

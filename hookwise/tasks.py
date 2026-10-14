@@ -1061,7 +1061,10 @@ def check_webhook_timeouts() -> Dict[str, Any]:
 
         for config in configs:
             summary["checked"] += 1
+            # Read both up front: after a rollback the instance is expired and
+            # touching it again could raise outside this endpoint's handler.
             config_name = config.name
+            config_id = config.id
             result = "not_due"
             error_text: str | None = None
             hours_since_activity = 0.0
@@ -1318,7 +1321,7 @@ def check_webhook_timeouts() -> Dict[str, Any]:
             if result in FAILED_RESULTS:
                 summary["failed"] += 1
                 summary["failures"].append(
-                    {"config_id": config.id, "name": config_name, "result": result, "error": error_text}
+                    {"config_id": config_id, "name": config_name, "result": result, "error": error_text}
                 )
 
         summary["status"] = "partial_failed" if summary["failed"] else "ok"

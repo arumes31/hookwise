@@ -84,6 +84,7 @@ def test_viewer_reads_state_but_cannot_change_it(client, store):
 
     assert page.status_code == 200
     assert b"Read-only" in page.data
+    assert b'id="maintenance-form"' not in page.data
     assert state.json == {"maintenance_mode": False}
     assert change.status_code == 403
     assert "hookwise_maintenance_mode" not in store

@@ -580,7 +580,7 @@ function initServiceHealth(container = document) {
             console.debug('Health check did not complete before navigation', e);
             updateFavicon('down');
             // Update all visible dots to a disconnected/error state
-            ['redis', 'database', 'celery'].forEach(service => {
+            ['redis', 'database', 'celery', 'stale_monitor'].forEach(service => {
                 const el = document.getElementById(`health-${service}`);
                 if (el) el.className = 'heartbeat-dot heartbeat-error';
                 const dashEl = document.getElementById(`dash-health-${service}`);
