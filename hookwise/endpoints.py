@@ -11,6 +11,7 @@ from flask import Response, flash, jsonify, redirect, render_template, request, 
 from .extensions import db
 from .models import EndpointTag, WebhookConfig
 from .services.endpoint_templates import public_endpoint_templates
+from .services.stale_monitor import stale_company_problem
 from .utils import auth_required, decrypt_string, encrypt_string, log_audit
 
 _TAG_NAME = re.compile(r"^[\w .:/-]{1,32}$")
@@ -52,7 +53,16 @@ def _authentication_error(config: WebhookConfig) -> str | None:
     return "Enable bearer authentication, configure HMAC, or explicitly allow an unauthenticated endpoint."
 
 
+def _stale_alert_error(config: WebhookConfig) -> str | None:
+    """Refuse stale alerts that ConnectWise would reject for want of a real company."""
+    if not config.timeout_alerts_enabled or config.is_draft:
+        return None
+    return stale_company_problem(config.customer_id_default)
+
+
 def _register_crud_routes(main_bp: Any) -> None:
+    """Register the endpoint create, edit, toggle, pin and token routes."""
+
     @main_bp.route("/endpoint/toggle-pin/<config_id>", methods=["POST"])
     @auth_required
     def toggle_pin(config_id: str) -> Any:
@@ -92,6 +102,7 @@ def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/new", methods=["GET", "POST"])
     @auth_required
     def new_endpoint() -> Any:
+        """Create an endpoint; refuse missing authentication or an unusable stale-alert company."""
         if request.method == "POST":
             bearer_token = secrets.token_urlsafe(32)
             config = WebhookConfig(
@@ -136,13 +147,13 @@ def _register_crud_routes(main_bp: Any) -> None:
                 retry_max_delay_seconds=_get_int_form_value("retry_max_delay_seconds", 300, 1, 86400),
             )
             db.session.add(config)
-            if auth_error := _authentication_error(config):
+            if form_error := _authentication_error(config) or _stale_alert_error(config):
                 db.session.rollback()
                 return (
                     render_template(
                         "form.html",
                         base_url=request.url_root.rstrip("/"),
-                        form_error=auth_error,
+                        form_error=form_error,
                         endpoint_templates=public_endpoint_templates(),
                     ),
                     400,
@@ -174,6 +185,7 @@ def _register_crud_routes(main_bp: Any) -> None:
     @main_bp.route("/endpoint/edit/<config_id>", methods=["GET", "POST"])
     @auth_required
     def edit_endpoint(config_id: str) -> Any:
+        """Update an endpoint with the same validation as creation."""
         config = WebhookConfig.query.get_or_404(config_id)
         if request.method == "POST":
             config.name = request.form.get("name")
@@ -218,14 +230,14 @@ def _register_crud_routes(main_bp: Any) -> None:
             if config.retry_max_delay_seconds < config.retry_base_delay_seconds:
                 config.retry_max_delay_seconds = config.retry_base_delay_seconds
 
-            if auth_error := _authentication_error(config):
+            if form_error := _authentication_error(config) or _stale_alert_error(config):
                 db.session.rollback()
                 return (
                     render_template(
                         "form.html",
                         config=config,
                         base_url=request.url_root.rstrip("/"),
-                        form_error=auth_error,
+                        form_error=form_error,
                         endpoint_templates=public_endpoint_templates(),
                     ),
                     400,

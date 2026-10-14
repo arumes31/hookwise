@@ -479,6 +479,20 @@
                                 data-utc-label="{{ next_stale_times[config.id].strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ next_stale_times[config.id].strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>
                         </div>
                         {% endif %}
+
+                        {% if config.timeout_alerts_enabled and config.stale_checked_at %}
+                        {% set stale_failed = config.stale_check_result in ('create_failed', 'repeat_failed', 'error') %}
+                        {% set stale_labels = {'not_due': 'OK', 'repeat_not_due': 'Alert open', 'alert_created': 'Ticket created', 'repeat_noted': 'Repeat noted', 'create_failed': 'Ticket failed', 'repeat_failed': 'Repeat note failed', 'error': 'Check failed', 'no_activity': 'No activity'} %}
+                        <div class="tech-label {{ 'text-danger' if stale_failed else 'text-secondary' }} mt-1 hw-t-xs">LAST STALE CHECK</div>
+                        <div class="small fw-bold {{ 'text-danger' if stale_failed else 'text-secondary' }} text-truncate hw-t-xs">
+                            <time class="hw-local-datetime" datetime="{{ config.stale_checked_at.isoformat() }}{{ 'Z' if config.stale_checked_at.tzinfo is none else '' }}"
+                                data-utc-label="{{ config.stale_checked_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC">{{ config.stale_checked_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</time>
+                            · {{ stale_labels.get(config.stale_check_result, config.stale_check_result) }}
+                        </div>
+                        {% if stale_failed and config.stale_check_error %}
+                        <div class="small text-danger text-truncate hw-t-xs" title="{{ config.stale_check_error }}">{{ config.stale_check_error }}</div>
+                        {% endif %}
+                        {% endif %}
                     </div>
                 </div>
                 <details class="endpoint-details mt-3">

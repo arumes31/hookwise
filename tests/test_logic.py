@@ -295,6 +295,41 @@ def test_cipp_defender_creates_new_actionable_ticket_when_correlated_ticket_is_c
         assert CippDefenderIncidentState.query.filter_by(incident_key="id:901").one().ticket_id == 701
 
 
+@patch("hookwise.services.cipp_defender._utcnow")
+@patch("hookwise.tasks.redis_client")
+@patch("hookwise.tasks.cw_client")
+def test_cipp_defender_rejected_create_is_not_recorded_as_ticketed(mock_cw, mock_redis, mock_now, app):
+    """A refused Defender ticket must surface to the delivery task, not vanish."""
+    mock_now.return_value = datetime(2026, 9, 15, 12, tzinfo=timezone.utc)
+    mock_redis.get.return_value = None
+    mock_cw.find_open_ticket.return_value = None
+    mock_cw.create_ticket.side_effect = TicketCreationRejected(
+        "ConnectWise rejected ticket creation (HTTP 400): Company identifier 'EXAMPLE' was not found.",
+        retryable=False,
+    )
+
+    with app.app_context():
+        config = WebhookConfig(
+            name="CIPP Defender",
+            description_template="{{ cipp_results }}",
+            trigger_field="status",
+            open_value="down",
+            board="Monitoring",
+            customer_id_default="EXAMPLE",
+        )
+        db.session.add(config)
+        db.session.commit()
+
+        incident = _defender_incident(901, "2026-09-15T10:00:00Z", "alert-a")
+        with pytest.raises(TicketCreationRejected, match="was not found"):
+            handle_webhook_logic(config.id, _cipp_defender_payload(incident), "req-defender-rejected")
+        db.session.rollback()
+
+        state = CippDefenderIncidentState.query.filter_by(incident_key="id:901").one_or_none()
+        assert state is None or state.ticket_id is None
+        assert TicketOperation.query.filter_by(status="completed").count() == 0
+
+
 GREENBONE_DESCRIPTION = """Site2Nite Boat Classifieds Multiple SQLi Vulnerabilities - Active Check
 
 Evidence

@@ -43,7 +43,7 @@ HookWise is a high-performance webhook router that connects monitoring and secur
 Requirements: Docker Engine with Docker Compose and ConnectWise Manage API credentials.
 
 1. Copy `.env.example` to `.env` and replace every sample credential. Add a unique `POSTGRES_PASSWORD`; production also requires strong `SECRET_KEY`, `GUI_PASSWORD`, `REDIS_PASSWORD`, and valid Fernet `ENCRYPTION_KEY` values.
-2. Review the selected Compose file before starting. `CW_URL`, `CW_COMPANY`, `CW_PUBLIC_KEY`, `CW_CLIENT_ID`, the default ticket settings, and several proxy/TLS settings are currently literal values in `docker-compose.yml` and `docker-compose.ghcr.yml`; edit or override them for your environment.
+2. Review the selected Compose file before starting. All `CW_*` settings are read from `.env`. `CW_PRIVATE_KEY` is required there; `CW_COMPANY`, `CW_PUBLIC_KEY`, and `CW_CLIENT_ID` can be set in `.env` or edited directly in the Compose file. `CW_DEFAULT_COMPANY_ID` should name a real ConnectWise company if endpoints rely on it. Several proxy/TLS settings are still literal values in `docker-compose.yml` and `docker-compose.ghcr.yml`; edit or override them for your environment.
 3. Start either a local source build or the published GHCR image:
 
    ```bash
@@ -436,6 +436,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
 | `HTTPS_ORIGIN` | Trusted public HTTPS origin used for redirects (for example, `https://hookwise.example.com`). |
 | `USE_PROXY` / `PROXY_FIX_COUNT` | Trust reverse-proxy forwarding headers and set the exact trusted proxy hop count. |
+| `SOCKETIO_ALLOWED_ORIGINS` | Origins allowed to open the live activity connection: comma-separated list or `*`. Default: the console's own origin, also behind a reverse proxy that sends `X-Forwarded-Proto`/`X-Forwarded-Host`. |
 | `ENABLE_HSTS` | Emit the one-year HSTS header (Default: `true`; meaningful only over HTTPS). |
 | `CELERY_TASK_SOFT_TIME_LIMIT` / `CELERY_TASK_TIME_LIMIT` | Worker soft/hard task limits in seconds (Defaults: `120` / `300`). |
 | `OLLAMA_HOST` | Ollama API base URL (Compose default: local `hookwise-llm`). |
@@ -828,6 +829,13 @@ flask db check
 ```
 
 CI runs these checks with stable Python 3.14.8 against PostgreSQL and Redis, matching the digest-pinned container runtime. Dependencies are installed from the hash-pinned `requirements-dev.txt` file.
+
+To run the lint, format and type checks automatically on every commit, install the pre-commit hooks once (with the project virtualenv active):
+
+```bash
+uv tool install pre-commit   # or: pipx install pre-commit
+pre-commit install
+```
 
 ### Database Migrations
 

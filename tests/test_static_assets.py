@@ -73,7 +73,7 @@ def test_high_impact_ui_actions_keep_explicit_confirmations():
         "account": (TEMPLATE_ROOT / "account_settings.html").read_text(encoding="utf-8"),
         "history": (TEMPLATE_ROOT / "history.html").read_text(encoding="utf-8"),
         "identity": (TEMPLATE_ROOT / "identity.html").read_text(encoding="utf-8"),
-        "index": (TEMPLATE_ROOT / "index.html").read_text(encoding="utf-8"),
+        "maintenance": (TEMPLATE_ROOT / "admin_maintenance.html").read_text(encoding="utf-8"),
         "webhooks": (TEMPLATE_ROOT / "webhooks.html").read_text(encoding="utf-8"),
         "dashboard": (STATIC_ROOT / "js" / "dashboard-page.js").read_text(encoding="utf-8"),
         "history_operations": (STATIC_ROOT / "js" / "history-operations.js").read_text(encoding="utf-8"),
@@ -89,8 +89,8 @@ def test_high_impact_ui_actions_keep_explicit_confirmations():
     assert "Replay edited request" in sources["history_operations"]
     assert "Set a new password for " in sources["identity"]
     assert "Enable automatic Entra provisioning?" in sources["identity"]
-    assert "toggleMaintenance(this)" in sources["index"]
-    assert "Enable maintenance mode?" in sources["dashboard"]
+    assert "Enable maintenance mode?" in sources["maintenance"]
+    assert "hwConfirm(" in sources["maintenance"]
     assert "Send a test webhook through" in sources["dashboard"]
     assert "archiveEndpoint(this.dataset.endpointId, this.dataset.endpointName, this)" in sources["webhooks"]
     assert (

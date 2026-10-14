@@ -17,6 +17,7 @@ from .extensions import csrf, db, limiter
 from .models import AuditLog, WebhookConfig, WebhookLog
 from .services.delivery_queue import commit_and_dispatch, stage_delivery
 from .services.routing import routing_regex_matches
+from .services.stale_monitor import last_run_status
 from .tasks import MAX_LOG_RETENTION_DAYS, celery, cw_client, process_webhook_task, redis_client
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
@@ -699,6 +700,7 @@ def _register() -> None:
 
     @limiter.exempt
     def health_services() -> Tuple[Response, int]:
+        """Report Redis, database, Celery and stale-check health for the console."""
         health_data = {"redis": "down", "database": "down", "celery": "down", "timestamp": time.time()}
         status_code = 200
 
@@ -728,20 +730,65 @@ def _register() -> None:
             current_app.logger.error(f"Celery health check failed: {e}")
             health_data["celery"] = "down"
 
+        # Stale alerts depend on beat dispatching and a worker finishing the
+        # check; neither shows up in the probes above.
+        try:
+            stale_monitor = last_run_status(redis_client)
+        except Exception as e:
+            current_app.logger.error(f"Stale monitor health check failed: {e}")
+            stale_monitor = {"state": "unknown", "message": "Stale monitor status could not be read."}
+        health_data["stale_monitor"] = {"ok": "up", "partial_failed": "warning", "unknown": "warning"}.get(
+            stale_monitor["state"], "down"
+        )
+        health_data["stale_monitor_detail"] = stale_monitor
+
         return jsonify(health_data), status_code
 
     # --- Admin ---
 
-    @auth_required
-    def maintenance_mode() -> Response:
-        if request.method == "POST":
-            current = redis_client.get("hookwise_maintenance_mode")
-            new_state = "true" if not current or cast(bytes, current).decode() != "true" else "false"
-            redis_client.set("hookwise_maintenance_mode", new_state)
-            log_audit("maintenance_toggle", None, f"Maintenance mode set to {new_state}")
-            return jsonify({"status": "success", "maintenance_mode": new_state == "true"})
+    def _maintenance_enabled() -> bool:
+        """Whether maintenance mode is currently switched on."""
         mode = redis_client.get("hookwise_maintenance_mode")
-        return jsonify({"maintenance_mode": mode and cast(bytes, mode).decode() == "true"})
+        return bool(mode) and cast(bytes, mode).decode() == "true"
+
+    def _wants_json() -> bool:
+        """Whether the caller expects JSON rather than an HTML page."""
+        return (
+            request.is_json
+            or request.accept_mimetypes.best == "application/json"
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        )
+
+    @auth_required
+    def admin_maintenance() -> Any:
+        """Maintenance page (settings:read); JSON clients get the bare state."""
+        enabled = _maintenance_enabled()
+        if _wants_json():
+            return jsonify({"maintenance_mode": enabled})
+        last_change = AuditLog.query.filter_by(action="maintenance_toggle").order_by(AuditLog.created_at.desc()).first()
+        return render_template("admin_maintenance.html", maintenance_mode=enabled, last_change=last_change)
+
+    @auth_required
+    def maintenance_mode() -> Any:
+        """Set maintenance mode (settings:write).
+
+        ``enabled`` names the target state, so a double submit or two admins
+        acting at once cannot flip it back. Without it the call toggles, as
+        before, for existing API clients.
+        """
+        source = request.get_json(silent=True) if request.is_json else request.form
+        requested = (source or {}).get("enabled")
+        if requested is None:
+            new_state = not _maintenance_enabled()
+        else:
+            new_state = str(requested).strip().lower() in {"true", "1", "on", "yes"}
+        state_text = "true" if new_state else "false"
+        redis_client.set("hookwise_maintenance_mode", state_text)
+        log_audit("maintenance_toggle", None, f"Maintenance mode set to {state_text}")
+        if _wants_json():
+            return jsonify({"status": "success", "maintenance_mode": new_state})
+        flash(f"Maintenance mode {'enabled' if new_state else 'disabled'}.", "warning" if new_state else "success")
+        return redirect(url_for("main.admin_maintenance"))
 
     @auth_required
     def settings() -> Any:

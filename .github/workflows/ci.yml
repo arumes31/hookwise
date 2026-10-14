@@ -102,3 +102,20 @@ jobs:
       run: |
         flask db upgrade
         flask db check
+
+    - name: Check migrations downgrade and upgrade cleanly
+      # The drift check only proves upgrades; a broken downgrade would first
+      # surface during a production rollback. The test database is empty here,
+      # so data-dependent downgrades are out of scope.
+      env:
+        FLASK_APP: hookwise:create_app
+        DATABASE_URL: postgresql://hookwise:hookwise_pass@localhost:5432/hookwise_test
+        SECRET_KEY: test-secret-key
+        GUI_PASSWORD: test-password
+        ENCRYPTION_KEY: vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E=
+        REDIS_HOST: localhost
+        TESTING: "true"
+      run: |
+        flask db downgrade base
+        flask db upgrade
+        flask db check

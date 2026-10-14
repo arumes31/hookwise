@@ -559,6 +559,12 @@ function initServiceHealth(container = document) {
                 if (el) {
                     el.className = `heartbeat-dot heartbeat-${data[service]}`;
                     el.title = `${service.toUpperCase()}: ${data[service].toUpperCase()}`;
+                    if (service === 'stale_monitor' && data.stale_monitor_detail) {
+                        const detail = data.stale_monitor_detail;
+                        el.title = detail.finished_at
+                            ? `Last stale check ${Math.round(detail.age_seconds / 60)} min ago: ${detail.state}, ${detail.failed} failed of ${detail.checked}`
+                            : (detail.message || detail.state);
+                    }
                 }
                 const dashEl = document.getElementById(`dash-health-${service}`);
                 if (dashEl) {
@@ -574,7 +580,7 @@ function initServiceHealth(container = document) {
             console.debug('Health check did not complete before navigation', e);
             updateFavicon('down');
             // Update all visible dots to a disconnected/error state
-            ['redis', 'database', 'celery'].forEach(service => {
+            ['redis', 'database', 'celery', 'stale_monitor'].forEach(service => {
                 const el = document.getElementById(`health-${service}`);
                 if (el) el.className = 'heartbeat-dot heartbeat-error';
                 const dashEl = document.getElementById(`dash-health-${service}`);

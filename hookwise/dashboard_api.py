@@ -109,6 +109,7 @@ def _percentile(values: list[float], percent: int) -> float:
 
 
 def _stale_config_ids(now: datetime) -> list[str]:
+    """IDs of monitored endpoints whose timeout has been reached."""
     configs = WebhookConfig.query.filter(
         WebhookConfig.is_draft.is_(False),
         WebhookConfig.timeout_alerts_enabled.is_(True),
@@ -121,7 +122,7 @@ def _stale_config_ids(now: datetime) -> list[str]:
         if seen is None:
             continue
         seen = seen.replace(tzinfo=timezone.utc) if seen.tzinfo is None else seen.astimezone(timezone.utc)
-        if seen + timedelta(hours=max(config.timeout_hours or 24, 1)) < now:
+        if seen + timedelta(hours=max(config.timeout_hours or 24, 1)) <= now:
             stale.append(config.id)
     return stale
 

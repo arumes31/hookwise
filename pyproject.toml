@@ -47,6 +47,10 @@ dev = [
     "ruff==0.16.8",
     "types-requests==2.33.0.20260906",
 ]
+# Browser and full-stack tests in tests/integration (CI job: integration.yml).
+integration = [
+    "playwright==1.63.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

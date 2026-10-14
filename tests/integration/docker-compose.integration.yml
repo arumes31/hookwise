@@ -1,0 +1,81 @@
+# Integration overlay: the real stack (proxy, worker, beat, migrate, Postgres,
+# Redis) against tests/integration/cw_mock.py instead of ConnectWise.
+#
+#   docker compose -f docker-compose.yml -f tests/integration/docker-compose.integration.yml \
+#     up -d --build --wait
+#
+# CW_URL is fixed to the mock here on purpose, so these tests can never create
+# tickets in a real ConnectWise instance, whatever .env contains. The LLM
+# service only starts with the "llm" profile; nothing in these tests needs it.
+# The base files make proxy, worker and beat wait for the LLM, so their
+# dependencies are restated without it.
+services:
+  hookwise-proxy:
+    container_name: !reset null
+    ports: !override
+      - "${HOOKWISE_IT_PORT:-5000}:5000"
+    environment:
+      - "CW_URL=http://cw-mock:8080/v4_6_release/apis/3.0"
+    depends_on: !override
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-migrate:
+        condition: service_completed_successfully
+      cw-mock:
+        condition: service_healthy
+
+  hookwise-worker:
+    container_name: !reset null
+    environment:
+      - "CW_URL=http://cw-mock:8080/v4_6_release/apis/3.0"
+    depends_on: !override
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-migrate:
+        condition: service_completed_successfully
+      cw-mock:
+        condition: service_healthy
+
+  hookwise-beat:
+    container_name: !reset null
+    environment:
+      - "CW_URL=http://cw-mock:8080/v4_6_release/apis/3.0"
+    depends_on: !override
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hookwise-migrate:
+        condition: service_completed_successfully
+      cw-mock:
+        condition: service_healthy
+
+  hookwise-migrate:
+    environment:
+      - "CW_URL=http://cw-mock:8080/v4_6_release/apis/3.0"
+
+  redis:
+    container_name: !reset null
+
+  postgres:
+    container_name: !reset null
+
+  hookwise-llm:
+    container_name: !reset null
+    profiles: ["llm"]
+
+  cw-mock:
+    # Same pinned base image as the Dockerfile.
+    image: python:3.14.8-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
+    command: ["python", "-u", "/mock/cw_mock.py"]
+    volumes:
+      - ./tests/integration/cw_mock.py:/mock/cw_mock.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/__requests', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from hookwise.metrics import (
@@ -59,7 +60,7 @@ def test_sync_to_prometheus(mock_redis):
     mock_counter = MagicMock()
     mock_labels_obj = MagicMock()
     mock_counter.labels.return_value = mock_labels_obj
-    prometheus_counters = {metric_name: mock_counter}
+    prometheus_counters: dict[str, Any] = {metric_name: mock_counter}
 
     RedisMetricRegistry.sync_to_prometheus(prometheus_counters)
 
@@ -74,7 +75,7 @@ def test_sync_to_prometheus_invalid_key(mock_logger, mock_redis):
     """Test that malformed keys are skipped."""
     mock_redis.keys.return_value = [b"invalid:key:format"]
 
-    prometheus_counters = {}
+    prometheus_counters: dict[str, Any] = {}
     RedisMetricRegistry.sync_to_prometheus(prometheus_counters)
 
     # No interaction with prometheus_counters expected

@@ -170,6 +170,11 @@ class WebhookConfig(Base):
     timeout_hours = db.Column(db.Integer, default=24, nullable=False)
     timeout_ticket_id = db.Column(db.Integer, nullable=True)
     last_stale_alert_at = db.Column(db.DateTime, nullable=True)
+    # Outcome of the most recent stale check, so a failing alert is visible on
+    # the endpoint instead of only in worker logs.
+    stale_checked_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    stale_check_result = db.Column(db.String(32), nullable=True)
+    stale_check_error = db.Column(db.Text, nullable=True)
 
     @validates("bearer_token", "hmac_secret")
     def _encrypt_secret(self, key: str, value: str | None) -> str | None:

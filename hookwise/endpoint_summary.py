@@ -95,6 +95,7 @@ def _latest_rows(config_ids: list[str], statuses: tuple[str, ...], cutoff: datet
 
 
 def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
+    """Build the dashboard card data for each endpoint, including its stale state."""
     config_ids = [config.id for config in configs]
     if not config_ids:
         return []
@@ -146,7 +147,7 @@ def _build_summaries(configs: list[WebhookConfig]) -> list[dict[str, Any]]:
             and config.is_enabled
             and not config.is_draft
             and last_activity
-            and now - last_activity > timedelta(hours=timeout_hours)
+            and now - last_activity >= timedelta(hours=timeout_hours)
         )
         token_reference = _as_utc(config.last_rotated_at) or _as_utc(config.created_at)
         outcomes = values["good"] + values["failed"]

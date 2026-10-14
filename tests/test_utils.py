@@ -63,8 +63,8 @@ def test_encrypt_decrypt_empty_string(app):
     with app.app_context():
         assert encrypt_string("") == ""
         assert decrypt_string("") == ""
-        assert encrypt_string(None) is None
-        assert decrypt_string(None) is None
+        assert encrypt_string(None) is None  # type: ignore[arg-type]  # deliberately invalid input
+        assert decrypt_string(None) is None  # type: ignore[arg-type]  # deliberately invalid input
 
 
 def test_encrypt_decrypt_unicode(app):
@@ -129,11 +129,11 @@ def test_resolve_jsonpath_edge_cases():
     """Test resolve_jsonpath with empty path, empty data, or invalid path."""
     # Path is empty or None
     assert resolve_jsonpath({"a": 1}, "") is None
-    assert resolve_jsonpath({"a": 1}, None) is None
+    assert resolve_jsonpath({"a": 1}, None) is None  # type: ignore[arg-type]  # deliberately invalid input
 
     # Data is empty or None
     assert resolve_jsonpath({}, "$.a") is None
-    assert resolve_jsonpath(None, "$.a") is None
+    assert resolve_jsonpath(None, "$.a") is None  # type: ignore[arg-type]  # deliberately invalid input
 
     # Path is invalid
     assert resolve_jsonpath({"a": 1}, "!!!invalid!!!") is None
@@ -325,7 +325,8 @@ def test_format_cipp_empty_results():
 
 
 def test_format_cipp_recursively_empty_values():
-    empty_results = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
+    """Results made only of blanks or empty containers produce the 'no results' message."""
+    empty_results: dict[str, list[object]] = {"Results": [None, "  \\t  ", {"Nested": [None, "\\n", {}]}]}
     assert format_cipp_results(empty_results) == "No alert results were returned."
 
     populated_results = {"Results": [{"Whitespace": "   ", "EmptyContainer": [None, {}], "Count": 0, "Enabled": False}]}
