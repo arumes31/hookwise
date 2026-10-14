@@ -17,6 +17,10 @@ COMPOSE_FILES = ("docker-compose.yml", "docker-compose.ghcr.yml")
 ENV_ENTRY = re.compile(r'^\s*-\s*"(?P<key>CW_[A-Z0-9_]+)=(?P<value>.*)"\s*$')
 INTERPOLATION = re.compile(r"^\$\{(?P<name>[A-Z0-9_]+)(?:(?P<op>:?[-?])(?P<rest>.*))?\}$")
 PLACEHOLDER = re.compile(r"your_|_for_tickets|changeme|placeholder", re.IGNORECASE)
+# Operators may keep these in the compose file instead of .env, so their sample
+# fallback is the place to edit. Every other CW_* value must not fall back to a
+# sample: a wrong CW_DEFAULT_COMPANY_ID is silently sent with every stale ticket.
+EDITABLE_IN_COMPOSE = {"CW_COMPANY", "CW_PUBLIC_KEY", "CW_CLIENT_ID"}
 
 
 def _connectwise_entries(path: Path) -> list[tuple[int, str, str]]:
@@ -38,17 +42,23 @@ def test_connectwise_settings_are_read_from_env(filename: str) -> None:
         match = INTERPOLATION.match(value)
         if not match or match["name"] != key:
             problems.append(f"{filename}:{number} {key} is hard-coded as {value!r}; use ${{{key}...}}")
-        elif match["op"] and match["op"].endswith("-") and PLACEHOLDER.search(match["rest"] or ""):
+        elif (
+            key not in EDITABLE_IN_COMPOSE
+            and match["op"]
+            and match["op"].endswith("-")
+            and PLACEHOLDER.search(match["rest"] or "")
+        ):
             problems.append(f"{filename}:{number} {key} defaults to the sample value {match['rest']!r}")
     assert not problems, "\n".join(problems)
 
 
-def test_required_connectwise_credentials_fail_fast() -> None:
-    """Missing credentials must stop `docker compose up`, not start with blanks."""
+def test_private_key_is_required_and_identifiers_stay_optional() -> None:
+    """The private key must come from .env; the other credentials may stay in compose."""
     for filename in COMPOSE_FILES:
         values = {key: value for _, key, value in _connectwise_entries(ROOT / filename)}
-        for key in ("CW_COMPANY", "CW_PUBLIC_KEY", "CW_PRIVATE_KEY", "CW_CLIENT_ID"):
-            assert values.get(key, "").startswith(f"${{{key}:?"), f"{filename}: {key} must use ${{{key}:?...}}"
+        assert values["CW_PRIVATE_KEY"].startswith("${CW_PRIVATE_KEY:?"), f"{filename}: CW_PRIVATE_KEY must use :?"
+        for key in sorted(EDITABLE_IN_COMPOSE):
+            assert values[key].startswith(f"${{{key}:-"), f"{filename}: {key} must stay optional in .env"
 
 
 @pytest.mark.parametrize("filename", COMPOSE_FILES)

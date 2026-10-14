@@ -9,10 +9,10 @@ services:
     environment: &env
       - "CW_URL=${CW_URL:-https://api-na.myconnectwise.net/v4_6_release/apis/3.0}"
       - "CW_WEB_URL=${CW_WEB_URL:-}"
-      - "CW_COMPANY=${CW_COMPANY:?Set CW_COMPANY in .env}"
-      - "CW_PUBLIC_KEY=${CW_PUBLIC_KEY:?Set CW_PUBLIC_KEY in .env}"
+      - "CW_COMPANY=${CW_COMPANY:-your_company_id}"
+      - "CW_PUBLIC_KEY=${CW_PUBLIC_KEY:-your_public_key}"
       - "CW_PRIVATE_KEY=${CW_PRIVATE_KEY:?Set CW_PRIVATE_KEY in .env}"
-      - "CW_CLIENT_ID=${CW_CLIENT_ID:?Set CW_CLIENT_ID in .env}"
+      - "CW_CLIENT_ID=${CW_CLIENT_ID:-your_client_id}"
       - "CW_TICKET_PREFIX=${CW_TICKET_PREFIX:-Alert:}"
       - "CW_SERVICE_BOARD=${CW_SERVICE_BOARD:-Service Board}"
       - "CW_STATUS_NEW=${CW_STATUS_NEW:-New}"
