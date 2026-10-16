@@ -392,9 +392,9 @@ cryptography==50.0.2 \
     #   hookwise (pyproject.toml)
     #   msal
     #   pyjwt
-deprecated==1.3.1 \
-    --hash=sha256:597bfef186b6f60181535a29fbe44865ce137a5079f295b479886c82729d5f3f \
-    --hash=sha256:b1b50e0ff0c1fddaa5708a2c6b0a6588bb09b892825ab2b214ac9ea9d92a5223
+deprecated==3.0.0 \
+    --hash=sha256:16850204d3a1e6bb0acd06bff48d96e8b0a0d25d1c52f71705405a0f4894192d \
+    --hash=sha256:58204cf4a7f6270d547af5c278ee7a6bb56045a4b3d8441a1cd11660f41b7939
     # via limits
 flask==3.1.3 \
     --hash=sha256:0ef0e52b8a9cd932855379197dd8f94047b359ca0a78695144304cb45f87c9eb \
