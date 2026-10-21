@@ -1,32 +1,38 @@
-name: Cleanup Old GHCR Packages
-
+name: GHCR cleanup
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run (if true, will not delete anything)'
+        description: Report candidates without deleting images
         type: boolean
         default: true
-      keep_last_n:
-        description: 'Number of extra versions to keep (besides latest/main/dev/rollback)'
-        type: number
-        default: 5
-
+        required: true
 permissions:
   contents: read
-  packages: write
-
+concurrency:
+  group: ghcr-retention
+  cancel-in-progress: false
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
     steps:
-      - name: Delete old package versions
-        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+      - name: Prune only old unreferenced untagged manifests
+        # v3.1 preserves platform/SBOM/provenance children of retained OCI indexes.
+        # Tagged versions and commit tags remain available for rollback.
+        uses: docker://ghcr.io/snok/container-retention-policy@sha256:884037f146d6ef574b61fbcc59bef490f887322e6b9dc2eefcf364cb4e9b4112
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          package-name: ${{ github.event.repository.name }}
-          exclude-tags: ^(main|latest|dev|rollback)$
-          keep-n-tagged: ${{ inputs.keep_last_n }}
-          dry-run: ${{ inputs.dry_run }}
-          # Only target container packages
-          package-type: container
+          args: >-
+            --account=user
+            --token=${{ secrets.GITHUB_TOKEN }}
+            --image-names=${{ github.event.repository.name }}
+            --tag-selection=untagged
+            --keep-n-most-recent=30
+            --timestamp-to-use=updated_at
+            --cut-off=30d
+            --dry-run=${{ inputs.dry_run }}
+        env:
+          RUST_LOG: container_retention_policy=INFO
