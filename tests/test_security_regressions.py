@@ -459,16 +459,20 @@ assert.strictEqual(autosaveStarted, true);
 
 def test_all_workflow_actions_use_immutable_shas():
     workflows = Path(__file__).parents[1] / ".github/workflows"
-    action_ref = re.compile(r"uses:\s+[^@\s]+@([^\s#]+)")
+    action_ref = re.compile(r"uses:\s+([^@\s]+)@([^\s#]+)")
 
     refs = [
-        match.group(1)
+        match.groups()
         for workflow in workflows.glob("*.yml")
         for match in action_ref.finditer(workflow.read_text(encoding="utf-8"))
     ]
 
     assert refs
-    assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in refs)
+    for action, ref in refs:
+        # Container actions are pinned by OCI content digests, not Git commits.
+        # Mutable tags and abbreviated hashes remain invalid for either kind.
+        pattern = r"sha256:[0-9a-f]{64}" if action.startswith("docker://") else r"[0-9a-f]{40}"
+        assert re.fullmatch(pattern, ref), f"Mutable action reference: {action}@{ref}"
 
 
 def test_ci_uses_latest_python_and_recommended_pr_guards():
