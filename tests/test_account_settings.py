@@ -114,7 +114,7 @@ def test_local_account_settings_offer_password_2fa_and_sessions(account_app, acc
     assert b"Change password" in response.data
     assert b"Set up 2FA" in response.data
     assert b"This browser" in response.data
-    assert b'href="/logout" hx-boost="false"' in response.data
+    assert b'action="/logout" method="POST" hx-boost="false"' in response.data
     assert b"Managed by Microsoft 365" not in response.data
 
 
@@ -214,9 +214,8 @@ def test_basic_auth_does_not_register_a_persistent_browser_session(
     account_app, account_client, session_redis, monkeypatch
 ):
     _user(account_app, "admin")
-    monkeypatch.delenv("GUI_USERNAME", raising=False)
-    monkeypatch.setenv("GUI_PASSWORD", "test-password")
-    credentials = base64.b64encode(b"admin:test-password").decode("ascii")
+    monkeypatch.setenv("GUI_BASIC_AUTH", "true")
+    credentials = base64.b64encode(b"admin:old-password").decode("ascii")
 
     with patch("hookwise.user_sessions.start_user_session") as start_user_session:
         response = account_client.get(

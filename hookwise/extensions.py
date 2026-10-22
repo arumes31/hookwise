@@ -71,6 +71,11 @@ def socketio_allowed_origins(raw: str | None) -> str | list[str] | None:
     return origins or None
 
 
+# Socket.IO rooms for the live activity feed. A socket joins one of them only
+# after the connect handler in live_feed.py authorised its session.
+LIVE_ROOM = "live"
+LIVE_PAYLOAD_ROOM = "live:payloads"
+
 socketio = SocketIO(
     cors_allowed_origins=socketio_allowed_origins(os.environ.get("SOCKETIO_ALLOWED_ORIGINS")),
     async_mode=os.environ.get("SOCKETIO_ASYNC_MODE"),

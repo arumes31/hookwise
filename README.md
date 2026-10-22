@@ -279,12 +279,14 @@ Settings covers retention, system health notifications, CIPP exclusions, Connect
 
 ## 📋 API Reference
 
-GUI and administrative APIs require an authenticated browser session or configured HTTP Basic Auth. Browser sessions are subject to RBAC, and state-changing browser requests are CSRF-protected. Basic Auth is intended for trusted headless clients, must name an active HookWise account, and should be restricted with `GUI_TRUSTED_IPS`.
+GUI and administrative APIs require an authenticated browser session or, when enabled with `GUI_BASIC_AUTH=true`, HTTP Basic Auth. Browser sessions are subject to RBAC, and state-changing browser requests (including `POST /logout`) are CSRF-protected. Basic Auth is off by default; when enabled it is intended for trusted headless clients, checks the named **local** account's current password (not `GUI_PASSWORD`), refuses accounts with 2FA, allows 5 failed attempts per minute per address (audit-logged as `basic_auth_failed`), and should be restricted with `GUI_TRUSTED_IPS`.
+
+The live activity feed (Socket.IO) accepts only signed-in sessions with `dashboard:read` from `GUI_TRUSTED_IPS`; webhook payloads are streamed only to sessions that also hold `history:read`.
 
 > [!CAUTION]
 > Treat the configured Basic Auth credential as privileged automation access, not as a least-privilege replacement for an interactive RBAC session.
 
-Webhook authentication is configured per endpoint: Bearer and HMAC may be used independently or together; when both are configured, both must validate. Disabling both is rejected unless **Explicitly allow unauthenticated delivery** is enabled. Trusted-IP/CIDR restrictions and per-endpoint rate limits apply independently of the authentication mode.
+Webhook authentication is configured per endpoint: Bearer and HMAC may be used independently or together; when both are configured, both must validate. Disabling both is rejected unless **Explicitly allow unauthenticated delivery** is enabled. Trusted-IP/CIDR restrictions and per-endpoint rate limits apply independently of the authentication mode. Rejected requests (401/403) do not count against the endpoint's rate limit; instead each source address may cause `WEBHOOK_REJECTION_LIMIT` rejections (default `30 per minute`) before receiving `429`. Rejections are sampled into history (at most 10 per endpoint and minute) and store only a SHA-256 digest, the size and a short masked JSON preview of the body.
 
 ### Webhook Ingestion
 
@@ -307,7 +309,7 @@ Webhook authentication is configured per endpoint: Bearer and HMAC may be used i
 - `GET /health` and `GET /readyz` are deliberately unauthenticated container probes.
 - `GET /health/services` reports Redis, PostgreSQL, and Celery state; browser-session access requires `settings:read`.
 - `GET /health/llm` and `GET /api/health/llm` report Ollama health; browser-session access requires `settings:read`.
-- `GET /metrics` exports Prometheus metrics and requires authentication; use an active Basic Auth account for a headless scraper.
+- `GET /metrics` exports Prometheus metrics and requires authentication; for a headless scraper set `GUI_BASIC_AUTH=true` and use an active local account without 2FA.
 
 ---
 
@@ -425,10 +427,13 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 |----------|-------|
 | `SECRET_KEY` | Flask session-signing secret. Always set a stable value outside disposable local development. |
 | `DEBUG_MODE` | Development conveniences only: permits a temporary random `SECRET_KEY` when none is configured, shows the red UI badge, and skips the confirmation before replaying a webhook. It does **not** enable Flask's interactive debugger or verbose logging and must remain `false` in production. |
-| `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** |
+| `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** Keys published in this repository's history are refused at startup; see [Rotating the encryption key](#rotating-the-encryption-key). |
 | `RBAC_ENFORCE` | Role enforcement: `on` (default), `log` (check + log only), `off`. See [Identity & Access](#-identity--access-rbac--entra-id). |
 | `ENTRA_*` | Microsoft Entra ID sign-in — see [Identity & Access](#-identity--access-rbac--entra-id). |
-| `GUI_USERNAME` / `GUI_PASSWORD` | Basic-auth credentials for trusted headless clients. The username must belong to an **active HookWise account**; pair this with `GUI_TRUSTED_IPS`. |
+| `GUI_USERNAME` / `GUI_PASSWORD` | `GUI_PASSWORD` bootstraps the local `admin` account (`BOOTSTRAP_ADMIN=true` or `flask bootstrap-admin`). It is no longer accepted as a Basic Auth secret. |
+| `GUI_BASIC_AUTH` | Enable HTTP Basic Auth for headless clients (Default: `false`). Credentials are checked against the account's current password; accounts with 2FA are refused. Pair with `GUI_TRUSTED_IPS`. |
+| `HOOKWISE_BIND_ADDRESS` | Host address the Compose files publish port 5000 on (Default: `127.0.0.1`). Use `0.0.0.0` only if HookWise must be reachable without a reverse proxy on the same host. |
+| `WEBHOOK_REJECTION_LIMIT` | Rejected webhook requests allowed per source address (Default: `30 per minute`). |
 | `GUI_TRUSTED_IPS` | Optional global IP/CIDR allowlist for authenticated GUI and administrative routes (e.g., `10.0.0.0/24, 192.168.1.5`). |
 | `LOG_RETENTION_DAYS` | Auto-cleanup limit for the `webhook_log` table. |
 | `SESSION_COOKIE_SECURE` | Send the session cookie only over HTTPS (Default: `true` outside tests). Disable only for local HTTP development. |
@@ -789,10 +794,28 @@ when enrolled), clear the Entra binding, enable/disable and delete. Two
 invariants are enforced server-side: the last active holder of `user:manage`
 cannot be deactivated or deleted, and you cannot delete your own account.
 
-**Note for headless/API clients:** HTTP Basic Auth authenticates against
-`GUI_USERNAME`/`GUI_PASSWORD` and requires an **active HookWise account with
-that username**. Treat it as a trusted automation credential and restrict its
+**Note for headless/API clients:** HTTP Basic Auth is disabled unless
+`GUI_BASIC_AUTH=true`. It then authenticates against the named **active local
+HookWise account's current password** (a password changed in the console takes
+effect immediately; `GUI_PASSWORD` is not a Basic Auth secret). Accounts with
+2FA are refused. Treat it as a trusted automation credential and restrict its
 source addresses with `GUI_TRUSTED_IPS`.
+
+### Rotating the encryption key
+
+HookWise refuses to start with a Fernet key that is public, including the
+`ENCRYPTION_KEY` that was the `docker-compose.yml` default in early 2026. If
+your deployment ever used it, rotate:
+
+1. Generate a new key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+2. Stop `hookwise-proxy`, `hookwise-worker` and `hookwise-beat`.
+3. Run once with the new key in `ENCRYPTION_KEY` and the old key in
+   `OLD_ENCRYPTION_KEY`, e.g.
+   `docker compose run --rm -e OLD_ENCRYPTION_KEY=<old> hookwise-migrate flask rotate-encryption-key`.
+   Endpoint bearer tokens, HMAC secrets and TOTP seeds are re-encrypted in one
+   transaction; nothing changes if any secret matches neither key.
+4. Start the services. Backups created before the rotation remain encrypted
+   with the old key.
 
 ---
 

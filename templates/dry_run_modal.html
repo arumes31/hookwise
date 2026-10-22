@@ -112,13 +112,15 @@
                 });
                 const data = await resp.json();
                 const badgeClass = actionClasses[data.action] || 'hw-dry-badge--muted';
-                badgeEl.innerHTML = `<span class="hw-t-md hw-dry-badge ${badgeClass}">${(data.action || '').replace(/_/g, ' ').toUpperCase()}</span>`;
+                // Every value derives from the pasted alert payload: escape it.
+                const esc = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+                badgeEl.innerHTML = `<span class="hw-t-md hw-dry-badge ${badgeClass}">${esc((data.action || '').replace(/_/g, ' ').toUpperCase())}</span>`;
                 detailEl.innerHTML = [
-                    data.ticket_summary ? `<div><span class="hw-dry-muted">Ticket Summary:</span> <strong>${data.ticket_summary}</strong></div>` : '',
-                    data.description ? `<div style="margin-top:6px;"><span class="hw-dry-muted">Description:</span><pre class="hw-t-sm hw-dry-code" style="margin:4px 0 0; max-height:120px; overflow-y:auto">${data.description}</pre></div>` : '',
-                    data.company_id ? `<div><span class="hw-dry-muted">Company ID:</span> <strong>${data.company_id}</strong></div>` : '',
-                    data.board ? `<div><span class="hw-dry-muted">Board:</span> <strong>${data.board}</strong></div>` : '',
-                    data.reason ? `<div><span class="hw-dry-muted">Reason:</span> <strong>${data.reason}</strong></div>` : '',
+                    data.ticket_summary ? `<div><span class="hw-dry-muted">Ticket Summary:</span> <strong>${esc(data.ticket_summary)}</strong></div>` : '',
+                    data.description ? `<div style="margin-top:6px;"><span class="hw-dry-muted">Description:</span><pre class="hw-t-sm hw-dry-code" style="margin:4px 0 0; max-height:120px; overflow-y:auto">${esc(data.description)}</pre></div>` : '',
+                    data.company_id ? `<div><span class="hw-dry-muted">Company ID:</span> <strong>${esc(data.company_id)}</strong></div>` : '',
+                    data.board ? `<div><span class="hw-dry-muted">Board:</span> <strong>${esc(data.board)}</strong></div>` : '',
+                    data.reason ? `<div><span class="hw-dry-muted">Reason:</span> <strong>${esc(data.reason)}</strong></div>` : '',
                 ].join('');
                 stepsEl.textContent = JSON.stringify(data.steps, null, 2);
                 resultEl.style.display = 'block';

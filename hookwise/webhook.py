@@ -1,12 +1,16 @@
 """Webhook ingestion route."""
 
+import hashlib
 import ipaddress
 import json
+import logging
+import os
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from flask import g, jsonify, request
+from flask import Response, g, jsonify, request
+from flask_limiter.util import get_remote_address
 from prometheus_client import Counter
 
 from .extensions import csrf, db, limiter, redis_client
@@ -17,6 +21,26 @@ from .tasks import process_webhook_task
 from .utils import decrypt_string, log_to_web, mask_secrets
 
 WEBHOOK_COUNT = Counter("hookwise_webhooks_received_total", "Total webhooks received", ["status", "config_name"])
+
+# Rejected (401/403) requests per source address. They no longer consume the
+# endpoint budget, so a client without the token cannot starve real alerts.
+_REJECTION_LIMIT_DEFAULT = "30 per minute"
+# At most this many rejections per endpoint and minute reach the history table.
+_REJECTION_LOG_SAMPLE = "10 per minute"
+_REJECTION_PREVIEW_CHARS = 512
+
+
+def _rejection_rate_limit() -> str:
+    return os.environ.get("WEBHOOK_REJECTION_LIMIT", "").strip() or _REJECTION_LIMIT_DEFAULT
+
+
+def _is_rejection(response: Response) -> bool:
+    return response.status_code in (401, 403)
+
+
+def _counts_against_endpoint(response: Response) -> bool:
+    """Only requests that passed authentication spend the endpoint budget."""
+    return not _is_rejection(response)
 
 
 def _endpoint_rate_limit() -> str:
@@ -49,17 +73,44 @@ def _record_rate_limit_usage(config: WebhookConfig) -> None:
         return
 
 
+def _rejected_body_summary() -> str:
+    """Describe a rejected body without storing it verbatim.
+
+    The sender is unauthenticated, so only a digest, the size and a short
+    masked JSON preview are kept -- never raw non-JSON bodies.
+    """
+    raw = request.get_data(cache=True) or b""
+    summary: dict[str, Any] = {
+        "rejected_body_sha256": hashlib.sha256(raw).hexdigest(),
+        "rejected_body_bytes": len(raw),
+    }
+    payload_data = request.get_json(silent=True)
+    if payload_data is not None:
+        preview = json.dumps(mask_secrets(payload_data))
+        summary["preview"] = preview[:_REJECTION_PREVIEW_CHARS]
+        summary["preview_truncated"] = len(preview) > _REJECTION_PREVIEW_CHARS
+    return json.dumps(summary)
+
+
+def _rejection_log_sampled(config_id: str) -> bool:
+    """Bound how many rejections per endpoint and minute are written."""
+    from limits import parse
+
+    try:
+        return bool(limiter.limiter.hit(parse(_REJECTION_LOG_SAMPLE), "webhook-rejection-log", config_id))
+    except Exception:
+        return True
+
+
 def _log_webhook_rejection(config_id: str, request_id: str, error_msg: str) -> None:
     """Log a rejected webhook to the database."""
+    if not _rejection_log_sampled(config_id):
+        return
     try:
         try:
-            payload_data = request.get_json(silent=True)
-            if payload_data is not None:
-                payload_str = json.dumps(mask_secrets(payload_data))
-            else:
-                payload_str = request.get_data(as_text=True) or "{}"
+            payload_str = _rejected_body_summary()
         except Exception:
-            payload_str = request.get_data(as_text=True) or "{}"
+            payload_str = "{}"
 
         headers_dict = dict(request.headers)
         headers_dict.pop("Authorization", None)
@@ -83,8 +134,6 @@ def _log_webhook_rejection(config_id: str, request_id: str, error_msg: str) -> N
         db.session.add(log_entry)
         db.session.commit()
     except Exception as _e:
-        import logging
-
         logging.getLogger(__name__).error(f"Failed to log webhook rejection: {_e}")
         db.session.rollback()
 
@@ -167,7 +216,13 @@ def _register() -> None:
 
     @main_bp.route("/w/<config_id>", methods=["POST"])
     @csrf.exempt
-    @limiter.limit(_endpoint_rate_limit, key_func=_endpoint_rate_limit_key)
+    @limiter.limit(_endpoint_rate_limit, key_func=_endpoint_rate_limit_key, deduct_when=_counts_against_endpoint)
+    @limiter.limit(
+        _rejection_rate_limit,
+        key_func=get_remote_address,
+        deduct_when=_is_rejection,
+        scope="webhook-rejections",
+    )
     def dynamic_webhook(config_id: str) -> Any:
         request_id = g.request_id
         config = WebhookConfig.query.get(config_id)

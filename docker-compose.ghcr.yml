@@ -4,7 +4,9 @@ services:
     container_name: hookwise-proxy
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      # Loopback only: publish through a TLS reverse proxy. Set
+      # HOOKWISE_BIND_ADDRESS=0.0.0.0 in .env to expose plain HTTP on every interface.
+      - "${HOOKWISE_BIND_ADDRESS:-127.0.0.1}:5000:5000"
     environment: &env
       - "CW_URL=${CW_URL:-https://api-na.myconnectwise.net/v4_6_release/apis/3.0}"
       - "CW_WEB_URL=${CW_WEB_URL:-}"
@@ -48,6 +50,8 @@ services:
       - "ENCRYPTION_KEY=${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}"
       - "GUI_USERNAME=admin"
       - "GUI_PASSWORD=${GUI_PASSWORD:?Set GUI_PASSWORD in .env}"
+      # HTTP Basic Auth for headless clients (e.g. a Prometheus scraper) is opt-in.
+      - "GUI_BASIC_AUTH=${GUI_BASIC_AUTH:-false}"
       - "GUI_TRUSTED_IPS="
       - "LOG_RETENTION_DAYS=30"
       - "OLLAMA_HOST=http://hookwise-llm:11434"

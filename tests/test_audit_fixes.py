@@ -173,20 +173,22 @@ def test_cleanup_logs_bounds_huge_redis_and_environment_values(audit_app):
 
 
 # --------------------------------------------------------------------- SEC-01
-def test_basic_auth_is_refused_for_an_account_with_2fa(audit_app, audit_client):
+def test_basic_auth_is_refused_for_an_account_with_2fa(audit_app, audit_client, monkeypatch):
     """Basic Auth has no second step, so it must not stand in for one."""
+    monkeypatch.setenv("GUI_BASIC_AUTH", "true")
     _account(audit_app, "admin", secret=pyotp.random_base32())
 
-    response = audit_client.get("/settings", headers=_basic("admin", "test-password"))
+    response = audit_client.get("/settings", headers=_basic("admin", "old-password"))
 
     assert response.status_code == 403
     assert b"two-factor" in response.data.lower()
 
 
-def test_basic_auth_still_works_without_2fa(audit_app, audit_client):
+def test_basic_auth_still_works_without_2fa(audit_app, audit_client, monkeypatch):
+    monkeypatch.setenv("GUI_BASIC_AUTH", "true")
     _account(audit_app, "admin")
 
-    response = audit_client.get("/settings", headers=_basic("admin", "test-password"))
+    response = audit_client.get("/settings", headers=_basic("admin", "old-password"))
 
     assert response.status_code == 200
 
@@ -207,7 +209,7 @@ def test_a_totp_code_cannot_be_used_twice(audit_app, audit_client):
         erste = audit_client.post("/login", data={"otp": code}, follow_redirects=False)
         assert erste.status_code == 302
 
-        audit_client.get("/logout", follow_redirects=False)
+        audit_client.post("/logout", follow_redirects=False)
         audit_client.post("/login", data={"username": "otp-user", "password": "old-password"})
         zweite = audit_client.post("/login", data={"otp": code}, follow_redirects=False)
 

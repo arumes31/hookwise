@@ -125,7 +125,10 @@
                         </small>
                     </div>
                     {% if active_session.current %}
-                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.logout') }}" hx-boost="false">Sign out</a>
+                    <form action="{{ url_for('main.logout') }}" method="POST" hx-boost="false">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">Sign out</button>
+                    </form>
                     {% else %}
                     <form action="{{ url_for('main.revoke_own_session', session_id=active_session.id) }}" method="POST"
                         hx-boost="false" class="hw-session-revoke-form">

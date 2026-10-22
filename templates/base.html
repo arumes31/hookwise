@@ -174,9 +174,12 @@
                     {{ nav_icon('settings') }}<span>System</span>
                 </a>
                 {% endif %}
-                <a class="nav-link" href="{{ url_for('main.logout') }}" hx-boost="false">
-                    {{ nav_icon('logout') }}<span>Logout</span>
-                </a>
+                <form action="{{ url_for('main.logout') }}" method="POST" hx-boost="false" style="display: contents">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="nav-link nav-logout">
+                        {{ nav_icon('logout') }}<span>Logout</span>
+                    </button>
+                </form>
                 {% else %}
                 <!-- Login removed from navbar as all pages are protected -->
                 {% endif %}

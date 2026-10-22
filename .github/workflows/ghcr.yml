@@ -155,11 +155,13 @@ jobs:
           DATABASE_URL: postgresql://hookwise:staging-only-db@127.0.0.1:5432/hookwise_staging
           REDIS_HOST: 127.0.0.1
           SECRET_KEY: hookwise-synthetic-staging-session-key
-          ENCRYPTION_KEY: vmJ34RDpkZk7-sUqAwq0lMA2QN0P0SEAEuC874kov5E=
           GUI_PASSWORD: HookWise-Staging-Only-2026
           SESSION_COOKIE_SECURE: 'false'
         shell: bash
         run: |
+          # Fresh throwaway key: the app refuses keys published in this repository.
+          ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+          export ENCRYPTION_KEY
           docker_env=(--env DATABASE_URL --env REDIS_HOST --env SECRET_KEY --env ENCRYPTION_KEY
             --env GUI_PASSWORD --env SESSION_COOKIE_SECURE)
           docker run --rm --network host "${docker_env[@]}" --env RBAC_SCHEMA_BOOTSTRAP=false "$IMAGE@$DIGEST" \
