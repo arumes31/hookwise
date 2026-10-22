@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+{% set v = values if values is not none else {} %}
+<div class="mb-4"><h1 class="fw-bold">{{ 'Kunden-Webhook bearbeiten' if hook else 'Kunden-Webhook anlegen' }}</h1>
+<p class="text-secondary">Der Kunde übernimmt die weitere Alarmierung nach Empfang des Webhooks.</p></div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<form method="post" class="glass-card p-4" hx-boost="false">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row g-4">
+    <div class="col-md-6"><label for="name" class="form-label">Name</label>
+      <input id="name" name="name" class="form-control" maxlength="100" required value="{{ v.get('name', hook.name if hook else '') }}"></div>
+    <div class="col-md-6"><label for="company_id" class="form-label">Kunde / CW Company ID</label>
+      <input id="company_id" name="company_id" class="form-control" list="companies" maxlength="50" required
+        {% if hook %}readonly{% endif %} value="{{ v.get('company_id', hook.company_id if hook else '') }}" aria-describedby="company-help">
+      <datalist id="companies">{% for company_id, description in companies %}<option value="{{ company_id }}">{{ description or company_id }}</option>{% endfor %}</datalist>
+      <div id="company-help" class="form-text">Muss der Kundenzuordnung des Endpoints bzw. der TenantMap entsprechen.</div></div>
+    <div class="col-md-6"><label for="config_id" class="form-label">Quell-Endpoint</label>
+      <select id="config_id" name="config_id" class="form-select" required {% if hook %}disabled{% endif %}>
+        <option value="">Bitte auswählen</option>{% for config in configs %}
+        <option value="{{ config.id }}" {% if v.get('config_id', hook.config_id if hook else '') == config.id %}selected{% endif %}>{{ config.name }}</option>{% endfor %}
+      </select>{% if hook %}<input type="hidden" name="config_id" value="{{ hook.config_id }}">{% endif %}
+      <div class="form-text">Wähle z. B. den Endpoint, der Defender-Alerts empfängt.</div></div>
+    <div class="col-md-6"><label for="target_url" class="form-label">Ziel-URL (HTTPS)</label>
+      <input id="target_url" name="target_url" type="url" class="form-control" maxlength="2048" autocomplete="off" {% if not hook %}required{% endif %}
+        placeholder="{{ 'Leer lassen: gespeichertes Ziel beibehalten' if hook else 'https://alarm.kunde.at/webhook' }}">
+      <div class="form-text">Öffentlich erreichbares HTTPS-Ziel auf Port 443. Die URL wird verschlüsselt gespeichert.</div></div>
+    <div class="col-md-6"><label for="score_path" class="form-label">Score-Feld im Alarm (JSONPath)</label>
+      <input id="score_path" name="score_path" class="form-control font-monospace" maxlength="200" required
+        value="{{ v.get('score_path', hook.score_path if hook else '$.score') }}" aria-describedby="score-help">
+      <div id="score-help" class="form-text">Beispiele: <code>$.score</code>, <code>$.riskScore</code>, <code>$.Results[*].Score</code>.
+        Fehlende oder nicht numerische Scores lösen nichts aus.</div></div>
+    <div class="col-md-6"><label for="minimum_score" class="form-label">Mindestscore (einschließlich)</label>
+      <input id="minimum_score" name="minimum_score" type="number" class="form-control" min="0" step="any" required
+        value="{{ v.get('minimum_score', hook.minimum_score if hook else 70) }}"></div>
+    {% for field, label in [('bearer_token', 'Bearer-Token des Kunden (optional)'), ('signing_secret', 'HMAC-Signaturschlüssel (optional)')] %}
+    <div class="col-md-6"><label for="{{ field }}" class="form-label">{{ label }}</label>
+      <input id="{{ field }}" name="{{ field }}" type="password" class="form-control" maxlength="2048" autocomplete="new-password"
+        placeholder="{{ 'Leer lassen: beibehalten' if hook else '' }}">
+      {% if hook and hook[field] %}<div class="form-check mt-2"><input id="clear_{{ field }}" name="clear_{{ field }}" class="form-check-input" type="checkbox">
+      <label for="clear_{{ field }}" class="form-check-label">Gespeicherten Schlüssel entfernen</label></div>{% endif %}
+      <div class="form-text">{% if field == 'bearer_token' %}Zur Anmeldung am Kundensystem. Den Token stellt der Kunde bereit.{% else %}Zur Prüfung von Absender und unverändertem Inhalt. Der Empfänger muss die HMAC-Signatur prüfen können.{% endif %}</div>
+    </div>{% endfor %}
+    <div class="col-12"><label for="comment" class="form-label">Kommentar / interne Notizen (optional)</label>
+      <textarea id="comment" name="comment" class="form-control" rows="3" maxlength="2000" aria-describedby="comment-help"
+        placeholder="Z. B. Ansprechpartner, zuständige Alarmierungskette oder Hinweise zur Übergabe">{{ v.get('comment', (hook.comment or '') if hook else '') }}</textarea>
+      <div id="comment-help" class="form-text">Bis zu 2000 Zeichen. Nur intern sichtbar; wird nicht mit dem Webhook übertragen. Hier keine Zugangsdaten hinterlegen.</div>
+    </div>
+    <div class="col-12"><div class="form-check">
+      <input id="is_enabled" name="is_enabled" type="checkbox" class="form-check-input"
+        {% if (values is not none and v.get('is_enabled') == 'on') or (values is none and (not hook or hook.is_enabled)) %}checked{% endif %}>
+      <label for="is_enabled" class="form-check-label">Webhook aktiv</label></div></div>
+  </div>
+  <p class="text-secondary small mt-4">Die Übertragung ist über HTTPS/TLS verschlüsselt; das Serverzertifikat wird geprüft.
+    HMAC ergänzt eine Signatur zur Echtheitsprüfung. Eine zusätzliche Verschlüsselung des JSON-Inhalts ist nicht eingerichtet.</p>
+  <p class="text-secondary small mt-4">Gesendet wird das Alarmobjekt, das den passenden Score enthält.
+    Identische Alarmdaten werden je Webhook einmal vorgemerkt. Bei temporären Fehlern folgen bis zu fünf Zustellversuche.
+    Der Empfänger sollte die Zustell-ID zur Deduplizierung verwenden.</p>
+  <div class="d-flex gap-2 mt-4"><button class="btn btn-primary" type="submit">Speichern</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('main.customer_webhooks') }}">Abbrechen</a></div>
+</form>
+{% endblock %}

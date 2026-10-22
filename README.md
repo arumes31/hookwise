@@ -14,6 +14,10 @@
 
 HookWise is a high-performance webhook router that connects monitoring and security sources such as Uptime Kuma, Zabbix, Grafana, Datadog, and CIPP to **ConnectWise Manage** tickets. It provides company-aware duplicate detection, durable asynchronous delivery, optional local AI analysis, and configuration/asset association.
 
+Customer-owned alarm chains can receive matching alerts through **Kunden-Webhooks**:
+configure a customer, source endpoint, HTTPS target and minimum numeric score.
+See [Kunden-Webhooks](docs/CUSTOMER_WEBHOOKS.md) for setup, delivery guarantees and the receiver contract.
+
 ---
 
 ## 📍 Table of Contents

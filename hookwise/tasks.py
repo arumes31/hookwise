@@ -695,6 +695,10 @@ celery.conf.beat_schedule = {
         "task": "hookwise.dispatch_delivery_outbox",
         "schedule": 10.0,
     },
+    "dispatch-customer-webhooks": {
+        "task": "hookwise.dispatch_customer_webhooks",
+        "schedule": 10.0,
+    },
 }
 
 # Execution guards: a hung ConnectWise/LLM call must not pin a worker forever.
@@ -810,6 +814,13 @@ def dispatch_delivery_outbox() -> dict[str, int]:
 
     dispatched, failed = dispatch_pending()
     return {"dispatched": dispatched, "failed": failed}
+
+
+@celery.task(name="hookwise.dispatch_customer_webhooks")  # type: ignore[untyped-decorator]
+def dispatch_customer_webhooks() -> dict[str, int]:
+    from .services.customer_webhooks import dispatch_customer_deliveries
+
+    return dispatch_customer_deliveries()
 
 
 @celery.task(name="hookwise.cleanup_logs")  # type: ignore[untyped-decorator]

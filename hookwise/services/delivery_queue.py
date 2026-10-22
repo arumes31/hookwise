@@ -34,6 +34,9 @@ def stage_delivery(
         ),
     )
     db.session.add(outbox)
+    from .customer_webhooks import stage_customer_deliveries
+
+    stage_customer_deliveries(log, data)
     return outbox
 
 

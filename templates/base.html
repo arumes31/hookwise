@@ -148,6 +148,12 @@
                     href="{{ url_for('main.tenantmap') }}"{% if request.endpoint == 'main.tenantmap' %} aria-current="page"{% endif %}>
                     {{ nav_icon('tenantmap') }}<span>TenantMap</span>
                 </a>
+                {% if hw_kann('endpoint:read') %}
+                <a class="nav-link{% if request.endpoint in ['main.customer_webhooks', 'main.new_customer_webhook', 'main.edit_customer_webhook', 'main.customer_webhook_deliveries'] %} active{% endif %}"
+                    href="{{ url_for('main.customer_webhooks') }}"{% if request.endpoint in ['main.customer_webhooks', 'main.new_customer_webhook', 'main.edit_customer_webhook', 'main.customer_webhook_deliveries'] %} aria-current="page"{% endif %}>
+                    {{ nav_icon('bell') }}<span>Kunden-Webhooks</span>
+                </a>
+                {% endif %}
                 <a class="nav-link{% if request.endpoint == 'main.history' %} active{% endif %}"
                     href="{{ url_for('main.history') }}"{% if request.endpoint == 'main.history' %} aria-current="page"{% endif %}>
                     {{ nav_icon('history') }}<span>History</span>

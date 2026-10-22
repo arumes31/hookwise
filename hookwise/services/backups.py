@@ -7,8 +7,8 @@ from typing import Any
 from cryptography.fernet import InvalidToken
 
 from ..extensions import db
-from ..models import EndpointTag, GlobalMapping, User, UserPreference, WebhookConfig
-from ..utils import get_fernet
+from ..models import CustomerWebhook, EndpointTag, GlobalMapping, User, UserPreference, WebhookConfig
+from ..utils import decrypt_string, get_fernet
 from .tenant_mappings import bump_mapping_cache_revision
 
 BACKUP_FORMAT = "hookwise-config"
@@ -57,6 +57,18 @@ CONFIG_FIELDS = {
     "timeout_alerts_enabled",
     "timeout_hours",
 }
+CUSTOMER_WEBHOOK_FIELDS = {
+    "comment",
+    "name",
+    "config_id",
+    "company_id",
+    "target_url",
+    "score_path",
+    "minimum_score",
+    "bearer_token",
+    "signing_secret",
+    "is_enabled",
+}
 BOOLEAN_FIELDS = {
     "bearer_auth_enabled",
     "allow_unauthenticated",
@@ -103,6 +115,10 @@ def export_backup() -> bytes:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "configs": [_config_record(config) for config in WebhookConfig.query.order_by(WebhookConfig.id).all()],
         "global_mappings": [mapping.to_dict() for mapping in GlobalMapping.query.order_by(GlobalMapping.id).all()],
+        "customer_webhooks": [
+            {"id": hook.id, **{field: getattr(hook, field) for field in CUSTOMER_WEBHOOK_FIELDS}}
+            for hook in CustomerWebhook.query.order_by(CustomerWebhook.id).all()
+        ],
         "preferences": [
             {
                 "username": preference.user.username,
@@ -253,7 +269,56 @@ def restore_backup(document: dict[str, Any]) -> int:
             if field in record:
                 setattr(preference, field, record[field])
         db.session.add(preference)
+    _restore_customer_webhooks(document.get("customer_webhooks", []))
     db.session.commit()
     if mappings:
         bump_mapping_cache_revision()
     return len(configs)
+
+
+def _restore_customer_webhooks(records: Any) -> None:
+    from .customer_webhooks import numeric_score, validate_score_path, validate_target_url
+
+    if not isinstance(records, list) or len(records) > MAX_CONFIGS:
+        raise BackupValidationError("Customer webhooks are invalid")
+    seen = set()
+    for record in records:
+        if isinstance(record, dict):
+            record = {"comment": None, **record}
+        if not isinstance(record, dict) or set(record) != CUSTOMER_WEBHOOK_FIELDS | {"id"}:
+            raise BackupValidationError("Customer webhook fields are invalid")
+        if record["comment"] is not None and (not isinstance(record["comment"], str) or len(record["comment"]) > 2000):
+            raise BackupValidationError("Customer webhook comment is invalid")
+        for field, maximum in (("id", 36), ("config_id", 64), ("company_id", 50), ("name", 100)):
+            if not isinstance(record[field], str) or not 1 <= len(record[field].strip()) <= maximum:
+                raise BackupValidationError(f"Customer webhook {field} is invalid")
+        if record["id"] in seen:
+            raise BackupValidationError("Duplicate customer webhook id")
+        seen.add(record["id"])
+        config = db.session.get(WebhookConfig, record["config_id"])
+        if config is None:
+            raise BackupValidationError("Customer webhook source does not exist")
+        if not isinstance(record["is_enabled"], bool) or numeric_score(record["minimum_score"]) is None:
+            raise BackupValidationError("Customer webhook threshold or state is invalid")
+        try:
+            if not isinstance(record["score_path"], str) or not isinstance(record["target_url"], str):
+                raise ValueError("Invalid path or target")
+            validate_score_path(record["score_path"])
+            validate_target_url(decrypt_string(record["target_url"]))
+            for field in ("bearer_token", "signing_secret"):
+                value = record[field]
+                if value is not None:
+                    if not isinstance(value, str):
+                        raise ValueError("Invalid credential")
+                    value = decrypt_string(value)
+                    if len(value) > 2048 or "\r" in value or "\n" in value:
+                        raise ValueError("Invalid credential")
+        except ValueError as exc:
+            raise BackupValidationError("Customer webhook target, path or credentials are invalid") from exc
+        hook = db.session.get(CustomerWebhook, record["id"])
+        if hook and (hook.company_id != record["company_id"] or hook.config_id != record["config_id"]):
+            raise BackupValidationError("Existing customer webhook source and customer cannot change")
+        hook = hook or CustomerWebhook(id=record["id"])
+        for field in CUSTOMER_WEBHOOK_FIELDS:
+            setattr(hook, field, record[field])
+        db.session.add(hook)

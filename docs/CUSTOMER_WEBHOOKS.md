@@ -1,0 +1,119 @@
+# Kunden-Webhooks
+
+Unter **Kunden-Webhooks → Webhook anlegen** lässt sich eine ausgehende
+Alarmierung konfigurieren. Die weitere Alarmierungskette betreibt der Kunde.
+
+1. Namen, CW Company ID und den eingehenden Quell-Endpoint auswählen.
+2. Die öffentlich erreichbare HTTPS-Ziel-URL des Kunden eintragen (Port 443).
+3. Das numerische Score-Feld und den Mindestscore festlegen, z. B. `$.score`
+   und `70`. Gleichheit ist eingeschlossen. Für CIPP-Batches ist beispielsweise
+   `$.Results[*].Score` möglich, sofern die tatsächliche Payload dieses Feld enthält.
+4. Bei Bedarf einen Bearer-Token und/oder einen gemeinsamen HMAC-Schlüssel
+   hinterlegen und speichern.
+5. Im Feld **Kommentar / interne Notizen** können Ansprechpartner, die
+   zuständige Alarmierungskette oder Übergabehinweise dokumentiert werden
+   (maximal 2000 Zeichen). Diese Notiz erscheint intern in der Übersicht,
+   wird im Konfigurationsbackup gesichert und nicht an den Empfänger gesendet.
+   Zugangsdaten gehören in die dafür vorgesehenen Felder.
+
+Der Score-Pfad muss zur tatsächlich eingehenden JSON-Meldung passen. Es gibt
+keine automatische Umrechnung von Defender-Severity (`high`, `medium` usw.)
+in einen numerischen Score. Fehlende, negative, unendliche, boolesche oder
+nicht numerische Werte lösen keine Zustellung aus.
+
+## Kundenzuordnung und Verhalten
+
+- Eine Konfiguration gehört immer zu genau einem Kunden und Quell-Endpoint.
+  Mehrere Ziele pro Kunde sind möglich.
+- Die Kundenauflösung berücksichtigt JSON-Mapping, Routing-Regeln, den
+  `#CW`-Marker, TenantMap und die konfigurierte Standardfirma. Auf gemeinsam
+  genutzten Endpoints mit globalem Routing werden unbekannte oder mehrdeutige
+  Tenants ohne explizite Kundenauflösung nicht an eine Standardfirma weitergeleitet.
+- Der Tenant steht wie bei der bestehenden Verarbeitung auf Payload-Ebene
+  oder in `TaskInfo`; mandantenübergreifende Batches mit wechselndem Tenant
+  innerhalb der einzelnen Ergebnisse werden nicht unterstützt.
+- Pausierte, archivierte oder als Entwurf gespeicherte Quellen,
+  Wartungsfenster, verworfene Meldungen und Recovery-Meldungen lösen nichts aus.
+- Die Zustellung wird mit der eingehenden Meldung in derselben
+  Datenbanktransaktion vorgemerkt. ConnectWise-Ticketfehler blockieren sie nicht.
+- Der Celery-Beat-Job `hookwise.dispatch_customer_webhooks` prüft alle zehn
+  Sekunden auf fällige Zustellungen. Web, Worker und Beat müssen denselben
+  aktuellen Code und dieselbe Datenbank verwenden.
+- Identische Alarmobjekte werden je Webhook anhand ihres Inhalts dedupliziert,
+  solange ihr Zustelleintrag existiert. Geänderte Alarmdaten können erneut auslösen.
+  Beim Pausieren werden bereits vorgemerkte Zustellungen beim nächsten Lauf
+  abgebrochen; beim Aktivieren werden diese nicht nachgeholt.
+
+## Empfänger-Vertrag
+
+Hookwise sendet `POST` mit `Content-Type: application/json`:
+
+```json
+{
+  "event": "hookwise.customer_alert",
+  "version": 1,
+  "company_id": "123",
+  "source_endpoint_id": "source-id",
+  "request_id": "incoming-request-id",
+  "score": 85.0,
+  "minimum_score": 70.0,
+  "alert": {"AlertId": "defender-alert-1", "Score": 85}
+}
+```
+
+`alert` enthält nur das Objekt, in dem sich das passende Score-Feld befindet.
+Andere Batch-Einträge und eingehende HTTP-Header werden nicht mitgeschickt.
+Bekannte Geheimnisfelder werden durch Hookwise maskiert. Mit `$.score` auf
+oberster Ebene ist das Alarmobjekt die gesamte eingehende JSON-Payload.
+
+`Idempotency-Key` und `X-HookWise-Delivery-ID` enthalten dieselbe stabile
+Zustell-ID. Der Empfänger sollte diese dauerhaft deduplizieren, bevor er eine
+Alarmierungskette startet: Wenn die Antwort verloren geht, kann derselbe
+Alarm mehrfach eintreffen.
+
+Optional sendet Hookwise `Authorization: Bearer <Token>`. Ist ein
+Signaturschlüssel hinterlegt, kommen diese Header dazu:
+
+- `X-HookWise-Timestamp`: Unix-Zeit in Sekunden, pro Versuch neu erzeugt.
+- `X-HookWise-Signature`: `sha256=<hex HMAC-SHA256>` über
+  `timestamp + "." + unveränderte UTF-8-Bytes des HTTP-Bodys`.
+
+Der Empfänger prüft die Signatur mit konstantem Zeitvergleich und akzeptiert
+nur aktuelle Zeitstempel, z. B. innerhalb von fünf Minuten.
+
+Jede HTTP-Antwort von 200 bis 299 gilt als erfolgreich. Netzwerkfehler und
+HTTP 408, 425, 429 sowie 5xx werden bis zu insgesamt fünf Versuchen wiederholt;
+die Wartezeiten sind 60, 120, 240 und 480 Sekunden zuzüglich Beat-Intervall.
+Andere Antworten, einschließlich Redirects, beenden die Zustellung als Fehler.
+Timeouts: fünf Sekunden Verbindungsaufbau, zehn Sekunden Lesen der Antwortheader.
+Im Menü **Zustellungen** stehen Status, HTTP-Code und Versuche.
+
+URL, Bearer-Token und Signaturschlüssel werden verschlüsselt gespeichert und
+beim Bearbeiten nicht ausgegeben. Lokale/private Zieladressen und Redirects
+werden nicht zugelassen. Die geprüfte öffentliche DNS-Adresse wird für die
+TLS-Verbindung festgesetzt; Zertifikat und SNI werden gegen den ursprünglichen
+Hostnamen geprüft ([urllib3-Dokumentation](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#custom-sni-hostname)).
+Lesen verwendet `endpoint:read`, Änderungen `endpoint:write`, der
+Zustellverlauf `history:read`. Änderungen erscheinen im Audit Log.
+Konfigurationen sind im verschlüsselten Konfigurationsbackup enthalten;
+Zustellverlauf und Warteschlange erfordern ein vollständiges Datenbankbackup.
+
+HTTPS/TLS verschlüsselt die Verbindung. Die optionale HMAC-Signatur prüft
+Herkunft und Integrität; sie verschlüsselt den JSON-Inhalt nicht zusätzlich.
+Eine zusätzliche Payload-Verschlüsselung, mTLS-Clientzertifikate und OAuth2
+sind derzeit nicht implementiert. Mit dem Empfänger sind das JSON-Format,
+Pflichtfelder, Authentifizierung, Signaturprüfung und Deduplizierung über die
+Zustell-ID abzustimmen.
+
+## Deployment
+
+Vor dem Start der aktualisierten Web-/Worker-/Beat-Prozesse:
+
+```bash
+flask --app hookwise:create_app db upgrade
+```
+
+Die Migration `c9a7b2e4d6f8` legt zwei neue Tabellen an. Eine bestehende
+Installation führt vor dem ersten Upgrade keine Kunden-Webhooks aus.
+Eine echte Zustellung lässt sich mit einer zum Score-Pfad passenden Meldung
+an den konfigurierten Quell-Endpoint prüfen; sie kann die Kundenalarmierung starten.
