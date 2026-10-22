@@ -121,9 +121,10 @@ Settings → Two-Factor Auth.
 break-glass admin. Entra accounts cannot fall back to passwords (they have
 none). The Entra ID tab on the Identity page shows the connection state.
 
-**Headless/API clients** authenticate via Basic Auth against
-`GUI_USERNAME`/`GUI_PASSWORD` *and* need an active HookWise account with that
-username; the account's roles decide what the client may call.
+**Headless/API clients** authenticate via Basic Auth only when
+`GUI_BASIC_AUTH=true`; the credentials are checked against the active local
+account's current password (not `GUI_PASSWORD`), accounts with 2FA are refused,
+and the account's roles decide what the client may call.
 
 ---
 
@@ -132,7 +133,8 @@ username; the account's roles decide what the client may call.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SECRET_KEY` | — (required in prod) | Flask session signing |
-| `GUI_PASSWORD` | — (required) | admin login password (also basic-auth secret for headless clients) |
+| `GUI_PASSWORD` | — (required) | bootstrap password for the local `admin` account |
+| `GUI_BASIC_AUTH` | `false` | allow HTTP Basic Auth for headless clients |
 | `RBAC_ENFORCE` | `on` | role enforcement: `on` / `log` (check + log only) / `off` |
 | `ENCRYPTION_KEY` | — (required) | Fernet key for stored secrets |
 | `SESSION_COOKIE_SECURE` | `true` | send session cookie only over HTTPS |

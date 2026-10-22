@@ -153,6 +153,13 @@ def _configure_app(app: Flask) -> None:
             raise RuntimeError("SECRET_KEY env var is required")
     app.config["SECRET_KEY"] = secret_key
 
+    # Fail at startup, not on the first decrypt, when the key is public.
+    encryption_key = os.environ.get("ENCRYPTION_KEY")
+    if encryption_key:
+        from .utils import reject_published_encryption_key
+
+        reject_published_encryption_key(encryption_key)
+
     # RBAC. Standard ist "on" -- Rollen wirken auch ohne gesetzte Variable
     # durchgesetzt. "log" prueft und protokolliert nur (Rollout- und
     # Diagnosestufe), "off" schaltet die Pruefung ab.
@@ -212,6 +219,11 @@ def _register_extensions(app: Flask) -> None:
     migrate.init_app(app, db)
     limiter.init_app(app)
     socketio.init_app(app)
+    # init_app builds a fresh Socket.IO server, so the authorising connect
+    # handler is attached to it here rather than by a module-level decorator.
+    from .live_feed import handle_connect
+
+    socketio.on_event("connect", handle_connect)
     csrf.init_app(app)
 
 
@@ -423,7 +435,8 @@ def _register_error_handlers(app: Flask) -> None:
 
 def _register_commands(app: Flask) -> None:
     """Register Flask CLI commands."""
-    from .commands import bootstrap_admin_command, clear_cw_cache_command
+    from .commands import bootstrap_admin_command, clear_cw_cache_command, rotate_encryption_key_command
 
     app.cli.add_command(clear_cw_cache_command)
     app.cli.add_command(bootstrap_admin_command)
+    app.cli.add_command(rotate_encryption_key_command)

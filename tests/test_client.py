@@ -516,3 +516,13 @@ def test_get_board_subtypes(mock_get, client):
 def test_get_board_items(mock_get, client):
     mock_get.return_value.json.return_value = [{"id": 1, "name": "Item"}]
     assert client.get_board_items(1) == [{"id": 1, "name": "Item"}]
+
+
+@patch("requests.Session.get")
+def test_get_companies_escapes_quotes_in_search(mock_get, client):
+    """A quote in the search term must not close the ConnectWise condition string."""
+    mock_get.return_value.json.return_value = []
+    client.get_companies("x' OR id > 0 OR name contains 'y")
+    conditions = mock_get.call_args.kwargs["params"]["conditions"]
+    escaped = "x'' OR id > 0 OR name contains ''y"
+    assert conditions == f"identifier contains '{escaped}' OR name contains '{escaped}'"

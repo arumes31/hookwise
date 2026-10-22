@@ -14,7 +14,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from .auth_entra import entra_aktiv
 from .extensions import db, limiter
 from .models import User
-from .utils import auth_required, decrypt_string, encrypt_string, log_audit
+from .utils import DUMMY_PASSWORD_HASH, auth_required, decrypt_string, encrypt_string, log_audit
 
 
 def _bp() -> Any:
@@ -160,6 +160,10 @@ def _register_login_routes(bp: Any) -> None:
             password = request.form.get("password")
 
             user = User.query.filter_by(username=username).first()
+            if user is None or user.quelle != "local" or not user.password_hash:
+                # Spend the same hashing time as a real check so the response
+                # time does not reveal whether the account exists.
+                check_password_hash(DUMMY_PASSWORD_HASH, password or "")
             if (
                 user
                 and user.quelle == "local"
@@ -359,7 +363,9 @@ def _register_account_routes(bp: Any) -> None:
 
 
 def _register_logout_routes(bp: Any) -> None:
-    @bp.route("/logout")
+    # POST only, so the global CSRF protection applies: a cross-site link or
+    # image can no longer sign a user out.
+    @bp.route("/logout", methods=["POST"])
     def logout() -> Any:
         username = session.get("username")
         from .user_sessions import revoke_current_session

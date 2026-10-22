@@ -118,7 +118,7 @@
                     <div class="input-group">
                         <input type="text" id="master-api-key"
                             class="form-control bg-dark border-secondary text-warning font-monospace"
-                            value="{{ master_api_key }}" readonly>
+                            value="" placeholder="{{ 'Generated - shown only once when created' if master_api_key_configured else 'Not Generated' }}" readonly>
                         <button type="button" class="btn btn-outline-warning" data-braucht="settings:write" data-braucht-modus="sperren" onclick="generateApiKey()">
                             <svg class="hw-icon me-1" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg> Regenerate
                         </button>
@@ -129,7 +129,7 @@
                     </div>
                     <div class="d-flex align-items-center mt-2 text-danger small">
                         <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-exclamation-triangle-fill"></use></svg>
-                        <span>Regenerating will immediately invalidate existing keys.</span>
+                        <span>Regenerating will immediately invalidate existing keys. The key is shown only once; HookWise stores just its hash.</span>
                     </div>
                 </div>
             </div>

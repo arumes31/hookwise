@@ -243,9 +243,9 @@
                 <span class="hw-act-name">${escapeHtml(data.config_name)}</span>
                 <span class="hw-act-msg" title="${escapeHtml(data.message)}">${escapeHtml(data.message)}</span>
                 ${ticketUrl ? `<a href="${escapeHtml(ticketUrl)}" target="_blank" rel="noopener noreferrer" class="badge bg-primary text-decoration-none hw-t-xs">#${escapeHtml(data.ticket_id)}</a>` : ''}
-                <button class="btn btn-sm btn-link text-secondary p-0 log-expand-payload" aria-label="Expand payload">
+                ${data.payload != null ? `<button class="btn btn-sm btn-link text-secondary p-0 log-expand-payload" aria-label="Expand payload">
                     <svg class="hw-icon" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
-                </button>
+                </button>` : ''}
             `;
             logEntry.innerHTML = flowHtml;
             const payloadButton = logEntry.querySelector('.log-expand-payload');

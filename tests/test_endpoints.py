@@ -103,7 +103,9 @@ def test_endpoint_form_uses_native_submission_and_excludes_sensitive_autosave_fi
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     form = re.search(r'<form[^>]*id="endpoint-form"[^>]*>', html)
-    csrf = re.search(r'<input[^>]*name="csrf_token"[^>]*>', html)
+    assert form is not None
+    # The navigation's logout form carries its own token; check the endpoint form's.
+    csrf = re.search(r'<input[^>]*name="csrf_token"[^>]*>', html[form.end() :])
     hmac_secret = re.search(r'<input[^>]*name="hmac_secret"[^>]*>', html)
     assert form is not None
     assert 'hx-boost="false"' in form.group(0)

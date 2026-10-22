@@ -1,5 +1,6 @@
 """History, statistics, endpoint diagnostics, and metrics handlers."""
 
+import hashlib
 import json
 import os
 import re
@@ -57,6 +58,21 @@ def _routing_regex_matches(pattern: str, value: str) -> bool:
 
 
 QUEUE_SIZE = Gauge("hookwise_celery_queue_size", "Approximate number of tasks in queue")
+
+MASTER_API_KEY_HASH_REDIS_KEY = "hookwise_master_api_key_sha256"
+# Older releases stored the key itself and redisplayed it on the settings page.
+LEGACY_MASTER_API_KEY_REDIS_KEY = "hookwise_master_api_key"
+
+
+def _master_api_key_configured() -> bool:
+    """Whether a master API key exists; migrates a legacy plaintext key to its digest."""
+    legacy = redis_client.get(LEGACY_MASTER_API_KEY_REDIS_KEY)
+    if legacy:
+        raw = legacy if isinstance(legacy, bytes) else str(legacy).encode()
+        redis_client.set(MASTER_API_KEY_HASH_REDIS_KEY, hashlib.sha256(raw).hexdigest())
+        redis_client.delete(LEGACY_MASTER_API_KEY_REDIS_KEY)
+        return True
+    return bool(redis_client.get(MASTER_API_KEY_HASH_REDIS_KEY))
 
 
 def _get_cached_connectwise_list(cache_key: str) -> str | None:
@@ -800,12 +816,10 @@ def _register() -> None:
         cipp_app_certificate_exclude_names = (
             cast(bytes, cipp_app_certificate_exclude_names).decode() if cipp_app_certificate_exclude_names else ""
         )
-        api_key = redis_client.get("hookwise_master_api_key")
-        api_key = cast(bytes, api_key).decode() if api_key else "Not Generated"
         return render_template(
             "settings.html",
             log_retention_days=retention,
-            master_api_key=api_key,
+            master_api_key_configured=_master_api_key_configured(),
             health_webhook=health_webhook,
             cipp_app_certificate_exclude_names=cipp_app_certificate_exclude_names,
         )
@@ -860,7 +874,9 @@ def _register() -> None:
     @auth_required
     def generate_api_key() -> Any:
         new_key = secrets.token_urlsafe(64)
-        redis_client.set("hookwise_master_api_key", new_key)
+        # Only the digest is stored; the key is shown once in this response.
+        redis_client.set(MASTER_API_KEY_HASH_REDIS_KEY, hashlib.sha256(new_key.encode()).hexdigest())
+        redis_client.delete(LEGACY_MASTER_API_KEY_REDIS_KEY)
         log_audit("generate_master_api_key", None, "New master API key generated")
         return jsonify({"status": "success", "api_key": new_key})
 

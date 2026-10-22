@@ -13,7 +13,9 @@ function getSocket() {
 }
 
 function initSocketHandlers() {
-    const socket = getSocket();
+    // Only pages with a live feed open the connection (via getSocket); the
+    // server refuses it without a signed-in session anyway.
+    const socket = socketInstance;
     if (!socket) return;
     // Global listeners can go here
 }

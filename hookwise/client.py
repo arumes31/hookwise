@@ -639,7 +639,8 @@ class ConnectWiseClient:
         try:
             params: Dict[str, Any] = {"pageSize": 50}
             if search:
-                params["conditions"] = f"identifier contains '{search}' OR name contains '{search}'"
+                safe_search = search.replace("'", "''")
+                params["conditions"] = f"identifier contains '{safe_search}' OR name contains '{safe_search}'"
             response = self.session.get(
                 f"{self.base_url}/company/companies", headers=self.headers, params=params, timeout=self.timeout
             )

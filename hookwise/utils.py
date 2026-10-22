@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from datetime import datetime, timezone
 from functools import lru_cache, wraps
 from typing import Any, Dict, Optional, cast
@@ -12,10 +13,15 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 from flask import Response, jsonify, redirect, request, session, url_for
 from jsonpath_ng import parse as _jsonpath_parse
+from werkzeug.security import generate_password_hash
 
-from .extensions import socketio
+from .extensions import LIVE_PAYLOAD_ROOM, LIVE_ROOM, socketio
 
 logger = logging.getLogger(__name__)
+
+# Compared against when an account does not exist, so a miss costs as much
+# as a wrong password and response timing does not enumerate usernames.
+DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(16))
 
 
 def call_llm(
@@ -62,15 +68,64 @@ def call_llm(
         return None
 
 
-def check_auth(username: str, password: str) -> bool:
-    """Check if a username/password combination is valid."""
-    import hmac as _hmac
+# Failed Basic-Auth attempts per client address. Mirrors the /login form limit
+# so the header is no faster a brute-force channel than the sign-in page.
+_BASIC_AUTH_FAILURE_LIMIT = "5 per minute"
 
-    expected_username = os.environ.get("GUI_USERNAME", "admin")
-    expected_password = os.environ.get("GUI_PASSWORD")
-    if not expected_password:
-        return False  # Fail closed if password not set
-    return _hmac.compare_digest(username, expected_username) and _hmac.compare_digest(password, expected_password)
+
+def basic_auth_enabled() -> bool:
+    """HTTP Basic Auth for headless clients is opt-in (``GUI_BASIC_AUTH=true``)."""
+    return os.environ.get("GUI_BASIC_AUTH", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def check_auth(username: str, password: str) -> Any:
+    """Return the local account these credentials match, or ``None``.
+
+    Validates against the account's current password hash, never against the
+    static ``GUI_PASSWORD`` bootstrap value: a password rotated in the console
+    must invalidate the old one for headless clients as well.
+    """
+    from werkzeug.security import check_password_hash
+
+    from .models import User
+
+    user = User.query.filter_by(username=username).first()
+    if user is None or user.quelle != "local" or not user.password_hash:
+        # Same hashing cost as a real check so timing does not confirm accounts.
+        check_password_hash(DUMMY_PASSWORD_HASH, password)
+        return None
+    if not check_password_hash(user.password_hash, password):
+        return None
+    return user
+
+
+def _basic_auth_rate_limit() -> Any:
+    from limits import parse
+
+    return parse(_BASIC_AUTH_FAILURE_LIMIT)
+
+
+def _basic_auth_blocked(client_ip: str) -> bool:
+    """True when this address used up its failed Basic-Auth budget."""
+    from .extensions import limiter
+
+    try:
+        return not limiter.limiter.test(_basic_auth_rate_limit(), "basic-auth-failure", client_ip)
+    except Exception:
+        return False
+
+
+def _record_basic_auth_failure(client_ip: str, username: str) -> None:
+    from .extensions import limiter
+
+    try:
+        limiter.limiter.hit(_basic_auth_rate_limit(), "basic-auth-failure", client_ip)
+    except Exception:
+        logger.debug("Basic-Auth failure counter unavailable", exc_info=True)
+    try:
+        log_audit("basic_auth_failed", None, f"Failed Basic-Auth attempt for {username[:64]!r} from {client_ip}")
+    except Exception:
+        logger.warning("Could not audit-log failed Basic-Auth attempt", exc_info=True)
 
 
 def authenticate() -> Response:
@@ -88,6 +143,20 @@ def parse_ip_network(network_str: str) -> Any:
     return ipaddress.ip_network(network_str)
 
 
+def client_ip_trusted(client_ip: Optional[str]) -> bool:
+    """Apply ``GUI_TRUSTED_IPS``; an unset list trusts every address."""
+    trusted_ips = os.environ.get("GUI_TRUSTED_IPS")
+    if not trusted_ips:
+        return True
+    for trusted_range in [ip.strip() for ip in trusted_ips.split(",")]:
+        try:
+            if client_ip and ipaddress.ip_address(client_ip) in parse_ip_network(trusted_range):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def auth_required(f: Any) -> Any:
     """Require a valid browser session or request-scoped Basic Auth."""
 
@@ -96,19 +165,8 @@ def auth_required(f: Any) -> Any:
         """Authorize one request before invoking the protected handler."""
 
         # 1. IP Whitelist Check (Global)
-        trusted_ips = os.environ.get("GUI_TRUSTED_IPS")
-        if trusted_ips:
-            client_ip = request.remote_addr
-            trusted = False
-            for trusted_range in [ip.strip() for ip in trusted_ips.split(",")]:
-                try:
-                    if client_ip and ipaddress.ip_address(client_ip) in parse_ip_network(trusted_range):
-                        trusted = True
-                        break
-                except ValueError:
-                    continue
-            if not trusted:
-                return Response("Your IP is not authorized to access this GUI.", 403)
+        if not client_ip_trusted(request.remote_addr):
+            return Response("Your IP is not authorized to access this GUI.", 403)
 
         # 2. Session Check (Primary for GUI)
         if "user_id" in session:
@@ -122,43 +180,35 @@ def auth_required(f: Any) -> Any:
                 return jsonify({"status": "error", "message": "Session has ended"}), 401
             return redirect(url_for("main.login"))
 
-        # 3. Basic Auth Check (Fallback for API/Headless)
+        # 3. Basic Auth Check (opt-in fallback for API/Headless)
         auth = request.authorization
-        gui_user = os.environ.get("GUI_USERNAME", "admin")
-        gui_pass = os.environ.get("GUI_PASSWORD")
-
-        if auth and gui_user and gui_pass:
-            # Only check Basic Auth if the client sent the header
-            if auth.username and auth.password and check_auth(auth.username, auth.password):
-                # Valid Basic Auth - populate synthetic session
-                from .models import User
-
-                # ADR-005: Basic Auth authentifiziert, vergibt aber keine
-                # Rolle mehr. Frueher entstand hier ohne passenden DB-Nutzer
-                # eine synthetische Admin-Session -- damit waere jede
-                # Rechtepruefung ueber den Header umgehbar gewesen.
-                user = User.query.filter_by(username=auth.username).first()
-                if user is None or not user.aktiv:
-                    return Response("No active HookWise account for these credentials.", 403)
-                # Basic Auth kennt keinen zweiten Schritt. Ohne diese Sperre
-                # haette der Header den fuer das Konto eingeschalteten zweiten
-                # Faktor vollstaendig umgangen -- die Sitzung entstand hier
-                # ohne jede Pruefung von ``is_2fa_enabled``.
-                if user.is_2fa_enabled:
-                    return Response(
-                        "This account requires two-factor authentication; sign in through the console.",
-                        403,
-                    )
-                session["user_id"] = user.id
-                session["username"] = user.username
-                session["role"] = user.role
-                from .rbac.resolver import sitzung_setzen
-
-                sitzung_setzen(user)
-                return f(*args, **kwargs)
-            else:
-                # Client sent invalid Basic Auth credentials
+        if auth and auth.type == "basic" and basic_auth_enabled():
+            client_ip = request.remote_addr or "unknown"
+            if _basic_auth_blocked(client_ip):
+                return Response("Too many failed sign-in attempts. Try again later.", 429)
+            user = check_auth(auth.username or "", auth.password or "") if auth.username and auth.password else None
+            if user is None:
+                _record_basic_auth_failure(client_ip, auth.username or "")
                 return authenticate()
+            # ADR-005: Basic Auth authentifiziert, vergibt aber keine Rolle --
+            # die Rechte kommen wie bei der Anmeldung aus dem DB-Konto.
+            if not user.aktiv:
+                return Response("No active HookWise account for these credentials.", 403)
+            # Basic Auth kennt keinen zweiten Schritt. Ohne diese Sperre haette
+            # der Header den fuer das Konto eingeschalteten zweiten Faktor
+            # vollstaendig umgangen.
+            if user.is_2fa_enabled:
+                return Response(
+                    "This account requires two-factor authentication; sign in through the console.",
+                    403,
+                )
+            session["user_id"] = user.id
+            session["username"] = user.username
+            session["role"] = user.role
+            from .rbac.resolver import sitzung_setzen
+
+            sitzung_setzen(user)
+            return f(*args, **kwargs)
 
         # 4. No valid auth found. Programmatic requests receive a stable 401;
         # browser page navigations retain the friendly login redirect.
@@ -454,6 +504,27 @@ def resolve_monitor_name(data: Dict[str, Any]) -> str:
 
 _fernet_instance = None
 
+# SHA-256 of Fernet keys that are public in this repository's history. The
+# first was the docker-compose.yml default in early 2026 and is never accepted;
+# the second protects throwaway CI/test data and is accepted only with
+# TESTING=true. Rotate with ``flask rotate-encryption-key``.
+_PUBLISHED_ENCRYPTION_KEY_DIGESTS = frozenset({"023a65e6c03391603749bbe6d333c98ea7a93b0dc5d164e1e79c275eb5b99f49"})
+_TEST_ENCRYPTION_KEY_DIGESTS = frozenset({"a9242bb5b6ba398c000d70ad480fd1aafb6a2c70ac6b0fd4eea2129709e94a9a"})
+
+
+def reject_published_encryption_key(key: str) -> None:
+    """Refuse a Fernet key that is publicly known."""
+    import hashlib
+
+    digest = hashlib.sha256(key.strip().encode()).hexdigest()
+    testing = os.environ.get("TESTING", "").lower() == "true"
+    if digest in _PUBLISHED_ENCRYPTION_KEY_DIGESTS or (digest in _TEST_ENCRYPTION_KEY_DIGESTS and not testing):
+        logger.critical("ENCRYPTION_KEY is a publicly known key; generate a new one and rotate stored secrets.")
+        raise RuntimeError(
+            "ENCRYPTION_KEY is publicly known. Generate a new key and run "
+            "'flask rotate-encryption-key' with the old key in OLD_ENCRYPTION_KEY."
+        )
+
 
 def get_fernet() -> Fernet:
     global _fernet_instance
@@ -463,6 +534,7 @@ def get_fernet() -> Fernet:
     if not key:
         logger.critical("ENCRYPTION_KEY not set! This is required for security.")
         raise RuntimeError("ENCRYPTION_KEY environment variable is not set.")
+    reject_published_encryption_key(key)
     try:
         _fernet_instance = Fernet(key.encode())
     except (ValueError, TypeError) as e:
@@ -569,14 +641,15 @@ def log_to_web(
             # Safer to redact than to leak.
             payload_to_send = {"raw": "[Redacted] Data could not be parsed safely."}
 
-    socketio.emit(
-        "new_log",
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "message": message,
-            "level": level,
-            "config_name": config_name,
-            "payload": payload_to_send,
-            "ticket_id": ticket_id,
-        },
-    )
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": message,
+        "level": level,
+        "config_name": config_name,
+        "payload": payload_to_send,
+        "ticket_id": ticket_id,
+    }
+    # Only authorised sessions join these rooms (see live_feed.py); nothing is
+    # broadcast to every connected socket. Payloads go to history readers only.
+    socketio.emit("new_log", event, to=LIVE_PAYLOAD_ROOM)
+    socketio.emit("new_log", {**event, "payload": None}, to=LIVE_ROOM)

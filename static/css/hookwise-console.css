@@ -347,6 +347,8 @@ body {
 
 /* ---------------- 5. Components ---------------- */
 .navbar .nav-link { border-radius:var(--radius-md); }
+/* Logout is a POST form button styled like its sibling links. */
+.navbar button.nav-link { border:0; background:transparent; font:inherit; text-align:start; cursor:pointer; }
 
 .glass-card, .card.glass-card, .card {
     background:var(--bg-surface);

@@ -19,6 +19,18 @@ def setup_test_env():
 
 
 @pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """Rate-limit counters live in process memory; start every test with none."""
+    from hookwise.extensions import limiter
+
+    try:
+        limiter.reset()
+    except Exception:
+        pass
+    yield
+
+
+@pytest.fixture(autouse=True)
 def isolate_external_redis():
     """Mock Redis globally for all tests."""
     with (
