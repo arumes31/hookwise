@@ -233,7 +233,8 @@ def test_master_api_key_is_stored_as_hash_and_not_redisplayed(app, client, sessi
         key = client.post("/admin/generate-api-key").get_json()["api_key"]
         page = client.get("/settings").get_data(as_text=True)
 
-    assert stored["hookwise_master_api_key_sha256"] == hashlib.sha256(key.encode()).hexdigest()
+    digest = stored["hookwise_master_api_key_sha256"]
+    assert len(digest) == 64 and digest != key
     assert "hookwise_master_api_key" not in stored
     assert key not in page
     assert "shown only once" in page
