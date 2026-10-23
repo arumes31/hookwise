@@ -1,6 +1,6 @@
-# Kunden-Webhooks
+# Forwarding
 
-Unter **Kunden-Webhooks → Webhook anlegen** lässt sich eine ausgehende
+Unter **Forwarding → Webhook anlegen** lässt sich eine ausgehende
 Alarmierung konfigurieren. Die weitere Alarmierungskette betreibt der Kunde.
 
 1. Namen, CW Company ID und den eingehenden Quell-Endpoint auswählen.
@@ -20,6 +20,21 @@ Der Score-Pfad muss zur tatsächlich eingehenden JSON-Meldung passen. Es gibt
 keine automatische Umrechnung von Defender-Severity (`high`, `medium` usw.)
 in einen numerischen Score. Fehlende, negative, unendliche, boolesche oder
 nicht numerische Werte lösen keine Zustellung aus.
+
+## Endpoint: 5. Additional Delivery
+
+Im fünften Schritt der Endpoint-Konfiguration sind beide Zustellwege standardmäßig aktiv:
+
+- **Deliver to ConnectWise** deaktivieren, um ausschließlich externe Webhooks zu verwenden.
+  Auch bereits eingereihte Ticketaufgaben, Replays, Recovery und Stale-Tickets führen
+  dann keine ConnectWise-Zustellung aus. Bestehende Tickets bleiben offen.
+- **Allow Forwarding connectors to listen** steuert, ob Forwarding diesen Endpoint
+  als Quelle verwenden darf. Deaktivieren verhindert neue Zustellungen und bricht
+  ausstehende Zustellungen bei der nächsten Prüfung durch den Dispatcher ab.
+- Die Liste zeigt Anzahl, Namen, Kunden, Score-Bedingungen und Aktiv-/Pause-Status
+  der zugeordneten Connectoren. Ohne Connector findet keine externe Zustellung statt.
+
+Beide Einstellungen bleiben beim Klonen, Exportieren und Wiederherstellen erhalten.
 
 ## Kundenzuordnung und Verhalten
 
@@ -98,6 +113,21 @@ Zustellverlauf `history:read`. Änderungen erscheinen im Audit Log.
 Konfigurationen sind im verschlüsselten Konfigurationsbackup enthalten;
 Zustellverlauf und Warteschlange erfordern ein vollständiges Datenbankbackup.
 
+Ändert sich die Ziel-URL, werden die bisherigen Zugangsdaten entfernt und
+ausstehende Zustellungen für das alte Ziel abgebrochen. Neue Zugangsdaten müssen
+für das neue Ziel eingetragen werden. Das gilt auch beim Wiederherstellen eines
+Backups; unveränderte alte Zugangsdaten werden dabei nicht übernommen. Ein bereits
+laufender HTTP-Aufruf kann noch am ursprünglichen Ziel ankommen.
+
+Abgeschlossene, fehlgeschlagene und abgebrochene Zustellungen entfernen ihren
+gespeicherten JSON-Inhalt sofort. Ihre Metadaten werden nach der konfigurierten
+Log-Aufbewahrungsfrist (`LOG_RETENTION_DAYS` bzw. Settings) gelöscht. Wartende und
+laufende Zustellungen behalten ihren Inhalt für die Zustellversuche. **Clear completed
+history** erfordert `history:delete` und entfernt nur abgeschlossene Einträge.
+Explizites Löschen der zugehörigen eingehenden Logs entfernt auch alle Kopien in
+Forwarding, einschließlich wartender Zustellungen. Nach dem Löschen eines
+Zustelleintrags kann derselbe Alarminhalt erneut zugestellt werden.
+
 HTTPS/TLS verschlüsselt die Verbindung. Die optionale HMAC-Signatur prüft
 Herkunft und Integrität; sie verschlüsselt den JSON-Inhalt nicht zusätzlich.
 Eine zusätzliche Payload-Verschlüsselung, mTLS-Clientzertifikate und OAuth2
@@ -107,13 +137,18 @@ Zustell-ID abzustimmen.
 
 ## Deployment
 
-Vor dem Start der aktualisierten Web-/Worker-/Beat-Prozesse:
+Hookwise führt erforderliche Alembic-Upgrades beim Start von Web, Worker und Beat
+automatisch aus. Gleichzeitige Starts werden über eine Datenbanksperre serialisiert.
+Ein fehlgeschlagenes Upgrade verhindert den Start. Compose behält zusätzlich seinen
+vorgeschalteten Migrationsdienst. Manuelle Migrationen bleiben möglich:
 
 ```bash
 flask --app hookwise:create_app db upgrade
 ```
 
-Die Migration `c9a7b2e4d6f8` legt zwei neue Tabellen an. Eine bestehende
-Installation führt vor dem ersten Upgrade keine Kunden-Webhooks aus.
+`AUTO_DB_UPGRADE=false` deaktiviert die automatische Migration für Installationen
+mit separat verwalteten Upgrades; explizite `flask db`-Befehle ändern immer nur die
+angeforderte Revision. Die Migrationen legen die Forwarding-Tabellen und
+Zustellkontrollen an; bestehende Endpoints behalten beide Zustellwege aktiviert.
 Eine echte Zustellung lässt sich mit einer zum Score-Pfad passenden Meldung
 an den konfigurierten Quell-Endpoint prüfen; sie kann die Kundenalarmierung starten.

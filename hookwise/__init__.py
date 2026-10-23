@@ -2,6 +2,7 @@ import hashlib
 import logging
 import os
 import secrets
+import sys
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -31,9 +32,17 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         app.config.update(config)
         if config.get("TESTING") and "SESSION_COOKIE_SECURE" not in config:
             app.config["SESSION_COOKIE_SECURE"] = False
+        if config.get("TESTING") and "AUTO_DB_UPGRADE" not in config:
+            app.config["AUTO_DB_UPGRADE"] = False
         _configure_database_engine(app)
     _register_template_helpers(app)
     _register_extensions(app)
+    # Explicit migration commands own their target revision (including downgrade).
+    migration_cli = os.environ.get("FLASK_RUN_FROM_CLI") == "true" and "db" in sys.argv[1:]
+    if app.config["AUTO_DB_UPGRADE"] and not migration_cli:
+        from .services.database_startup import upgrade_database
+
+        upgrade_database(app)
     _register_request_handlers(app)
     _register_blueprints(app)
     if os.environ.get("BOOTSTRAP_ADMIN", "false").lower() == "true":
@@ -193,6 +202,10 @@ def _configure_app(app: Flask) -> None:
         "DATABASE_URL", "postgresql://hookwise:hookwise_pass@postgres:5432/hookwise"
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["AUTO_DB_UPGRADE"] = (
+        os.environ.get("AUTO_DB_UPGRADE", "true").lower() == "true"
+        and os.environ.get("TESTING", "false").lower() != "true"
+    )
     _configure_database_engine(app)
 
 

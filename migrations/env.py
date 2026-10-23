@@ -79,7 +79,13 @@ def run_migrations_online():
     conf_args = current_app.extensions["migrate"].configure_args
     connectable = get_engine()
 
-    with connectable.connect() as connection:
+    with connectable.begin() as connection:
+        # Web, worker, Beat and the one-shot migrator may start together. Hold
+        # one database lock through revision inspection and the entire upgrade.
+        if connection.dialect.name == "postgresql":
+            connection.exec_driver_sql("SELECT pg_advisory_xact_lock(%s)", (0x484F4F4B4442,))
+        elif connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
         context.configure(connection=connection, target_metadata=get_metadata(), **conf_args)
 
         with context.begin_transaction():
