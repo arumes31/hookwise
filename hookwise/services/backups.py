@@ -65,6 +65,7 @@ CUSTOMER_WEBHOOK_FIELDS = {
     "config_id",
     "company_id",
     "target_url",
+    "additional_urls",
     "score_path",
     "minimum_score",
     "bearer_token",
@@ -281,14 +282,14 @@ def restore_backup(document: dict[str, Any]) -> int:
 
 
 def _restore_customer_webhooks(records: Any) -> None:
-    from .customer_webhooks import numeric_score, set_destination, validate_score_path, validate_target_url
+    from .customer_webhooks import destination_urls, numeric_score, set_destination, validate_score_path
 
     if not isinstance(records, list) or len(records) > MAX_CONFIGS:
         raise BackupValidationError("Customer webhooks are invalid")
     seen = set()
     for record in records:
         if isinstance(record, dict):
-            record = {"comment": None, **record}
+            record = {"comment": None, "additional_urls": None, **record}
         if not isinstance(record, dict) or set(record) != CUSTOMER_WEBHOOK_FIELDS | {"id"}:
             raise BackupValidationError("Customer webhook fields are invalid")
         if record["comment"] is not None and (not isinstance(record["comment"], str) or len(record["comment"]) > 2000):
@@ -307,8 +308,13 @@ def _restore_customer_webhooks(records: Any) -> None:
         try:
             if not isinstance(record["score_path"], str) or not isinstance(record["target_url"], str):
                 raise ValueError("Invalid path or target")
-            validate_score_path(record["score_path"])
-            validate_target_url(decrypt_string(record["target_url"]))
+            if record["score_path"]:
+                validate_score_path(record["score_path"])
+            if record["additional_urls"] is not None and not isinstance(record["additional_urls"], str):
+                raise ValueError("Invalid additional targets")
+            urls = destination_urls(
+                CustomerWebhook(target_url=record["target_url"], additional_urls=record["additional_urls"])
+            )
             for field in ("bearer_token", "signing_secret"):
                 value = record[field]
                 if value is not None:
@@ -325,9 +331,9 @@ def _restore_customer_webhooks(records: Any) -> None:
         hook = hook or CustomerWebhook(id=record["id"])
         set_destination(
             hook,
-            decrypt_string(record["target_url"]),
+            urls,
             {field: record[field] for field in ("bearer_token", "signing_secret")},
         )
-        for field in CUSTOMER_WEBHOOK_FIELDS - {"target_url", "bearer_token", "signing_secret"}:
+        for field in CUSTOMER_WEBHOOK_FIELDS - {"target_url", "additional_urls", "bearer_token", "signing_secret"}:
             setattr(hook, field, record[field])
         db.session.add(hook)

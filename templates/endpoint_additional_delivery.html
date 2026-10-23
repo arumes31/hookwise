@@ -11,7 +11,7 @@
                     <input type="hidden" name="connectwise_delivery_enabled" value="false">
                     <label class="form-check-label fw-bold" for="connectwise_delivery_enabled">Deliver to ConnectWise</label>
                 </div>
-                <p class="small text-secondary mt-2 mb-0" id="connectwise-delivery-help">Turn off to use external webhooks only. Ticket creation, updates, recovery and stale-endpoint tickets are disabled. Existing tickets stay open.</p>
+                <p class="small text-secondary mt-2 mb-0" id="connectwise-delivery-help">Turn off to use only forwarding connectors. Ticket creation, updates, recovery and stale-endpoint tickets are disabled. Existing tickets stay open.</p>
             </div>
         </div>
         <div class="col-12">
@@ -41,7 +41,7 @@
             <ul class="list-group list-group-flush">
                 {% for connector in connectors %}
                 <li class="list-group-item bg-transparent px-0 d-flex flex-wrap justify-content-between gap-2">
-                    <div><strong>{{ connector.name }}</strong><div class="small text-secondary">Company {{ connector.company_id }} · <code>{{ connector.score_path }}</code> ≥ {{ connector.minimum_score }}</div></div>
+                    <div><strong>{{ connector.name }}</strong><div class="small text-secondary">Company {{ connector.company_id }} · {% if connector.score_path %}<code>{{ connector.score_path }}</code> ≥ {{ connector.minimum_score }}{% else %}No score filter{% endif %}</div></div>
                     <span class="badge align-self-start {{ 'bg-success' if connector.is_enabled else 'bg-secondary' }}">{{ 'Active' if connector.is_enabled else 'Paused' }}</span>
                 </li>
                 {% endfor %}

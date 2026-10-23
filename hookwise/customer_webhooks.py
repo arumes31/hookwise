@@ -11,12 +11,13 @@ from .rbac import requires
 from .routes import main_bp
 from .services.customer_webhooks import (
     TERMINAL_STATUSES,
+    destination_urls,
     numeric_score,
     set_destination,
     validate_score_path,
-    validate_target_url,
+    validate_target_urls,
 )
-from .utils import auth_required, decrypt_string, log_audit
+from .utils import auth_required, log_audit
 
 
 @main_bp.get("/customer-webhooks")
@@ -27,7 +28,7 @@ def customer_webhooks() -> Any:
     hosts = {}
     for hook in hooks:
         try:
-            hosts[hook.id] = urlsplit(decrypt_string(hook.target_url)).hostname
+            hosts[hook.id] = ", ".join(urlsplit(url).hostname or "" for url in destination_urls(hook))
         except ValueError:
             hosts[hook.id] = "Ziel nicht lesbar"
     return render_template("customer_webhooks.html", hooks=hooks, hosts=hosts)
@@ -36,8 +37,15 @@ def customer_webhooks() -> Any:
 def _render_form(hook: CustomerWebhook | None = None, values: Any = None, error: str | None = None) -> Any:
     configs = WebhookConfig.query.filter(WebhookConfig.archived_at.is_(None)).order_by(WebhookConfig.name).all()
     companies = db.session.query(GlobalMapping.company_id, GlobalMapping.description).distinct().all()
+    targets = destination_urls(hook) if hook else []
     return render_template(
-        "customer_webhook_form.html", hook=hook, values=values, configs=configs, companies=companies, error=error
+        "customer_webhook_form.html",
+        hook=hook,
+        values=values,
+        configs=configs,
+        companies=companies,
+        error=error,
+        target_hosts=[urlsplit(url).hostname for url in targets],
     )
 
 
@@ -49,8 +57,24 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
         company_id = form.get("company_id", "").strip()
         config = db.session.get(WebhookConfig, form.get("config_id", ""))
         path = form.get("score_path", "").strip()
-        threshold = numeric_score(form.get("minimum_score"))
-        url = form.get("target_url", "").strip()
+        threshold = numeric_score(form.get("minimum_score")) if path else 0
+        previous_urls = destination_urls(hook) if not creating else []
+        submitted_urls = form.getlist("target_url")
+        slots = form.getlist("target_slot")
+        urls = []
+        if slots:
+            if len(slots) != len(submitted_urls) or len(set(slot for slot in slots if slot != "new")) != sum(
+                slot != "new" for slot in slots
+            ):
+                raise ValueError("Ungültige Zielauswahl.")
+            for slot, value in zip(slots, submitted_urls, strict=True):
+                if slot != "new" and (not slot.isdecimal() or int(slot) >= len(previous_urls)):
+                    raise ValueError("Ungültige Zielauswahl.")
+                value = value.strip()
+                urls.append(value or (previous_urls[int(slot)] if slot != "new" else ""))
+        else:
+            urls = [value.strip() for value in submitted_urls if value.strip()] or previous_urls
+        validate_target_urls(urls)
         if not name or len(name) > 100 or not company_id or len(company_id) > 50:
             raise ValueError("Name (max. 100 Zeichen) und CW Company ID (max. 50 Zeichen) sind erforderlich.")
         if len(comment) > 2000:
@@ -59,9 +83,8 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
             raise ValueError("Bitte einen gültigen Quell-Endpoint auswählen.")
         if threshold is None:
             raise ValueError("Der Mindestscore muss eine endliche Zahl ab 0 sein.")
-        validate_score_path(path)
-        if url or creating:
-            validate_target_url(url)
+        if path:
+            validate_score_path(path)
         # Pending deliveries retain the original customer boundary. Changing a
         # subscription's customer/source would silently reroute those alarms.
         if not creating and (hook.company_id != company_id or hook.config_id != config.id):
@@ -81,7 +104,7 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
                 credentials[field] = value
             elif form.get(f"clear_{field}") == "on":
                 credentials[field] = None
-        set_destination(hook, url or decrypt_string(hook.target_url), credentials, drop_replayed=False)
+        set_destination(hook, urls, credentials, drop_replayed=False)
         db.session.add(hook)
         db.session.flush()
         log_audit(

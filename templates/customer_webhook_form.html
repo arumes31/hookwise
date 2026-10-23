@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% set v = values if values is not none else {} %}
+{% set score_enabled = v.get('score_path', hook.score_path if hook else '') %}
 <div class="mb-4"><h1 class="fw-bold">{{ 'Forwarding connector bearbeiten' if hook else 'Forwarding connector anlegen' }}</h1>
 <p class="text-secondary">Der Kunde übernimmt die weitere Alarmierung nach Empfang des Webhooks.</p></div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
@@ -20,18 +21,31 @@
         <option value="{{ config.id }}" {% if v.get('config_id', hook.config_id if hook else '') == config.id %}selected{% endif %}>{{ config.name }}</option>{% endfor %}
       </select>{% if hook %}<input type="hidden" name="config_id" value="{{ hook.config_id }}">{% endif %}
       <div class="form-text">Wähle z. B. den Endpoint, der Defender-Alerts empfängt.</div></div>
-    <div class="col-md-6"><label for="target_url" class="form-label">Ziel-URL (HTTPS)</label>
-      <input id="target_url" name="target_url" type="url" class="form-control" maxlength="2048" autocomplete="off" {% if not hook %}required{% endif %}
-        placeholder="{{ 'Leer lassen: gespeichertes Ziel beibehalten' if hook else 'https://alarm.kunde.at/webhook' }}">
-      <div class="form-text">Öffentlich erreichbares HTTPS-Ziel auf Port 443. Die URL wird verschlüsselt gespeichert.
-        {% if hook %}Ein geändertes Ziel entfernt gespeicherte Zugangsdaten und bricht ausstehende Zustellungen ab. Hinterlege neue Zugangsdaten für das neue Ziel.{% endif %}</div></div>
-    <div class="col-md-6"><label for="score_path" class="form-label">Score-Feld im Alarm (JSONPath)</label>
-      <input id="score_path" name="score_path" class="form-control font-monospace" maxlength="200" required
+    <div class="col-md-6"><div class="form-label" id="targets-label">Ziel-URLs (HTTPS)</div>
+      <div id="forwarding-targets" role="group" aria-labelledby="targets-label" aria-describedby="targets-help">
+        {% for host in target_hosts or [none] %}
+        <div class="input-group mb-2" data-target-row>
+          <input name="target_slot" type="hidden" value="{{ loop.index0 if hook else 'new' }}">
+          <input name="target_url" type="url" class="form-control" maxlength="2048" autocomplete="off"
+            aria-label="Ziel-URL {{ loop.index }}" {% if not hook %}required{% endif %}
+            placeholder="{{ 'Leer lassen: Ziel ' ~ loop.index ~ ' (' ~ host ~ ') beibehalten' if hook else 'https://alarm.kunde.at/webhook' }}">
+          <button type="button" class="btn btn-outline-secondary" data-remove-target aria-label="Ziel-URL entfernen">−</button>
+        </div>{% endfor %}
+      </div>
+      <button type="button" id="add-forwarding-target" class="btn btn-sm btn-outline-primary" aria-label="Ziel-URL hinzufügen">+ Ziel-URL</button>
+      <div id="targets-help" class="form-text">Bis zu 10 öffentliche HTTPS-Ziele auf Port 443. Alle Ziele werden parallel beschickt und verschlüsselt gespeichert. Zugangsdaten gelten für alle Ziele.
+        {% if hook %}Änderungen an der Zielliste entfernen gespeicherte Zugangsdaten und brechen ausstehende Zustellungen ab. Hinterlege die Zugangsdaten erneut.{% endif %}</div></div>
+    <div class="col-12"><div class="form-check form-switch">
+      <input id="score_enabled" type="checkbox" class="form-check-input" {% if score_enabled %}checked{% endif %} aria-controls="score-path-field score-minimum-field">
+      <label for="score_enabled" class="form-check-label">Score-Filter verwenden (optional)</label></div>
+      <div class="form-text">Ohne Filter wird das vollständige, bereinigte Alarmobjekt des zugeordneten Kunden weitergeleitet.</div></div>
+    <div class="col-md-6" id="score-path-field" {% if not score_enabled %}hidden{% endif %}><label for="score_path" class="form-label">Score-Feld im Alarm (JSONPath)</label>
+      <input id="score_path" name="score_path" class="form-control font-monospace" maxlength="200" {% if score_enabled %}required{% else %}disabled{% endif %}
         value="{{ v.get('score_path', hook.score_path if hook else '$.score') }}" aria-describedby="score-help">
       <div id="score-help" class="form-text">Beispiele: <code>$.score</code>, <code>$.riskScore</code>, <code>$.Results[*].Score</code>.
         Fehlende oder nicht numerische Scores lösen nichts aus.</div></div>
-    <div class="col-md-6"><label for="minimum_score" class="form-label">Mindestscore (einschließlich)</label>
-      <input id="minimum_score" name="minimum_score" type="number" class="form-control" min="0" step="any" required
+    <div class="col-md-6" id="score-minimum-field" {% if not score_enabled %}hidden{% endif %}><label for="minimum_score" class="form-label">Mindestscore (einschließlich)</label>
+      <input id="minimum_score" name="minimum_score" type="number" class="form-control" min="0" step="any" {% if score_enabled %}required{% else %}disabled{% endif %}
         value="{{ v.get('minimum_score', hook.minimum_score if hook else 70) }}"></div>
     {% for field, label in [('bearer_token', 'Bearer-Token des Kunden (optional)'), ('signing_secret', 'HMAC-Signaturschlüssel (optional)')] %}
     <div class="col-md-6"><label for="{{ field }}" class="form-label">{{ label }}</label>
@@ -53,10 +67,13 @@
   </div>
   <p class="text-secondary small mt-4">Die Übertragung ist über HTTPS/TLS verschlüsselt; das Serverzertifikat wird geprüft.
     HMAC ergänzt eine Signatur zur Echtheitsprüfung. Eine zusätzliche Verschlüsselung des JSON-Inhalts ist nicht eingerichtet.</p>
-  <p class="text-secondary small mt-4">Gesendet wird das Alarmobjekt, das den passenden Score enthält.
-    Identische Alarmdaten werden je Webhook einmal vorgemerkt. Bei temporären Fehlern folgen bis zu fünf Zustellversuche.
+  <p class="text-secondary small mt-4">Mit Score-Filter wird das Objekt mit dem passenden Score gesendet, sonst der vollständige bereinigte Alarm.
+    Identische Alarmdaten werden je Ziel einmal vorgemerkt. Bei temporären Fehlern folgen je Ziel bis zu fünf Zustellversuche.
     Der Empfänger sollte die Zustell-ID zur Deduplizierung verwenden.</p>
   <div class="d-flex gap-2 mt-4"><button class="btn btn-primary" type="submit">Speichern</button>
     <a class="btn btn-outline-secondary" href="{{ url_for('main.customer_webhooks') }}">Abbrechen</a></div>
 </form>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_asset('js/customer-webhook-form.js') }}"></script>
 {% endblock %}
