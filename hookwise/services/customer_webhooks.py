@@ -27,6 +27,7 @@ from .routing import evaluate_routing
 
 MAX_ATTEMPTS = 5
 MAX_TARGETS = 10
+SEVERITY_LEVELS = ("informational", "low", "medium", "high", "critical")
 TERMINAL_STATUSES = ("delivered", "failed", "cancelled")
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,45 @@ def numeric_score(value: Any) -> float | None:
     return number if math.isfinite(number) and number >= 0 else None
 
 
+def normalize_severity(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    normalized = "informational" if normalized == "info" else normalized
+    return normalized if normalized in SEVERITY_LEVELS else None
+
+
+def validate_severity_filter(path: str, minimum: str) -> tuple[str, str]:
+    if not isinstance(path, str) or not isinstance(minimum, str):
+        raise ValueError("Schweregrad-Pfad und Mindest-Schweregrad sind ungültig.")
+    normalized = normalize_severity(minimum)
+    if normalized is None:
+        raise ValueError("Mindest-Schweregrad: informational, low, medium, high oder critical auswählen.")
+    path = path.strip()
+    if path:
+        try:
+            validate_score_path(path)
+        except ValueError:
+            raise ValueError(
+                "Schweregrad-Feld als JSONPath angeben, z. B. $.Results[*].Severity oder $.severity."
+            ) from None
+    return path, normalized
+
+
+def set_severity_filter(webhook: CustomerWebhook, path: str, minimum: str) -> None:
+    path, minimum = validate_severity_filter(path, minimum)
+    if (webhook.severity_path or "", webhook.minimum_severity or "high") != (path, minimum):
+        webhook.destination_generation = (webhook.destination_generation or 1) + 1
+        CustomerWebhookDelivery.query.filter(
+            CustomerWebhookDelivery.webhook_id == webhook.id,
+            CustomerWebhookDelivery.status.in_(("pending", "sending")),
+        ).update(
+            {"status": "cancelled", "payload": "{}", "completed_at": datetime.now(timezone.utc)},
+            synchronize_session="fetch",
+        )
+    webhook.severity_path, webhook.minimum_severity = path, minimum
+
+
 def _company_resolution(config: Any, data: dict[str, Any]) -> tuple[str | None, str]:
     """Keep the production routing decision and its diagnostic reason together."""
     from ..tasks import _global_mapping_for_tenant, get_all_global_mappings
@@ -314,6 +354,47 @@ def evaluate_customer_webhook(webhook: CustomerWebhook, data: dict[str, Any]) ->
             return blocked("score_below_threshold", "Kein Score erreicht den eingestellten Mindestscore.", company_id)
     else:
         matched = [(None, data)]
+    if webhook.severity_path:
+        try:
+            severity_path, minimum = validate_severity_filter(webhook.severity_path, webhook.minimum_severity)
+        except ValueError:
+            return blocked("invalid_severity_filter", "Der gespeicherte Schweregrad-Filter ist ungültig.", company_id)
+        severity_matches = parse(severity_path).find(data)
+        if not severity_matches:
+            return blocked(
+                "severity_missing", "Das konfigurierte Schweregrad-Feld fehlt in dieser Meldung.", company_id
+            )
+        recognized = [
+            (severity, match.context.value)
+            for match in severity_matches
+            if (severity := normalize_severity(match.value)) is not None
+        ]
+        if not recognized:
+            return blocked(
+                "severity_invalid",
+                "Kein bekannter Schweregrad gefunden; unbekannte Werte werden nicht alarmiert.",
+                company_id,
+            )
+        qualifying = [
+            alert for severity, alert in recognized if SEVERITY_LEVELS.index(severity) >= SEVERITY_LEVELS.index(minimum)
+        ]
+        if not qualifying:
+            return blocked(
+                "severity_below_threshold", f"Kein Schweregrad erreicht den Mindestwert {minimum}.", company_id
+            )
+        if webhook.score_path:
+            # Both JSONPaths must select fields on the same alarm object. A high
+            # score on one batch member cannot qualify another member's severity.
+            qualifying_ids = {id(alert) for alert in qualifying}
+            matched = [(score, alert) for score, alert in matched if id(alert) in qualifying_ids]
+            if not matched:
+                return blocked(
+                    "filters_no_joint_match",
+                    "Score und Schweregrad passen nicht gemeinsam auf dasselbe Alarmobjekt.",
+                    company_id,
+                )
+        else:
+            matched = [(None, alert) for alert in qualifying]
     matches = [(score, _sanitized_alert(alert)) for score, alert in matched]
     return ForwardingEvaluation(True, "ready", "Kundenzuordnung und Filter passen.", company_id, matches, targets)
 
@@ -350,6 +431,10 @@ def build_alert_payload(
     }
     if test:
         payload["test"] = True
+    if webhook.severity_path and isinstance(alert, dict):
+        field = webhook.severity_path.rsplit(".", 1)[-1]
+        payload["severity"] = normalize_severity(alert.get(field))
+        payload["minimum_severity"] = webhook.minimum_severity
     return payload
 
 

@@ -10,6 +10,15 @@
   </div>
 </div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="glass-card p-4 mb-4" aria-labelledby="saved-conditions-title">
+  <h2 id="saved-conditions-title" class="h5">Gespeicherte Alarmierungsbedingungen</h2>
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Schweregrad</dt><dd class="col-sm-9">{% if hook.severity_path %}Severity ≥ <strong>{{ hook.minimum_severity }}</strong> · <code>{{ hook.severity_path }}</code>{% else %}Alle Schweregrade{% endif %}</dd>
+    <dt class="col-sm-3">Score</dt><dd class="col-sm-9">{% if hook.score_path %}Score ≥ <strong>{{ hook.minimum_score }}</strong> · <code>{{ hook.score_path }}</code>{% else %}Ohne Score-Filter{% endif %}</dd>
+  </dl>
+  {% if hook.severity_path and hook.score_path %}<p class="text-secondary small mb-0">Beide Bedingungen müssen im selben Alarmobjekt erfüllt sein. Ein hoher Score in einem anderen Incident reicht nicht aus.</p>
+  {% elif hook.severity_path %}<p class="text-secondary small mb-0">Nur Alarmobjekte ab dem Mindestschweregrad werden weitergeleitet. Fehlende oder unbekannte Schweregrade werden übersprungen.</p>{% endif %}
+</section>
 {% if test_deliveries %}
 <section class="glass-card p-4 mb-4" aria-labelledby="test-queue-title">
   <h2 id="test-queue-title" class="h5">Testzustellungen</h2>

@@ -153,7 +153,7 @@ def build_pagerduty_event(payload: dict[str, Any], routing_key: str) -> dict[str
     event_payload: dict[str, Any] = {
         "summary": _summary(incidents, test),
         "source": f"Hookwise / {source_name}" if source_name else "Hookwise",
-        "severity": _severity(incidents),
+        "severity": _SEVERITIES.get(str(details.get("severity", "")), _severity(incidents)),
         "custom_details": details,
     }
     timestamp = _timestamp(payload.get("timestamp"))

@@ -9,7 +9,7 @@ Alarmierung konfigurieren. Die weitere Alarmierungskette betreibt der Kunde.
    und `70`. Gleichheit ist eingeschlossen. Für CIPP-Batches ist beispielsweise
    `$.Results[*].Score` möglich, sofern die tatsächliche Payload dieses Feld enthält.
    CIPP Defender Incidents enthalten häufig nur `Severity` und keinen Score.
-   Für diese Meldungen den Score-Filter deaktivieren; dann wird das gesamte
+   Für diese Meldungen den Score-Filter deaktivieren; ohne weitere Filter wird das gesamte
    kundenzugeordnete Alarmobjekt weitergeleitet, `score` und `minimum_score` sind `null`.
 4. Bei Bedarf einen Bearer-Token und/oder einen gemeinsamen HMAC-Schlüssel
    hinterlegen und speichern.
@@ -23,6 +23,42 @@ Der Score-Pfad muss zur tatsächlich eingehenden JSON-Meldung passen. Es gibt
 keine automatische Umrechnung von Defender-Severity (`high`, `medium` usw.)
 in einen numerischen Score. Fehlende, negative, unendliche, boolesche oder
 nicht numerische Werte lösen bei aktivem Score-Filter keine Zustellung aus.
+
+## Schweregrad statt numerischem Score
+
+Für Defender Incidents lässt sich im Connector **Nach Schweregrad filtern (Severity)**
+aktivieren. Als Feld `$.Results[*].Severity` und als Mindest-Schweregrad **High**
+wählen. Der numerische Score-Filter bleibt aus, wenn die Quelle keinen Score liefert.
+Damit werden `informational` (etwa EICAR), `low` und `medium` nicht an die Bereitschaft
+geschickt. Ab **Medium** werden Medium und High zugelassen. Defender kennt maximal
+High; die zusätzliche Stufe Critical ist ausschließlich für andere Quellen gedacht.
+Siehe [Microsoft Graph Incident](https://learn.microsoft.com/en-us/graph/api/resources/security-incident).
+
+Jeder Batch-Eintrag wird separat geprüft und nur das passende Incident-Objekt
+weitergeleitet. Ein High-Incident nimmt keine Low-/Informational-Geschwister mit.
+Das ausgewählte Severity-Feld darf auch z. B. `$.severity` oder `$.priority` heißen,
+muss aber Textwerte `informational`, `low`, `medium`, `high` oder `critical` liefern.
+Groß-/Kleinschreibung und umgebende Leerzeichen sind egal; `info` wird als
+`informational` erkannt. Unbekannte, numerische oder fehlende Werte alarmieren nicht.
+Eine numerische Priorität `1`/`2` wird nicht automatisch interpretiert.
+
+Sind Score- und Schweregrad-Filter beide aktiv, müssen beide Felder auf demselben
+Alarmobjekt liegen und beide Bedingungen erfüllen. Ein hoher Score auf einem
+anderen Batch-Eintrag reicht nicht. Die Testseite meldet `severity_missing`,
+`severity_invalid`, `severity_below_threshold` oder `filters_no_joint_match` und
+zeigt für passende Alarme die tatsächlich gefilterte Payload. Aktive Filter ergänzen
+das generische Ereignis um `severity` (normalisiert) und `minimum_severity`;
+PagerDuty übernimmt den ausgewählten Schweregrad auch bei einem eigenen Feldnamen.
+
+Bestehende Connectoren und alte Backups behalten zunächst alle Schweregrade.
+Den Filter bewusst pro Connector aktivieren. Änderungen an Pfad oder Mindestwert
+brechen wartende Zustellungen ab und lassen offene Testformulare ablaufen;
+die Änderung selbst holt keine früheren Alarme nach. Beim Wechsel vom vollständigen
+Batch auf gefilterte Einzelobjekte ändert sich jedoch die Deduplizierungsgrundlage:
+Ein später erneut eingehender, zuvor als Teil des Batches gesendeter Incident kann
+einmalig erneut zugestellt werden. Ein bereits laufender HTTP-Aufruf kann noch
+abschließen. Beim Rollback werden Connectoren mit aktivem
+Severity-Filter deaktiviert, weil die alte Version deren Filter nicht durchsetzen kann.
 
 ## Diagnose und Testalarm
 
@@ -61,7 +97,7 @@ Hookwise erzeugt `event_action: trigger`, einen über alle Wiederholungen stabil
 `dedup_key` und `payload` mit `summary`, `source`, `severity` und `custom_details`.
 Die CIPP-Einstufung wird für PagerDuty übersetzt: `high → critical`,
 `medium → error`, `low → warning`, `informational → info`. Das aktiviert keinen
-numerischen Score-Filter. Batches werden als ein Ereignis mit vollständigen
+numerischen Score-Filter. Ohne Severity-Filter werden Batches als ein Ereignis mit vollständigen
 bereinigten Details übergeben; die höchste enthaltene Severity wird verwendet.
 PagerDuty entscheidet anhand von Service, Bereitschaft und Eskalationsregeln
 über Anruf, Push oder SMS. Ein HTTP-202 bestätigt die Annahme des Ereignisses,
