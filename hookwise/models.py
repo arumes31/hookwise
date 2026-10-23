@@ -363,13 +363,15 @@ class CustomerWebhook(Base):
     minimum_score = db.Column(db.Float, nullable=False)
     bearer_token = db.Column(db.Text, nullable=True)
     signing_secret = db.Column(db.Text, nullable=True)
+    payload_format = db.Column(db.String(20), nullable=False, default="hookwise", server_default="hookwise")
+    pagerduty_routing_key = db.Column(db.Text, nullable=True)
     is_enabled = db.Column(db.Boolean, nullable=False, default=True)
     destination_generation = db.Column(db.Integer, nullable=False, default=1, server_default="1")
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     config = db.relationship("WebhookConfig", backref=db.backref("customer_webhooks", cascade="all, delete-orphan"))
 
-    @validates("target_url", "additional_urls", "bearer_token", "signing_secret")
+    @validates("target_url", "additional_urls", "bearer_token", "signing_secret", "pagerduty_routing_key")
     def _encrypt_credentials(self, key: str, value: str | None) -> str | None:
         from .utils import ensure_encrypted
 

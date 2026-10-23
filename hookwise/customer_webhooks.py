@@ -3,17 +3,18 @@
 from typing import Any
 from urllib.parse import urlsplit
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db
 from .models import CustomerWebhook, CustomerWebhookDelivery, GlobalMapping, WebhookConfig
-from .rbac import requires
+from .rbac import current_permissions, requires
 from .routes import main_bp
 from .services.customer_webhooks import (
     TERMINAL_STATUSES,
     destination_urls,
     numeric_score,
     set_destination,
+    set_payload_format,
     validate_score_path,
     validate_target_urls,
 )
@@ -57,6 +58,7 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
         company_id = form.get("company_id", "").strip()
         config = db.session.get(WebhookConfig, form.get("config_id", ""))
         path = form.get("score_path", "").strip()
+        payload_format = form.get("payload_format", hook.payload_format or "hookwise").strip()
         threshold = numeric_score(form.get("minimum_score")) if path else 0
         previous_urls = destination_urls(hook) if not creating else []
         submitted_urls = form.getlist("target_url")
@@ -105,6 +107,12 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
             elif form.get(f"clear_{field}") == "on":
                 credentials[field] = None
         set_destination(hook, urls, credentials, drop_replayed=False)
+        set_payload_format(
+            hook,
+            payload_format,
+            form.get("pagerduty_routing_key", "").strip() or None,
+            clear=form.get("clear_pagerduty_routing_key") == "on",
+        )
         db.session.add(hook)
         db.session.flush()
         log_audit(
@@ -129,6 +137,7 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
                 "is_enabled",
             )
         }
+        safe_values["payload_format"] = form.get("payload_format", hook.payload_format or "hookwise")
         return _render_form(None if creating else hook, safe_values, str(exc)), 400
     flash("Forwarding connector gespeichert.", "success")
     return redirect(url_for("main.customer_webhooks"))
@@ -151,6 +160,29 @@ def edit_customer_webhook(webhook_id: str) -> Any:
     if request.method == "POST":
         return _save(hook, False)
     return _render_form(hook)
+
+
+@main_bp.post("/customer-webhooks/<webhook_id>/targets/<int:target_index>/reveal")
+@auth_required
+@requires("secret:reveal")
+def reveal_customer_webhook_target(webhook_id: str, target_index: int) -> Any:
+    # URLs may contain customer API keys. Keep this boundary enforced even
+    # during a permissive RBAC rollout, and reveal only after an explicit click.
+    permissions = current_permissions()
+    for permission in ("endpoint:write", "secret:reveal"):
+        if permission not in permissions:
+            return jsonify({"message": "Insufficient permissions", "required": permission}), 403
+    hook = db.get_or_404(CustomerWebhook, webhook_id)
+    targets = destination_urls(hook)
+    if target_index >= len(targets):
+        return jsonify({"message": "Ziel nicht gefunden."}), 404
+    log_audit(
+        "customer_webhook_target_reveal", hook.config_id, f"Customer webhook {hook.id}; target {target_index + 1}"
+    )
+    response = jsonify({"url": targets[target_index]})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @main_bp.post("/customer-webhooks/<webhook_id>/toggle")

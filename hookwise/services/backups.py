@@ -60,6 +60,8 @@ CONFIG_FIELDS = {
     "timeout_hours",
 }
 CUSTOMER_WEBHOOK_FIELDS = {
+    "payload_format",
+    "pagerduty_routing_key",
     "comment",
     "name",
     "config_id",
@@ -282,14 +284,26 @@ def restore_backup(document: dict[str, Any]) -> int:
 
 
 def _restore_customer_webhooks(records: Any) -> None:
-    from .customer_webhooks import destination_urls, numeric_score, set_destination, validate_score_path
+    from .customer_webhooks import (
+        destination_urls,
+        numeric_score,
+        set_destination,
+        set_payload_format,
+        validate_score_path,
+    )
 
     if not isinstance(records, list) or len(records) > MAX_CONFIGS:
         raise BackupValidationError("Customer webhooks are invalid")
     seen = set()
     for record in records:
         if isinstance(record, dict):
-            record = {"comment": None, "additional_urls": None, **record}
+            record = {
+                "comment": None,
+                "additional_urls": None,
+                "payload_format": "hookwise",
+                "pagerduty_routing_key": None,
+                **record,
+            }
         if not isinstance(record, dict) or set(record) != CUSTOMER_WEBHOOK_FIELDS | {"id"}:
             raise BackupValidationError("Customer webhook fields are invalid")
         if record["comment"] is not None and (not isinstance(record["comment"], str) or len(record["comment"]) > 2000):
@@ -315,7 +329,7 @@ def _restore_customer_webhooks(records: Any) -> None:
             urls = destination_urls(
                 CustomerWebhook(target_url=record["target_url"], additional_urls=record["additional_urls"])
             )
-            for field in ("bearer_token", "signing_secret"):
+            for field in ("bearer_token", "signing_secret", "pagerduty_routing_key"):
                 value = record[field]
                 if value is not None:
                     if not isinstance(value, str):
@@ -332,8 +346,19 @@ def _restore_customer_webhooks(records: Any) -> None:
         set_destination(
             hook,
             urls,
-            {field: record[field] for field in ("bearer_token", "signing_secret")},
+            {field: record[field] for field in ("bearer_token", "signing_secret", "pagerduty_routing_key")},
         )
-        for field in CUSTOMER_WEBHOOK_FIELDS - {"target_url", "additional_urls", "bearer_token", "signing_secret"}:
+        try:
+            set_payload_format(hook, record["payload_format"])
+        except ValueError as exc:
+            raise BackupValidationError("Customer webhook format or PagerDuty key is invalid") from exc
+        for field in CUSTOMER_WEBHOOK_FIELDS - {
+            "target_url",
+            "additional_urls",
+            "bearer_token",
+            "signing_secret",
+            "payload_format",
+            "pagerduty_routing_key",
+        }:
             setattr(hook, field, record[field])
         db.session.add(hook)

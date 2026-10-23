@@ -3,6 +3,7 @@
 <div class="mb-4"><a href="{{ url_for('main.customer_webhooks') }}">← Forwarding</a>
   <h1 class="fw-bold mt-2">Zustellungen: {{ hook.name }}</h1>
   <p class="text-secondary">Kunde {{ hook.company_id }} · Quelle {{ hook.config.name }}</p></div>
+{% if hw_kann('endpoint:test') %}<a class="btn btn-outline-primary mb-3" href="{{ url_for('main.test_customer_webhook', webhook_id=hook.id, latest=1) }}">Alert testen</a>{% endif %}
 <div class="glass-card p-4">
   {% if hw_kann('history:delete') %}
   <form method="post" action="{{ url_for('main.clear_customer_webhook_history', webhook_id=hook.id) }}" class="mb-3" hx-boost="false">
@@ -16,7 +17,7 @@
   <tbody>{% for delivery in deliveries.items %}<tr>
     <td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td><code>{{ delivery.id }}</code></td>
     <td>{{ delivery.target_index + 1 }} <span class="text-secondary small">(Version {{ delivery.destination_generation }})</span></td>
-    <td>{{ {'pending': 'Wartet', 'sending': 'Wird gesendet', 'delivered': 'Zugestellt', 'failed': 'Fehlgeschlagen', 'cancelled': 'Abgebrochen'}.get(delivery.status, delivery.status) }}</td>
+    <td>{% if delivery.event_key.startswith('test:') %}<span class="badge bg-warning text-dark me-1">Test</span>{% endif %}{{ {'pending': 'Wartet', 'sending': 'Wird gesendet', 'delivered': 'Zugestellt', 'failed': 'Fehlgeschlagen', 'cancelled': 'Abgebrochen'}.get(delivery.status, delivery.status) }}</td>
     <td>{{ delivery.attempts }} / 5</td><td>{{ delivery.response_status or '—' }}</td><td>{{ delivery.error_message or '—' }}</td>
   </tr>{% else %}<tr><td colspan="7" class="text-secondary">Noch keine passenden Alarme eingegangen.</td></tr>{% endfor %}</tbody></table>
   </div>
