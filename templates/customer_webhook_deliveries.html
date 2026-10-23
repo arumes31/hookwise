@@ -12,12 +12,13 @@
   </form>
   {% endif %}
   <div class="table-responsive" role="region" aria-label="Forwarding deliveries" tabindex="0">
-  <table class="table align-middle"><thead><tr><th>Zeit (UTC)</th><th>Zustell-ID</th><th>Status</th><th>Versuche</th><th>HTTP</th><th>Diagnose</th></tr></thead>
+  <table class="table align-middle"><thead><tr><th>Zeit (UTC)</th><th>Zustell-ID</th><th>Ziel</th><th>Status</th><th>Versuche</th><th>HTTP</th><th>Diagnose</th></tr></thead>
   <tbody>{% for delivery in deliveries.items %}<tr>
     <td>{{ delivery.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td><td><code>{{ delivery.id }}</code></td>
+    <td>{{ delivery.target_index + 1 }} <span class="text-secondary small">(Version {{ delivery.destination_generation }})</span></td>
     <td>{{ {'pending': 'Wartet', 'sending': 'Wird gesendet', 'delivered': 'Zugestellt', 'failed': 'Fehlgeschlagen', 'cancelled': 'Abgebrochen'}.get(delivery.status, delivery.status) }}</td>
     <td>{{ delivery.attempts }} / 5</td><td>{{ delivery.response_status or '—' }}</td><td>{{ delivery.error_message or '—' }}</td>
-  </tr>{% else %}<tr><td colspan="6" class="text-secondary">Noch keine passenden Alarme eingegangen.</td></tr>{% endfor %}</tbody></table>
+  </tr>{% else %}<tr><td colspan="7" class="text-secondary">Noch keine passenden Alarme eingegangen.</td></tr>{% endfor %}</tbody></table>
   </div>
   <nav aria-label="Zustellungen Seiten" class="d-flex gap-3 mt-3">
     {% if deliveries.has_prev %}<a href="{{ url_for('main.customer_webhook_deliveries', webhook_id=hook.id, page=deliveries.prev_num) }}">Zurück</a>{% endif %}

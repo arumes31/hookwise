@@ -10,6 +10,8 @@ import os
 import re
 import socket
 import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
@@ -24,16 +26,37 @@ from ..utils import decrypt_string, ensure_encrypted, mask_secrets, resolve_json
 from .routing import evaluate_routing
 
 MAX_ATTEMPTS = 5
+MAX_TARGETS = 10
 TERMINAL_STATUSES = ("delivered", "failed", "cancelled")
 logger = logging.getLogger(__name__)
 
 
+def destination_urls(webhook: CustomerWebhook) -> list[str]:
+    additional = json.loads(decrypt_string(webhook.additional_urls)) if webhook.additional_urls else []
+    if not isinstance(additional, list):
+        raise ValueError("Ungültige Ziel-URLs.")
+    urls = [decrypt_string(webhook.target_url), *additional]
+    validate_target_urls(urls)
+    return urls
+
+
+def validate_target_urls(urls: list[str]) -> None:
+    if not 1 <= len(urls) <= MAX_TARGETS or any(not isinstance(url, str) for url in urls):
+        raise ValueError(f"Bitte 1 bis {MAX_TARGETS} Ziel-URLs angeben.")
+    if len(set(urls)) != len(urls):
+        raise ValueError("Jede Ziel-URL darf nur einmal vorkommen.")
+    for url in urls:
+        validate_target_url(url)
+
+
 def set_destination(
-    webhook: CustomerWebhook, url: str, credentials: dict[str, str | None], *, drop_replayed: bool = True
+    webhook: CustomerWebhook, url: str | list[str], credentials: dict[str, str | None], *, drop_replayed: bool = True
 ) -> None:
     """Bind credentials and queued alarms to the receiver, including backup restores."""
     credentials = {field: ensure_encrypted(value) if value else None for field, value in credentials.items()}
-    changed = bool(webhook.target_url) and decrypt_string(webhook.target_url) != url
+    urls = [url] if isinstance(url, str) else url
+    validate_target_urls(urls)
+    changed = bool(webhook.target_url) and destination_urls(webhook) != urls
     if changed:
         for field in ("bearer_token", "signing_secret"):
             old = getattr(webhook, field)
@@ -50,7 +73,8 @@ def set_destination(
             {"status": "cancelled", "payload": "{}", "completed_at": datetime.now(timezone.utc)},
             synchronize_session="fetch",
         )
-    webhook.target_url = url
+    webhook.target_url = urls[0]
+    webhook.additional_urls = json.dumps(urls[1:]) if len(urls) > 1 else None
     for field, value in credentials.items():
         setattr(webhook, field, value)
 
@@ -163,18 +187,28 @@ def stage_customer_deliveries(log: WebhookLog, data: dict[str, Any]) -> None:
     for webhook in subscriptions:
         if webhook.company_id != company_id:
             continue
+        if webhook.score_path:
+            try:
+                validate_score_path(webhook.score_path)
+            except ValueError:
+                logger.warning("Skipping Forwarding subscription %s: invalid score_path", webhook.id)
+                continue
+            matches = [
+                (numeric_score(match.value), match.context.value) for match in parse(webhook.score_path).find(data)
+            ]
+        else:
+            matches = [(None, data)]
         try:
-            validate_score_path(webhook.score_path)
+            targets = destination_urls(webhook)
         except ValueError:
-            logger.warning("Skipping Forwarding subscription %s: invalid score_path", webhook.id)
+            logger.warning("Skipping Forwarding subscription %s: invalid destinations", webhook.id)
             continue
-        for match in parse(webhook.score_path).find(data):
-            score = numeric_score(match.value)
-            if score is None or score < webhook.minimum_score:
+        for score, matched_alert in matches:
+            if webhook.score_path and (score is None or score < webhook.minimum_score):
                 continue
             # Send only the object containing the matched score, never the whole
             # batch of unrelated alerts or the sender's authentication headers.
-            alert = mask_secrets(match.context.value)
+            alert = mask_secrets(matched_alert)
             canonical = json.dumps(alert, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             event_key = hashlib.sha256(f"{company_id}:{canonical}".encode()).hexdigest()
             payload = {
@@ -184,26 +218,34 @@ def stage_customer_deliveries(log: WebhookLog, data: dict[str, Any]) -> None:
                 "source_endpoint_id": config.id,
                 "request_id": log.request_id,
                 "score": score,
-                "minimum_score": webhook.minimum_score,
+                "minimum_score": webhook.minimum_score if webhook.score_path else None,
                 "alert": alert,
             }
-            if CustomerWebhookDelivery.query.filter_by(webhook_id=webhook.id, event_key=event_key).first():
-                continue
-            try:
-                with db.session.begin_nested():
-                    db.session.add(
-                        CustomerWebhookDelivery(
-                            webhook_id=webhook.id,
-                            log_id=log.id,
-                            event_key=event_key,
-                            destination_generation=webhook.destination_generation,
-                            payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            for target_index in range(len(targets)):
+                # Keep the legacy key for the first target so existing deduplication survives upgrades.
+                target_key = (
+                    event_key
+                    if target_index == 0
+                    else hashlib.sha256(f"{event_key}:{target_index}".encode()).hexdigest()
+                )
+                if CustomerWebhookDelivery.query.filter_by(webhook_id=webhook.id, event_key=target_key).first():
+                    continue
+                try:
+                    with db.session.begin_nested():
+                        db.session.add(
+                            CustomerWebhookDelivery(
+                                webhook_id=webhook.id,
+                                log_id=log.id,
+                                event_key=target_key,
+                                target_index=target_index,
+                                destination_generation=webhook.destination_generation,
+                                payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                            )
                         )
-                    )
-                    db.session.flush()
-            except IntegrityError:
-                # A concurrent ingestion already persisted this exact alarm.
-                continue
+                        db.session.flush()
+                except IntegrityError:
+                    # A concurrent ingestion already persisted this exact alarm for this target.
+                    continue
 
 
 def post_webhook(url: str, body: bytes, headers: dict[str, str]) -> int:
@@ -246,6 +288,65 @@ def post_webhook(url: str, body: bytes, headers: dict[str, str]) -> int:
         pool.close()
 
 
+@dataclass(frozen=True)
+class DeliveryAttempt:
+    delivery_id: str
+    attempts: int
+    claim_until: datetime
+    target_url: str
+    bearer_token: str | None
+    signing_secret: str | None
+    body: bytes
+
+
+def _send_attempt(attempt: DeliveryAttempt) -> dict[str, Any]:
+    """Perform network I/O only; database sessions stay in the dispatcher thread."""
+    delivery_id, attempts = attempt.delivery_id, attempt.attempts
+    target_url, bearer_token, signing_secret = attempt.target_url, attempt.bearer_token, attempt.signing_secret
+    body = attempt.body
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Hookwise/Customer-Webhooks",
+        "Idempotency-Key": delivery_id,
+        "X-HookWise-Delivery-ID": delivery_id,
+    }
+    code = None
+    error_message = None
+    try:
+        if bearer_token:
+            headers["Authorization"] = "Bearer " + decrypt_string(bearer_token)
+        if signing_secret:
+            timestamp = str(int(time.time()))
+            signature = hmac.new(
+                decrypt_string(signing_secret).encode(),
+                timestamp.encode() + b"." + body,
+                hashlib.sha256,
+            ).hexdigest()
+            headers["X-HookWise-Timestamp"] = timestamp
+            headers["X-HookWise-Signature"] = "sha256=" + signature
+        code = post_webhook(target_url, body, headers)
+        if 200 <= code < 300:
+            status = "delivered"
+        else:
+            retryable = code in (408, 425, 429) or code >= 500
+            status = "pending" if retryable and attempts < MAX_ATTEMPTS else "failed"
+            error_message = f"Empfänger antwortete mit HTTP {code}."
+    except Exception as exc:
+        # Exception strings can contain URLs, query credentials or headers.
+        error_message = f"Zustellung fehlgeschlagen ({type(exc).__name__})."
+        retryable = not isinstance(exc, ValueError)
+        status = "pending" if retryable and attempts < MAX_ATTEMPTS else "failed"
+    changes = {
+        "status": status,
+        "response_status": code,
+        "error_message": error_message,
+        "next_attempt_at": datetime.now(timezone.utc) + timedelta(seconds=min(30 * 2**attempts, 1800)),
+    }
+    if status in TERMINAL_STATUSES:
+        changes.update(payload="{}", completed_at=datetime.now(timezone.utc))
+    return changes
+
+
 def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
     """Claim due rows atomically and recover abandoned claims after five minutes."""
     now = datetime.now(timezone.utc)
@@ -265,6 +366,7 @@ def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
         .all()
     ]
     result = {"delivered": 0, "failed": 0}
+    jobs: list[DeliveryAttempt] = []
     for delivery_id in ids:
         claimed = CustomerWebhookDelivery.query.filter(
             CustomerWebhookDelivery.id == delivery_id,
@@ -304,7 +406,16 @@ def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
             continue
         # Snapshot one destination/credential generation before committing. An
         # in-flight request may finish to the old receiver, never to a new one.
-        target_url, bearer_token, signing_secret = webhook.target_url, webhook.bearer_token, webhook.signing_secret
+        try:
+            target_url = destination_urls(webhook)[delivery.target_index]
+        except ValueError, IndexError:
+            delivery.status, delivery.payload = "failed", "{}"
+            delivery.error_message = "Ungültiges Zustellziel."
+            delivery.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
+            result["failed"] += 1
+            continue
+        bearer_token, signing_secret = webhook.bearer_token, webhook.signing_secret
         body = delivery.payload.encode("utf-8")
         attempts = delivery.attempts + 1
         claim_until = delivery.next_attempt_at
@@ -318,51 +429,19 @@ def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
         db.session.commit()
         if not started:
             continue
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Hookwise/Customer-Webhooks",
-            "Idempotency-Key": delivery_id,
-            "X-HookWise-Delivery-ID": delivery_id,
-        }
-        code = None
-        error_message = None
-        try:
-            if bearer_token:
-                headers["Authorization"] = "Bearer " + decrypt_string(bearer_token)
-            if signing_secret:
-                timestamp = str(int(time.time()))
-                signature = hmac.new(
-                    decrypt_string(signing_secret).encode(),
-                    timestamp.encode() + b"." + body,
-                    hashlib.sha256,
-                ).hexdigest()
-                headers["X-HookWise-Timestamp"] = timestamp
-                headers["X-HookWise-Signature"] = "sha256=" + signature
-            code = post_webhook(decrypt_string(target_url), body, headers)
-            if 200 <= code < 300:
-                status = "delivered"
-            else:
-                retryable = code in (408, 425, 429) or code >= 500
-                status = "pending" if retryable and attempts < MAX_ATTEMPTS else "failed"
-                error_message = f"Empfänger antwortete mit HTTP {code}."
-        except Exception as exc:
-            # Exception strings can contain URLs, query credentials or headers.
-            error_message = f"Zustellung fehlgeschlagen ({type(exc).__name__})."
-            retryable = not isinstance(exc, ValueError)
-            status = "pending" if retryable and attempts < MAX_ATTEMPTS else "failed"
-        changes = {
-            "status": status,
-            "response_status": code,
-            "error_message": error_message,
-            "next_attempt_at": datetime.now(timezone.utc) + timedelta(seconds=min(30 * 2**attempts, 1800)),
-        }
-        if status in TERMINAL_STATUSES:
-            changes.update(payload="{}", completed_at=datetime.now(timezone.utc))
+        jobs.append(DeliveryAttempt(delivery_id, attempts, claim_until, target_url, bearer_token, signing_secret, body))
+    if len(jobs) > 1:
+        with ThreadPoolExecutor(max_workers=MAX_TARGETS) as pool:
+            outcomes = list(pool.map(_send_attempt, jobs))
+    else:
+        outcomes = [_send_attempt(job) for job in jobs]
+    for job, changes in zip(jobs, outcomes, strict=True):
+        delivery_id, attempts, claim_until = job.delivery_id, job.attempts, job.claim_until
         # A retarget, history deletion or another claim must win over this result.
         updated = CustomerWebhookDelivery.query.filter_by(
             id=delivery_id, status="sending", attempts=attempts, next_attempt_at=claim_until
         ).update(changes, synchronize_session="fetch")
         if updated:
-            result["delivered" if status == "delivered" else "failed"] += 1
+            result["delivered" if changes["status"] == "delivered" else "failed"] += 1
         db.session.commit()
     return result
