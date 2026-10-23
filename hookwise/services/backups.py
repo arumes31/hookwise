@@ -60,6 +60,8 @@ CONFIG_FIELDS = {
     "timeout_hours",
 }
 CUSTOMER_WEBHOOK_FIELDS = {
+    "severity_path",
+    "minimum_severity",
     "payload_format",
     "pagerduty_routing_key",
     "comment",
@@ -289,7 +291,9 @@ def _restore_customer_webhooks(records: Any) -> None:
         numeric_score,
         set_destination,
         set_payload_format,
+        set_severity_filter,
         validate_score_path,
+        validate_severity_filter,
     )
 
     if not isinstance(records, list) or len(records) > MAX_CONFIGS:
@@ -302,6 +306,8 @@ def _restore_customer_webhooks(records: Any) -> None:
                 "additional_urls": None,
                 "payload_format": "hookwise",
                 "pagerduty_routing_key": None,
+                "severity_path": "",
+                "minimum_severity": "high",
                 **record,
             }
         if not isinstance(record, dict) or set(record) != CUSTOMER_WEBHOOK_FIELDS | {"id"}:
@@ -324,6 +330,9 @@ def _restore_customer_webhooks(records: Any) -> None:
                 raise ValueError("Invalid path or target")
             if record["score_path"]:
                 validate_score_path(record["score_path"])
+            record["severity_path"], record["minimum_severity"] = validate_severity_filter(
+                record["severity_path"], record["minimum_severity"]
+            )
             if record["additional_urls"] is not None and not isinstance(record["additional_urls"], str):
                 raise ValueError("Invalid additional targets")
             urls = destination_urls(
@@ -350,6 +359,7 @@ def _restore_customer_webhooks(records: Any) -> None:
         )
         try:
             set_payload_format(hook, record["payload_format"])
+            set_severity_filter(hook, record["severity_path"], record["minimum_severity"])
         except ValueError as exc:
             raise BackupValidationError("Customer webhook format or PagerDuty key is invalid") from exc
         for field in CUSTOMER_WEBHOOK_FIELDS - {
@@ -359,6 +369,8 @@ def _restore_customer_webhooks(records: Any) -> None:
             "signing_secret",
             "payload_format",
             "pagerduty_routing_key",
+            "severity_path",
+            "minimum_severity",
         }:
             setattr(hook, field, record[field])
         db.session.add(hook)

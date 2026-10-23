@@ -3,6 +3,7 @@
         const targets = document.getElementById('forwarding-targets');
         const add = document.getElementById('add-forwarding-target');
         const score = document.getElementById('score_enabled');
+        const severity = document.getElementById('severity_enabled');
         if (!targets || !add || targets.dataset.initialized) return;
         targets.dataset.initialized = 'true';
 
@@ -102,6 +103,17 @@
             }
             if (score.checked && !document.getElementById('score_path').value) {
                 document.getElementById('score_path').value = '$.score';
+            }
+        });
+        severity?.addEventListener('change', () => {
+            for (const [fieldId, inputId] of [['severity-path-field', 'severity_path'], ['severity-minimum-field', 'minimum_severity']]) {
+                document.getElementById(fieldId).hidden = !severity.checked;
+                const input = document.getElementById(inputId);
+                input.disabled = !severity.checked;
+                input.required = severity.checked;
+            }
+            if (severity.checked && !document.getElementById('severity_path').value) {
+                document.getElementById('severity_path').value = '$.Results[*].Severity';
             }
         });
         const format = document.getElementById('payload_format');

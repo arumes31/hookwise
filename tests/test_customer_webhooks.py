@@ -762,6 +762,7 @@ def test_migration_matches_models_and_rolls_back(app):
     destination = importlib.import_module("migrations.versions.d7f3a9b2c5e1_bind_forwarding_destinations")
     targets = importlib.import_module("migrations.versions.f2a8c4d6e9b1_add_forwarding_targets")
     pagerduty = importlib.import_module("migrations.versions.a8c2d4e6f901_add_pagerduty_forwarding")
+    severity = importlib.import_module("migrations.versions.b6d8e0f2a4c6_add_forwarding_severity_filter")
     with db.engine.begin() as connection:
         db.metadata.tables["customer_webhook_delivery"].drop(connection)
         db.metadata.tables["customer_webhook"].drop(connection)
@@ -771,7 +772,9 @@ def test_migration_matches_models_and_rolls_back(app):
             destination.upgrade()
             targets.upgrade()
             pagerduty.upgrade()
+            severity.upgrade()
             assert compare_metadata(context, db.metadata) == []
+            severity.downgrade()
             pagerduty.downgrade()
             targets.downgrade()
             destination.downgrade()
@@ -780,6 +783,7 @@ def test_migration_matches_models_and_rolls_back(app):
             destination.upgrade()
             targets.upgrade()
             pagerduty.upgrade()
+            severity.upgrade()
             assert compare_metadata(context, db.metadata) == []
 
 

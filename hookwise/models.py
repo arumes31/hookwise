@@ -361,6 +361,8 @@ class CustomerWebhook(Base):
     additional_urls = db.Column(db.Text, nullable=True)
     score_path = db.Column(db.String(200), nullable=False)
     minimum_score = db.Column(db.Float, nullable=False)
+    severity_path = db.Column(db.String(200), nullable=False, default="", server_default="")
+    minimum_severity = db.Column(db.String(20), nullable=False, default="high", server_default="high")
     bearer_token = db.Column(db.Text, nullable=True)
     signing_secret = db.Column(db.Text, nullable=True)
     payload_format = db.Column(db.String(20), nullable=False, default="hookwise", server_default="hookwise")

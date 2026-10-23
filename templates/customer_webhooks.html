@@ -14,7 +14,11 @@
         <td><strong>{{ hook.name }}</strong><br><span class="text-secondary small">{{ hosts[hook.id] }}</span>
           {% if hook.comment %}<details class="small mt-1"><summary class="text-secondary">Kommentar</summary><p class="text-break mt-1 mb-0">{{ hook.comment }}</p></details>{% endif %}</td>
         <td>{{ hook.company_id }}</td><td>{{ hook.config.name }}</td>
-        <td>{% if hook.score_path %}<code>{{ hook.score_path }}</code><br>Score ≥ {{ hook.minimum_score }}{% else %}Ohne Score-Filter{% endif %}</td>
+        <td>
+          {% if hook.severity_path %}<div>Severity ≥ <strong>{{ hook.minimum_severity }}</strong><br><code>{{ hook.severity_path }}</code></div>{% else %}<div>Alle Schweregrade</div>{% endif %}
+          {% if hook.score_path %}<div class="mt-1">Score ≥ {{ hook.minimum_score }}<br><code>{{ hook.score_path }}</code></div>{% else %}<div class="small text-secondary">Ohne Score-Filter</div>{% endif %}
+          {% if hook.severity_path and hook.score_path %}<div class="small text-secondary mt-1">Beide Bedingungen im selben Alarmobjekt</div>{% endif %}
+        </td>
         <td><span class="badge {{ 'bg-success' if hook.is_enabled else 'bg-warning text-dark' }}">{{ 'Aktiv' if hook.is_enabled else 'Pausiert' }}</span></td>
         <td><div class="d-flex flex-wrap gap-2">
           {% if hw_kann('endpoint:test') %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.test_customer_webhook', webhook_id=hook.id) }}">Alert testen</a>{% endif %}
@@ -31,7 +35,7 @@
   </div>
   {% else %}
   <h2 class="h5">Noch keine Forwarding</h2>
-  <p class="text-secondary">Lege einen Connector mit Kunde, Quell-Endpoint und Ziel-URLs an. Ein Score-Filter ist optional.
+  <p class="text-secondary">Lege einen Connector mit Kunde, Quell-Endpoint und Ziel-URLs an. Filter nach Schweregrad und Score sind optional.
     Sobald eine passende Meldung eingeht, erhält der Kunde einen HTTPS-POST mit dem Alarm.</p>
   {% endif %}
 </div>
