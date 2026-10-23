@@ -156,6 +156,8 @@ class WebhookConfig(Base):
     # boundary and again defensively by the task retry implementation.
     rate_limit_per_minute = db.Column(db.Integer, default=60, nullable=False)
     retry_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    connectwise_delivery_enabled = db.Column(db.Boolean, default=True, server_default=db.true(), nullable=False)
+    forwarding_enabled = db.Column(db.Boolean, default=True, server_default=db.true(), nullable=False)
     retry_max_attempts = db.Column(db.Integer, default=5, nullable=False)
     retry_base_delay_seconds = db.Column(db.Integer, default=1, nullable=False)
     retry_max_delay_seconds = db.Column(db.Integer, default=300, nullable=False)
@@ -212,6 +214,8 @@ class WebhookConfig(Base):
             "bearer_token_last4": self.bearer_token_last4,
             "rate_limit_per_minute": self.rate_limit_per_minute,
             "retry_enabled": self.retry_enabled,
+            "connectwise_delivery_enabled": self.connectwise_delivery_enabled,
+            "forwarding_enabled": self.forwarding_enabled,
             "retry_max_attempts": self.retry_max_attempts,
             "retry_base_delay_seconds": self.retry_base_delay_seconds,
             "retry_max_delay_seconds": self.retry_max_delay_seconds,
@@ -343,6 +347,56 @@ class WebhookLog(Base):
             "created_at": self.created_at.isoformat(),
             "config_name": self.config.name if self.config else "Unknown",
         }
+
+
+class CustomerWebhook(Base):
+    """An outbound alarm subscription scoped to one source and one customer."""
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(100), nullable=False)
+    comment = db.Column(db.Text, nullable=True)
+    config_id = db.Column(db.String(64), db.ForeignKey("webhook_config.id", ondelete="CASCADE"), nullable=False)
+    company_id = db.Column(db.String(50), nullable=False, index=True)
+    target_url = db.Column(db.Text, nullable=False)
+    score_path = db.Column(db.String(200), nullable=False)
+    minimum_score = db.Column(db.Float, nullable=False)
+    bearer_token = db.Column(db.Text, nullable=True)
+    signing_secret = db.Column(db.Text, nullable=True)
+    is_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    destination_generation = db.Column(db.Integer, nullable=False, default=1, server_default="1")
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    config = db.relationship("WebhookConfig", backref=db.backref("customer_webhooks", cascade="all, delete-orphan"))
+
+    @validates("target_url", "bearer_token", "signing_secret")
+    def _encrypt_credentials(self, key: str, value: str | None) -> str | None:
+        from .utils import ensure_encrypted
+
+        return ensure_encrypted(value) if value else value
+
+
+class CustomerWebhookDelivery(Base):
+    """Durable outgoing queue and delivery history, separate from ticket delivery."""
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    webhook_id = db.Column(db.String(36), db.ForeignKey("customer_webhook.id", ondelete="CASCADE"), nullable=False)
+    log_id = db.Column(db.String(36), db.ForeignKey("webhook_log.id", ondelete="SET NULL"), nullable=True)
+    event_key = db.Column(db.String(64), nullable=False)
+    destination_generation = db.Column(db.Integer, nullable=False, default=1, server_default="1")
+    payload = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="pending")
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    response_status = db.Column(db.Integer, nullable=True)
+    error_message = db.Column(db.String(255), nullable=True)
+    next_attempt_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("webhook_id", "event_key", name="uq_customer_webhook_event"),
+        db.Index("ix_customer_delivery_due", "status", "next_attempt_at"),
+    )
+    webhook = db.relationship("CustomerWebhook", backref=db.backref("deliveries", cascade="all, delete-orphan"))
 
 
 class DeliveryOutbox(Base):

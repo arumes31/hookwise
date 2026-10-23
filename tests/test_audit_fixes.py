@@ -457,12 +457,14 @@ def test_stale_outbox_claim_is_recovered_after_a_dispatcher_crash(audit_app):
         db.session.add(log)
         db.session.flush()
         outbox = stage_delivery(log, {"status": "down"})
+        assert outbox is not None
         outbox.status = "dispatching"
         outbox.dispatched_at = datetime.now(timezone.utc) - timedelta(seconds=CLAIM_TIMEOUT_SECONDS + 1)
         fresh_log = WebhookLog(config_id=config.id, request_id="outbox-fresh", payload="{}", status="received")
         db.session.add(fresh_log)
         db.session.flush()
         fresh_claim = stage_delivery(fresh_log, {"status": "down"})
+        assert fresh_claim is not None
         fresh_claim.status = "dispatching"
         fresh_claim.dispatched_at = datetime.now(timezone.utc)
         db.session.commit()

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..extensions import db
-from ..models import DeliveryOutbox, WebhookLog
+from ..models import DeliveryOutbox, WebhookConfig, WebhookLog
 
 
 def stage_delivery(
@@ -14,11 +14,23 @@ def stage_delivery(
     *,
     source_ip: str | None = None,
     headers: dict[str, str] | None = None,
-) -> DeliveryOutbox:
+) -> DeliveryOutbox | None:
     """Stage a task intent in the same transaction as its delivery log."""
     log.status = "pending_enqueue"
     db.session.add(log)
     db.session.flush()
+    from .customer_webhooks import stage_customer_deliveries
+
+    stage_customer_deliveries(log, data)
+    config = db.session.get(WebhookConfig, log.config_id)
+    if config and not config.connectwise_delivery_enabled:
+        config.last_seen_at = datetime.now(timezone.utc)
+        config.last_ip = source_ip or config.last_ip
+        log.status = "skipped"
+        log.action = "forwarding"
+        log.error_message = "ConnectWise delivery disabled; Forwarding evaluated independently."
+        log.completed_at = datetime.now(timezone.utc)
+        return None
     outbox = DeliveryOutbox(
         log=log,
         arguments=json.dumps(
@@ -50,6 +62,15 @@ def dispatch_outbox(outbox: DeliveryOutbox, task: Any = None) -> bool:
         db.session.delete(outbox)
         db.session.commit()
         return False
+    config = WebhookConfig.query.filter_by(id=log.config_id).populate_existing().first()
+    if config and not config.connectwise_delivery_enabled:
+        outbox.status = "cancelled"
+        outbox.arguments = "{}"
+        log.status = "skipped"
+        log.error_message = "ConnectWise delivery disabled before dispatch."
+        log.completed_at = datetime.now(timezone.utc)
+        db.session.commit()
+        return True
     try:
         arguments = json.loads(outbox.arguments)
         optional_arguments = {
@@ -82,12 +103,15 @@ def dispatch_outbox(outbox: DeliveryOutbox, task: Any = None) -> bool:
     return True
 
 
-def commit_and_dispatch(outbox: DeliveryOutbox, task: Any = None) -> bool:
+def commit_and_dispatch(outbox: DeliveryOutbox | None, task: Any = None) -> bool:
     """Commit the domain change and then attempt low-latency dispatch."""
     # Der Besitzvermerk geht mit derselben Transaktion raus wie die fachliche
     # Aenderung. Sonst sieht der Outbox-Sweep die Zeile im Fenster zwischen
     # Commit und Versand als "pending" und stellt denselben Task ein zweites Mal
     # in die Queue. Scheitert der Versand, setzt ``dispatch_outbox`` zurueck.
+    if outbox is None:
+        db.session.commit()
+        return True
     outbox.status = "dispatching"
     outbox.dispatched_at = datetime.now(timezone.utc)
     db.session.commit()

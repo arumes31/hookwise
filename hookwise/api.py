@@ -354,7 +354,10 @@ def _register() -> None:
     @main_bp.route("/history/delete/<log_id>", methods=["POST"])
     @auth_required
     def delete_log(log_id: str) -> Any:
+        from .services.customer_webhooks import delete_delivery_history
+
         log_entry = WebhookLog.query.get_or_404(log_id)
+        delete_delivery_history([log_id])
         db.session.delete(log_entry)
         db.session.commit()
         return jsonify({"status": "success"})
@@ -362,6 +365,9 @@ def _register() -> None:
     @main_bp.route("/history/delete-all", methods=["POST"])
     @auth_required
     def delete_all_logs() -> Any:
+        from .services.customer_webhooks import delete_delivery_history
+
+        delete_delivery_history()
         WebhookLog.query.delete()
         db.session.commit()
         return jsonify({"status": "success", "message": "All logs deleted"})
@@ -369,9 +375,12 @@ def _register() -> None:
     @main_bp.route("/history/bulk-delete", methods=["POST"])
     @auth_required
     def bulk_delete_logs() -> Any:
+        from .services.customer_webhooks import delete_delivery_history
+
         ids = request.json.get("ids", [])
         if not ids:
             return jsonify({"status": "error", "message": "No IDs provided"}), 400
+        delete_delivery_history(ids)
         WebhookLog.query.filter(WebhookLog.id.in_(ids)).delete(synchronize_session=False)
         db.session.commit()
         return jsonify({"status": "success"})

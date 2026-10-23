@@ -55,6 +55,8 @@ def _authentication_error(config: WebhookConfig) -> str | None:
 
 def _stale_alert_error(config: WebhookConfig) -> str | None:
     """Refuse stale alerts that ConnectWise would reject for want of a real company."""
+    if config.connectwise_delivery_enabled is False:
+        return None
     if not config.timeout_alerts_enabled or config.is_draft:
         return None
     return stale_company_problem(config.customer_id_default)
@@ -142,6 +144,8 @@ def _register_crud_routes(main_bp: Any) -> None:
                 notify_window_minutes=max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440)),
                 rate_limit_per_minute=_get_int_form_value("rate_limit_per_minute", 60, 1, 10000),
                 retry_enabled=request.form.get("retry_enabled", "true") == "true",
+                connectwise_delivery_enabled=request.form.get("connectwise_delivery_enabled", "true") == "true",
+                forwarding_enabled=request.form.get("forwarding_enabled", "true") == "true",
                 retry_max_attempts=_get_int_form_value("retry_max_attempts", 5, 0, 20),
                 retry_base_delay_seconds=_get_int_form_value("retry_base_delay_seconds", 1, 1, 3600),
                 retry_max_delay_seconds=_get_int_form_value("retry_max_delay_seconds", 300, 1, 86400),
@@ -224,6 +228,13 @@ def _register_crud_routes(main_bp: Any) -> None:
             config.notify_window_minutes = max(5, _get_int_form_value("notify_window_minutes", 60, max_val=1440))
             config.rate_limit_per_minute = _get_int_form_value("rate_limit_per_minute", 60, 1, 10000)
             config.retry_enabled = request.form.get("retry_enabled", "true") == "true"
+            config.connectwise_delivery_enabled = (
+                request.form.get("connectwise_delivery_enabled", str(config.connectwise_delivery_enabled).lower())
+                == "true"
+            )
+            config.forwarding_enabled = (
+                request.form.get("forwarding_enabled", str(config.forwarding_enabled).lower()) == "true"
+            )
             config.retry_max_attempts = _get_int_form_value("retry_max_attempts", 5, 0, 20)
             config.retry_base_delay_seconds = _get_int_form_value("retry_base_delay_seconds", 1, 1, 3600)
             config.retry_max_delay_seconds = _get_int_form_value("retry_max_delay_seconds", 300, 1, 86400)
@@ -480,6 +491,8 @@ def _register_crud_routes(main_bp: Any) -> None:
             timeout_hours=config.timeout_hours,
             rate_limit_per_minute=config.rate_limit_per_minute,
             retry_enabled=config.retry_enabled,
+            connectwise_delivery_enabled=config.connectwise_delivery_enabled,
+            forwarding_enabled=config.forwarding_enabled,
             retry_max_attempts=config.retry_max_attempts,
             retry_base_delay_seconds=config.retry_base_delay_seconds,
             retry_max_delay_seconds=config.retry_max_delay_seconds,

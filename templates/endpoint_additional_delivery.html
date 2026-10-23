@@ -1,0 +1,55 @@
+<div class="tab-pane fade" id="pane-additional-delivery" role="tabpanel" aria-labelledby="tab-additional-delivery">
+    <h2 class="h5 mb-3">Additional Delivery</h2>
+    <p class="text-secondary">Choose where this endpoint delivers alerts. Each Forwarding connector applies its own customer and score filters.</p>
+    <div class="row g-4">
+        <div class="col-12">
+            <div class="hw-schaltkarte p-3 rounded-2 border border-secondary border-opacity-25">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="connectwise_delivery_enabled"
+                        name="connectwise_delivery_enabled" value="true" aria-describedby="connectwise-delivery-help"
+                        {{ 'checked' if not config or config.connectwise_delivery_enabled else '' }}>
+                    <input type="hidden" name="connectwise_delivery_enabled" value="false">
+                    <label class="form-check-label fw-bold" for="connectwise_delivery_enabled">Deliver to ConnectWise</label>
+                </div>
+                <p class="small text-secondary mt-2 mb-0" id="connectwise-delivery-help">Turn off to use external webhooks only. Ticket creation, updates, recovery and stale-endpoint tickets are disabled. Existing tickets stay open.</p>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="hw-schaltkarte p-3 rounded-2 border border-secondary border-opacity-25">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="forwarding_enabled"
+                        name="forwarding_enabled" value="true" aria-describedby="forwarding-delivery-help"
+                        {{ 'checked' if not config or config.forwarding_enabled else '' }}>
+                    <input type="hidden" name="forwarding_enabled" value="false">
+                    <label class="form-check-label fw-bold" for="forwarding_enabled">Allow Forwarding connectors to listen</label>
+                </div>
+                <p class="small text-secondary mt-2 mb-0" id="forwarding-delivery-help">Enabled by default. Turning this off stops new forwarding and cancels pending deliveries when the dispatcher checks them. Re-enabling does not replay cancelled alerts.</p>
+            </div>
+        </div>
+        <div class="col-12">
+            {% set connectors = config.customer_webhooks if config and config.id else [] %}
+            {% set active = connectors|selectattr('is_enabled')|list %}
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h3 class="h6 mb-0">Forwarding connectors <span class="badge bg-secondary ms-1">{{ connectors|length }}</span></h3>
+                <a href="{{ url_for('main.customer_webhooks') }}">Manage Forwarding</a>
+            </div>
+            {% if connectors %}
+            <p class="small text-secondary">{{ active|length }} active · {{ connectors|length - active|length }} paused.
+                {% if not config.forwarding_enabled %}Listening is disabled for this endpoint.
+                {% elif not config.is_enabled or config.is_draft or config.archived_at %}Listening is suspended while this endpoint is paused, a draft or archived.
+                {% else %}Active connectors listen for matching alerts on this endpoint.{% endif %}</p>
+            <ul class="list-group list-group-flush">
+                {% for connector in connectors %}
+                <li class="list-group-item bg-transparent px-0 d-flex flex-wrap justify-content-between gap-2">
+                    <div><strong>{{ connector.name }}</strong><div class="small text-secondary">Company {{ connector.company_id }} · <code>{{ connector.score_path }}</code> ≥ {{ connector.minimum_score }}</div></div>
+                    <span class="badge align-self-start {{ 'bg-success' if connector.is_enabled else 'bg-secondary' }}">{{ 'Active' if connector.is_enabled else 'Paused' }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-secondary mb-0">No Forwarding connectors are attached to this endpoint.
+                {% if not config or not config.id %}Save the endpoint, then select it as a source in Forwarding.{% else %}Create a connector in Forwarding and select this endpoint as its source.{% endif %}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

@@ -14,6 +14,18 @@
 
 HookWise is a high-performance webhook router that connects monitoring and security sources such as Uptime Kuma, Zabbix, Grafana, Datadog, and CIPP to **ConnectWise Manage** tickets. It provides company-aware duplicate detection, durable asynchronous delivery, optional local AI analysis, and configuration/asset association.
 
+Customer-owned alarm chains can receive matching alerts through **Forwarding**:
+configure a customer, source endpoint, HTTPS target and minimum numeric score.
+Endpoint configuration → **5. Additional Delivery** controls ConnectWise delivery
+and whether Forwarding connectors may listen (both enabled by default), and lists
+the attached connectors. Disable ConnectWise delivery for external-webhook-only use.
+See [Forwarding](docs/CUSTOMER_WEBHOOKS.md) for setup, delivery guarantees and the receiver contract.
+
+Web, worker and Beat startup automatically apply pending database migrations under
+a database lock. Failed migrations stop startup; `AUTO_DB_UPGRADE=false` is available
+for separately managed migration workflows. Completed Forwarding payloads are
+discarded immediately and history follows the configured log-retention period.
+
 ---
 
 ## 📍 Table of Contents

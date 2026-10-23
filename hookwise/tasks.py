@@ -695,6 +695,10 @@ celery.conf.beat_schedule = {
         "task": "hookwise.dispatch_delivery_outbox",
         "schedule": 10.0,
     },
+    "dispatch-customer-webhooks": {
+        "task": "hookwise.dispatch_customer_webhooks",
+        "schedule": 10.0,
+    },
 }
 
 # Execution guards: a hung ConnectWise/LLM call must not pin a worker forever.
@@ -812,6 +816,13 @@ def dispatch_delivery_outbox() -> dict[str, int]:
     return {"dispatched": dispatched, "failed": failed}
 
 
+@celery.task(name="hookwise.dispatch_customer_webhooks")  # type: ignore[untyped-decorator]
+def dispatch_customer_webhooks() -> dict[str, int]:
+    from .services.customer_webhooks import dispatch_customer_deliveries
+
+    return dispatch_customer_deliveries()
+
+
 @celery.task(name="hookwise.cleanup_logs")  # type: ignore[untyped-decorator]
 def cleanup_logs() -> None:
     """Remove logs older than retention period."""
@@ -853,6 +864,18 @@ def cleanup_logs() -> None:
         retention_days = ersatz
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+
+    from .models import CustomerWebhookDelivery
+    from .services.customer_webhooks import TERMINAL_STATUSES
+
+    CustomerWebhookDelivery.query.filter(
+        CustomerWebhookDelivery.status.in_(TERMINAL_STATUSES),
+        db.func.coalesce(CustomerWebhookDelivery.completed_at, CustomerWebhookDelivery.created_at) < cutoff,
+    ).delete(synchronize_session=False)
+    # Also remove payloads left by versions predating terminal-state scrubbing.
+    CustomerWebhookDelivery.query.filter(
+        CustomerWebhookDelivery.status.in_(TERMINAL_STATUSES), CustomerWebhookDelivery.payload != "{}"
+    ).update({"payload": "{}"}, synchronize_session=False)
 
     deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
     db.session.commit()
@@ -1057,7 +1080,9 @@ def check_webhook_timeouts() -> Dict[str, Any]:
 
     try:
         # Only check enabled, non-draft endpoints with timeout alerts enabled
-        configs = WebhookConfig.query.filter_by(timeout_alerts_enabled=True, is_enabled=True, is_draft=False).all()
+        configs = WebhookConfig.query.filter_by(
+            timeout_alerts_enabled=True, is_enabled=True, is_draft=False, connectwise_delivery_enabled=True
+        ).all()
         logger.info(f"Starting timeout check for {len(configs)} endpoints with alerts enabled (run {run_id}).")
 
         for config in configs:
@@ -1619,7 +1644,7 @@ def _resolve_timeout_alert(config: WebhookConfig) -> None:
     config.last_seen_at = datetime.now(timezone.utc)
     config.last_stale_alert_at = None
 
-    if config.timeout_ticket_id:
+    if config.timeout_ticket_id and config.connectwise_delivery_enabled:
         ticket_id = config.timeout_ticket_id
         resolution = f"Webhook data received again for endpoint '{config.name}'. Automatically closing timeout alert."
 
@@ -1719,6 +1744,13 @@ def handle_webhook_logic(
         db.session.commit()
 
         try:
+            if not config.connectwise_delivery_enabled:
+                _resolve_timeout_alert(config)
+                log_entry.status = "skipped"
+                log_entry.error_message = "ConnectWise delivery disabled; Forwarding evaluated independently."
+                log_entry.completed_at = datetime.now(timezone.utc)
+                db.session.commit()
+                return
             # 2. Check Maintenance Window
             if is_in_maintenance(config):
                 # Ensure heartbeat is updated even in maintenance

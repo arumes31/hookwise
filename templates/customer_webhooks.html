@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+  <div><h1 class="fw-bold mb-1">Forwarding</h1>
+    <p class="text-secondary mb-0">Passende Alarme an die Alarmierungskette eines Kunden senden.</p></div>
+  {% if hw_kann('endpoint:write') %}<a class="btn btn-primary" href="{{ url_for('main.new_customer_webhook') }}">Webhook anlegen</a>{% endif %}
+</div>
+<div class="glass-card p-4">
+  {% if hooks %}
+  <div class="table-responsive" role="region" aria-label="Forwarding" tabindex="0">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Name / Ziel</th><th>Kunde</th><th>Quelle</th><th>Bedingung</th><th>Status</th><th>Aktionen</th></tr></thead>
+      <tbody>{% for hook in hooks %}<tr>
+        <td><strong>{{ hook.name }}</strong><br><span class="text-secondary small">{{ hosts[hook.id] }}</span>
+          {% if hook.comment %}<details class="small mt-1"><summary class="text-secondary">Kommentar</summary><p class="text-break mt-1 mb-0">{{ hook.comment }}</p></details>{% endif %}</td>
+        <td>{{ hook.company_id }}</td><td>{{ hook.config.name }}</td>
+        <td><code>{{ hook.score_path }}</code><br>Score ≥ {{ hook.minimum_score }}</td>
+        <td><span class="badge {{ 'bg-success' if hook.is_enabled else 'bg-warning text-dark' }}">{{ 'Aktiv' if hook.is_enabled else 'Pausiert' }}</span></td>
+        <td><div class="d-flex flex-wrap gap-2">
+          {% if hw_kann('endpoint:write') %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.edit_customer_webhook', webhook_id=hook.id) }}">Bearbeiten</a>
+          <form method="post" action="{{ url_for('main.toggle_customer_webhook', webhook_id=hook.id) }}" hx-boost="false">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-secondary" type="submit">{{ 'Pausieren' if hook.is_enabled else 'Aktivieren' }}</button>
+          </form>{% endif %}
+          {% if hw_kann('history:read') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.customer_webhook_deliveries', webhook_id=hook.id) }}">Zustellungen</a>{% endif %}
+        </div></td>
+      </tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% else %}
+  <h2 class="h5">Noch keine Forwarding</h2>
+  <p class="text-secondary">Lege einen Webhook mit Kunde, Quell-Endpoint, Ziel-URL und Mindestscore an.
+    Sobald eine passende Meldung eingeht, erhält der Kunde einen HTTPS-POST mit dem Alarm.</p>
+  {% endif %}
+</div>
+{% endblock %}
