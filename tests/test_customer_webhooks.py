@@ -373,6 +373,44 @@ def test_same_destination_preserves_credentials(client, subscription):
     assert decrypt_string(subscription.signing_secret) == "signing-key"
 
 
+def test_retarget_accepts_explicitly_reentered_credentials(client, subscription):
+    receive(subscription, {"Results": [{"Score": 90}]})
+    response = client.post(
+        f"/customer-webhooks/{subscription.id}/edit",
+        data=form_data(subscription, bearer_token="customer-token", signing_secret="signing-key"),
+    )
+    assert response.status_code == 302
+    assert decrypt_string(subscription.bearer_token) == "customer-token"
+    assert decrypt_string(subscription.signing_secret) == "signing-key"
+    assert CustomerWebhookDelivery.query.one().status == "cancelled"
+
+
+def test_invalid_stored_score_path_does_not_block_ingress(client, subscription, caplog):
+    from hookwise.models import DeliveryOutbox
+
+    invalid = CustomerWebhook(
+        name="Invalid stored subscription",
+        config_id=subscription.config_id,
+        company_id=subscription.company_id,
+        target_url="https://invalid.example/hook",
+        score_path="$..Score",
+        minimum_score=70,
+    )
+    db.session.add(invalid)
+    db.session.commit()
+    with patch("hookwise.webhook.process_webhook_task.delay") as broker:
+        response = client.post(
+            f"/w/{subscription.config_id}",
+            json={"Results": [{"Score": 90}]},
+            headers={"Authorization": "Bearer " + decrypt_string(subscription.config.bearer_token)},
+        )
+    assert response.status_code == 202
+    broker.assert_called_once()
+    assert DeliveryOutbox.query.count() == 1
+    assert CustomerWebhookDelivery.query.one().webhook_id == subscription.id
+    assert invalid.id in caplog.text and "invalid score_path" in caplog.text
+
+
 def test_restore_retarget_cannot_reuse_old_credentials(subscription):
     from hookwise.services.backups import export_backup, parse_backup, restore_backup
     from hookwise.utils import encrypt_string

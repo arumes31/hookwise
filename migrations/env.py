@@ -85,7 +85,14 @@ def run_migrations_online():
         if connection.dialect.name == "postgresql":
             connection.exec_driver_sql("SELECT pg_advisory_xact_lock(%s)", (0x484F4F4B4442,))
         elif connection.dialect.name == "sqlite":
-            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            # Allow a competing startup upgrade to finish before taking the write lock.
+            timeout = int(connection.exec_driver_sql("PRAGMA busy_timeout").scalar_one())
+            connection.exec_driver_sql(f"PRAGMA busy_timeout = {max(timeout, 60000)}")
+            try:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
+            finally:
+                # Do not change the timeout of ordinary queries on this pooled connection.
+                connection.exec_driver_sql(f"PRAGMA busy_timeout = {timeout}")
         context.configure(connection=connection, target_metadata=get_metadata(), **conf_args)
 
         with context.begin_transaction():

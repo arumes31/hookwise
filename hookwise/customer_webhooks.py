@@ -81,7 +81,7 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
                 credentials[field] = value
             elif form.get(f"clear_{field}") == "on":
                 credentials[field] = None
-        set_destination(hook, url or decrypt_string(hook.target_url), credentials)
+        set_destination(hook, url or decrypt_string(hook.target_url), credentials, drop_replayed=False)
         db.session.add(hook)
         db.session.flush()
         log_audit(

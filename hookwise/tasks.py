@@ -873,9 +873,9 @@ def cleanup_logs() -> None:
         db.func.coalesce(CustomerWebhookDelivery.completed_at, CustomerWebhookDelivery.created_at) < cutoff,
     ).delete(synchronize_session=False)
     # Also remove payloads left by versions predating terminal-state scrubbing.
-    CustomerWebhookDelivery.query.filter(CustomerWebhookDelivery.status.in_(TERMINAL_STATUSES)).update(
-        {"payload": "{}"}, synchronize_session=False
-    )
+    CustomerWebhookDelivery.query.filter(
+        CustomerWebhookDelivery.status.in_(TERMINAL_STATUSES), CustomerWebhookDelivery.payload != "{}"
+    ).update({"payload": "{}"}, synchronize_session=False)
 
     deleted = WebhookLog.query.filter(WebhookLog.created_at < cutoff).delete()
     db.session.commit()

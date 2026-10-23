@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import math
 import os
 import re
@@ -24,9 +25,12 @@ from .routing import evaluate_routing
 
 MAX_ATTEMPTS = 5
 TERMINAL_STATUSES = ("delivered", "failed", "cancelled")
+logger = logging.getLogger(__name__)
 
 
-def set_destination(webhook: CustomerWebhook, url: str, credentials: dict[str, str | None]) -> None:
+def set_destination(
+    webhook: CustomerWebhook, url: str, credentials: dict[str, str | None], *, drop_replayed: bool = True
+) -> None:
     """Bind credentials and queued alarms to the receiver, including backup restores."""
     credentials = {field: ensure_encrypted(value) if value else None for field, value in credentials.items()}
     changed = bool(webhook.target_url) and decrypt_string(webhook.target_url) != url
@@ -35,7 +39,7 @@ def set_destination(webhook: CustomerWebhook, url: str, credentials: dict[str, s
             old = getattr(webhook, field)
             new = credentials.get(field)
             # Replayed backup ciphertext is not a new credential for a new receiver.
-            if old and new and decrypt_string(old) == decrypt_string(new):
+            if drop_replayed and old and new and decrypt_string(old) == decrypt_string(new):
                 credentials[field] = None
             setattr(webhook, field, None)
         webhook.destination_generation += 1
@@ -159,7 +163,11 @@ def stage_customer_deliveries(log: WebhookLog, data: dict[str, Any]) -> None:
     for webhook in subscriptions:
         if webhook.company_id != company_id:
             continue
-        validate_score_path(webhook.score_path)
+        try:
+            validate_score_path(webhook.score_path)
+        except ValueError:
+            logger.warning("Skipping Forwarding subscription %s: invalid score_path", webhook.id)
+            continue
         for match in parse(webhook.score_path).find(data):
             score = numeric_score(match.value)
             if score is None or score < webhook.minimum_score:
