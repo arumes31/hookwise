@@ -43,6 +43,8 @@ CONFIG_FIELDS = {
     "allow_unauthenticated",
     "rate_limit_per_minute",
     "retry_enabled",
+    "connectwise_delivery_enabled",
+    "forwarding_enabled",
     "retry_max_attempts",
     "retry_base_delay_seconds",
     "retry_max_delay_seconds",
@@ -73,6 +75,8 @@ BOOLEAN_FIELDS = {
     "bearer_auth_enabled",
     "allow_unauthenticated",
     "retry_enabled",
+    "connectwise_delivery_enabled",
+    "forwarding_enabled",
     "is_enabled",
     "is_pinned",
     "is_draft",
@@ -277,7 +281,7 @@ def restore_backup(document: dict[str, Any]) -> int:
 
 
 def _restore_customer_webhooks(records: Any) -> None:
-    from .customer_webhooks import numeric_score, validate_score_path, validate_target_url
+    from .customer_webhooks import numeric_score, set_destination, validate_score_path, validate_target_url
 
     if not isinstance(records, list) or len(records) > MAX_CONFIGS:
         raise BackupValidationError("Customer webhooks are invalid")
@@ -315,10 +319,15 @@ def _restore_customer_webhooks(records: Any) -> None:
                         raise ValueError("Invalid credential")
         except ValueError as exc:
             raise BackupValidationError("Customer webhook target, path or credentials are invalid") from exc
-        hook = db.session.get(CustomerWebhook, record["id"])
+        hook = CustomerWebhook.query.filter_by(id=record["id"]).with_for_update().first()
         if hook and (hook.company_id != record["company_id"] or hook.config_id != record["config_id"]):
             raise BackupValidationError("Existing customer webhook source and customer cannot change")
         hook = hook or CustomerWebhook(id=record["id"])
-        for field in CUSTOMER_WEBHOOK_FIELDS:
+        set_destination(
+            hook,
+            decrypt_string(record["target_url"]),
+            {field: record[field] for field in ("bearer_token", "signing_secret")},
+        )
+        for field in CUSTOMER_WEBHOOK_FIELDS - {"target_url", "bearer_token", "signing_secret"}:
             setattr(hook, field, record[field])
         db.session.add(hook)

@@ -9,7 +9,13 @@ from .extensions import db
 from .models import CustomerWebhook, CustomerWebhookDelivery, GlobalMapping, WebhookConfig
 from .rbac import requires
 from .routes import main_bp
-from .services.customer_webhooks import numeric_score, validate_score_path, validate_target_url
+from .services.customer_webhooks import (
+    TERMINAL_STATUSES,
+    numeric_score,
+    set_destination,
+    validate_score_path,
+    validate_target_url,
+)
 from .utils import auth_required, decrypt_string, log_audit
 
 
@@ -68,14 +74,14 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
         hook.comment = comment or None
         hook.score_path, hook.minimum_score = path, threshold
         hook.is_enabled = form.get("is_enabled") == "on"
-        if url:
-            hook.target_url = url
+        credentials: dict[str, str | None] = {}
         for field in ("bearer_token", "signing_secret"):
             value = form.get(field, "").strip()
             if value:
-                setattr(hook, field, value)
+                credentials[field] = value
             elif form.get(f"clear_{field}") == "on":
-                setattr(hook, field, None)
+                credentials[field] = None
+        set_destination(hook, url or decrypt_string(hook.target_url), credentials)
         db.session.add(hook)
         db.session.flush()
         log_audit(
@@ -101,7 +107,7 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
             )
         }
         return _render_form(None if creating else hook, safe_values, str(exc)), 400
-    flash("Kunden-Webhook gespeichert.", "success")
+    flash("Forwarding connector gespeichert.", "success")
     return redirect(url_for("main.customer_webhooks"))
 
 
@@ -118,7 +124,7 @@ def new_customer_webhook() -> Any:
 @auth_required
 @requires("endpoint:write")
 def edit_customer_webhook(webhook_id: str) -> Any:
-    hook = db.get_or_404(CustomerWebhook, webhook_id)
+    hook = CustomerWebhook.query.filter_by(id=webhook_id).with_for_update().first_or_404()
     if request.method == "POST":
         return _save(hook, False)
     return _render_form(hook)
@@ -154,3 +160,18 @@ def customer_webhook_deliveries(webhook_id: str) -> Any:
         .paginate(page=max(1, page), per_page=50, error_out=False)
     )
     return render_template("customer_webhook_deliveries.html", hook=hook, deliveries=deliveries)
+
+
+@main_bp.post("/customer-webhooks/<webhook_id>/deliveries/clear")
+@auth_required
+@requires("history:delete")
+def clear_customer_webhook_history(webhook_id: str) -> Any:
+    hook = db.get_or_404(CustomerWebhook, webhook_id)
+    count = CustomerWebhookDelivery.query.filter(
+        CustomerWebhookDelivery.webhook_id == hook.id,
+        CustomerWebhookDelivery.status.in_(TERMINAL_STATUSES),
+    ).delete(synchronize_session=False)
+    log_audit("forwarding_history_clear", hook.config_id, f"Cleared {count} forwarding deliveries", commit=False)
+    db.session.commit()
+    flash("Forwarding history cleared. Pending deliveries were kept.", "success")
+    return redirect(url_for("main.customer_webhook_deliveries", webhook_id=hook.id))

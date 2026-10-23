@@ -285,7 +285,7 @@ def form_data(subscription, **overrides):
 
 
 def test_menu_create_edit_pause_and_history(client, subscription):
-    assert b"Kunden-Webhooks" in client.get("/").data
+    assert b"Forwarding" in client.get("/").data
     assert client.get("/customer-webhooks").status_code == 200
     assert client.get("/customer-webhooks/new").status_code == 200
     response = client.post("/customer-webhooks/new", data=form_data(subscription))
@@ -351,6 +351,213 @@ def test_customer_boundary_cannot_be_edited(client, subscription):
     assert subscription.company_id == "123"
 
 
+def test_retarget_clears_credentials_and_cancels_old_deliveries(client, subscription):
+    receive(subscription, {"Results": [{"Score": 90, "user": "private@example.com"}]})
+    response = client.post(f"/customer-webhooks/{subscription.id}/edit", data=form_data(subscription))
+    assert response.status_code == 302
+    assert subscription.bearer_token is None and subscription.signing_secret is None
+    row = CustomerWebhookDelivery.query.one()
+    assert row.status == "cancelled" and row.payload == "{}"
+    with patch("hookwise.services.customer_webhooks.post_webhook") as post:
+        dispatch_customer_deliveries()
+        post.assert_not_called()
+
+
+def test_same_destination_preserves_credentials(client, subscription):
+    response = client.post(
+        f"/customer-webhooks/{subscription.id}/edit",
+        data=form_data(subscription, target_url=decrypt_string(subscription.target_url)),
+    )
+    assert response.status_code == 302
+    assert decrypt_string(subscription.bearer_token) == "customer-token"
+    assert decrypt_string(subscription.signing_secret) == "signing-key"
+
+
+def test_restore_retarget_cannot_reuse_old_credentials(subscription):
+    from hookwise.services.backups import export_backup, parse_backup, restore_backup
+    from hookwise.utils import encrypt_string
+
+    receive(subscription, {"Results": [{"Score": 90}]})
+    document = parse_backup(export_backup())
+    document["customer_webhooks"][0]["target_url"] = encrypt_string("https://new.example/hook")
+    restore_backup(document)
+    assert subscription.bearer_token is None and subscription.signing_secret is None
+    assert CustomerWebhookDelivery.query.one().status == "cancelled"
+
+
+@pytest.mark.parametrize("status", ["delivered", "failed", "cancelled"])
+def test_terminal_delivery_discards_payload(subscription, status):
+    receive(subscription, {"Results": [{"Score": 90, "email": "private@example.com"}]})
+    if status == "cancelled":
+        subscription.is_enabled = False
+        db.session.commit()
+    with patch("hookwise.services.customer_webhooks.post_webhook", return_value=204 if status == "delivered" else 401):
+        dispatch_customer_deliveries()
+    row = CustomerWebhookDelivery.query.one()
+    assert row.status == status and row.payload == "{}"
+    receive(subscription, {"Results": [{"Score": 90, "email": "private@example.com"}]}, "repeat")
+    assert CustomerWebhookDelivery.query.count() == 1
+
+
+def test_retention_purges_terminal_rows_but_preserves_pending(subscription):
+    from hookwise.tasks import cleanup_logs
+
+    receive(subscription, {"Results": [{"Score": 90}, {"Score": 91}]})
+    rows = CustomerWebhookDelivery.query.order_by(CustomerWebhookDelivery.created_at).all()
+    old = datetime.now(timezone.utc) - timedelta(days=40)
+    rows[0].status, rows[0].completed_at = "delivered", old
+    for row in rows:
+        row.created_at = old
+    db.session.commit()
+    cleanup_logs.run()
+    assert CustomerWebhookDelivery.query.count() == 1
+    assert CustomerWebhookDelivery.query.one().status == "pending"
+
+
+@pytest.mark.parametrize("action", ["single", "bulk", "all"])
+def test_history_deletion_removes_forwarding_copies(client, subscription, action):
+    log = receive(subscription, {"Results": [{"Score": 90}]})
+    url = {"single": f"/history/delete/{log.id}", "bulk": "/history/bulk-delete", "all": "/history/delete-all"}[action]
+    response = client.post(url, json={"ids": [log.id]})
+    assert response.status_code == 200
+    assert CustomerWebhookDelivery.query.count() == 0
+
+
+def test_retarget_during_request_cannot_resurrect_cancelled_delivery(subscription):
+    from hookwise.services.customer_webhooks import set_destination
+
+    receive(subscription, {"Results": [{"Score": 90}]})
+
+    def retarget(url, body, headers):
+        assert url == "https://alarm.example/hook?key=hidden"
+        assert headers["Authorization"] == "Bearer customer-token"
+        set_destination(subscription, "https://new.example/hook", {"bearer_token": "new-token"})
+        db.session.commit()
+        return 503
+
+    with patch("hookwise.services.customer_webhooks.post_webhook", side_effect=retarget):
+        dispatch_customer_deliveries()
+    row = CustomerWebhookDelivery.query.one()
+    assert row.status == "cancelled" and row.payload == "{}"
+    assert decrypt_string(subscription.bearer_token) == "new-token"
+
+
+def test_old_generation_cannot_follow_retarget(subscription):
+    from hookwise.services.customer_webhooks import set_destination
+
+    receive(subscription, {"Results": [{"Score": 90}]})
+    set_destination(subscription, "https://new.example/hook", {})
+    row = CustomerWebhookDelivery.query.one()
+    # Simulate ingestion that started before the edit but committed afterwards.
+    row.status, row.payload = "pending", '{"old":"alert"}'
+    db.session.commit()
+    with patch("hookwise.services.customer_webhooks.post_webhook") as post:
+        dispatch_customer_deliveries()
+        post.assert_not_called()
+    assert row.status == "cancelled"
+
+
+def test_forwarding_only_ingress_does_not_require_ticket_broker(client, subscription):
+    from hookwise.models import DeliveryOutbox
+
+    subscription.config.connectwise_delivery_enabled = False
+    db.session.commit()
+    with patch("hookwise.webhook.process_webhook_task.delay", side_effect=ConnectionError) as broker:
+        response = client.post(
+            f"/w/{subscription.config_id}",
+            json={"Results": [{"Score": 90}]},
+            headers={"Authorization": "Bearer " + decrypt_string(subscription.config.bearer_token)},
+        )
+    assert response.status_code == 202
+    broker.assert_not_called()
+    assert DeliveryOutbox.query.count() == 0
+    assert CustomerWebhookDelivery.query.count() == 1
+    assert subscription.config.last_seen_at is not None
+
+
+def test_forwarding_switch_blocks_new_and_pending_deliveries(subscription):
+    receive(subscription, {"Results": [{"Score": 90}]})
+    subscription.config.forwarding_enabled = False
+    db.session.commit()
+    receive(subscription, {"Results": [{"Score": 91}]}, "disabled")
+    assert CustomerWebhookDelivery.query.count() == 1
+    with patch("hookwise.services.customer_webhooks.post_webhook") as post:
+        dispatch_customer_deliveries()
+        post.assert_not_called()
+    assert CustomerWebhookDelivery.query.one().status == "cancelled"
+
+
+def test_connectwise_switch_stops_queued_work_and_stale_tickets(subscription):
+    from hookwise.tasks import check_webhook_timeouts, handle_webhook_logic
+
+    log = receive(subscription, {"Results": [{"Score": 90}]})
+    subscription.config.connectwise_delivery_enabled = False
+    subscription.config.timeout_alerts_enabled = True
+    subscription.config.timeout_ticket_id = 123
+    subscription.config.last_seen_at = datetime.now(timezone.utc) - timedelta(days=3)
+    db.session.commit()
+    with patch("hookwise.tasks.cw_client") as cw:
+        check_webhook_timeouts.run()
+        handle_webhook_logic(subscription.config_id, {"heartbeat": {"status": 0}}, "request-1", log_id=log.id)
+        assert cw.mock_calls == []
+    db.session.refresh(log)
+    assert log.status == "skipped"
+    assert subscription.config.timeout_ticket_id == 123
+
+
+def test_endpoint_additional_delivery_controls_and_connector_list(client, subscription):
+    config = subscription.config
+    page = client.get(f"/endpoint/edit/{config.id}").get_data(as_text=True)
+    assert "Additional Delivery" in page and 'id="tab-additional-delivery"' in page
+    assert 'name="connectwise_delivery_enabled"' in page and 'name="forwarding_enabled"' in page
+    assert "1 active" in page and "Kundenalarm" in page
+    response = client.post(
+        f"/endpoint/edit/{config.id}",
+        data={
+            "name": config.name,
+            "bearer_auth_enabled": "true",
+            "connectwise_delivery_enabled": "false",
+            "forwarding_enabled": "false",
+        },
+    )
+    assert response.status_code == 302
+    assert config.connectwise_delivery_enabled is False and config.forwarding_enabled is False
+    assert config.to_dict()["forwarding_enabled"] is False
+    assert client.post(f"/endpoint/clone/{config.id}").status_code == 302
+    cloned = WebhookConfig.query.filter_by(name=config.name + " (Copy)").one()
+    assert cloned.connectwise_delivery_enabled is False and cloned.forwarding_enabled is False
+
+
+def test_delivery_controls_survive_backup_restore(subscription):
+    from hookwise.services.backups import export_backup, parse_backup, restore_backup
+
+    subscription.config.connectwise_delivery_enabled = False
+    subscription.config.forwarding_enabled = False
+    db.session.commit()
+    document = parse_backup(export_backup())
+    subscription.config.connectwise_delivery_enabled = True
+    subscription.config.forwarding_enabled = True
+    db.session.commit()
+    restore_backup(document)
+    assert subscription.config.connectwise_delivery_enabled is False
+    assert subscription.config.forwarding_enabled is False
+
+
+def test_clear_forwarding_history_permissions_and_pending_preservation(client, subscription):
+    receive(subscription, {"Results": [{"Score": 90}, {"Score": 91}]})
+    rows = CustomerWebhookDelivery.query.all()
+    rows[0].status = "delivered"
+    db.session.commit()
+    path = f"/customer-webhooks/{subscription.id}/deliveries/clear"
+    with client.session_transaction() as session:
+        session["role"] = "viewer"
+    assert client.post(path).status_code == 403
+    with client.session_transaction() as session:
+        session["role"] = "admin"
+    assert client.post(path).status_code == 302
+    assert CustomerWebhookDelivery.query.one().status == "pending"
+
+
 def test_stage_is_safe_when_repeated_for_same_log(subscription):
     log = receive(subscription, {"Results": [{"Score": 90}]})
     stage_customer_deliveries(log, {"Results": [{"Score": 90}]})
@@ -403,13 +610,17 @@ def test_migration_matches_models_and_rolls_back(app):
     from alembic.operations import Operations
 
     migration = importlib.import_module("migrations.versions.c9a7b2e4d6f8_add_customer_webhooks")
+    destination = importlib.import_module("migrations.versions.d7f3a9b2c5e1_bind_forwarding_destinations")
     with db.engine.begin() as connection:
         db.metadata.tables["customer_webhook_delivery"].drop(connection)
         db.metadata.tables["customer_webhook"].drop(connection)
         context = MigrationContext.configure(connection)
         with Operations.context(context):
             migration.upgrade()
+            destination.upgrade()
             assert compare_metadata(context, db.metadata) == []
+            destination.downgrade()
             migration.downgrade()
             migration.upgrade()
+            destination.upgrade()
             assert compare_metadata(context, db.metadata) == []

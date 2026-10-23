@@ -98,6 +98,11 @@
                                 data-bs-target="#pane-delivery" type="button" role="tab"
                                 aria-controls="pane-delivery" aria-selected="false"><i class="hw-step-nr">4</i><span>Delivery</span></button>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-additional-delivery" data-bs-toggle="tab"
+                                data-bs-target="#pane-additional-delivery" type="button" role="tab"
+                                aria-controls="pane-additional-delivery" aria-selected="false"><i class="hw-step-nr">5</i><span>Additional Delivery</span></button>
+                        </li>
                     </ul>
 
                     <div class="tab-content hw-formtab-inhalt">
@@ -728,6 +733,7 @@
                                 </div>
                             </div>
                         </div>
+                        {% include 'endpoint_additional_delivery.html' %}
                     </div>
 
                     <hr class="my-4 border-secondary border-opacity-10">
@@ -836,13 +842,13 @@
 <script src="{{ static_asset('js/endpoint-form-fields.js') }}"></script>
 <script src="{{ static_asset('js/endpoint-form-actions.js') }}"></script>
 <script>
-    /* Stepper: General -> Routing -> Security -> Delivery. "Next" blaettert,
+    /* Stepper: General -> Routing -> Security -> Delivery -> Additional Delivery. "Next" blaettert,
        der Absende-Knopf erscheint erst im letzten Schritt. Die Schritte oben
        bleiben direkt anklickbar; shown.bs.tab haelt die Fusszeile synchron. */
     if (!window.hwFormWizard) {
         window.hwFormWizard = true;
         (function () {
-            const reihenfolge = ['tab-general', 'tab-routing', 'tab-security', 'tab-delivery'];
+            const reihenfolge = ['tab-general', 'tab-routing', 'tab-security', 'tab-delivery', 'tab-additional-delivery'];
             const aktuelle = () => reihenfolge.findIndex(id => {
                 const el = document.getElementById(id);
                 return el && el.classList.contains('active');

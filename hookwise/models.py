@@ -156,6 +156,8 @@ class WebhookConfig(Base):
     # boundary and again defensively by the task retry implementation.
     rate_limit_per_minute = db.Column(db.Integer, default=60, nullable=False)
     retry_enabled = db.Column(db.Boolean, default=True, nullable=False)
+    connectwise_delivery_enabled = db.Column(db.Boolean, default=True, server_default=db.true(), nullable=False)
+    forwarding_enabled = db.Column(db.Boolean, default=True, server_default=db.true(), nullable=False)
     retry_max_attempts = db.Column(db.Integer, default=5, nullable=False)
     retry_base_delay_seconds = db.Column(db.Integer, default=1, nullable=False)
     retry_max_delay_seconds = db.Column(db.Integer, default=300, nullable=False)
@@ -212,6 +214,8 @@ class WebhookConfig(Base):
             "bearer_token_last4": self.bearer_token_last4,
             "rate_limit_per_minute": self.rate_limit_per_minute,
             "retry_enabled": self.retry_enabled,
+            "connectwise_delivery_enabled": self.connectwise_delivery_enabled,
+            "forwarding_enabled": self.forwarding_enabled,
             "retry_max_attempts": self.retry_max_attempts,
             "retry_base_delay_seconds": self.retry_base_delay_seconds,
             "retry_max_delay_seconds": self.retry_max_delay_seconds,
@@ -359,6 +363,7 @@ class CustomerWebhook(Base):
     bearer_token = db.Column(db.Text, nullable=True)
     signing_secret = db.Column(db.Text, nullable=True)
     is_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    destination_generation = db.Column(db.Integer, nullable=False, default=1, server_default="1")
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     config = db.relationship("WebhookConfig", backref=db.backref("customer_webhooks", cascade="all, delete-orphan"))
@@ -377,6 +382,7 @@ class CustomerWebhookDelivery(Base):
     webhook_id = db.Column(db.String(36), db.ForeignKey("customer_webhook.id", ondelete="CASCADE"), nullable=False)
     log_id = db.Column(db.String(36), db.ForeignKey("webhook_log.id", ondelete="SET NULL"), nullable=True)
     event_key = db.Column(db.String(64), nullable=False)
+    destination_generation = db.Column(db.Integer, nullable=False, default=1, server_default="1")
     payload = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(20), nullable=False, default="pending")
     attempts = db.Column(db.Integer, nullable=False, default=0)

@@ -19,10 +19,44 @@ from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import CustomerWebhook, CustomerWebhookDelivery, WebhookConfig, WebhookLog
-from ..utils import decrypt_string, mask_secrets, resolve_jsonpath, resolve_monitor_name
+from ..utils import decrypt_string, ensure_encrypted, mask_secrets, resolve_jsonpath, resolve_monitor_name
 from .routing import evaluate_routing
 
 MAX_ATTEMPTS = 5
+TERMINAL_STATUSES = ("delivered", "failed", "cancelled")
+
+
+def set_destination(webhook: CustomerWebhook, url: str, credentials: dict[str, str | None]) -> None:
+    """Bind credentials and queued alarms to the receiver, including backup restores."""
+    credentials = {field: ensure_encrypted(value) if value else None for field, value in credentials.items()}
+    changed = bool(webhook.target_url) and decrypt_string(webhook.target_url) != url
+    if changed:
+        for field in ("bearer_token", "signing_secret"):
+            old = getattr(webhook, field)
+            new = credentials.get(field)
+            # Replayed backup ciphertext is not a new credential for a new receiver.
+            if old and new and decrypt_string(old) == decrypt_string(new):
+                credentials[field] = None
+            setattr(webhook, field, None)
+        webhook.destination_generation += 1
+        CustomerWebhookDelivery.query.filter(
+            CustomerWebhookDelivery.webhook_id == webhook.id,
+            CustomerWebhookDelivery.status.in_(("pending", "sending")),
+        ).update(
+            {"status": "cancelled", "payload": "{}", "completed_at": datetime.now(timezone.utc)},
+            synchronize_session="fetch",
+        )
+    webhook.target_url = url
+    for field, value in credentials.items():
+        setattr(webhook, field, value)
+
+
+def delete_delivery_history(log_ids: list[str] | None = None) -> int:
+    """Explicit log deletion also removes queued and historical alert copies."""
+    query = CustomerWebhookDelivery.query
+    if log_ids is not None:
+        query = query.filter(CustomerWebhookDelivery.log_id.in_(log_ids))
+    return int(query.delete(synchronize_session="fetch"))
 
 
 def _public_address(value: str) -> bool:
@@ -106,11 +140,18 @@ def stage_customer_deliveries(log: WebhookLog, data: dict[str, Any]) -> None:
     """Persist matching alarms atomically with ingress, before any ticket API call."""
     from ..tasks import is_in_maintenance
 
-    subscriptions = CustomerWebhook.query.filter_by(config_id=log.config_id, is_enabled=True).all()
+    subscriptions = CustomerWebhook.query.filter_by(config_id=log.config_id, is_enabled=True).populate_existing().all()
     if not subscriptions:
         return
     config = db.session.get(WebhookConfig, log.config_id)
-    if not config or not config.is_enabled or config.is_draft or config.archived_at or is_in_maintenance(config):
+    if (
+        not config
+        or not config.is_enabled
+        or not config.forwarding_enabled
+        or config.is_draft
+        or config.archived_at
+        or is_in_maintenance(config)
+    ):
         return
     company_id = _company_for_payload(config, data)
     if not company_id:
@@ -147,6 +188,7 @@ def stage_customer_deliveries(log: WebhookLog, data: dict[str, Any]) -> None:
                             webhook_id=webhook.id,
                             log_id=log.id,
                             event_key=event_key,
+                            destination_generation=webhook.destination_generation,
                             payload=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
                         )
                     )
@@ -230,65 +272,89 @@ def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
         delivery = db.session.get(CustomerWebhookDelivery, delivery_id)
         if delivery is None:
             continue
-        webhook = delivery.webhook
+        webhook = CustomerWebhook.query.filter_by(id=delivery.webhook_id).populate_existing().one()
+        config = WebhookConfig.query.filter_by(id=webhook.config_id).populate_existing().one()
         if (
             not webhook.is_enabled
-            or not webhook.config.is_enabled
-            or webhook.config.archived_at
-            or webhook.config.is_draft
+            or not config.is_enabled
+            or not config.forwarding_enabled
+            or config.archived_at
+            or config.is_draft
+            or delivery.destination_generation != webhook.destination_generation
         ):
             delivery.status = "cancelled"
+            delivery.payload = "{}"
             delivery.completed_at = datetime.now(timezone.utc)
             db.session.commit()
             continue
         if delivery.attempts >= MAX_ATTEMPTS:
             delivery.status = "failed"
+            delivery.payload = "{}"
             delivery.error_message = "Maximale Anzahl der Zustellversuche erreicht."
             delivery.completed_at = datetime.now(timezone.utc)
             db.session.commit()
             continue
-        delivery.attempts += 1
-        # A worker dying after the request must still consume an attempt.
-        db.session.commit()
+        # Snapshot one destination/credential generation before committing. An
+        # in-flight request may finish to the old receiver, never to a new one.
+        target_url, bearer_token, signing_secret = webhook.target_url, webhook.bearer_token, webhook.signing_secret
         body = delivery.payload.encode("utf-8")
+        attempts = delivery.attempts + 1
+        claim_until = delivery.next_attempt_at
+        # A worker dying after the request must still consume an attempt.
+        started = CustomerWebhookDelivery.query.filter_by(
+            id=delivery_id,
+            status="sending",
+            next_attempt_at=claim_until,
+            destination_generation=webhook.destination_generation,
+        ).update({"attempts": attempts}, synchronize_session=False)
+        db.session.commit()
+        if not started:
+            continue
         headers = {
             "Content-Type": "application/json",
             "User-Agent": "Hookwise/Customer-Webhooks",
-            "Idempotency-Key": delivery.id,
-            "X-HookWise-Delivery-ID": delivery.id,
+            "Idempotency-Key": delivery_id,
+            "X-HookWise-Delivery-ID": delivery_id,
         }
-        delivery.response_status = None
+        code = None
+        error_message = None
         try:
-            if webhook.bearer_token:
-                headers["Authorization"] = "Bearer " + decrypt_string(webhook.bearer_token)
-            if webhook.signing_secret:
+            if bearer_token:
+                headers["Authorization"] = "Bearer " + decrypt_string(bearer_token)
+            if signing_secret:
                 timestamp = str(int(time.time()))
                 signature = hmac.new(
-                    decrypt_string(webhook.signing_secret).encode(),
+                    decrypt_string(signing_secret).encode(),
                     timestamp.encode() + b"." + body,
                     hashlib.sha256,
                 ).hexdigest()
                 headers["X-HookWise-Timestamp"] = timestamp
                 headers["X-HookWise-Signature"] = "sha256=" + signature
-            code = post_webhook(decrypt_string(webhook.target_url), body, headers)
-            delivery.response_status = code
+            code = post_webhook(decrypt_string(target_url), body, headers)
             if 200 <= code < 300:
-                delivery.status = "delivered"
-                delivery.error_message = None
-                delivery.completed_at = datetime.now(timezone.utc)
-                result["delivered"] += 1
-                db.session.commit()
-                continue
-            retryable = code in (408, 425, 429) or code >= 500
-            delivery.error_message = f"Empfänger antwortete mit HTTP {code}."
+                status = "delivered"
+            else:
+                retryable = code in (408, 425, 429) or code >= 500
+                status = "pending" if retryable and attempts < MAX_ATTEMPTS else "failed"
+                error_message = f"Empfänger antwortete mit HTTP {code}."
         except Exception as exc:
             # Exception strings can contain URLs, query credentials or headers.
-            delivery.error_message = f"Zustellung fehlgeschlagen ({type(exc).__name__})."
+            error_message = f"Zustellung fehlgeschlagen ({type(exc).__name__})."
             retryable = not isinstance(exc, ValueError)
-        delivery.status = "pending" if retryable and delivery.attempts < MAX_ATTEMPTS else "failed"
-        delivery.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=min(30 * 2**delivery.attempts, 1800))
-        if delivery.status == "failed":
-            delivery.completed_at = datetime.now(timezone.utc)
-        result["failed"] += 1
+            status = "pending" if retryable and attempts < MAX_ATTEMPTS else "failed"
+        changes = {
+            "status": status,
+            "response_status": code,
+            "error_message": error_message,
+            "next_attempt_at": datetime.now(timezone.utc) + timedelta(seconds=min(30 * 2**attempts, 1800)),
+        }
+        if status in TERMINAL_STATUSES:
+            changes.update(payload="{}", completed_at=datetime.now(timezone.utc))
+        # A retarget, history deletion or another claim must win over this result.
+        updated = CustomerWebhookDelivery.query.filter_by(
+            id=delivery_id, status="sending", attempts=attempts, next_attempt_at=claim_until
+        ).update(changes, synchronize_session="fetch")
+        if updated:
+            result["delivered" if status == "delivered" else "failed"] += 1
         db.session.commit()
     return result
