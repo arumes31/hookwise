@@ -17,6 +17,7 @@
         <td>{% if hook.score_path %}<code>{{ hook.score_path }}</code><br>Score ≥ {{ hook.minimum_score }}{% else %}Ohne Score-Filter{% endif %}</td>
         <td><span class="badge {{ 'bg-success' if hook.is_enabled else 'bg-warning text-dark' }}">{{ 'Aktiv' if hook.is_enabled else 'Pausiert' }}</span></td>
         <td><div class="d-flex flex-wrap gap-2">
+          {% if hw_kann('endpoint:test') %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.test_customer_webhook', webhook_id=hook.id) }}">Alert testen</a>{% endif %}
           {% if hw_kann('endpoint:write') %}
           <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.edit_customer_webhook', webhook_id=hook.id) }}">Bearbeiten</a>
           <form method="post" action="{{ url_for('main.toggle_customer_webhook', webhook_id=hook.id) }}" hx-boost="false">

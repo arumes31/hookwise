@@ -57,14 +57,22 @@ def set_destination(
     urls = [url] if isinstance(url, str) else url
     validate_target_urls(urls)
     changed = bool(webhook.target_url) and destination_urls(webhook) != urls
+    old_key = decrypt_string(webhook.pagerduty_routing_key) if webhook.pagerduty_routing_key else None
+    submitted_key = credentials.get("pagerduty_routing_key")
+    key_changed = (
+        bool(webhook.target_url)
+        and "pagerduty_routing_key" in credentials
+        and old_key != (decrypt_string(submitted_key) if submitted_key else None)
+    )
     if changed:
-        for field in ("bearer_token", "signing_secret"):
+        for field in ("bearer_token", "signing_secret", "pagerduty_routing_key"):
             old = getattr(webhook, field)
             new = credentials.get(field)
             # Replayed backup ciphertext is not a new credential for a new receiver.
             if drop_replayed and old and new and decrypt_string(old) == decrypt_string(new):
                 credentials[field] = None
             setattr(webhook, field, None)
+    if changed or key_changed:
         webhook.destination_generation += 1
         CustomerWebhookDelivery.query.filter(
             CustomerWebhookDelivery.webhook_id == webhook.id,
@@ -77,6 +85,43 @@ def set_destination(
     webhook.additional_urls = json.dumps(urls[1:]) if len(urls) > 1 else None
     for field, value in credentials.items():
         setattr(webhook, field, value)
+
+
+def set_payload_format(
+    webhook: CustomerWebhook, payload_format: str, routing_key: str | None = None, *, clear: bool = False
+) -> None:
+    """Explicitly select the wire protocol; never reuse a generic bearer token."""
+    from .pagerduty_events import validate_pagerduty_url
+
+    if payload_format not in ("hookwise", "pagerduty"):
+        raise ValueError("Ungültiges Webhook-Format.")
+    key = None if clear else webhook.pagerduty_routing_key
+    if routing_key:
+        if not re.fullmatch(r"[A-Za-z0-9]{32}", routing_key):
+            raise ValueError("Der PagerDuty Integration Key muss 32 Buchstaben/Ziffern enthalten.")
+        key = ensure_encrypted(routing_key)
+    if payload_format == "pagerduty":
+        for url in destination_urls(webhook):
+            validate_pagerduty_url(url)
+        if not key:
+            raise ValueError("Für PagerDuty ist ein Integration Key erforderlich (kein REST-API-Token).")
+        if not re.fullmatch(r"[A-Za-z0-9]{32}", decrypt_string(key)):
+            raise ValueError("Der gespeicherte PagerDuty Integration Key ist ungültig.")
+    else:
+        key = None
+    old_format = webhook.payload_format or "hookwise"
+    old_key = decrypt_string(webhook.pagerduty_routing_key) if webhook.pagerduty_routing_key else None
+    new_key = decrypt_string(key) if key else None
+    if old_format != payload_format or old_key != new_key:
+        webhook.destination_generation = (webhook.destination_generation or 1) + 1
+        CustomerWebhookDelivery.query.filter(
+            CustomerWebhookDelivery.webhook_id == webhook.id,
+            CustomerWebhookDelivery.status.in_(("pending", "sending")),
+        ).update(
+            {"status": "cancelled", "payload": "{}", "completed_at": datetime.now(timezone.utc)},
+            synchronize_session="fetch",
+        )
+    webhook.payload_format, webhook.pagerduty_routing_key = payload_format, key
 
 
 def delete_delivery_history(log_ids: list[str] | None = None) -> int:
@@ -136,13 +181,15 @@ def numeric_score(value: Any) -> float | None:
     return number if math.isfinite(number) and number >= 0 else None
 
 
-def _company_for_payload(config: Any, data: dict[str, Any]) -> str | None:
-    """Use explicit routing; unknown tenants on shared sources never use a fallback."""
+def _company_resolution(config: Any, data: dict[str, Any]) -> tuple[str | None, str]:
+    """Keep the production routing decision and its diagnostic reason together."""
     from ..tasks import _global_mapping_for_tenant, get_all_global_mappings
 
     decision = evaluate_routing(data, config.to_dict())
-    if decision.values.get("drop") or decision.alert_type == "UP":
-        return None
+    if decision.values.get("drop"):
+        return None, "routing_drop"
+    if decision.alert_type == "UP":
+        return None, "recovery"
     company = decision.values.get("customer_id")
     match = re.search(r"#CW-?(\w+)", resolve_monitor_name(data))
     company = company or (match.group(1) if match else None)
@@ -157,77 +204,177 @@ def _company_for_payload(config: Any, data: dict[str, Any]) -> str | None:
         )
         mapping = _global_mapping_for_tenant(str(tenant or ""), get_all_global_mappings())
         if not mapping:
-            return None
+            return None, "tenant_unmapped"
         company = mapping.get("company_id")
     if not company:
         company = config.customer_id_default or os.environ.get("CW_DEFAULT_COMPANY_ID")
-    return str(company).strip() if company else None
+    return (str(company).strip() or None, "resolved") if company else (None, "tenant_unmapped")
+
+
+def _sanitized_alert(data: Any) -> Any:
+    """Do not forward CIPP identity headers or its private ingress URL metadata."""
+    if isinstance(data, list):
+        return [_sanitized_alert(item) for item in data]
+    if not isinstance(data, dict):
+        return data
+    sanitized = mask_secrets(data)
+    for key, value in sanitized.items():
+        if key.lower().startswith("x-ms-client-principal") or key.lower() in (
+            "cookie",
+            "set-cookie",
+            "postexecutionresults",
+            "headers",
+        ):
+            sanitized[key] = "***"
+        else:
+            sanitized[key] = _sanitized_alert(value)
+    return sanitized
+
+
+@dataclass
+class ForwardingEvaluation:
+    eligible: bool
+    code: str
+    message: str
+    company_id: str | None = None
+    matches: list[tuple[float | None, Any]] | None = None
+    targets: list[str] | None = None
+
+
+def evaluate_customer_webhook(webhook: CustomerWebhook, data: dict[str, Any]) -> ForwardingEvaluation:
+    """Evaluate the saved connector without network calls or database mutations."""
+    from ..tasks import is_in_maintenance
+
+    def blocked(code: str, message: str, company: str | None = None) -> ForwardingEvaluation:
+        return ForwardingEvaluation(False, code, message, company)
+
+    config = db.session.get(WebhookConfig, webhook.config_id)
+    if not webhook.is_enabled:
+        return blocked("connector_disabled", "Der Forwarding-Connector ist pausiert.")
+    if not config or not config.is_enabled:
+        return blocked("endpoint_disabled", "Der Quell-Endpoint fehlt oder ist pausiert.")
+    if config.archived_at:
+        return blocked("archived", "Der Quell-Endpoint ist archiviert.")
+    if config.is_draft:
+        return blocked("draft", "Der Quell-Endpoint ist ein Entwurf.")
+    if not config.forwarding_enabled:
+        return blocked("forwarding_disabled", "Forwarding ist im Quell-Endpoint deaktiviert.")
+    if is_in_maintenance(config):
+        return blocked("maintenance", "Für den Quell-Endpoint ist ein Wartungsfenster aktiv.")
+    company_id, reason = _company_resolution(config, data)
+    if reason == "routing_drop":
+        return blocked(reason, "Eine Routing-Regel verwirft diesen Alarm.")
+    if reason == "recovery":
+        return blocked(reason, "Der Endpoint erkennt diese Meldung als Entwarnung (Recovery).")
+    if not company_id:
+        return blocked("tenant_unmapped", "Keine eindeutige Kundenzuordnung. TenantMap und Endpoint-Routing prüfen.")
+    if webhook.company_id != company_id:
+        return blocked("company_mismatch", "Der ermittelte Kunde stimmt nicht mit dem Connector überein.", company_id)
+    try:
+        targets = destination_urls(webhook)
+        if webhook.payload_format == "pagerduty":
+            from .pagerduty_events import validate_pagerduty_url
+
+            for url in targets:
+                validate_pagerduty_url(url)
+            if not webhook.pagerduty_routing_key:
+                return blocked("invalid_destinations", "Der PagerDuty Integration Key fehlt.", company_id)
+        elif any(urlsplit(url).hostname in ("events.pagerduty.com", "events.eu.pagerduty.com") for url in targets):
+            return blocked(
+                "payload_format_mismatch",
+                "Dieses Ziel ist PagerDuty. Webhook-Format auf PagerDuty Events v2 umstellen "
+                "und Integration Key hinterlegen.",
+                company_id,
+            )
+    except ValueError:
+        return blocked(
+            "invalid_destinations", "Gespeicherte Ziel-URLs sind ungültig oder nicht entschlüsselbar.", company_id
+        )
+    matched: list[tuple[float | None, Any]]
+    if webhook.score_path:
+        try:
+            validate_score_path(webhook.score_path)
+        except ValueError:
+            return blocked("invalid_score_path", "Der gespeicherte Score-Pfad ist ungültig.", company_id)
+        found = parse(webhook.score_path).find(data)
+        if not found:
+            return blocked(
+                "score_missing",
+                "Das konfigurierte Score-Feld fehlt. CIPP-Severity ist kein numerischer Score; "
+                "für Meldungen ohne Score den Score-Filter deaktivieren.",
+                company_id,
+            )
+        numeric = [(numeric_score(match.value), match.context.value) for match in found]
+        if not any(score is not None for score, _ in numeric):
+            return blocked(
+                "score_invalid", "Die gefundenen Score-Werte sind nicht numerisch (z. B. Severity).", company_id
+            )
+        matched = [(score, alert) for score, alert in numeric if score is not None and score >= webhook.minimum_score]
+        if not matched:
+            return blocked("score_below_threshold", "Kein Score erreicht den eingestellten Mindestscore.", company_id)
+    else:
+        matched = [(None, data)]
+    matches = [(score, _sanitized_alert(alert)) for score, alert in matched]
+    return ForwardingEvaluation(True, "ready", "Kundenzuordnung und Filter passen.", company_id, matches, targets)
+
+
+def _alert_key(company_id: str, alert: Any) -> str:
+    canonical = json.dumps(alert, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(f"{company_id}:{canonical}".encode()).hexdigest()
+
+
+def _target_key(event_key: str, target_index: int) -> str:
+    # Keep the legacy key for the first target across upgrades.
+    return event_key if target_index == 0 else hashlib.sha256(f"{event_key}:{target_index}".encode()).hexdigest()
+
+
+def build_alert_payload(
+    webhook: CustomerWebhook,
+    request_id: str,
+    score: float | None,
+    alert: Any,
+    *,
+    test: bool = False,
+) -> dict[str, Any]:
+    source = _public_source(webhook.config_id, webhook.config.name)
+    payload = {
+        "event": "hookwise.customer_alert",
+        "version": 1,
+        "company_id": webhook.company_id,
+        "source_endpoint_id": source["id"],
+        "source": source,
+        "request_id": request_id,
+        "score": score,
+        "minimum_score": webhook.minimum_score if webhook.score_path else None,
+        "alert": alert,
+    }
+    if test:
+        payload["test"] = True
+    return payload
+
+
+def _public_source(config_id: str, name: str) -> dict[str, str]:
+    # The real config ID is the private /w/<id> ingress token.
+    return {"id": hashlib.sha256(f"hookwise-source:{config_id}".encode()).hexdigest(), "name": name}
 
 
 def stage_customer_deliveries(log: WebhookLog, data: dict[str, Any]) -> None:
     """Persist matching alarms atomically with ingress, before any ticket API call."""
-    from ..tasks import is_in_maintenance
-
     subscriptions = CustomerWebhook.query.filter_by(config_id=log.config_id, is_enabled=True).populate_existing().all()
-    if not subscriptions:
-        return
-    config = db.session.get(WebhookConfig, log.config_id)
-    if (
-        not config
-        or not config.is_enabled
-        or not config.forwarding_enabled
-        or config.is_draft
-        or config.archived_at
-        or is_in_maintenance(config)
-    ):
-        return
-    company_id = _company_for_payload(config, data)
-    if not company_id:
-        return
     for webhook in subscriptions:
-        if webhook.company_id != company_id:
+        evaluation = evaluate_customer_webhook(webhook, data)
+        if not evaluation.eligible:
+            log_message = (
+                logger.warning if evaluation.code in ("invalid_score_path", "invalid_destinations") else logger.info
+            )
+            reason = "invalid score_path" if evaluation.code == "invalid_score_path" else evaluation.code
+            log_message("Skipping Forwarding subscription %s: %s", webhook.id, reason)
             continue
-        if webhook.score_path:
-            try:
-                validate_score_path(webhook.score_path)
-            except ValueError:
-                logger.warning("Skipping Forwarding subscription %s: invalid score_path", webhook.id)
-                continue
-            matches = [
-                (numeric_score(match.value), match.context.value) for match in parse(webhook.score_path).find(data)
-            ]
-        else:
-            matches = [(None, data)]
-        try:
-            targets = destination_urls(webhook)
-        except ValueError:
-            logger.warning("Skipping Forwarding subscription %s: invalid destinations", webhook.id)
-            continue
-        for score, matched_alert in matches:
-            if webhook.score_path and (score is None or score < webhook.minimum_score):
-                continue
-            # Send only the object containing the matched score, never the whole
-            # batch of unrelated alerts or the sender's authentication headers.
-            alert = mask_secrets(matched_alert)
-            canonical = json.dumps(alert, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-            event_key = hashlib.sha256(f"{company_id}:{canonical}".encode()).hexdigest()
-            payload = {
-                "event": "hookwise.customer_alert",
-                "version": 1,
-                "company_id": company_id,
-                "source_endpoint_id": config.id,
-                "request_id": log.request_id,
-                "score": score,
-                "minimum_score": webhook.minimum_score if webhook.score_path else None,
-                "alert": alert,
-            }
-            for target_index in range(len(targets)):
-                # Keep the legacy key for the first target so existing deduplication survives upgrades.
-                target_key = (
-                    event_key
-                    if target_index == 0
-                    else hashlib.sha256(f"{event_key}:{target_index}".encode()).hexdigest()
-                )
+        for score, alert in evaluation.matches or []:
+            event_key = _alert_key(webhook.company_id, alert)
+            payload = build_alert_payload(webhook, log.request_id, score, alert)
+            for target_index in range(len(evaluation.targets or [])):
+                target_key = _target_key(event_key, target_index)
                 if CustomerWebhookDelivery.query.filter_by(webhook_id=webhook.id, event_key=target_key).first():
                     continue
                 try:
@@ -297,6 +444,17 @@ class DeliveryAttempt:
     bearer_token: str | None
     signing_secret: str | None
     body: bytes
+    payload_format: str = "hookwise"
+    pagerduty_routing_key: str | None = None
+
+
+def preview_delivery_payload(webhook: CustomerWebhook, payload: dict[str, Any]) -> dict[str, Any]:
+    """Display the real wire format with an explicit placeholder for the key."""
+    if webhook.payload_format == "pagerduty":
+        from .pagerduty_events import build_pagerduty_event
+
+        return build_pagerduty_event({**payload, "id": "dry-run"}, "***")
+    return payload
 
 
 def _send_attempt(attempt: DeliveryAttempt) -> dict[str, Any]:
@@ -313,9 +471,21 @@ def _send_attempt(attempt: DeliveryAttempt) -> dict[str, Any]:
     code = None
     error_message = None
     try:
-        if bearer_token:
+        if attempt.payload_format == "pagerduty":
+            from .pagerduty_events import build_pagerduty_event, validate_pagerduty_url
+
+            validate_pagerduty_url(target_url)
+            if not attempt.pagerduty_routing_key:
+                raise ValueError("PagerDuty key missing")
+            event = build_pagerduty_event(
+                {**json.loads(body), "id": delivery_id}, decrypt_string(attempt.pagerduty_routing_key)
+            )
+            body = json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        elif attempt.payload_format != "hookwise":
+            raise ValueError("Unsupported payload format")
+        elif bearer_token:
             headers["Authorization"] = "Bearer " + decrypt_string(bearer_token)
-        if signing_secret:
+        if signing_secret and attempt.payload_format == "hookwise":
             timestamp = str(int(time.time()))
             signature = hmac.new(
                 decrypt_string(signing_secret).encode(),
@@ -416,7 +586,20 @@ def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
             result["failed"] += 1
             continue
         bearer_token, signing_secret = webhook.bearer_token, webhook.signing_secret
-        body = delivery.payload.encode("utf-8")
+        payload_format, routing_key = webhook.payload_format or "hookwise", webhook.pagerduty_routing_key
+        # Also protect envelopes staged by an older worker before this upgrade.
+        try:
+            stored_payload = _sanitized_alert(json.loads(delivery.payload))
+            stored_payload["source"] = _public_source(config.id, config.name)
+            stored_payload["source_endpoint_id"] = stored_payload["source"]["id"]
+            body = json.dumps(stored_payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except ValueError, TypeError, RecursionError:
+            delivery.status, delivery.payload = "failed", "{}"
+            delivery.error_message = "Ungültiger gespeicherter Alarm."
+            delivery.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
+            result["failed"] += 1
+            continue
         attempts = delivery.attempts + 1
         claim_until = delivery.next_attempt_at
         # A worker dying after the request must still consume an attempt.
@@ -429,7 +612,19 @@ def dispatch_customer_deliveries(limit: int = 10) -> dict[str, int]:
         db.session.commit()
         if not started:
             continue
-        jobs.append(DeliveryAttempt(delivery_id, attempts, claim_until, target_url, bearer_token, signing_secret, body))
+        jobs.append(
+            DeliveryAttempt(
+                delivery_id,
+                attempts,
+                claim_until,
+                target_url,
+                bearer_token,
+                signing_secret,
+                body,
+                payload_format,
+                routing_key,
+            )
+        )
     if len(jobs) > 1:
         with ThreadPoolExecutor(max_workers=MAX_TARGETS) as pool:
             outcomes = list(pool.map(_send_attempt, jobs))

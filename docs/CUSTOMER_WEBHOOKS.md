@@ -5,9 +5,12 @@ Alarmierung konfigurieren. Die weitere Alarmierungskette betreibt der Kunde.
 
 1. Namen, CW Company ID und den eingehenden Quell-Endpoint auswählen.
 2. Die öffentlich erreichbare HTTPS-Ziel-URL des Kunden eintragen (Port 443).
-3. Das numerische Score-Feld und den Mindestscore festlegen, z. B. `$.score`
+3. Optional den Score-Filter aktivieren und das numerische Score-Feld sowie den Mindestscore festlegen, z. B. `$.score`
    und `70`. Gleichheit ist eingeschlossen. Für CIPP-Batches ist beispielsweise
    `$.Results[*].Score` möglich, sofern die tatsächliche Payload dieses Feld enthält.
+   CIPP Defender Incidents enthalten häufig nur `Severity` und keinen Score.
+   Für diese Meldungen den Score-Filter deaktivieren; dann wird das gesamte
+   kundenzugeordnete Alarmobjekt weitergeleitet, `score` und `minimum_score` sind `null`.
 4. Bei Bedarf einen Bearer-Token und/oder einen gemeinsamen HMAC-Schlüssel
    hinterlegen und speichern.
 5. Im Feld **Kommentar / interne Notizen** können Ansprechpartner, die
@@ -19,7 +22,51 @@ Alarmierung konfigurieren. Die weitere Alarmierungskette betreibt der Kunde.
 Der Score-Pfad muss zur tatsächlich eingehenden JSON-Meldung passen. Es gibt
 keine automatische Umrechnung von Defender-Severity (`high`, `medium` usw.)
 in einen numerischen Score. Fehlende, negative, unendliche, boolesche oder
-nicht numerische Werte lösen keine Zustellung aus.
+nicht numerische Werte lösen bei aktivem Score-Filter keine Zustellung aus.
+
+## Diagnose und Testalarm
+
+**Alert testen** steht in Übersicht, Bearbeitung und Zustellverlauf zur Verfügung
+(`endpoint:test`). Eine eingefügte JSON-Payload oder die letzte gespeicherte Meldung
+des Quell-Endpoints (`history:read`) wird zunächst ohne Versand geprüft.
+Die Diagnose erklärt Kundenzuordnung, fehlende/ungültige Scores, Schwellwert,
+Wartung, Pausierung, Entwurf, Recovery, Routing-Verwerfung und gesperrtes Forwarding.
+Ein bereits deduplizierter Alarm wird als solcher angezeigt.
+
+Die Vorschau zeigt die bereinigte ausgehende Payload und die gespeicherten
+Ziel-Hosts. Identitätsheader aus CIPP (`TaskInfo.Parameters.Headers`) und
+`PostExecutionResults` mit internen URLs werden nicht weitergegeben.
+**Testalarm senden** erfordert eine ausdrückliche Bestätigung im Formular.
+Er erzeugt Zustellungen in derselben dauerhaften Warteschlange wie echte Alarme,
+mit `test: true` und eigener stabiler Zustell-ID. Worker und Beat übernehmen den
+Versand; Status, HTTP-Code und Fehler sind auf der Testseite sichtbar.
+Der Test kann die echte Bereitschafts-Kette auslösen. Er erzeugt keine
+ConnectWise-Tickets und verändert keine eingehenden Alarme. Wiederholtes Absenden
+desselben Formulars erzeugt keine doppelten Zustellungen. Nach einer Änderung der
+Ziele oder des Formats muss die Testseite neu geladen werden.
+
+## PagerDuty Events v2
+
+Als **Webhook-Format** explizit **PagerDuty Events v2** auswählen. Ziel ist je nach
+PagerDuty-Region `https://events.pagerduty.com/v2/enqueue` oder
+`https://events.eu.pagerduty.com/v2/enqueue`. Andere Hosts/Pfade werden für dieses
+Format abgelehnt, damit der Integration Key nur PagerDuty erreicht.
+Den 32-stelligen Integration Key einer **Events API v2 Integration** hinterlegen;
+ein REST-API-Token oder generischer Bearer-Token erfüllt diese Aufgabe nicht.
+Der Key wird verschlüsselt gespeichert, erst beim Versand als `routing_key` in
+den JSON-Body eingesetzt und in Vorschau, Warteschlange und Zustellverlauf maskiert
+bzw. weggelassen. Bearer- und HMAC-Header werden im PagerDuty-Modus nicht gesendet.
+
+Hookwise erzeugt `event_action: trigger`, einen über alle Wiederholungen stabilen
+`dedup_key` und `payload` mit `summary`, `source`, `severity` und `custom_details`.
+Die CIPP-Einstufung wird für PagerDuty übersetzt: `high → critical`,
+`medium → error`, `low → warning`, `informational → info`. Das aktiviert keinen
+numerischen Score-Filter. Batches werden als ein Ereignis mit vollständigen
+bereinigten Details übergeben; die höchste enthaltene Severity wird verwendet.
+PagerDuty entscheidet anhand von Service, Bereitschaft und Eskalationsregeln
+über Anruf, Push oder SMS. Ein HTTP-202 bestätigt die Annahme des Ereignisses,
+keinen tatsächlich ausgeführten Anruf.
+Siehe [PagerDuty Events API v2](https://docs.pagerduty.com/developer/send-alert-event).
 
 ## Endpoint: 5. Additional Delivery
 
@@ -69,6 +116,7 @@ Hookwise sendet `POST` mit `Content-Type: application/json`:
   "version": 1,
   "company_id": "123",
   "source_endpoint_id": "source-id",
+  "source": {"id": "source-id", "name": "Cipp"},
   "request_id": "incoming-request-id",
   "score": 85.0,
   "minimum_score": 70.0,
@@ -77,6 +125,8 @@ Hookwise sendet `POST` mit `Content-Type: application/json`:
 ```
 
 `alert` enthält nur das Objekt, in dem sich das passende Score-Feld befindet.
+`source_endpoint_id` und `source.id` sind stabile SHA-256-Referenzen; sie enthalten
+nicht den privaten Ingress-Token des Quell-Endpoints. `source.name` ist dessen Anzeigename.
 Andere Batch-Einträge und eingehende HTTP-Header werden nicht mitgeschickt.
 Bekannte Geheimnisfelder werden durch Hookwise maskiert. Mit `$.score` auf
 oberster Ebene ist das Alarmobjekt die gesamte eingehende JSON-Payload.
@@ -103,8 +153,11 @@ Andere Antworten, einschließlich Redirects, beenden die Zustellung als Fehler.
 Timeouts: fünf Sekunden Verbindungsaufbau, zehn Sekunden Lesen der Antwortheader.
 Im Menü **Zustellungen** stehen Status, HTTP-Code und Versuche.
 
-URL, Bearer-Token und Signaturschlüssel werden verschlüsselt gespeichert und
-beim Bearbeiten nicht ausgegeben. Lokale/private Zieladressen und Redirects
+URL, Bearer-Token, Signaturschlüssel und PagerDuty Integration Key werden verschlüsselt gespeichert.
+Die URL wird beim Bearbeiten erst durch **Ziel bearbeiten** geladen
+(`endpoint:write` plus `secret:reveal`, CSRF-geschützter POST, Audit-Eintrag,
+`Cache-Control: no-store`). Ohne Reveal-Berechtigung kann ein Ziel vollständig
+ersetzt werden. Zugangsdaten werden nie vorbefüllt. Lokale/private Zieladressen und Redirects
 werden nicht zugelassen. Die geprüfte öffentliche DNS-Adresse wird für die
 TLS-Verbindung festgesetzt; Zertifikat und SNI werden gegen den ursprünglichen
 Hostnamen geprüft ([urllib3-Dokumentation](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#custom-sni-hostname)).
@@ -118,6 +171,8 @@ ausstehende Zustellungen für das alte Ziel abgebrochen. Neue Zugangsdaten müss
 für das neue Ziel eingetragen werden. Das gilt auch beim Wiederherstellen eines
 Backups; unveränderte alte Zugangsdaten werden dabei nicht übernommen. Ein bereits
 laufender HTTP-Aufruf kann noch am ursprünglichen Ziel ankommen.
+Änderungen des Webhook-Formats oder PagerDuty Integration Keys brechen ebenfalls
+ausstehende Zustellungen ab, damit alte Alarme nicht mit neuem Vertrag versendet werden.
 
 Abgeschlossene, fehlgeschlagene und abgebrochene Zustellungen entfernen ihren
 gespeicherten JSON-Inhalt sofort. Ihre Metadaten werden nach der konfigurierten
