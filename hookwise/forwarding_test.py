@@ -35,17 +35,20 @@ def _sample_payload(hook: CustomerWebhook) -> dict[str, Any]:
     tenant = (
         mapping.tenant_value if mapping and not any(c in mapping.tenant_value for c in "*?") else "customer.example"
     )
+    incident: dict[str, Any] = {
+        "IncidentID": "hookwise-test",
+        "IncidentName": "Hookwise Testalarm",
+        "Severity": "informational",
+        "Tenant": tenant,
+    }
+    if hook.status_path:
+        # Synthetic example only. Never infer this field for imported history
+        # or submitted payloads: the source must explicitly provide the status.
+        incident["Status"] = "Active"
     return {
         "Tenant": tenant,
         "TaskInfo": {"Command": "Get-CIPPAlertDefenderIncidents", "Tenant": "AllTenants"},
-        "Results": [
-            {
-                "IncidentID": "hookwise-test",
-                "IncidentName": "Hookwise Testalarm",
-                "Severity": "informational",
-                "Tenant": tenant,
-            }
-        ],
+        "Results": [incident],
     }
 
 
@@ -90,21 +93,30 @@ def test_customer_webhook(webhook_id: str) -> Any:
     error = None
     duplicates = 0
     source_note = (
-        "Beispiel einer CIPP-Meldung ohne numerischen Score. Eigene Payload einfügen oder letzte Meldung laden."
+        "Synthetisches CIPP-Beispiel ohne numerischen Score. Eigene Payload einfügen oder letzte Meldung laden."
     )
+    if hook.status_path:
+        source_note += (
+            " Status: Active wurde nur für dieses Beispiel ergänzt. Die aktuelle Standard-CIPP-Meldung enthält "
+            "keinen Status; CIPP muss ihn vor der produktiven Nutzung dieses Filters explizit mitsenden."
+        )
     payload = _sample_payload(hook)
     if request.method == "GET":
         historical, note = _load_history(hook)
         if historical is not None:
             payload = historical
         if note:
-            source_note = note
+            source_note = note if historical is not None else f"{note} {source_note}"
     payload_text = json.dumps(payload, ensure_ascii=False, indent=2)
     tokens = dict(session.get("forwarding_test_tokens", {}))
     if request.method == "GET":
         # Keep only a bounded set of test forms in the signed session.
         tokens = dict(list(tokens.items())[-9:])
-        tokens[hook.id] = {"value": secrets.token_hex(16), "generation": hook.destination_generation}
+        tokens[hook.id] = {
+            "value": secrets.token_hex(16),
+            "generation": hook.destination_generation,
+            "status_path": hook.status_path or "",
+        }
         session["forwarding_test_tokens"] = tokens
     token_record = tokens.get(hook.id, {})
     # String records from a pre-upgrade session must not authorize a send.
@@ -155,12 +167,16 @@ def test_customer_webhook(webhook_id: str) -> Any:
                 submitted_token = request.form.get("test_token", "")
                 if not test_token or not secrets.compare_digest(submitted_token, test_token):
                     raise ValueError("Das Testformular ist abgelaufen. Seite neu laden und erneut prüfen.")
+                if token_record.get("status_path", "") != (hook.status_path or ""):
+                    raise ValueError("Der Status-Filter wurde geändert. Seite neu laden und erneut prüfen.")
                 if token_record.get("generation") != hook.destination_generation:
                     raise ValueError("Die Zustellziele wurden geändert. Seite neu laden und die Ziele erneut prüfen.")
                 if not evaluation.eligible:
                     raise ValueError(evaluation.message)
                 # Serialize with target edits; never send to URLs supplied by the test form.
                 hook = CustomerWebhook.query.filter_by(id=hook.id).populate_existing().with_for_update().one()
+                if token_record.get("status_path", "") != (hook.status_path or ""):
+                    raise ValueError("Der Status-Filter wurde geändert. Seite neu laden und erneut prüfen.")
                 if token_record.get("generation") != hook.destination_generation:
                     raise ValueError("Die Zustellziele wurden geändert. Seite neu laden und die Ziele erneut prüfen.")
                 evaluation = evaluate_customer_webhook(hook, payload)

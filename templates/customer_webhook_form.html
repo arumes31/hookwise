@@ -3,6 +3,7 @@
 {% set v = values if values is not none else {} %}
 {% set score_enabled = v.get('score_path', hook.score_path if hook else '') %}
 {% set severity_enabled = v.get('severity_path', hook.severity_path if hook else '') %}
+{% set status_enabled = v.get('status_path', hook.status_path if hook else '') %}
 {% set minimum_severity = v.get('minimum_severity', (hook.minimum_severity or 'high') if hook else 'high') %}
 {% set payload_format = v.get('payload_format', (hook.payload_format or 'hookwise') if hook else 'hookwise') %}
 <div class="mb-4"><h1 class="fw-bold">{{ 'Forwarding connector bearbeiten' if hook else 'Forwarding connector anlegen' }}</h1>
@@ -11,6 +12,7 @@
 <form method="post" class="glass-card p-4" hx-boost="false">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="severity_filter_present" value="1">
+  <input type="hidden" name="status_filter_present" value="1">
   <div class="row g-4">
     <div class="col-md-6"><label for="name" class="form-label">Name</label>
       <input id="name" name="name" class="form-control" maxlength="100" required value="{{ v.get('name', hook.name if hook else '') }}"></div>
@@ -95,6 +97,18 @@
       <div id="severity-minimum-help" class="form-text">Reihenfolge: Informational &lt; Low &lt; Medium &lt; High &lt; Critical.
         Defender verwendet maximal High; Critical ist für andere Quellen vorgesehen.</div></div>
     <div class="col-12"><div class="form-check form-switch">
+      <input id="status_enabled" type="checkbox" class="form-check-input" {% if status_enabled %}checked{% endif %} aria-controls="status-path-field" aria-describedby="status-filter-help">
+      <label for="status_enabled" class="form-check-label">Nur offene Vorfälle (noch nicht erledigt)</label></div>
+      <div id="status-filter-help" class="form-text">Lässt nur <strong>Active</strong>, <strong>InProgress</strong> und <strong>AwaitingAction</strong> zu.
+        Resolved und Redirected werden blockiert. Fehlender oder unbekannter Status löst bei aktivem Filter nichts aus.
+        Für Bereitschaft zusammen mit Mindestschweregrad <strong>High</strong> verwenden.</div></div>
+    <div class="col-md-6" id="status-path-field" {% if not status_enabled %}hidden{% endif %}><label for="status_path" class="form-label">Status-Feld im Vorfall (JSONPath)</label>
+      <input id="status_path" name="status_path" class="form-control font-monospace" maxlength="200" {% if status_enabled %}required{% else %}disabled{% endif %}
+        value="{{ v.get('status_path', (hook.status_path or '$.Results[*].Status') if hook else '$.Results[*].Status') }}" aria-describedby="status-path-help">
+      <div id="status-path-help" class="form-text">Erwartet z. B. <code>$.Results[*].Status</code>. Die aktuelle Standard-CIPP-Meldung enthält dieses Feld nicht;
+        CIPP muss den Incident-Status explizit mitsenden (z. B. <code>Status = $Incident.status</code> in der Ergebnisprojektion).
+        Ohne diese Quellanpassung blockiert der Filter die Meldungen. Über „Letzte Meldung laden“ und „Prüfen (ohne Versand)“ kontrollieren.</div></div>
+    <div class="col-12"><div class="form-check form-switch">
       <input id="score_enabled" type="checkbox" class="form-check-input" {% if score_enabled %}checked{% endif %} aria-controls="score-path-field score-minimum-field">
       <label for="score_enabled" class="form-check-label">Score-Filter verwenden (optional)</label></div>
       <div class="form-text">Optional zusätzlich nach einem numerischen Score filtern. Defender-Meldungen mit Severity benötigen keinen Score-Filter.</div></div>
@@ -127,8 +141,8 @@
   </div>
   <p class="text-secondary small mt-4">Die Übertragung ist über HTTPS/TLS verschlüsselt; das Serverzertifikat wird geprüft.
     HMAC ergänzt eine Signatur zur Echtheitsprüfung. Eine zusätzliche Verschlüsselung des JSON-Inhalts ist nicht eingerichtet.</p>
-  <p class="text-secondary small mt-4">Mit Filtern wird jedes passende Alarmobjekt gesendet. Sind Score- und Schweregradfilter aktiv, müssen beide Bedingungen im selben Alarmobjekt erfüllt sein
-    (z. B. <code>$.Results[*].Score</code> und <code>$.Results[*].Severity</code>). Ohne Filter wird der vollständige bereinigte Alarm weitergeleitet.
+  <p class="text-secondary small mt-4">Mit Filtern wird jedes passende Alarmobjekt gesendet. Alle aktivierten Bedingungen müssen im selben Alarmobjekt erfüllt sein
+    (z. B. <code>$.Results[*].Severity</code>, <code>$.Results[*].Status</code> und optional <code>$.Results[*].Score</code>). Ohne Filter wird der vollständige bereinigte Alarm weitergeleitet.
     Identische Alarmdaten werden je Ziel einmal vorgemerkt. Bei temporären Fehlern folgen je Ziel bis zu fünf Zustellversuche.
     Der Empfänger sollte die Zustell-ID zur Deduplizierung verwenden.</p>
   <div class="d-flex gap-2 mt-4"><button class="btn btn-primary" type="submit">Speichern</button>

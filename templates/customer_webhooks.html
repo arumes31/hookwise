@@ -16,8 +16,10 @@
         <td>{{ hook.company_id }}</td><td>{{ hook.config.name }}</td>
         <td>
           {% if hook.severity_path %}<div>Severity ≥ <strong>{{ hook.minimum_severity }}</strong><br><code>{{ hook.severity_path }}</code></div>{% else %}<div>Alle Schweregrade</div>{% endif %}
+          {% if hook.status_path %}<div class="mt-1">Nur offene Vorfälle<br><code>{{ hook.status_path }}</code></div>{% else %}<div class="small text-secondary">Ohne Status-Filter</div>{% endif %}
           {% if hook.score_path %}<div class="mt-1">Score ≥ {{ hook.minimum_score }}<br><code>{{ hook.score_path }}</code></div>{% else %}<div class="small text-secondary">Ohne Score-Filter</div>{% endif %}
-          {% if hook.severity_path and hook.score_path %}<div class="small text-secondary mt-1">Beide Bedingungen im selben Alarmobjekt</div>{% endif %}
+          {% if hook.status_path and (hook.severity_path or hook.score_path) %}<div class="small text-secondary mt-1">Alle Bedingungen im selben Alarmobjekt</div>
+          {% elif hook.severity_path and hook.score_path %}<div class="small text-secondary mt-1">Beide Bedingungen im selben Alarmobjekt</div>{% endif %}
         </td>
         <td><span class="badge {{ 'bg-success' if hook.is_enabled else 'bg-warning text-dark' }}">{{ 'Aktiv' if hook.is_enabled else 'Pausiert' }}</span></td>
         <td><div class="d-flex flex-wrap gap-2">
@@ -35,7 +37,7 @@
   </div>
   {% else %}
   <h2 class="h5">Noch keine Forwarding</h2>
-  <p class="text-secondary">Lege einen Connector mit Kunde, Quell-Endpoint und Ziel-URLs an. Filter nach Schweregrad und Score sind optional.
+  <p class="text-secondary">Lege einen Connector mit Kunde, Quell-Endpoint und Ziel-URLs an. Filter nach Schweregrad, Vorfallstatus und Score sind optional.
     Sobald eine passende Meldung eingeht, erhält der Kunde einen HTTPS-POST mit dem Alarm.</p>
   {% endif %}
 </div>

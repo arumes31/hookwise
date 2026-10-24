@@ -4,6 +4,7 @@
         const add = document.getElementById('add-forwarding-target');
         const score = document.getElementById('score_enabled');
         const severity = document.getElementById('severity_enabled');
+        const status = document.getElementById('status_enabled');
         if (!targets || !add || targets.dataset.initialized) return;
         targets.dataset.initialized = 'true';
 
@@ -115,6 +116,13 @@
             if (severity.checked && !document.getElementById('severity_path').value) {
                 document.getElementById('severity_path').value = '$.Results[*].Severity';
             }
+        });
+        status?.addEventListener('change', () => {
+            document.getElementById('status-path-field').hidden = !status.checked;
+            const input = document.getElementById('status_path');
+            input.disabled = !status.checked;
+            input.required = status.checked;
+            if (status.checked && !input.value) input.value = '$.Results[*].Status';
         });
         const format = document.getElementById('payload_format');
         const routingKey = document.getElementById('pagerduty_routing_key');
