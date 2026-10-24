@@ -60,6 +60,48 @@ einmalig erneut zugestellt werden. Ein bereits laufender HTTP-Aufruf kann noch
 abschließen. Beim Rollback werden Connectoren mit aktivem
 Severity-Filter deaktiviert, weil die alte Version deren Filter nicht durchsetzen kann.
 
+## High und noch nicht erledigt
+
+Zusätzlich **Nur offene Vorfälle (noch nicht erledigt)** aktivieren und als
+Status-Feld `$.Results[*].Status` verwenden. Mit Mindestschweregrad High werden
+nur Incident-Objekte zugelassen, die beide Bedingungen erfüllen. Der Statusfilter
+erlaubt `active`, `inProgress` und `awaitingAction` (Groß-/Kleinschreibung und
+umgebende Leerzeichen sind egal). `resolved` und `redirected` werden blockiert;
+ein fehlender, leerer oder unbekannter Status gilt nicht als offen.
+
+**CIPP muss den Status explizit liefern.** Die geprüfte CIPP-API-Version 11.2.1
+fragt bereits nur aktive Incidents ab, entfernt den Status aber aus ihrer
+Ergebnisprojektion. Ohne Anpassung wird High bei eingeschaltetem Statusfilter
+mit `status_missing` blockiert. `TaskInfo.TaskState` ist kein Incident-Status.
+Der [CIPP-Leitfaden](CIPP_DEFENDER_STATUS.md) enthält die geprüften Quellen, einen
+minimalen Patch und die Umstiegsschritte. Das neue Feld verändert CIPP-Hashes
+und kann eine erneute Meldung bestehender Vorfälle sowie geänderte Snooze-Zuordnungen
+verursachen. Den Filter deshalb erst nach Prüfung der tatsächlichen CIPP-Ausgabe
+aktivieren. Hookwise ergänzt den Status nicht automatisch und fragt Defender
+nicht selbst ab.
+
+Sind Score, Schweregrad und Status aktiv, müssen alle Filter auf dasselbe
+Alarmobjekt zeigen. High/resolved und Low/active in einem Batch ergeben keinen
+passenden Alarm. Der Filter kann auch allein verwendet werden; dann wird nur
+das jeweils passende offene Objekt weitergeleitet. Ein leeres Status-Feld in
+der Konfiguration deaktiviert den Filter und erhält das bisherige Verhalten.
+
+Die Testseite unterscheidet `status_missing`, `status_invalid`, `status_closed`,
+`invalid_status_filter` und `filters_no_joint_match`. Das generische Ereignis
+enthält bei aktivem Filter zusätzlich den normalisierten `incident_status`;
+PagerDuty übernimmt ihn in `custom_details`. Ein synthetisches Testbeispiel kann
+`Status: Active` enthalten; beim Laden einer echten Meldung wird kein Status
+hinzugefügt. Ein erfolgreicher synthetischer Test bestätigt keine CIPP-Anpassung.
+
+Statusänderungen an der Filterkonfiguration brechen wartende Zustellungen ab,
+lassen Testformulare ablaufen und werden im Konfigurationsbackup gesichert.
+Beim Rollback auf eine Version ohne Statusfilter werden betroffene Connectoren
+pausiert und ihre wartenden Zustellungen abgebrochen. Eine bereits laufende
+HTTP-Anfrage kann noch abschließen. Bestehende Incidents werden nicht nachgeholt.
+Die Bedingung wertet den gelieferten Status zum Abfragezeitpunkt aus; sie fragt
+ihn vor einem Retry nicht erneut in Defender ab. Bereits ausgelöste
+PagerDuty-Vorfälle werden dadurch nicht automatisch erledigt.
+
 ## Diagnose und Testalarm
 
 **Alert testen** steht in Übersicht, Bearbeitung und Zustellverlauf zur Verfügung

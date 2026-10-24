@@ -1,6 +1,6 @@
 <div class="tab-pane fade" id="pane-additional-delivery" role="tabpanel" aria-labelledby="tab-additional-delivery">
     <h2 class="h5 mb-3">Additional Delivery</h2>
-    <p class="text-secondary">Choose where this endpoint delivers alerts. Each Forwarding connector applies its own customer, severity and score filters.</p>
+    <p class="text-secondary">Choose where this endpoint delivers alerts. Each Forwarding connector applies its own customer, severity, incident status and score filters.</p>
     <div class="row g-4">
         <div class="col-12">
             <div class="hw-schaltkarte p-3 rounded-2 border border-secondary border-opacity-25">
@@ -41,8 +41,9 @@
             <ul class="list-group list-group-flush">
                 {% for connector in connectors %}
                 <li class="list-group-item bg-transparent px-0 d-flex flex-wrap justify-content-between gap-2">
-                    <div><strong>{{ connector.name }}</strong><div class="small text-secondary">Company {{ connector.company_id }} · {% if connector.severity_path %}Severity ≥ {{ connector.minimum_severity }} (<code>{{ connector.severity_path }}</code>){% else %}All severities{% endif %} · {% if connector.score_path %}<code>{{ connector.score_path }}</code> ≥ {{ connector.minimum_score }}{% else %}No score filter{% endif %}</div>
-                      {% if connector.severity_path and connector.score_path %}<div class="small text-secondary">Both filters must match the same alert object.</div>{% endif %}</div>
+                    <div><strong>{{ connector.name }}</strong><div class="small text-secondary">Company {{ connector.company_id }} · {% if connector.severity_path %}Severity ≥ {{ connector.minimum_severity }} (<code>{{ connector.severity_path }}</code>){% else %}All severities{% endif %} · {% if connector.status_path %}Open incidents only (<code>{{ connector.status_path }}</code>){% else %}No status filter{% endif %} · {% if connector.score_path %}<code>{{ connector.score_path }}</code> ≥ {{ connector.minimum_score }}{% else %}No score filter{% endif %}</div>
+                      {% if connector.status_path and (connector.severity_path or connector.score_path) %}<div class="small text-secondary">All filters must match the same alert object.</div>
+                      {% elif connector.severity_path and connector.score_path %}<div class="small text-secondary">Both filters must match the same alert object.</div>{% endif %}</div>
                     <span class="badge align-self-start {{ 'bg-success' if connector.is_enabled else 'bg-secondary' }}">{{ 'Active' if connector.is_enabled else 'Paused' }}</span>
                 </li>
                 {% endfor %}

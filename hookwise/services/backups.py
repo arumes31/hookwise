@@ -60,6 +60,7 @@ CONFIG_FIELDS = {
     "timeout_hours",
 }
 CUSTOMER_WEBHOOK_FIELDS = {
+    "status_path",
     "severity_path",
     "minimum_severity",
     "payload_format",
@@ -292,8 +293,10 @@ def _restore_customer_webhooks(records: Any) -> None:
         set_destination,
         set_payload_format,
         set_severity_filter,
+        set_status_filter,
         validate_score_path,
         validate_severity_filter,
+        validate_status_filter,
     )
 
     if not isinstance(records, list) or len(records) > MAX_CONFIGS:
@@ -308,6 +311,7 @@ def _restore_customer_webhooks(records: Any) -> None:
                 "pagerduty_routing_key": None,
                 "severity_path": "",
                 "minimum_severity": "high",
+                "status_path": "",
                 **record,
             }
         if not isinstance(record, dict) or set(record) != CUSTOMER_WEBHOOK_FIELDS | {"id"}:
@@ -333,6 +337,7 @@ def _restore_customer_webhooks(records: Any) -> None:
             record["severity_path"], record["minimum_severity"] = validate_severity_filter(
                 record["severity_path"], record["minimum_severity"]
             )
+            record["status_path"] = validate_status_filter(record["status_path"])
             if record["additional_urls"] is not None and not isinstance(record["additional_urls"], str):
                 raise ValueError("Invalid additional targets")
             urls = destination_urls(
@@ -360,6 +365,7 @@ def _restore_customer_webhooks(records: Any) -> None:
         try:
             set_payload_format(hook, record["payload_format"])
             set_severity_filter(hook, record["severity_path"], record["minimum_severity"])
+            set_status_filter(hook, record["status_path"])
         except ValueError as exc:
             raise BackupValidationError("Customer webhook format or PagerDuty key is invalid") from exc
         for field in CUSTOMER_WEBHOOK_FIELDS - {
@@ -371,6 +377,7 @@ def _restore_customer_webhooks(records: Any) -> None:
             "pagerduty_routing_key",
             "severity_path",
             "minimum_severity",
+            "status_path",
         }:
             setattr(hook, field, record[field])
         db.session.add(hook)

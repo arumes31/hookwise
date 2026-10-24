@@ -28,6 +28,8 @@ from .routing import evaluate_routing
 MAX_ATTEMPTS = 5
 MAX_TARGETS = 10
 SEVERITY_LEVELS = ("informational", "low", "medium", "high", "critical")
+OPEN_INCIDENT_STATUSES = ("active", "inprogress", "awaitingaction")
+CLOSED_INCIDENT_STATUSES = ("resolved", "redirected")
 TERMINAL_STATUSES = ("delivered", "failed", "cancelled")
 logger = logging.getLogger(__name__)
 
@@ -221,6 +223,39 @@ def set_severity_filter(webhook: CustomerWebhook, path: str, minimum: str) -> No
     webhook.severity_path, webhook.minimum_severity = path, minimum
 
 
+def normalize_incident_status(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return normalized if normalized in OPEN_INCIDENT_STATUSES + CLOSED_INCIDENT_STATUSES else None
+
+
+def validate_status_filter(path: str) -> str:
+    if not isinstance(path, str):
+        raise ValueError("Der Status-Pfad ist ungültig.")
+    path = path.strip()
+    if path:
+        try:
+            validate_score_path(path)
+        except ValueError:
+            raise ValueError("Status-Feld als JSONPath angeben, z. B. $.Results[*].Status oder $.status.") from None
+    return path
+
+
+def set_status_filter(webhook: CustomerWebhook, path: str) -> None:
+    path = validate_status_filter(path)
+    if (webhook.status_path or "") != path:
+        webhook.destination_generation = (webhook.destination_generation or 1) + 1
+        CustomerWebhookDelivery.query.filter(
+            CustomerWebhookDelivery.webhook_id == webhook.id,
+            CustomerWebhookDelivery.status.in_(("pending", "sending")),
+        ).update(
+            {"status": "cancelled", "payload": "{}", "completed_at": datetime.now(timezone.utc)},
+            synchronize_session="fetch",
+        )
+    webhook.status_path = path
+
+
 def _company_resolution(config: Any, data: dict[str, Any]) -> tuple[str | None, str]:
     """Keep the production routing decision and its diagnostic reason together."""
     from ..tasks import _global_mapping_for_tenant, get_all_global_mappings
@@ -395,6 +430,50 @@ def evaluate_customer_webhook(webhook: CustomerWebhook, data: dict[str, Any]) ->
                 )
         else:
             matched = [(None, alert) for alert in qualifying]
+    if webhook.status_path:
+        try:
+            status_path = validate_status_filter(webhook.status_path)
+        except ValueError:
+            return blocked("invalid_status_filter", "Der gespeicherte Status-Filter ist ungültig.", company_id)
+        if not status_path:
+            return blocked("invalid_status_filter", "Der gespeicherte Status-Filter ist ungültig.", company_id)
+        status_matches = parse(status_path).find(data)
+        if not status_matches:
+            return blocked(
+                "status_missing",
+                "Das konfigurierte Status-Feld fehlt. CIPP muss den Incident-Status zusätzlich übermitteln; "
+                "ohne bekannten Status wird nicht alarmiert.",
+                company_id,
+            )
+        recognized_statuses = [
+            (status, match.context.value)
+            for match in status_matches
+            if (status := normalize_incident_status(match.value)) is not None
+        ]
+        if not recognized_statuses:
+            return blocked(
+                "status_invalid",
+                "Kein bekannter Incident-Status gefunden; unbekannte Werte werden nicht alarmiert.",
+                company_id,
+            )
+        open_incidents = [alert for status, alert in recognized_statuses if status in OPEN_INCIDENT_STATUSES]
+        if not open_incidents:
+            return blocked(
+                "status_closed", "Alle gefundenen Vorfälle sind erledigt oder wurden zusammengeführt.", company_id
+            )
+        if webhook.score_path or webhook.severity_path:
+            # Every enabled field filter must qualify the very same incident.
+            # An open sibling cannot rescue an already resolved High incident.
+            open_ids = {id(alert) for alert in open_incidents}
+            matched = [(score, alert) for score, alert in matched if id(alert) in open_ids]
+            if not matched:
+                return blocked(
+                    "filters_no_joint_match",
+                    "Die aktivierten Filter passen nicht gemeinsam auf dasselbe Alarmobjekt.",
+                    company_id,
+                )
+        else:
+            matched = [(None, alert) for alert in open_incidents]
     matches = [(score, _sanitized_alert(alert)) for score, alert in matched]
     return ForwardingEvaluation(True, "ready", "Kundenzuordnung und Filter passen.", company_id, matches, targets)
 
@@ -435,6 +514,9 @@ def build_alert_payload(
         field = webhook.severity_path.rsplit(".", 1)[-1]
         payload["severity"] = normalize_severity(alert.get(field))
         payload["minimum_severity"] = webhook.minimum_severity
+    if webhook.status_path and isinstance(alert, dict):
+        field = webhook.status_path.rsplit(".", 1)[-1]
+        payload["incident_status"] = normalize_incident_status(alert.get(field))
     return payload
 
 

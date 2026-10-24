@@ -16,6 +16,7 @@ from .services.customer_webhooks import (
     set_destination,
     set_payload_format,
     set_severity_filter,
+    set_status_filter,
     validate_score_path,
     validate_target_urls,
 )
@@ -56,6 +57,7 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
     severity_submitted = any(
         field in form for field in ("severity_filter_present", "severity_path", "minimum_severity")
     )
+    status_submitted = any(field in form for field in ("status_filter_present", "status_path"))
     try:
         name = form.get("name", "").strip()
         comment = form.get("comment", "").strip()
@@ -108,6 +110,8 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
                 form.get("severity_path", "").strip(),
                 form.get("minimum_severity", hook.minimum_severity or "high").strip(),
             )
+        if status_submitted:
+            set_status_filter(hook, form.get("status_path", "").strip())
         hook.is_enabled = form.get("is_enabled") == "on"
         credentials: dict[str, str | None] = {}
         for field in ("bearer_token", "signing_secret"):
@@ -151,6 +155,8 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
         if severity_submitted:
             safe_values["severity_path"] = form.get("severity_path", "")
             safe_values["minimum_severity"] = form.get("minimum_severity", hook.minimum_severity or "high")
+        if status_submitted:
+            safe_values["status_path"] = form.get("status_path", "")
         return _render_form(None if creating else hook, safe_values, str(exc)), 400
     flash("Forwarding connector gespeichert.", "success")
     return redirect(url_for("main.customer_webhooks"))
