@@ -71,7 +71,7 @@ jobs:
           if [[ "$result" -ne 0 ]]; then
             echo "::warning::$message This advisory scan does not fail CI."
           fi
-          printf '### Strix advisory scan\n\n%s\n\nExit code: `%s`. CI is not blocked.\n' "$message" "$result" >> "$GITHUB_STEP_SUMMARY"
+          printf '### Strix advisory scan\n\n%s\n\nExit code: %s. CI is not blocked.\n' "$message" "$result" >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
       - name: Upload Strix reports
