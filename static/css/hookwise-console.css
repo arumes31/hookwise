@@ -323,7 +323,7 @@ body {
     .navbar-nav > .notification-center             { order:20; margin-top:auto; width:100%; }
     .navbar-nav > [data-bs-target="#docsSidebar"]  { order:21; }
     .navbar-nav > [href*="settings"]               { order:22; }
-    .navbar-nav > [href*="logout"]                 { order:23; }
+    .navbar-nav .nav-logout                        { order:23; }
 
     .notification-center .nav-link { width:calc(100% - 26px); height:42px; }
     .navbar-nav .notification-toggle > span.d-lg-none {
@@ -2110,7 +2110,7 @@ code, pre, .font-monospace, kbd, samp {
 @media (min-width:992px) {
     .navbar-nav > .nav-account { order:22; }
     .navbar-nav > .nav-system-settings { order:23; }
-    .navbar-nav > [href*="logout"] { order:24; }
+    .navbar-nav .nav-logout { order:24; }
 }
 @media (max-width:991.98px) {
     .hw-account-grid { grid-template-columns:1fr; }

@@ -212,6 +212,10 @@ def _configure_app(app: Flask) -> None:
 def _configure_database_engine(app: Flask) -> None:
     """Set engine options for the final database URI before extension setup."""
     db_url = app.config["SQLALCHEMY_DATABASE_URI"]
+    # Keep the installed psycopg2 driver when SQLAlchemy changes its default.
+    if db_url.startswith("postgresql://"):
+        db_url = "postgresql+psycopg2://" + db_url[len("postgresql://") :]
+        app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     if not db_url.startswith("sqlite"):
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
             "pool_size": 10,

@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -98,8 +99,113 @@ def test_threshold_batch_isolation_dedup_and_encryption(subscription):
     assert decrypt_string(subscription.bearer_token) == "customer-token"
 
 
+def test_optional_score_forwards_whole_sanitized_alarm(client, subscription):
+    response = client.post("/customer-webhooks/new", data=form_data(subscription, score_path="", minimum_score=""))
+    assert response.status_code == 302
+    hook = CustomerWebhook.query.filter_by(name="Defender Alarm").one()
+    data = {"message": "No numeric score", "password": "sensitive"}
+    receive(hook, data)
+    receive(hook, data, "duplicate")
+    row = CustomerWebhookDelivery.query.filter_by(webhook_id=hook.id).one()
+    payload = json.loads(row.payload)
+    assert payload["alert"]["message"] == data["message"]
+    assert "sensitive" not in row.payload
+    assert payload["score"] is None and payload["minimum_score"] is None
+
+
+def test_multiple_targets_dispatch_in_parallel_and_retry_independently(client, subscription):
+    urls = ["https://first.example/hook", "https://second.example/hook"]
+    response = client.post(
+        "/customer-webhooks/new",
+        data=form_data(subscription, target_url=urls, bearer_token="shared-token", signing_secret="shared-signing"),
+    )
+    assert response.status_code == 302
+    hook = CustomerWebhook.query.filter_by(name="Defender Alarm").one()
+    receive(hook, {"score": 90})
+    receive(hook, {"score": 90}, "duplicate")
+    rows = (
+        CustomerWebhookDelivery.query.filter_by(webhook_id=hook.id).order_by(CustomerWebhookDelivery.target_index).all()
+    )
+    assert len(rows) == 2
+    assert "second.example" not in hook.additional_urls
+    barrier = threading.Barrier(2)
+
+    def send(url, body, headers):
+        assert headers["Authorization"] == "Bearer shared-token"
+        expected = hmac.new(
+            b"shared-signing", headers["X-HookWise-Timestamp"].encode() + b"." + body, hashlib.sha256
+        ).hexdigest()
+        assert headers["X-HookWise-Signature"] == "sha256=" + expected
+        barrier.wait(timeout=3)
+        return 204 if url == urls[0] else 503
+
+    with patch("hookwise.services.customer_webhooks.post_webhook", side_effect=send) as post:
+        assert dispatch_customer_deliveries() == {"delivered": 1, "failed": 1}
+    assert {call.args[0] for call in post.call_args_list} == set(urls)
+    db.session.expire_all()
+    assert [row.status for row in rows] == ["delivered", "pending"]
+    assert rows[0].payload == "{}" and rows[1].payload != "{}"
+    retry_id = rows[1].id
+    rows[1].next_attempt_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.session.commit()
+    with patch("hookwise.services.customer_webhooks.post_webhook", return_value=204) as post:
+        dispatch_customer_deliveries()
+    post.assert_called_once()
+    assert post.call_args.args[0] == urls[1]
+    assert post.call_args.args[2]["Idempotency-Key"] == retry_id
+
+
+def test_multiple_targets_edit_preserves_hidden_urls_and_cancels_on_removal(client, subscription):
+    from hookwise.services.customer_webhooks import destination_urls, set_destination
+
+    urls = ["https://first.example/hook?key=secret", "https://second.example/hook?key=secret"]
+    set_destination(subscription, urls, {"bearer_token": "shared"})
+    db.session.commit()
+    receive(subscription, {"Results": [{"Score": 90}]})
+    generation = subscription.destination_generation
+    response = client.post(
+        f"/customer-webhooks/{subscription.id}/edit",
+        data=form_data(subscription, target_url=["", ""], target_slot=["0", "1"]),
+    )
+    assert response.status_code == 302
+    assert destination_urls(subscription) == urls
+    assert subscription.destination_generation == generation
+    page = client.get(f"/customer-webhooks/{subscription.id}/edit").get_data(as_text=True)
+    assert "key=secret" not in page and "shared" not in page
+    response = client.post(
+        f"/customer-webhooks/{subscription.id}/edit",
+        data=form_data(subscription, target_url="", target_slot="1"),
+    )
+    assert response.status_code == 302
+    assert destination_urls(subscription) == [urls[1]]
+    assert subscription.bearer_token is None
+    assert all(row.status == "cancelled" and row.payload == "{}" for row in subscription.deliveries)
+
+
+def test_optional_score_and_multiple_targets_backup_round_trip(subscription):
+    from hookwise.services.backups import export_backup, parse_backup, restore_backup
+    from hookwise.services.customer_webhooks import destination_urls, set_destination
+
+    urls = ["https://first.example/hook", "https://second.example/hook"]
+    set_destination(subscription, urls, {})
+    subscription.score_path, subscription.minimum_score = "", 0
+    db.session.commit()
+    document = parse_backup(export_backup())
+    restore_backup(document)
+    assert destination_urls(subscription) == urls
+    assert subscription.score_path == ""
+
+
+@pytest.mark.parametrize("urls", [["https://one.example", "https://127.0.0.1"], ["https://one.example"] * 2])
+def test_invalid_multiple_targets_are_rejected(client, subscription, urls):
+    assert client.post("/customer-webhooks/new", data=form_data(subscription, target_url=urls)).status_code == 400
+
+
 @pytest.mark.parametrize("change", ["customer", "disabled", "draft", "archived", "maintenance", "drop", "recovery"])
-def test_unmatched_or_suppressed_alerts_never_stage(subscription, change):
+@pytest.mark.parametrize("filter_enabled", [True, False])
+def test_unmatched_or_suppressed_alerts_never_stage(subscription, change, filter_enabled):
+    if not filter_enabled:
+        subscription.score_path, subscription.minimum_score = "", 0
     config = subscription.config
     data: dict[str, Any] = {"Results": [{"Score": 90}]}
     if change == "customer":
@@ -411,13 +517,17 @@ def test_invalid_stored_score_path_does_not_block_ingress(client, subscription, 
     assert invalid.id in caplog.text and "invalid score_path" in caplog.text
 
 
-def test_restore_retarget_cannot_reuse_old_credentials(subscription):
+@pytest.mark.parametrize("change", ["primary", "additional"])
+def test_restore_retarget_cannot_reuse_old_credentials(subscription, change):
     from hookwise.services.backups import export_backup, parse_backup, restore_backup
     from hookwise.utils import encrypt_string
 
     receive(subscription, {"Results": [{"Score": 90}]})
     document = parse_backup(export_backup())
-    document["customer_webhooks"][0]["target_url"] = encrypt_string("https://new.example/hook")
+    if change == "primary":
+        document["customer_webhooks"][0]["target_url"] = encrypt_string("https://new.example/hook")
+    else:
+        document["customer_webhooks"][0]["additional_urls"] = encrypt_string(json.dumps(["https://new.example/hook"]))
     restore_backup(document)
     assert subscription.bearer_token is None and subscription.signing_secret is None
     assert CustomerWebhookDelivery.query.one().status == "cancelled"
@@ -636,6 +746,7 @@ def test_configuration_backup_round_trip(subscription):
 
     # Backups from before the comment field was introduced remain readable.
     document["customer_webhooks"][0].pop("comment")
+    document["customer_webhooks"][0].pop("additional_urls")
     restore_backup(document)
     assert hook.comment is None
 
@@ -649,6 +760,10 @@ def test_migration_matches_models_and_rolls_back(app):
 
     migration = importlib.import_module("migrations.versions.c9a7b2e4d6f8_add_customer_webhooks")
     destination = importlib.import_module("migrations.versions.d7f3a9b2c5e1_bind_forwarding_destinations")
+    targets = importlib.import_module("migrations.versions.f2a8c4d6e9b1_add_forwarding_targets")
+    pagerduty = importlib.import_module("migrations.versions.a8c2d4e6f901_add_pagerduty_forwarding")
+    severity = importlib.import_module("migrations.versions.b6d8e0f2a4c6_add_forwarding_severity_filter")
+    status = importlib.import_module("migrations.versions.c7e9f1a3b5d7_add_forwarding_status_filter")
     with db.engine.begin() as connection:
         db.metadata.tables["customer_webhook_delivery"].drop(connection)
         db.metadata.tables["customer_webhook"].drop(connection)
@@ -656,9 +771,42 @@ def test_migration_matches_models_and_rolls_back(app):
         with Operations.context(context):
             migration.upgrade()
             destination.upgrade()
+            targets.upgrade()
+            pagerduty.upgrade()
+            severity.upgrade()
+            status.upgrade()
             assert compare_metadata(context, db.metadata) == []
+            status.downgrade()
+            severity.downgrade()
+            pagerduty.downgrade()
+            targets.downgrade()
             destination.downgrade()
             migration.downgrade()
             migration.upgrade()
             destination.upgrade()
+            targets.upgrade()
+            pagerduty.upgrade()
+            severity.upgrade()
+            status.upgrade()
             assert compare_metadata(context, db.metadata) == []
+
+
+def test_target_migration_rollback_does_not_reroute_extra_copies(subscription):
+    import importlib
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import text
+
+    from hookwise.services.customer_webhooks import set_destination
+
+    set_destination(subscription, ["https://first.example", "https://second.example"], {})
+    db.session.commit()
+    receive(subscription, {"Results": [{"Score": 90}]})
+    db.session.remove()
+    migration = importlib.import_module("migrations.versions.f2a8c4d6e9b1_add_forwarding_targets")
+    with db.engine.begin() as connection, Operations.context(MigrationContext.configure(connection)):
+        migration.downgrade()
+        assert connection.execute(text("SELECT COUNT(*) FROM customer_webhook_delivery")).scalar_one() == 1
+        migration.upgrade()
+        assert connection.execute(text("SELECT target_index FROM customer_webhook_delivery")).scalar_one() == 0
