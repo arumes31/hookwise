@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div><a href="{{ url_for('main.customer_webhooks') }}">← Forwarding</a>
+    <h1 class="fw-bold mt-2">Alert testen: {{ hook.name }}</h1>
+    <p class="text-secondary mb-0">Kunde {{ hook.company_id }} · Quelle {{ hook.config.name }} · Gespeicherte Konfiguration</p></div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if hw_kann('endpoint:write') %}<a class="btn btn-outline-secondary" href="{{ url_for('main.edit_customer_webhook', webhook_id=hook.id) }}">Konfiguration bearbeiten</a>{% endif %}
+    {% if hw_kann('history:read') %}<a class="btn btn-outline-secondary" href="{{ url_for('main.customer_webhook_deliveries', webhook_id=hook.id) }}">Zustellungen</a>{% endif %}
+  </div>
+</div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<section class="glass-card p-4 mb-4" aria-labelledby="saved-conditions-title">
+  <h2 id="saved-conditions-title" class="h5">Gespeicherte Alarmierungsbedingungen</h2>
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Schweregrad</dt><dd class="col-sm-9">{% if hook.severity_path %}Severity ≥ <strong>{{ hook.minimum_severity }}</strong> · <code>{{ hook.severity_path }}</code>{% else %}Alle Schweregrade{% endif %}</dd>
+    <dt class="col-sm-3">Vorfallstatus</dt><dd class="col-sm-9">{% if hook.status_path %}Nur offene Vorfälle (Active, InProgress, AwaitingAction) · <code>{{ hook.status_path }}</code>{% else %}Ohne Status-Filter{% endif %}</dd>
+    <dt class="col-sm-3">Score</dt><dd class="col-sm-9">{% if hook.score_path %}Score ≥ <strong>{{ hook.minimum_score }}</strong> · <code>{{ hook.score_path }}</code>{% else %}Ohne Score-Filter{% endif %}</dd>
+  </dl>
+  {% if hook.status_path %}<p class="text-secondary small mb-0">Alle aktivierten Bedingungen müssen im selben Alarmobjekt erfüllt sein. Resolved, Redirected sowie fehlender oder unbekannter Status werden blockiert.
+    Die Quelle muss den Status mitsenden; die aktuelle Standard-CIPP-Meldung enthält ihn nicht.</p>
+  {% elif hook.severity_path and hook.score_path %}<p class="text-secondary small mb-0">Beide Bedingungen müssen im selben Alarmobjekt erfüllt sein. Ein hoher Score in einem anderen Incident reicht nicht aus.</p>
+  {% elif hook.severity_path %}<p class="text-secondary small mb-0">Nur Alarmobjekte ab dem Mindestschweregrad werden weitergeleitet. Fehlende oder unbekannte Schweregrade werden übersprungen.</p>{% endif %}
+</section>
+{% if test_deliveries %}
+<section class="glass-card p-4 mb-4" aria-labelledby="test-queue-title">
+  <h2 id="test-queue-title" class="h5">Testzustellungen</h2>
+  <p class="text-secondary">Der Test verwendet dieselbe Warteschlange, Signatur und Wiederholungslogik wie echte Alarme. Es wird kein ConnectWise-Ticket angelegt.</p>
+  <div class="table-responsive"><table class="table"><thead><tr><th>Ziel</th><th>Zustell-ID</th><th>Status</th><th>Versuche</th><th>HTTP</th><th>Diagnose</th></tr></thead>
+    <tbody>{% for delivery in test_deliveries %}<tr>
+      <td>{{ delivery.target_index + 1 }}</td><td><code>{{ delivery.id }}</code></td>
+      <td>{{ {'pending':'Wartet auf Worker / Beat', 'sending':'Wird gesendet', 'delivered':'Zugestellt', 'failed':'Fehlgeschlagen', 'cancelled':'Abgebrochen'}.get(delivery.status, delivery.status) }}</td>
+      <td>{{ delivery.attempts }}</td><td>{{ delivery.response_status or '—' }}</td><td>{{ delivery.error_message or '—' }}</td>
+    </tr>{% endfor %}</tbody></table></div>
+  <a class="btn btn-outline-primary" href="{{ url_for('main.test_customer_webhook', webhook_id=hook.id, batch=batch) }}">Status aktualisieren</a>
+</section>
+{% endif %}
+<form method="post" hx-boost="false" class="glass-card p-4 mb-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="test_token" value="{{ test_token }}">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <label for="test-payload" class="form-label mb-0">Eingehende JSON-Payload</label>
+    {% if hw_kann('history:read') %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.test_customer_webhook', webhook_id=hook.id, latest=1) }}">Letzte Meldung laden</a>{% endif %}
+  </div>
+  <p id="test-payload-help" class="text-secondary small">{{ source_note }} Identitätsheader und interne Ausführungsdaten werden bereinigt.</p>
+  <textarea id="test-payload" name="payload" class="form-control font-monospace" rows="16" required spellcheck="false" aria-describedby="test-payload-help">{{ payload_text }}</textarea>
+  <div class="d-flex flex-wrap align-items-center gap-3 mt-3">
+    <button type="submit" name="action" value="preview" class="btn btn-primary">Prüfen (ohne Versand)</button>
+    <span class="text-secondary small">Zeigt Kundenzuordnung, Filter und die ausgehende Payload.</span>
+  </div>
+  {% if evaluation %}
+  <section class="mt-4" aria-labelledby="test-result-title" aria-live="polite">
+    <h2 id="test-result-title" class="h5">Prüfergebnis</h2>
+    <div class="alert {{ 'alert-success' if evaluation.eligible else 'alert-warning' }}">
+      {{ evaluation.message }} <code>{{ evaluation.code }}</code>
+    </div>
+    {% if evaluation.company_id %}<p>Ermittelter Kunde: <strong>{{ evaluation.company_id }}</strong> · Connector: {{ hook.company_id }}</p>{% endif %}
+    {% if evaluation.eligible %}
+    <p>{{ previews|length }} passende Alarmobjekte · {{ targets|length }} Ziele: {% for host in targets %}<span class="font-monospace">{{ host }}</span>{{ ', ' if not loop.last else '' }}{% endfor %}</p>
+    <p class="text-secondary small">{{ duplicates }} identische produktive Zustellungen sind bereits bekannt. Ein ausdrücklich gesendeter Test hat eine eigene Zustell-ID und umgeht diese Deduplizierung.</p>
+    <details class="mb-3" open><summary>Bereinigte ausgehende Test-Payload</summary>
+      {% for preview in previews %}<pre class="p-3 mt-2 border rounded text-break" style="white-space:pre-wrap">{{ preview }}</pre>{% endfor %}
+    </details>
+    <div class="form-check mt-3">
+      <input class="form-check-input" id="confirm-send" name="confirm_send" type="checkbox">
+      <label class="form-check-label" for="confirm-send">Ich möchte diese Payload tatsächlich an die gespeicherten Ziele senden. Das kann die Kundenalarmierung auslösen.</label>
+    </div>
+    <button type="submit" name="action" value="send" class="btn btn-outline-warning mt-3">Testalarm senden</button>
+    <p class="text-secondary small mt-2">Der Empfänger erhält zusätzlich <code>test: true</code>. Worker und Beat müssen laufen; der Test startet keine Ticketverarbeitung.</p>
+    {% endif %}
+  </section>
+  {% endif %}
+</form>
+{% endblock %}
