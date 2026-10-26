@@ -1,0 +1,11 @@
+diff --git a/Modules/CIPPAlerts/Public/Alerts/Get-CIPPAlertDefenderIncidents.ps1 b/Modules/CIPPAlerts/Public/Alerts/Get-CIPPAlertDefenderIncidents.ps1
+--- a/Modules/CIPPAlerts/Public/Alerts/Get-CIPPAlertDefenderIncidents.ps1
++++ b/Modules/CIPPAlerts/Public/Alerts/Get-CIPPAlertDefenderIncidents.ps1
+@@ -26,6 +26,7 @@ function Get-CIPPAlertDefenderIncidents {
+             [PSCustomObject]@{
+                 IncidentName   = $Incident.displayName
+                 Severity       = $Incident.severity
++                Status         = $Incident.status
+                 Classification = $Incident.classification
+                 Determination  = $Incident.determination
+                 Summary        = $Incident.summary

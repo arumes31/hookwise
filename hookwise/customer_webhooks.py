@@ -3,20 +3,24 @@
 from typing import Any
 from urllib.parse import urlsplit
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, jsonify, redirect, render_template, request, url_for
 
 from .extensions import db
 from .models import CustomerWebhook, CustomerWebhookDelivery, GlobalMapping, WebhookConfig
-from .rbac import requires
+from .rbac import current_permissions, requires
 from .routes import main_bp
 from .services.customer_webhooks import (
     TERMINAL_STATUSES,
+    destination_urls,
     numeric_score,
     set_destination,
+    set_payload_format,
+    set_severity_filter,
+    set_status_filter,
     validate_score_path,
-    validate_target_url,
+    validate_target_urls,
 )
-from .utils import auth_required, decrypt_string, log_audit
+from .utils import auth_required, log_audit
 
 
 @main_bp.get("/customer-webhooks")
@@ -27,7 +31,7 @@ def customer_webhooks() -> Any:
     hosts = {}
     for hook in hooks:
         try:
-            hosts[hook.id] = urlsplit(decrypt_string(hook.target_url)).hostname
+            hosts[hook.id] = ", ".join(urlsplit(url).hostname or "" for url in destination_urls(hook))
         except ValueError:
             hosts[hook.id] = "Ziel nicht lesbar"
     return render_template("customer_webhooks.html", hooks=hooks, hosts=hosts)
@@ -36,21 +40,49 @@ def customer_webhooks() -> Any:
 def _render_form(hook: CustomerWebhook | None = None, values: Any = None, error: str | None = None) -> Any:
     configs = WebhookConfig.query.filter(WebhookConfig.archived_at.is_(None)).order_by(WebhookConfig.name).all()
     companies = db.session.query(GlobalMapping.company_id, GlobalMapping.description).distinct().all()
+    targets = destination_urls(hook) if hook else []
     return render_template(
-        "customer_webhook_form.html", hook=hook, values=values, configs=configs, companies=companies, error=error
+        "customer_webhook_form.html",
+        hook=hook,
+        values=values,
+        configs=configs,
+        companies=companies,
+        error=error,
+        target_hosts=[urlsplit(url).hostname for url in targets],
     )
 
 
 def _save(hook: CustomerWebhook, creating: bool) -> Any:
     form = request.form
+    severity_submitted = any(
+        field in form for field in ("severity_filter_present", "severity_path", "minimum_severity")
+    )
+    status_submitted = any(field in form for field in ("status_filter_present", "status_path"))
     try:
         name = form.get("name", "").strip()
         comment = form.get("comment", "").strip()
         company_id = form.get("company_id", "").strip()
         config = db.session.get(WebhookConfig, form.get("config_id", ""))
         path = form.get("score_path", "").strip()
-        threshold = numeric_score(form.get("minimum_score"))
-        url = form.get("target_url", "").strip()
+        payload_format = form.get("payload_format", hook.payload_format or "hookwise").strip()
+        threshold = numeric_score(form.get("minimum_score")) if path else 0
+        previous_urls = destination_urls(hook) if not creating else []
+        submitted_urls = form.getlist("target_url")
+        slots = form.getlist("target_slot")
+        urls = []
+        if slots:
+            if len(slots) != len(submitted_urls) or len(set(slot for slot in slots if slot != "new")) != sum(
+                slot != "new" for slot in slots
+            ):
+                raise ValueError("Ungültige Zielauswahl.")
+            for slot, value in zip(slots, submitted_urls, strict=True):
+                if slot != "new" and (not slot.isdecimal() or int(slot) >= len(previous_urls)):
+                    raise ValueError("Ungültige Zielauswahl.")
+                value = value.strip()
+                urls.append(value or (previous_urls[int(slot)] if slot != "new" else ""))
+        else:
+            urls = [value.strip() for value in submitted_urls if value.strip()] or previous_urls
+        validate_target_urls(urls)
         if not name or len(name) > 100 or not company_id or len(company_id) > 50:
             raise ValueError("Name (max. 100 Zeichen) und CW Company ID (max. 50 Zeichen) sind erforderlich.")
         if len(comment) > 2000:
@@ -59,9 +91,8 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
             raise ValueError("Bitte einen gültigen Quell-Endpoint auswählen.")
         if threshold is None:
             raise ValueError("Der Mindestscore muss eine endliche Zahl ab 0 sein.")
-        validate_score_path(path)
-        if url or creating:
-            validate_target_url(url)
+        if path:
+            validate_score_path(path)
         # Pending deliveries retain the original customer boundary. Changing a
         # subscription's customer/source would silently reroute those alarms.
         if not creating and (hook.company_id != company_id or hook.config_id != config.id):
@@ -73,6 +104,14 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
         hook.name, hook.company_id, hook.config_id = name, company_id, config.id
         hook.comment = comment or None
         hook.score_path, hook.minimum_score = path, threshold
+        if severity_submitted:
+            set_severity_filter(
+                hook,
+                form.get("severity_path", "").strip(),
+                form.get("minimum_severity", hook.minimum_severity or "high").strip(),
+            )
+        if status_submitted:
+            set_status_filter(hook, form.get("status_path", "").strip())
         hook.is_enabled = form.get("is_enabled") == "on"
         credentials: dict[str, str | None] = {}
         for field in ("bearer_token", "signing_secret"):
@@ -81,7 +120,13 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
                 credentials[field] = value
             elif form.get(f"clear_{field}") == "on":
                 credentials[field] = None
-        set_destination(hook, url or decrypt_string(hook.target_url), credentials, drop_replayed=False)
+        set_destination(hook, urls, credentials, drop_replayed=False)
+        set_payload_format(
+            hook,
+            payload_format,
+            form.get("pagerduty_routing_key", "").strip() or None,
+            clear=form.get("clear_pagerduty_routing_key") == "on",
+        )
         db.session.add(hook)
         db.session.flush()
         log_audit(
@@ -106,6 +151,12 @@ def _save(hook: CustomerWebhook, creating: bool) -> Any:
                 "is_enabled",
             )
         }
+        safe_values["payload_format"] = form.get("payload_format", hook.payload_format or "hookwise")
+        if severity_submitted:
+            safe_values["severity_path"] = form.get("severity_path", "")
+            safe_values["minimum_severity"] = form.get("minimum_severity", hook.minimum_severity or "high")
+        if status_submitted:
+            safe_values["status_path"] = form.get("status_path", "")
         return _render_form(None if creating else hook, safe_values, str(exc)), 400
     flash("Forwarding connector gespeichert.", "success")
     return redirect(url_for("main.customer_webhooks"))
@@ -128,6 +179,29 @@ def edit_customer_webhook(webhook_id: str) -> Any:
     if request.method == "POST":
         return _save(hook, False)
     return _render_form(hook)
+
+
+@main_bp.post("/customer-webhooks/<webhook_id>/targets/<int:target_index>/reveal")
+@auth_required
+@requires("secret:reveal")
+def reveal_customer_webhook_target(webhook_id: str, target_index: int) -> Any:
+    # URLs may contain customer API keys. Keep this boundary enforced even
+    # during a permissive RBAC rollout, and reveal only after an explicit click.
+    permissions = current_permissions()
+    for permission in ("endpoint:write", "secret:reveal"):
+        if permission not in permissions:
+            return jsonify({"message": "Insufficient permissions", "required": permission}), 403
+    hook = db.get_or_404(CustomerWebhook, webhook_id)
+    targets = destination_urls(hook)
+    if target_index >= len(targets):
+        return jsonify({"message": "Ziel nicht gefunden."}), 404
+    log_audit(
+        "customer_webhook_target_reveal", hook.config_id, f"Customer webhook {hook.id}; target {target_index + 1}"
+    )
+    response = jsonify({"url": targets[target_index]})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @main_bp.post("/customer-webhooks/<webhook_id>/toggle")
