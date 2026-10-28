@@ -46,7 +46,7 @@ async def _capture_browser_fixture(browser: str, url: str, tmp_path: Path) -> st
                     "about:blank",
                     stdout=log,
                     stderr=subprocess.STDOUT,
-                    **({"start_new_session": True} if os.name != "nt" else {}),
+                    start_new_session=os.name != "nt",
                 )
                 while True:
                     if process.returncode is not None:
