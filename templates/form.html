@@ -118,11 +118,11 @@
                                         class="form-control bg-dark border-secondary text-info font-monospace" readonly
                                         value="{{ base_url }}/w/{{ config.id }}">
                                     <button class="btn btn-outline-secondary" type="button"
-                                        onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" title="Copy URL">
+                                        data-hw-arg="{{ base_url }}/w/{{ config.id }}" onclick="copyToClipboard(this.dataset.hwArg)" title="Copy URL">
                                         <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg>
                                     </button>
                                     <button class="btn btn-primary fw-bold" type="button"
-                                        onclick="showSetupGuide('{{ config.id }}')">
+                                        data-hw-arg="{{ config.id }}" onclick="showSetupGuide(this.dataset.hwArg)">
                                         Setup Guide
                                     </button>
                                 </div>
@@ -572,7 +572,7 @@
                                                 </button>
                                             </div>
                                             <button type="button" class="btn btn-sm btn-outline-warning w-100 fw-bold"
-                                                onclick="rotateBearerToken('{{ config.id }}')" id="rotate-btn">
+                                                data-hw-arg="{{ config.id }}" onclick="rotateBearerToken(this.dataset.hwArg)" id="rotate-btn">
                                                 <svg class="hw-icon me-2" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-arrow-clockwise"></use></svg>Regenerate Bearer Token
                                             </button>
                                             <div class="small text-warning mt-2 hw-t-xs">

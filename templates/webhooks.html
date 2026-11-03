@@ -301,7 +301,7 @@
                         </summary>
                         <div class="hw-more-menu">
                         <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:write"
-                            onclick="togglePin('{{ config.id }}')"
+                            data-hw-arg="{{ config.id }}" onclick="togglePin(this.dataset.hwArg)"
                             data-tooltip="{{ 'Unpin' if config.is_pinned else 'Pin' }}" aria-label="{{ 'Unpin' if config.is_pinned else 'Pin' }} endpoint">
                             <span class="hw-more-icon text-{{ 'warning' if config.is_pinned else 'secondary' }} hover-warning" aria-hidden="true">
                                 {% if config.is_pinned %}<svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-pin-fill"></use></svg>{% else %}<svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-pin"></use></svg>{% endif %}
@@ -309,7 +309,7 @@
                             <span class="hw-more-text">{{ 'Unpin' if config.is_pinned else 'Pin' }}</span>
                         </button>
                         <button type="button" class="hw-more-row hw-endpoint-action-row"
-                            onclick="openEndpointDetail('{{ config.id }}')" data-tooltip="Open details" aria-label="Open details">
+                            data-hw-arg="{{ config.id }}" onclick="openEndpointDetail(this.dataset.hwArg)" data-tooltip="Open details" aria-label="Open details">
                             <span class="hw-more-icon" aria-hidden="true">
                                 <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
                             </span>
@@ -333,14 +333,14 @@
                             <span class="hw-more-text">Archive</span>
                         </button>
                         <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:write"
-                            onclick="cloneEndpoint('{{ config.id }}')" data-tooltip="Duplicate endpoint" aria-label="Duplicate endpoint">
+                            data-hw-arg="{{ config.id }}" onclick="cloneEndpoint(this.dataset.hwArg)" data-tooltip="Duplicate endpoint" aria-label="Duplicate endpoint">
                             <span class="hw-more-icon" aria-hidden="true">
                                 <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-copy"></use></svg>
                             </span>
                             <span class="hw-more-text">Duplicate</span>
                         </button>
                         <button type="button" class="hw-more-row hw-endpoint-action-row" data-braucht="endpoint:test"
-                            onclick="testEndpoint('{{ config.id }}')" data-tooltip="Test Webhook" aria-label="Test webhook">
+                            data-hw-arg="{{ config.id }}" onclick="testEndpoint(this.dataset.hwArg)" data-tooltip="Test Webhook" aria-label="Test webhook">
                             <span class="hw-more-icon hover-info" aria-hidden="true">
                                 <svg class="hw-icon" width="16" height="16" focusable="false"><use href="#i-play-fill"></use></svg>
                             </span>
@@ -430,7 +430,7 @@
                         {% set voll_url = base_url ~ '/w/' ~ config.id %}
                         <code class="flex-grow-1" title="{{ voll_url }}">{{ voll_url[:26] }}&hellip;{{ voll_url[-10:] }}</code>
                         <button class="btn btn-sm btn-link text-primary p-0"
-                            onclick="copyToClipboard('{{ base_url }}/w/{{ config.id }}')" data-tooltip="Copy URL" aria-label="Copy endpoint URL">
+                            data-hw-arg="{{ base_url }}/w/{{ config.id }}" onclick="copyToClipboard(this.dataset.hwArg)" data-tooltip="Copy URL" aria-label="Copy endpoint URL">
                             <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clipboard"></use></svg>
                         </button>
                     </div>

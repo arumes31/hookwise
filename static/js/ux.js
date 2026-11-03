@@ -893,10 +893,12 @@ function getTroubleshootingLink(message) {
     return null;
 }
 
+// Escapes for both text nodes and quoted attribute values: textContent/innerHTML
+// alone leaves quotes intact, which lets a value close an attribute.
 window.escapeHtml = function (text) {
     const div = document.createElement('div');
     div.textContent = text;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 };
 
 // Nr. 14: Duplizieren aus dem Kartenmenue. Nutzt dieselbe POST-Form wie das

@@ -42,6 +42,7 @@
     <meta name="hookwise-logo-url" content="{{ static_asset('img/logo.png') }}">
     <meta name="hookwise-ticket-url-template" content="{{ connectwise_ticket_url_template() }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="hw-account" content="{{ session.user_id or '' }}">
     {# Rechte der Sitzung fuer ux.js (data-braucht). Nur Anzeige-Logik --
        durchgesetzt wird serverseitig. #}
     <meta name="hw-perms" content="{{ hw_rechte() }}">

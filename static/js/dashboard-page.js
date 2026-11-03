@@ -237,17 +237,32 @@
             const sevKlasse = data.level === 'error' ? 'crit' : data.level === 'warning' ? 'warn' : 'ok';
             const sevText   = data.level === 'error' ? 'FAIL' : data.level === 'warning' ? 'WARN' : 'OK';
             const ticketUrl = window.hookwiseTicketUrl?.(data.ticket_id) || '';
+            // Static markup only. Every event-derived value (endpoint name,
+            // message, level, ticket link) is assigned below through DOM
+            // properties, so quotes and markup in webhook text stay data.
             let flowHtml = `
-                <span class="hw-act-time">${timeStr}</span>
-                <span class="hw-act-sev hw-act-sev--${sevKlasse}" title="${escapeHtml(data.level || 'info')}">${sevText}</span>
-                <span class="hw-act-name">${escapeHtml(data.config_name)}</span>
-                <span class="hw-act-msg" title="${escapeHtml(data.message)}">${escapeHtml(data.message)}</span>
-                ${ticketUrl ? `<a href="${escapeHtml(ticketUrl)}" target="_blank" rel="noopener noreferrer" class="badge bg-primary text-decoration-none hw-t-xs">#${escapeHtml(data.ticket_id)}</a>` : ''}
+                <span class="hw-act-time"></span>
+                <span class="hw-act-sev hw-act-sev--${sevKlasse}">${sevText}</span>
+                <span class="hw-act-name"></span>
+                <span class="hw-act-msg"></span>
+                ${ticketUrl ? `<a target="_blank" rel="noopener noreferrer" class="badge bg-primary text-decoration-none hw-t-xs"></a>` : ''}
                 ${data.payload != null ? `<button class="btn btn-sm btn-link text-secondary p-0 log-expand-payload" aria-label="Expand payload">
                     <svg class="hw-icon" width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-arrows-angle-expand"></use></svg>
                 </button>` : ''}
             `;
             logEntry.innerHTML = flowHtml;
+            logEntry.querySelector('.hw-act-time').textContent = timeStr;
+            logEntry.querySelector('.hw-act-sev').title = String(data.level || 'info');
+            logEntry.querySelector('.hw-act-name').textContent = data.config_name == null ? '' : String(data.config_name);
+            const messageNode = logEntry.querySelector('.hw-act-msg');
+            const messageText = data.message == null ? '' : String(data.message);
+            messageNode.textContent = messageText;
+            messageNode.title = messageText;
+            const ticketLink = logEntry.querySelector('a.badge');
+            if (ticketLink) {
+                ticketLink.href = ticketUrl;
+                ticketLink.textContent = `#${data.ticket_id}`;
+            }
             const payloadButton = logEntry.querySelector('.log-expand-payload');
             if (payloadButton) payloadButton.dataset.payload = JSON.stringify(data.payload);
             window.activityStream?.decorate?.(logEntry, data);

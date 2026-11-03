@@ -7,13 +7,30 @@
     const text = value => (value || '').toString().toLowerCase();
     const safeJson = (value, fallback) => { try { return JSON.parse(value) ?? fallback; } catch (_) { return fallback; } };
 
+    // Signed out (login page): strip any persisted token search right away.
+    if (!document.querySelector('meta[name="hw-account"]')?.content) {
+        try {
+            const saved = safeJson(localStorage.getItem(STORAGE_KEY), null);
+            if (saved && typeof saved.q === 'string' && saved.q.trim().startsWith(tokenPrefix)) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...saved, q: '' }));
+            }
+        } catch (_) { /* Storage is optional. */ }
+    }
     function root() { return document.getElementById('endpoint-dashboard'); }
     function cards() { return [...document.querySelectorAll('.endpoint-card')]; }
+    // A token: search may hold a complete bearer token. It is never written to
+    // storage or the URL, and a value persisted by an older version is dropped.
+    const isTokenQuery = value => typeof value === 'string' && value.trim().startsWith(tokenPrefix);
     function getState() {
         const params = new URLSearchParams(window.location.search);
         const saved = safeJson(localStorage.getItem(STORAGE_KEY), {});
+        if (isTokenQuery(saved.q)) {
+            saved.q = '';
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (_) { /* best effort */ }
+        }
+        const urlQuery = params.get('q');
         return {
-            q: params.get('q') ?? saved.q ?? '', board: params.get('board') ?? saved.board ?? '',
+            q: (isTokenQuery(urlQuery) ? null : urlQuery) ?? saved.q ?? '', board: params.get('board') ?? saved.board ?? '',
             status: params.get('status') ?? saved.status ?? '', quick: params.get('filter') ?? saved.quick ?? '',
         };
     }
@@ -111,9 +128,10 @@
         if (empty) empty.hidden = count !== 0;
         updateChips(state, count);
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            const persisted = { ...state, q: isTokenQuery(state.q) ? '' : state.q };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
             const params = new URLSearchParams(window.location.search);
-            [['q', state.q], ['board', state.board], ['status', state.status], ['filter', state.quick]].forEach(([key, value]) => value ? params.set(key, value) : params.delete(key));
+            [['q', persisted.q], ['board', persisted.board], ['status', persisted.status], ['filter', persisted.quick]].forEach(([key, value]) => value ? params.set(key, value) : params.delete(key));
             history.replaceState(null, '', `${location.pathname}${params.toString() ? `?${params}` : ''}`);
         } catch (_) { /* Storage/history are enhancements only. */ }
         // The table view renders from the card list; rebuild it so search,
