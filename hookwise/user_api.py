@@ -185,6 +185,20 @@ def _wuerde_aussperren(user_id: str, neue_rollen: List[str] | None = None, deakt
     return not behaelt and len(halter) <= 1
 
 
+def _sitzungen_beenden(user_id: str) -> None:
+    """Revoke every browser session of an account after a lifecycle change.
+
+    Session validation also rejects disabled and deleted accounts on every
+    request; this registry cleanup is the second line and is best effort.
+    """
+    from .user_sessions import SessionRevocationError, revoke_all_user_sessions
+
+    try:
+        revoke_all_user_sessions(str(user_id))
+    except SessionRevocationError:
+        _logger.warning("Sessions of account %s could not be revoked", user_id)
+
+
 def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[..., Any]] | None = None) -> None:
     """Registriert die Verwaltungs-Routen am Haupt-Blueprint."""
 
@@ -352,6 +366,8 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         db.session.commit()
         log_audit("user_update", None, f"User {nutzer.username} updated")
         bump_epoch()
+        if nutzer.is_active is False:
+            _sitzungen_beenden(user_id)
         return jsonify({"status": "success", "user": nutzer.to_dict()})
 
     @main_bp.route("/api/users/<user_id>", methods=["DELETE"])
@@ -393,6 +409,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         db.session.commit()
         log_audit("user_delete", None, f"User {name} deleted")
         bump_epoch()
+        _sitzungen_beenden(user_id)
         return jsonify({"status": "success"})
 
     @main_bp.route("/api/users/<user_id>/password", methods=["POST"])
@@ -415,6 +432,7 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         nutzer.password_hash = generate_password_hash(passwort)
         db.session.commit()
         log_audit("user_password_reset", None, f"Password reset for {nutzer.username}")
+        _sitzungen_beenden(user_id)
         return jsonify({"status": "success"})
 
     @main_bp.route("/api/users/<user_id>/mfa", methods=["DELETE"])

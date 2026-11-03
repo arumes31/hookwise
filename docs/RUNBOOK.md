@@ -108,8 +108,11 @@ and are written to the audit log as `perm_denied`.
 The app refuses to deactivate/delete the last `user:manage` holder, so this
 state normally cannot be reached through the UI. If it happens anyway
 (lost password, disabled account):
-1. `BOOTSTRAP_ADMIN=true` + `GUI_PASSWORD=<new>` on the web container
-   recreates/re-syncs the local `admin` account (role `admin`) at startup.
+1. Set `GUI_PASSWORD=<new>` and run `flask bootstrap-admin --reset-password`
+   once in the web container: it recreates a missing local `admin` account
+   (role `admin`) or replaces the existing admin password. Routine bootstrap
+   (`BOOTSTRAP_ADMIN=true`, the migration job) only creates a missing account
+   and never overwrites an existing password.
 2. Alternatively `RBAC_ENFORCE=log` grants temporary access to repair role
    assignments through the Identity page.
 

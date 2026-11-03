@@ -12,13 +12,19 @@ logger = logging.getLogger(__name__)
 
 
 @click.command("bootstrap-admin")
+@click.option(
+    "--reset-password",
+    is_flag=True,
+    default=False,
+    help="Replace the existing admin password with GUI_PASSWORD (explicit recovery only).",
+)
 @with_appcontext
-def bootstrap_admin_command() -> None:
-    """Create or explicitly rotate the configured bootstrap administrator."""
+def bootstrap_admin_command(reset_password: bool) -> None:
+    """Create the bootstrap administrator, or explicitly reset its password."""
     from . import _init_db_data
 
-    _init_db_data(cast(Flask, current_app))
-    click.echo("Administrator bootstrap completed.")
+    _init_db_data(cast(Flask, current_app), reset_password=reset_password)
+    click.echo("Administrator password reset completed." if reset_password else "Administrator bootstrap completed.")
 
 
 @click.command("clear-cw-cache")

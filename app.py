@@ -14,9 +14,11 @@ from typing import Any  # noqa: E402
 
 from dotenv import load_dotenv  # noqa: E402
 
-from hookwise import create_app, socketio  # noqa: E402
-
+# Load the dotenv file before importing hookwise: the extensions module picks
+# the Redis destinations (Socket.IO queue, limiter, cache) at import time.
 load_dotenv()
+
+from hookwise import create_app, socketio  # noqa: E402
 
 app = create_app()
 

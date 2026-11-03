@@ -39,7 +39,11 @@ def header_whitelist():
     """Exempt normal signed-in traffic, but never sensitive account actions."""
     from flask import request, session
 
+    # Sign-in stays throttled even for a browser that is already signed in:
+    # otherwise one authenticated session could guess another account's
+    # password and, after that, its one-time codes without any limit.
     sensitive_endpoints = {
+        "main.login",
         "main.change_own_password",
         "main.disable_2fa",
     }

@@ -2,6 +2,7 @@
 
 import json
 import secrets
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -10,8 +11,13 @@ from flask import current_app, request, session
 _SESSION_PREFIX = "hookwise:user-session:"
 _USER_SET_PREFIX = "hookwise:user-sessions:"
 _REVOKED_PREFIX = "hookwise:revoked-session:"
+_ACCOUNT_REVOKED_PREFIX = "hookwise:user-sessions-revoked-at:"
 _SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
 _TOUCH_INTERVAL_SECONDS = 60
+# Revocation state must outlive every cookie the signer still accepts, plus a
+# margin for clock skew between application instances.
+_REVOCATION_MARGIN_SECONDS = 60 * 60 * 24
+SESSION_STARTED_AT = "session_started_at"
 
 
 class SessionRevocationError(RuntimeError):
@@ -45,6 +51,48 @@ def _revoked_key(session_id: str) -> str:
     return f"{_REVOKED_PREFIX}{session_id}"
 
 
+def _account_revoked_key(user_id: str) -> str:
+    return f"{_ACCOUNT_REVOKED_PREFIX}{user_id}"
+
+
+def _retention_seconds() -> int:
+    """Keep registry and revocation state for the full accepted cookie lifetime."""
+    try:
+        cookie_lifetime = int(current_app.permanent_session_lifetime.total_seconds())
+    except Exception:
+        cookie_lifetime = _SESSION_TTL_SECONDS
+    return max(_SESSION_TTL_SECONDS, cookie_lifetime) + _REVOCATION_MARGIN_SECONDS
+
+
+def _account_revoked_at(user_id: str) -> float | None:
+    """Return when all earlier sessions of this account were revoked, if ever."""
+    raw = _redis().get(_account_revoked_key(user_id))
+    if raw is None:
+        return None
+    try:
+        return float(_decode(raw))
+    except ValueError:
+        # An unreadable marker still proves that a revocation happened.
+        return float("inf")
+
+
+def _mark_account_revoked(client: Any, user_id: str) -> float:
+    """Record an account-wide revocation that outlives every existing cookie."""
+    revoked_at = time.time()
+    client.setex(_account_revoked_key(user_id), _retention_seconds(), repr(revoked_at))
+    return revoked_at
+
+
+def _session_started_before(revoked_at: float | None) -> bool:
+    """Whether the current cookie's authentication predates an account revocation."""
+    if revoked_at is None:
+        return False
+    started_at = session.get(SESSION_STARTED_AT)
+    if not isinstance(started_at, (int, float)):
+        return True
+    return float(started_at) < revoked_at
+
+
 def _request_metadata() -> dict[str, str]:
     """Return bounded, display-only metadata for the current browser."""
     forwarded = (request.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
@@ -59,9 +107,9 @@ def _write(record: dict[str, Any]) -> None:
     user_id = str(record["user_id"])
     payload = json.dumps(record, separators=(",", ":"))
     pipeline = client.pipeline()
-    pipeline.setex(_session_key(session_id), _SESSION_TTL_SECONDS, payload)
+    pipeline.setex(_session_key(session_id), _retention_seconds(), payload)
     pipeline.sadd(_user_set_key(user_id), session_id)
-    pipeline.expire(_user_set_key(user_id), _SESSION_TTL_SECONDS)
+    pipeline.expire(_user_set_key(user_id), _retention_seconds())
     pipeline.execute()
 
 
@@ -80,6 +128,7 @@ def start_user_session(user: Any) -> str:
     }
     session["session_id"] = session_id
     session["auth_source"] = record["auth_source"]
+    session[SESSION_STARTED_AT] = time.time()
     try:
         client = _redis()
         client.delete(_revoked_key(session_id))
@@ -90,16 +139,35 @@ def start_user_session(user: Any) -> str:
 
 
 def ensure_user_session() -> bool:
-    """Validate revocation state, backfill legacy sessions, and refresh activity."""
+    """Validate account state and revocation, backfill legacy sessions, refresh activity."""
+    from .models import User
+
     user_id = session.get("user_id")
     if not user_id:
         return False
 
     session_id = session.get("session_id")
-    if not session_id:
-        from .models import User
+    user = User.query.get(user_id)
+    if user is None:
+        # A registered session (or one whose permissions were resolved for this
+        # exact account) belongs to a real account; once that account is gone,
+        # the cookie must stop working everywhere, including /metrics.
+        if session_id or session.get("perms_uid") == user_id:
+            return False
+    elif not user.aktiv:
+        return False
 
-        user = User.query.get(user_id)
+    if not session_id:
+        # Legacy cookie without a registry ID (issued before the registry, or
+        # by the former Basic Auth fallback). It can only be adopted when the
+        # account has not revoked its sessions since; otherwise a retained copy
+        # would survive a password change or "sign out everywhere".
+        try:
+            if _account_revoked_at(str(user_id)) is not None:
+                return False
+        except Exception:
+            current_app.logger.exception("Unable to check account-wide session revocation")
+            return False
         if user is not None:
             start_user_session(user)
         return True
@@ -111,9 +179,12 @@ def ensure_user_session() -> bool:
 
         raw = client.get(_session_key(str(session_id)))
         if raw is None:
-            from .models import User
-
-            user = User.query.get(user_id)
+            # The registry record is gone (expiry or Redis data loss). Only
+            # re-register when no account-wide revocation happened after this
+            # cookie authenticated; individual revocations keep their marker
+            # for the full cookie lifetime.
+            if _session_started_before(_account_revoked_at(str(user_id))):
+                return False
             if user is not None:
                 start_user_session(user)
             return True
@@ -132,6 +203,12 @@ def ensure_user_session() -> bool:
         # into a global authentication outage for already signed-in users.
         current_app.logger.exception("Unable to validate the user session registry")
     return True
+
+
+def session_revoked(session_id: str) -> bool:
+    """Whether a registered session has been revoked (used outside requests)."""
+    client = _redis()
+    return bool(client.get(_revoked_key(session_id)))
 
 
 def list_user_sessions(user_id: str) -> list[dict[str, Any]]:
@@ -183,7 +260,7 @@ def revoke_user_session(user_id: str, session_id: str) -> bool:
         if str(record.get("user_id")) != str(user_id):
             return False
         pipeline = client.pipeline()
-        pipeline.setex(_revoked_key(session_id), _SESSION_TTL_SECONDS, "1")
+        pipeline.setex(_revoked_key(session_id), _retention_seconds(), "1")
         pipeline.delete(_session_key(session_id))
         pipeline.srem(_user_set_key(user_id), session_id)
         pipeline.execute()
@@ -219,6 +296,15 @@ def revoke_other_sessions(user_id: str, current_session_id: str) -> int:
                 raise SessionRevocationError("Session registry ownership mismatch")
             targets.append(session_id)
 
+        # Account-wide marker first: it also invalidates cookies the registry
+        # never knew about (legacy cookies without a session ID) and cookies
+        # whose registry record later disappears.
+        revoked_at = _mark_account_revoked(client, user_id)
+        if current_session_id and str(session.get("session_id") or "") == current_session_id:
+            session[SESSION_STARTED_AT] = revoked_at
+        if not client.get(_account_revoked_key(user_id)):
+            raise SessionRevocationError("Account-wide session revocation could not be verified")
+
         if not targets and not stale:
             return 0
 
@@ -226,7 +312,7 @@ def revoke_other_sessions(user_id: str, current_session_id: str) -> int:
         for session_id in stale:
             pipeline.srem(user_key, session_id)
         for session_id in targets:
-            pipeline.setex(_revoked_key(session_id), _SESSION_TTL_SECONDS, "1")
+            pipeline.setex(_revoked_key(session_id), _retention_seconds(), "1")
             pipeline.delete(_session_key(session_id))
             pipeline.srem(user_key, session_id)
         pipeline.execute()
@@ -256,3 +342,8 @@ def revoke_current_session() -> None:
     session_id = session.get("session_id")
     if user_id and session_id:
         revoke_user_session(str(user_id), str(session_id))
+
+
+def revoke_all_user_sessions(user_id: str) -> int:
+    """Revoke every session of an account, e.g. when it is disabled or deleted."""
+    return revoke_other_sessions(str(user_id), "")

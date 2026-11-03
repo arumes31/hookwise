@@ -54,7 +54,10 @@ def schema_bereit() -> bool:
         from .schema_bridge import rbac_schema_state, seed_builtin_roles
 
         zustand = rbac_schema_state(db.engine)
-        if zustand["vollstaendig"]:
+        # Massgeblich ist, ob Rollen und Zuweisungen lesbar sind. Ein fehlender
+        # Index ist Drift; er darf nicht dazu fuehren, dass bestehende
+        # Zuweisungen zugunsten der breiteren Legacy-Rolle ignoriert werden.
+        if zustand["daten_lesbar"]:
             current_app.config["RBAC_SCHEMA_OK"] = True
             try:
                 seed_builtin_roles()
@@ -84,6 +87,25 @@ def aktueller_epoch(frisch: bool = False) -> Optional[int]:
     _EPOCH_CACHE["wert"] = wert
     _EPOCH_CACHE["bis"] = jetzt + _EPOCH_TTL
     return wert
+
+
+def epoch_in_transaktion_erhoehen() -> None:
+    """Erhoeht den Epoch in der laufenden Transaktion, ohne zu committen.
+
+    Fuer Aenderungen, die selbst committen (Rollen-Seed, Entra-Sync): Rechte und
+    Epoch werden so gemeinsam sichtbar -- nie die neuen Rechte mit altem Epoch.
+    """
+    from ..extensions import db
+    from ..models import RbacMeta
+
+    geaendert = (
+        db.session.query(RbacMeta)
+        .filter_by(id=1)
+        .update({RbacMeta.permissions_epoch: RbacMeta.permissions_epoch + 1}, synchronize_session=False)
+    )
+    if not geaendert:
+        db.session.add(RbacMeta(id=1, permissions_epoch=2))
+    _EPOCH_CACHE["bis"] = 0.0
 
 
 def bump_epoch() -> int:

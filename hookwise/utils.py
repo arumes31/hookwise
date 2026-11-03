@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional, cast
 
 import requests
 from cryptography.fernet import Fernet, InvalidToken
-from flask import Response, jsonify, redirect, request, session, url_for
+from flask import Response, current_app, g, jsonify, redirect, request, session, url_for
+from flask.sessions import SecureCookieSessionInterface
 from jsonpath_ng import parse as _jsonpath_parse
 from werkzeug.security import generate_password_hash
 
@@ -157,6 +158,33 @@ def client_ip_trusted(client_ip: Optional[str]) -> bool:
     return False
 
 
+_REQUEST_SCOPED_AUTH_FLAG = "hookwise_request_scoped_auth"
+
+
+def mark_request_scoped_auth() -> None:
+    """Flag the current request so its session state is never persisted."""
+    setattr(g, _REQUEST_SCOPED_AUTH_FLAG, True)
+
+
+def request_scoped_auth_active() -> bool:
+    """Whether the current request authenticated with request-scoped credentials."""
+    return bool(getattr(g, _REQUEST_SCOPED_AUTH_FLAG, False))
+
+
+class RequestScopedSessionInterface(SecureCookieSessionInterface):
+    """Signed-cookie sessions that never persist request-scoped (Basic) identities.
+
+    A Basic-authenticated request populates the session so handlers see a
+    uniform identity, but issuing that state as a cookie would create an
+    unregistered, unrevocable browser session.
+    """
+
+    def save_session(self, app: Any, session: Any, response: Any) -> None:
+        if request_scoped_auth_active():
+            return None
+        return super().save_session(app, session, response)
+
+
 def auth_required(f: Any) -> Any:
     """Require a valid browser session or request-scoped Basic Auth."""
 
@@ -202,12 +230,23 @@ def auth_required(f: Any) -> Any:
                     "This account requires two-factor authentication; sign in through the console.",
                     403,
                 )
+            # Basic Auth is request-scoped: the identity lives in this request's
+            # session object only, and the session interface never turns it
+            # into a browser cookie (see RequestScopedSessionInterface).
+            mark_request_scoped_auth()
             session["user_id"] = user.id
             session["username"] = user.username
             session["role"] = user.role
+            from .rbac.decorators import enforce_route_permission
             from .rbac.resolver import sitzung_setzen
 
             sitzung_setzen(user)
+            # The central RBAC guard ran before this identity existed and
+            # skipped the request; apply the route's permission now, before
+            # the handler runs.
+            denied = enforce_route_permission(current_app)
+            if denied is not None:
+                return denied
             return f(*args, **kwargs)
 
         # 4. No valid auth found. Programmatic requests receive a stable 401;
@@ -226,9 +265,33 @@ def _cached_jsonpath_parse(path: str) -> Any:
     return _jsonpath_parse(path)
 
 
-def resolve_jsonpath(data: Dict[str, Any], path: str) -> Optional[Any]:
-    """Resolve a JSONPath expression against the data."""
+MAX_BOUNDED_JSONPATH_LENGTH = 256
+MAX_BOUNDED_JSONPATH_RECURSIVE_DESCENTS = 1
+
+
+def bounded_jsonpath_allowed(path: Any) -> bool:
+    """Whether an interactive (caller-supplied) JSONPath stays within a bounded cost.
+
+    jsonpath-ng materialises every match; each additional recursive descent
+    (``..``) multiplies the traversal by the document size. Interactive
+    previews therefore accept short expressions with at most one descent.
+    """
+    return (
+        isinstance(path, str)
+        and len(path) <= MAX_BOUNDED_JSONPATH_LENGTH
+        and path.count("..") <= MAX_BOUNDED_JSONPATH_RECURSIVE_DESCENTS
+    )
+
+
+def resolve_jsonpath(data: Dict[str, Any], path: str, *, bounded: bool = False) -> Optional[Any]:
+    """Resolve a JSONPath expression against the data.
+
+    ``bounded=True`` is for caller-supplied expressions (diagnostics): costly
+    expressions resolve to ``None`` instead of being evaluated.
+    """
     if not path:
+        return None
+    if bounded and not bounded_jsonpath_allowed(path):
         return None
     try:
         jsonpath_expr = _cached_jsonpath_parse(path)
@@ -603,12 +666,21 @@ def log_audit(
         target_session.commit()
 
 
+SENSITIVE_KEY_PARTS = frozenset({"password", "secret", "token", "key", "auth", "authorization", "bearer"})
+
+
+def is_sensitive_key(key: Any) -> bool:
+    """Whether a mapping key names a value that must be masked."""
+    lowered = str(key).lower()
+    return any(part in lowered for part in SENSITIVE_KEY_PARTS)
+
+
 def mask_secrets(data: Any) -> Any:
     """Recursively mask fields that might contain sensitive information."""
     if not isinstance(data, (dict, list)):
         return data
 
-    sensitive_keys = {"password", "secret", "token", "key", "auth", "authorization", "bearer"}
+    sensitive_keys = SENSITIVE_KEY_PARTS
 
     if isinstance(data, list):
         return [mask_secrets(item) for item in data]
