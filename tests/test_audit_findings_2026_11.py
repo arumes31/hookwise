@@ -143,7 +143,9 @@ def test_disabled_account_loses_its_registered_session(audit_app, client, sessio
         {"id": "registered-session", "user_id": user_id, "last_seen_at": "2999-01-01T00:00:00+00:00"}
     )
     with audit_app.app_context():
-        db.session.get(User, user_id).is_active = False
+        account = db.session.get(User, user_id)
+        assert account is not None
+        account.is_active = False
         db.session.commit()
 
     # /metrics has no route permission; only session validation protects it.
@@ -174,7 +176,7 @@ def test_revocation_markers_outlive_the_cookie_lifetime(audit_app):
 def test_token_suffix_search_without_reveal_uses_only_the_hint():
     from hookwise.endpoint_summary import _token_suffix_matches
 
-    config = SimpleNamespace(bearer_token_last4="WXYZ", bearer_token=encrypt_string("secret-token-WXYZ"))
+    config: Any = SimpleNamespace(bearer_token_last4="WXYZ", bearer_token=encrypt_string("secret-token-WXYZ"))
     with patch("hookwise.endpoint_summary.decrypt_string") as decrypt:
         assert _token_suffix_matches(config, "wrongWXYZ", may_compare_secret=False)
         decrypt.assert_not_called()
