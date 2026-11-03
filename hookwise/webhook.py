@@ -30,6 +30,13 @@ _REJECTION_LOG_SAMPLE = "10 per minute"
 _REJECTION_PREVIEW_CHARS = 512
 
 
+# A signed timestamp is accepted while it is within the skew window on either
+# side of "now", i.e. for up to twice the window (plus the integer-second
+# boundary). The nonce must stay reserved for longer than that, with margin.
+_HMAC_MAX_SKEW_SECONDS = 300
+_HMAC_NONCE_TTL_SECONDS = 2 * _HMAC_MAX_SKEW_SECONDS + 60
+
+
 def _rejection_rate_limit() -> str:
     return os.environ.get("WEBHOOK_REJECTION_LIMIT", "").strip() or _REJECTION_LIMIT_DEFAULT
 
@@ -168,7 +175,7 @@ def _validate_request_auth(config: WebhookConfig) -> tuple[bool, str, int]:
             signed_at = int(timestamp)
         except ValueError:
             return False, "Invalid HMAC timestamp", 401
-        if abs(int(time.time()) - signed_at) > 300:
+        if abs(int(time.time()) - signed_at) > _HMAC_MAX_SKEW_SECONDS:
             return False, "Expired HMAC timestamp", 401
         if not 16 <= len(nonce) <= 128 or not nonce.replace("-", "").replace("_", "").isalnum():
             return False, "Invalid HMAC nonce", 401
@@ -182,7 +189,7 @@ def _validate_request_auth(config: WebhookConfig) -> tuple[bool, str, int]:
             return False, "Invalid HMAC Signature", 401
         nonce_key = f"hookwise:hmac-nonce:{config.id}:{nonce}"
         try:
-            if not redis_client.set(nonce_key, "1", nx=True, ex=600):
+            if not redis_client.set(nonce_key, "1", nx=True, ex=_HMAC_NONCE_TTL_SECONDS):
                 return False, "Replayed HMAC request", 409
         except Exception:
             return False, "HMAC replay protection unavailable", 503

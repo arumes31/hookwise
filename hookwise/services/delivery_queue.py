@@ -63,11 +63,16 @@ def dispatch_outbox(outbox: DeliveryOutbox, task: Any = None) -> bool:
         db.session.commit()
         return False
     config = WebhookConfig.query.filter_by(id=log.config_id).populate_existing().first()
-    if config and not config.connectwise_delivery_enabled:
+    cancel_reason = None
+    if config and (not config.is_enabled or config.archived_at is not None):
+        cancel_reason = "Endpoint paused or archived before dispatch."
+    elif config and not config.connectwise_delivery_enabled:
+        cancel_reason = "ConnectWise delivery disabled before dispatch."
+    if cancel_reason:
         outbox.status = "cancelled"
         outbox.arguments = "{}"
         log.status = "skipped"
-        log.error_message = "ConnectWise delivery disabled before dispatch."
+        log.error_message = cancel_reason
         log.completed_at = datetime.now(timezone.utc)
         db.session.commit()
         return True

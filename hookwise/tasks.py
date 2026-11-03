@@ -129,7 +129,9 @@ def check_failure_threshold(config_id: str) -> None:
         try:
             import requests
 
-            requests.post(
+            # The receiver's answer is never read: stream it and close the
+            # connection so a (compressed) body cannot be inflated into memory.
+            response = requests.post(
                 ziel,
                 json={
                     "content": (
@@ -138,7 +140,10 @@ def check_failure_threshold(config_id: str) -> None:
                     )
                 },
                 timeout=5,
+                stream=True,
+                allow_redirects=False,
             )
+            response.close()
         except Exception:
             logger.warning("Threshold alert webhook unreachable (throttled anyway)")
         logger.info(f"Failure threshold alert for {config.name}: {anzahl} failures in {fenster}m")
@@ -260,6 +265,9 @@ def _company_cache_token(company_identifier: str | None) -> str:
     return hashlib.sha256(discriminator).hexdigest()
 
 
+_DESCRIPTION_PLACEHOLDER = re.compile(r"\{\{ (monitor_name|msg|request_id|cipp_results) \}\}|\{(\$[^{}]+)\}")
+
+
 def _render_ticket_description(
     *,
     mapped_description: Any,
@@ -278,16 +286,30 @@ def _render_ticket_description(
     if not description_template:
         return f"Source: {monitor_name}\nMessage: {message}\nRequest ID: {request_id}\nPayload: {json.dumps(safe_data)}"
 
-    description = (
-        description_template.replace("{{ monitor_name }}", monitor_name)
-        .replace("{{ msg }}", str(message))
-        .replace("{{ request_id }}", request_id)
-    )
-    for path in re.findall(r"\{(\$.+?)\}", description):
-        description = description.replace("{" + path + "}", str(resolve_jsonpath(safe_data, path)))
-    if "{{ cipp_results }}" in description:
-        description = description.replace("{{ cipp_results }}", format_cipp_results(safe_data))
-    return description
+    # One pass over the configured template: placeholders are discovered in the
+    # template itself, and substituted webhook values stay inert text instead of
+    # being scanned again as template syntax.
+    fixed_values = {
+        "monitor_name": monitor_name,
+        "msg": str(message),
+        "request_id": request_id,
+    }
+    jsonpath_values: dict[str, str] = {}
+    cipp_results: list[str] = []
+
+    def _substitute(match: re.Match[str]) -> str:
+        name, path = match.group(1), match.group(2)
+        if name is not None:
+            if name == "cipp_results":
+                if not cipp_results:
+                    cipp_results.append(format_cipp_results(safe_data))
+                return cipp_results[0]
+            return fixed_values[name]
+        if path not in jsonpath_values:
+            jsonpath_values[path] = str(resolve_jsonpath(safe_data, path))
+        return jsonpath_values[path]
+
+    return _DESCRIPTION_PLACEHOLDER.sub(_substitute, description_template)
 
 
 def _duplicate_ticket_note(
@@ -1742,6 +1764,18 @@ def handle_webhook_logic(
         if source_ip:
             config.last_ip = source_ip
         db.session.commit()
+
+        if not config.is_enabled or config.archived_at is not None:
+            # Work accepted while the endpoint was active may sit in the broker,
+            # a retry or the durable outbox. Pausing or archiving the endpoint
+            # takes it out of processing: no timeout resolution, no tickets.
+            log_entry.status = "skipped"
+            log_entry.error_message = "Skipped: endpoint is paused or archived"
+            log_entry.completed_at = datetime.now(timezone.utc)
+            log_entry.processing_time = time.time() - start_time
+            db.session.commit()
+            logger.info("Skipped queued webhook for paused or archived endpoint", extra=extra)
+            return
 
         try:
             if not config.connectwise_delivery_enabled:

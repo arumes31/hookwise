@@ -27,6 +27,11 @@ _MAX_CONFIGURATION_MATCH_CRITERIA = 16
 _MAX_CONFIGURATION_MATCH_RESULTS = 129
 
 
+def _log_safe(value: Any) -> str:
+    """Escape control characters so webhook text cannot forge extra log lines."""
+    return "".join(ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii") for ch in str(value))
+
+
 class ConnectWiseError(Exception):
     pass
 
@@ -457,7 +462,7 @@ class ConnectWiseClient:
             )
             response.raise_for_status()
             ticket = response.json()
-            logger.info(f"Created ticket #{ticket.get('id')} for {monitor_name}")
+            logger.info("Created ticket #%s for %s", ticket.get("id"), _log_safe(monitor_name))
             return cast(Dict[str, Any], ticket)
         except requests.exceptions.RequestException as e:
             error_msg = f"Error creating ticket: {e}"

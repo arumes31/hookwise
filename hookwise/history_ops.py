@@ -128,7 +128,22 @@ def _timeline(log: WebhookLog) -> list[dict[str, str]]:
     return [{"event": name, "at": at.isoformat()} for name, at in fields if at]
 
 
+class EndpointInactiveError(ValueError):
+    """Replay refused because the endpoint is paused or archived."""
+
+
+_INACTIVE_REPLAY_MESSAGE = "The endpoint is paused or archived; resume it before replaying."
+
+
+def endpoint_accepts_replay(config_id: str) -> bool:
+    """Replays follow the endpoint lifecycle: paused or archived means no delivery."""
+    config = db.session.get(WebhookConfig, config_id)
+    return config is not None and bool(config.is_enabled) and config.archived_at is None
+
+
 def _queue_replay(log: WebhookLog, payload: Any, suffix: str) -> dict[str, str]:
+    if not endpoint_accepts_replay(log.config_id):
+        raise EndpointInactiveError("Endpoint is paused or archived")
     body = json.dumps(payload, separators=(",", ":"))
     if len(body.encode("utf-8")) > _MAX_REPLAY_BYTES:
         raise ValueError("Replay payload exceeds 256 KiB")
@@ -249,6 +264,8 @@ def _register() -> None:
             return jsonify({"error": "Stored payload is not valid JSON."}), 409
         try:
             return jsonify({"status": "queued", **_queue_replay(log, payload, "retry")}), 202
+        except EndpointInactiveError:
+            return jsonify({"error": _INACTIVE_REPLAY_MESSAGE}), 409
         except ValueError:
             return jsonify({"error": "Replay payload exceeds 256 KiB."}), 400
         except Exception:
@@ -268,6 +285,8 @@ def _register() -> None:
             return jsonify({"error": "payload must be a JSON object or array."}), 400
         try:
             return jsonify({"status": "queued", **_queue_replay(log, payload, "edited")}), 202
+        except EndpointInactiveError:
+            return jsonify({"error": _INACTIVE_REPLAY_MESSAGE}), 409
         except ValueError:
             return jsonify({"error": "Replay payload exceeds 256 KiB."}), 400
         except Exception:
