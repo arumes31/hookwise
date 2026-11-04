@@ -33,6 +33,10 @@ _OVERRIDABLE_FIELDS = (
 )
 
 
+#: Upper bound for tokens in one space-separated mapping expression.
+MAX_MAPPING_EXPRESSION_TOKENS = 256
+
+
 def routing_regex_matches(pattern: str, value: str) -> bool:
     """Evaluate an administrator-defined expression with strict resource bounds."""
     if len(pattern) > 1_000 or len(value) > 100_000:
@@ -86,6 +90,10 @@ def apply_mapping(data: dict[str, Any], raw_mapping: str | None) -> dict[str, st
             continue
 
         tokens = _TOKEN_RE.findall(expression)
+        if len(tokens) > MAX_MAPPING_EXPRESSION_TOKENS:
+            # A mapping expression is a short label template; an oversized one
+            # is skipped rather than evaluated token by token.
+            continue
         resolved: list[tuple[str, bool]] = []
         for token in tokens:
             if token.startswith("$"):
@@ -95,15 +103,19 @@ def apply_mapping(data: dict[str, Any], raw_mapping: str | None) -> dict[str, st
                 resolved.append((token, False))
         if not any(value and variable for value, variable in resolved):
             continue
+        # Literal tokens are kept only next to populated variables somewhere on
+        # either side. Count populated variables once instead of rescanning the
+        # prefix and suffix for every literal token.
+        populated_total = sum(1 for value, variable in resolved if variable and value)
+        populated_before = 0
         parts: list[str] = []
-        for index, (value, variable) in enumerate(resolved):
+        for value, variable in resolved:
             if variable:
                 if value:
                     parts.append(value)
+                    populated_before += 1
                 continue
-            left = any(item and is_variable for item, is_variable in resolved[:index])
-            right = any(item and is_variable for item, is_variable in resolved[index + 1 :])
-            if left or right:
+            if populated_before or populated_total - populated_before:
                 parts.append(value)
         if parts:
             mapped[field] = " ".join(parts)

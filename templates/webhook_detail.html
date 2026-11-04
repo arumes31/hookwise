@@ -51,7 +51,7 @@
         <div class="copyable-field">
             {% set voll_url = base_url ~ '/w/' ~ config.id %}
             <code class="flex-grow-1" title="{{ voll_url }}">{{ voll_url[:40] }}&hellip;{{ voll_url[-10:] }}</code>
-            <button class="btn btn-sm btn-link text-primary p-0" onclick="copyToClipboard('{{ voll_url }}')"
+            <button class="btn btn-sm btn-link text-primary p-0" data-hw-arg="{{ voll_url }}" onclick="copyToClipboard(this.dataset.hwArg)"
                 data-tooltip="Copy URL" aria-label="Copy endpoint URL">
                 <svg class="hw-icon" width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clipboard"></use></svg>
             </button>

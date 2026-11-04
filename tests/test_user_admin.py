@@ -336,8 +336,10 @@ def test_passwort_setzen_fuer_lokales_konto():
         client = app.test_client()
         _anmelden(client, chef)
         assert client.post(f"/api/users/{ziel.id}/password", json={"password": "kurz"}).status_code == 400
-        antwort = client.post(f"/api/users/{ziel.id}/password", json={"password": "Neu-und-lang-1"})
+        with patch("hookwise.user_sessions.revoke_all_user_sessions", return_value=0) as revoke:
+            antwort = client.post(f"/api/users/{ziel.id}/password", json={"password": "Neu-und-lang-1"})
         assert antwort.status_code == 200
+        revoke.assert_called_once_with(ziel.id)
         assert check_password_hash(User.query.get(ziel.id).password_hash, "Neu-und-lang-1")
         db.session.remove()
         db.drop_all()

@@ -140,18 +140,31 @@ def _get_next_stale_times(configs: List[WebhookConfig]) -> Dict[str, datetime]:
 
 
 def _get_navigation_notifications() -> List[Dict[str, Any]]:
-    """Build the actionable notifications shown in the global navbar."""
+    """Build the actionable notifications shown in the global navbar.
+
+    Every rendering route shares this loader, so it applies the same read
+    permissions as the dedicated pages: endpoint health needs endpoint:read,
+    delivery failures need history:read.
+    """
+    from .rbac.resolver import has_permission
+
     notifications: List[Dict[str, Any]] = []
+    may_read_endpoints = has_permission("endpoint:read")
+    may_read_history = has_permission("history:read")
 
     unhealthy_configs = (
-        WebhookConfig.query.filter(
-            WebhookConfig.is_draft.is_(False),
-            WebhookConfig.archived_at.is_(None),
-            WebhookConfig.config_health_status.in_(["WARNING", "ERROR"]),
+        []
+        if not may_read_endpoints
+        else (
+            WebhookConfig.query.filter(
+                WebhookConfig.is_draft.is_(False),
+                WebhookConfig.archived_at.is_(None),
+                WebhookConfig.config_health_status.in_(["WARNING", "ERROR"]),
+            )
+            .order_by(WebhookConfig.config_health_status.asc(), WebhookConfig.name.asc())
+            .limit(4)
+            .all()
         )
-        .order_by(WebhookConfig.config_health_status.asc(), WebhookConfig.name.asc())
-        .limit(4)
-        .all()
     )
     for config in unhealthy_configs:
         severity = "danger" if config.config_health_status == "ERROR" else "warning"
@@ -168,15 +181,19 @@ def _get_navigation_notifications() -> List[Dict[str, Any]]:
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     recent_failures = (
-        WebhookLog.query.join(WebhookConfig)
-        .filter(
-            WebhookConfig.is_draft.is_(False),
-            WebhookLog.status.in_(["failed", "dlq"]),
-            WebhookLog.created_at >= cutoff,
+        []
+        if not may_read_history
+        else (
+            WebhookLog.query.join(WebhookConfig)
+            .filter(
+                WebhookConfig.is_draft.is_(False),
+                WebhookLog.status.in_(["failed", "dlq"]),
+                WebhookLog.created_at >= cutoff,
+            )
+            .order_by(WebhookLog.created_at.desc())
+            .limit(6)
+            .all()
         )
-        .order_by(WebhookLog.created_at.desc())
-        .limit(6)
-        .all()
     )
     for log in recent_failures:
         is_dlq = log.status == "dlq"

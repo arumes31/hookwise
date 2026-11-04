@@ -28,6 +28,9 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     app = Flask(__name__, template_folder="../templates", static_folder="../static")
 
     _configure_app(app)
+    from .utils import RequestScopedSessionInterface
+
+    app.session_interface = RequestScopedSessionInterface()
     if config:
         app.config.update(config)
         if config.get("TESTING") and "SESSION_COOKIE_SECURE" not in config:
@@ -238,9 +241,10 @@ def _register_extensions(app: Flask) -> None:
     socketio.init_app(app)
     # init_app builds a fresh Socket.IO server, so the authorising connect
     # handler is attached to it here rather than by a module-level decorator.
-    from .live_feed import handle_connect
+    from .live_feed import handle_connect, handle_disconnect
 
     socketio.on_event("connect", handle_connect)
+    socketio.on_event("disconnect", handle_disconnect)
     csrf.init_app(app)
 
 
@@ -318,7 +322,10 @@ def _register_request_handlers(app: Flask) -> None:
     @app.before_request
     def force_https() -> Any:
         if os.environ.get("FORCE_HTTPS") == "true":
-            if not request.is_secure and request.headers.get("X-Forwarded-Proto", "http") != "https":
+            # Only request.is_secure counts. Behind a reverse proxy, USE_PROXY lets
+            # ProxyFix derive it from the trusted hop's X-Forwarded-Proto; a raw
+            # header from an untrusted client must not suppress the redirect.
+            if not request.is_secure:
                 url = _trusted_https_redirect_url()
                 if url is None:
                     app.logger.warning("Rejected HTTPS redirect for an untrusted or unconfigured host")
@@ -368,8 +375,15 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(main_bp)
 
 
-def _init_db_data(app: Flask) -> None:
-    """Initialize database with default data (e.g., admin user)."""
+def _init_db_data(app: Flask, *, reset_password: bool = False) -> None:
+    """Create the bootstrap administrator; replace its password only on explicit request.
+
+    Routine bootstrap (``BOOTSTRAP_ADMIN`` and the Compose migration job) is
+    create-only: overwriting an existing password whenever it differs from
+    ``GUI_PASSWORD`` would silently undo a legitimate password change and
+    revive a retired credential. ``flask bootstrap-admin --reset-password`` is
+    the deliberate recovery path.
+    """
     from .models import User
 
     with app.app_context():
@@ -384,11 +398,16 @@ def _init_db_data(app: Flask) -> None:
                 admin = User(username="admin", password_hash=generate_password_hash(gui_password), role="admin")
                 db.session.add(admin)
                 db.session.commit()
-            elif not check_password_hash(admin.password_hash, gui_password):
-                # A6: Sync password hash if GUI_PASSWORD env var changed
+            elif reset_password and not check_password_hash(admin.password_hash, gui_password):
+                # Sessions authenticated with the old password must not survive
+                # the reset; abort (without changing the password) if the
+                # registry cannot prove the revocation.
+                from .user_sessions import revoke_all_user_sessions
+
+                revoke_all_user_sessions(str(admin.id))
                 admin.password_hash = generate_password_hash(gui_password)
                 db.session.commit()
-                _logger.info("Admin password hash updated to match GUI_PASSWORD.")
+                _logger.warning("Admin password reset to GUI_PASSWORD on explicit request.")
         except Exception:
             db.session.rollback()
             _logger.exception("Admin bootstrap failed")

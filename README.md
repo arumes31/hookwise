@@ -442,7 +442,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `ENCRYPTION_KEY` | 32-byte Fernet key. **DO NOT LOSE.** Keys published in this repository's history are refused at startup; see [Rotating the encryption key](#rotating-the-encryption-key). |
 | `RBAC_ENFORCE` | Role enforcement: `on` (default), `log` (check + log only), `off`. See [Identity & Access](#-identity--access-rbac--entra-id). |
 | `ENTRA_*` | Microsoft Entra ID sign-in — see [Identity & Access](#-identity--access-rbac--entra-id). |
-| `GUI_USERNAME` / `GUI_PASSWORD` | `GUI_PASSWORD` bootstraps the local `admin` account (`BOOTSTRAP_ADMIN=true` or `flask bootstrap-admin`). It is no longer accepted as a Basic Auth secret. |
+| `GUI_USERNAME` / `GUI_PASSWORD` | `GUI_PASSWORD` bootstraps the local `admin` account (`BOOTSTRAP_ADMIN=true` or `flask bootstrap-admin`); an existing admin password is only replaced by `flask bootstrap-admin --reset-password`. It is no longer accepted as a Basic Auth secret. |
 | `GUI_BASIC_AUTH` | Enable HTTP Basic Auth for headless clients (Default: `false`). Credentials are checked against the account's current password; accounts with 2FA are refused. Pair with `GUI_TRUSTED_IPS`. |
 | `HOOKWISE_BIND_ADDRESS` | Host address the Compose files publish port 5000 on (Default: `127.0.0.1`). Use `0.0.0.0` only if HookWise must be reachable without a reverse proxy on the same host. |
 | `WEBHOOK_REJECTION_LIMIT` | Rejected webhook requests allowed per source address (Default: `30 per minute`). |
@@ -450,7 +450,7 @@ The `LLM_MAX_TOKENS` environment variable controls how many tokens Ollama is all
 | `LOG_RETENTION_DAYS` | Auto-cleanup limit for the `webhook_log` table. |
 | `SESSION_COOKIE_SECURE` | Send the session cookie only over HTTPS (Default: `true` outside tests). Disable only for local HTTP development. |
 | `MAX_CONTENT_LENGTH_KB` | Maximum inbound request size before a `413` response (Default: `1024`). |
-| `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. |
+| `FORCE_HTTPS` | Redirects all traffic to TLS. Requires `HTTPS_ORIGIN`. Behind a TLS-terminating reverse proxy also set `USE_PROXY=true`; `X-Forwarded-Proto` is only honoured from the trusted proxy hop. |
 | `HTTPS_ORIGIN` | Trusted public HTTPS origin used for redirects (for example, `https://hookwise.example.com`). |
 | `USE_PROXY` / `PROXY_FIX_COUNT` | Trust reverse-proxy forwarding headers and set the exact trusted proxy hop count. |
 | `SOCKETIO_ALLOWED_ORIGINS` | Origins allowed to open the live activity connection: comma-separated list or `*`. Default: the console's own origin, also behind a reverse proxy that sends `X-Forwarded-Proto`/`X-Forwarded-Host`. |

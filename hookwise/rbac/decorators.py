@@ -92,9 +92,9 @@ def requires(permission: str) -> Callable[..., Any]:
             if modus == "log":
                 _logger.warning(
                     "RBAC(log): %s fehlt %s fuer %s -- nicht blockiert",
-                    session.get("username", "?"),
+                    _log_feld(session.get("username", "?")),
                     permission,
-                    request.path,
+                    _log_feld(request.path),
                 )
                 return f(*args, **kwargs)
             return _verweigern(permission)
@@ -145,38 +145,55 @@ def verify_route_coverage(app: Any, streng: bool = False) -> List[str]:
     return sorted(offen)
 
 
+def _log_feld(wert: Any) -> str:
+    """Steuerzeichen in Request-Werten maskieren, damit ein Logeintrag eine Zeile bleibt."""
+    return "".join(
+        zeichen if zeichen.isprintable() else zeichen.encode("unicode_escape").decode("ascii") for zeichen in str(wert)
+    )
+
+
+def enforce_route_permission(app: Any) -> Any:
+    """Prueft das Registry-Recht der laufenden Route fuer die angemeldete Identitaet.
+
+    Liefert ``None``, wenn die Route weiterlaufen darf, sonst die Ablehnung.
+    Wird vom zentralen Guard und -- nach erfolgreicher Basic-Authentifizierung --
+    von ``auth_required`` aufgerufen: Basic Auth stellt die Identitaet erst nach
+    dem Guard fest, die Rechte muessen trotzdem vor dem Handler greifen.
+    """
+    from .routes import ist_frei, recht_fuer
+
+    modus = app.config.get("RBAC_ENFORCE", "on")
+    if modus == "off":
+        return None
+    endpunkt = request.endpoint
+    if not endpunkt or endpunkt == "static" or ist_frei(endpunkt):
+        return None
+    if "user_id" not in session:
+        return None  # auth_required kuemmert sich um die Anmeldung
+    sicht = app.view_functions.get(endpunkt)
+    if getattr(sicht, "_hw_permission", None):
+        return None  # der Decorator prueft bereits
+    recht = recht_fuer(endpunkt)
+    if not recht or recht in current_permissions():
+        return None
+    if modus == "log":
+        _logger.warning(
+            "RBAC(log): %s fehlt %s fuer %s -- nicht blockiert",
+            _log_feld(session.get("username", "?")),
+            recht,
+            _log_feld(request.path),
+        )
+        return None
+    return _verweigern(recht)
+
+
 def install_guard(app: Any) -> None:
     """Setzt die zentrale Zuordnung als before_request durch.
 
     Zweite Verteidigungslinie neben @requires: Auch eine Route ohne Decorator
     wird geprueft, solange sie in der Zuordnung steht.
     """
-    from flask import request as _request
-
-    from .routes import ist_frei, recht_fuer
 
     @app.before_request
     def _rbac_guard() -> Any:  # pragma: no cover - ueber Integrationstests geprueft
-        modus = app.config.get("RBAC_ENFORCE", "on")
-        if modus == "off":
-            return None
-        endpunkt = _request.endpoint
-        if not endpunkt or endpunkt == "static" or ist_frei(endpunkt):
-            return None
-        if "user_id" not in session:
-            return None  # auth_required kuemmert sich um die Anmeldung
-        sicht = app.view_functions.get(endpunkt)
-        if getattr(sicht, "_hw_permission", None):
-            return None  # der Decorator prueft bereits
-        recht = recht_fuer(endpunkt)
-        if not recht or recht in current_permissions():
-            return None
-        if modus == "log":
-            _logger.warning(
-                "RBAC(log): %s fehlt %s fuer %s -- nicht blockiert",
-                session.get("username", "?"),
-                recht,
-                _request.path,
-            )
-            return None
-        return _verweigern(recht)
+        return enforce_route_permission(app)

@@ -144,8 +144,9 @@ def _app_rolle_ermitteln(anspruch: Mapping[str, Any], mapping: Mapping[str, str]
 def _entra_rolle_speichern(nutzer: User, rollen_key: str) -> bool:
     """Materialisiert die App Role und ersetzt alte Entra-Zuweisungen."""
     from .models import RbacRole, RbacUserRole
-    from .rbac.resolver import schema_bereit
+    from .rbac.resolver import epoch_in_transaktion_erhoehen, schema_bereit
 
+    vorher = (nutzer.entra_role, nutzer.role)
     nutzer.entra_role = rollen_key
     nutzer.entra_role_synced_at = datetime.now(timezone.utc)
     nutzer.role = rollen_key  # Legacy-Fallback bei noch nicht bereitem RBAC-Schema.
@@ -156,6 +157,12 @@ def _entra_rolle_speichern(nutzer: User, rollen_key: str) -> bool:
     if rolle is None:
         _logger.error("Entra: eingebaute Zielrolle %s existiert nicht", rollen_key)
         return False
+    bisherige_rollen = {z.role_id for z in RbacUserRole.query.filter_by(user_id=nutzer.id)}
+    if vorher != (rollen_key, rollen_key) or bisherige_rollen != {rolle.id}:
+        # Geaenderte Autoritaet: andere Sitzungen desselben Kontos muessen ihre
+        # gecachten Rechte beim naechsten Request neu aufloesen. Der Epoch geht
+        # mit demselben Commit raus wie die neue Rolle.
+        epoch_in_transaktion_erhoehen()
     RbacUserRole.query.filter_by(user_id=nutzer.id).delete(synchronize_session=False)
     db.session.add(
         RbacUserRole(

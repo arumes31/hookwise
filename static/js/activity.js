@@ -2,13 +2,29 @@
 (() => {
     'use strict';
     const STORAGE_KEY = 'hookwise.activity-preferences.v1';
-    const NOTES_KEY = 'hookwise.activity-notes.v1';
+    // Local notes exist only for events the server cannot store (no id). They
+    // are scoped to the signed-in account and dropped once nobody is signed in.
+    const LEGACY_NOTES_KEY = 'hookwise.activity-notes.v1';
+    const NOTES_PREFIX = 'hookwise.activity-notes.v2:';
+    const currentAccount = () => document.querySelector('meta[name="hw-account"]')?.content || '';
+    const notesKey = () => { const account = currentAccount(); return account ? `${NOTES_PREFIX}${account}` : ''; };
+    function purgeNotes({ keepCurrent }) {
+        try {
+            const keep = keepCurrent ? notesKey() : '';
+            const doomed = [];
+            for (let index = 0; index < localStorage.length; index += 1) {
+                const name = localStorage.key(index);
+                if (name && (name === LEGACY_NOTES_KEY || (name.startsWith(NOTES_PREFIX) && name !== keep))) doomed.push(name);
+            }
+            doomed.forEach(name => localStorage.removeItem(name));
+        } catch (_) { /* Storage is optional. */ }
+    }
     const state = { paused: false, seen: new Set(), rendered: new Map(), duplicates: 0, counters: { all: 0, failure: 0, success: 0 }, connection: null, keyboardBound: false };
     const load = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (_) { return {}; } };
     const save = values => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(values)); } catch (_) { /* non-critical */ } };
     const eventKey = data => data.id || `${data.request_id || ''}:${data.config_name || ''}:${data.timestamp || ''}:${data.message || ''}`;
-    const notes = () => { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch (_) { return {}; } };
-    const saveNotes = value => { try { localStorage.setItem(NOTES_KEY, JSON.stringify(value)); } catch (_) { /* Optional local annotations. */ } };
+    const notes = () => { const name = notesKey(); if (!name) return {}; try { return JSON.parse(localStorage.getItem(name) || '{}'); } catch (_) { return {}; } };
+    const saveNotes = value => { const name = notesKey(); if (!name) return; try { localStorage.setItem(name, JSON.stringify(value)); } catch (_) { /* Optional local annotations. */ } };
     async function persistAnnotation(data, value) {
         if (!data.id) return;
         const response = await fetch(`/api/activity/events/${encodeURIComponent(data.id)}/annotation`, {
@@ -61,33 +77,50 @@
     }
 
     function decorate(entry, data) {
-        const key = eventKey(data); const saved = notes(); const persisted = data.annotation || {};
-        if (data.id && data.annotation) saved[key] = { note: persisted.text || '', pinned: Boolean(persisted.is_pinned) };
+        const key = eventKey(data);
+        // Persisted events: the current account's server annotation is
+        // authoritative, including "none". Only id-less events use the cache.
+        let current;
+        if (data.id) {
+            const persisted = data.annotation;
+            current = persisted ? { note: persisted.text || '', pinned: Boolean(persisted.is_pinned) } : {};
+        } else {
+            current = notes()[key] || {};
+        }
+        const remember = value => {
+            current = value;
+            if (data.id) return;
+            const cache = notes(); cache[key] = value; saveNotes(cache);
+        };
         const controls = document.createElement('span');
         controls.className = 'activity-entry-controls ms-2';
-        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn btn-sm btn-link p-0' + (saved[key]?.pinned ? ' is-pinned' : ''); pin.innerHTML = spriteIcon(saved[key]?.pinned ? 'pin-fill' : 'pin'); pin.title = 'Pin event';
+        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'btn btn-sm btn-link p-0' + (current.pinned ? ' is-pinned' : ''); pin.innerHTML = spriteIcon(current.pinned ? 'pin-fill' : 'pin'); pin.title = 'Pin event';
         pin.setAttribute('aria-label', 'Ereignis anheften');
         const annotate = document.createElement('button'); annotate.type = 'button'; annotate.className = 'btn btn-sm btn-link p-0 text-secondary ms-1'; annotate.innerHTML = spriteIcon('pencil-square'); annotate.title = 'Annotate event';
         annotate.setAttribute('aria-label', 'Ereignis kommentieren');
-        const note = document.createElement('small'); note.className = 'text-info ms-1'; note.textContent = saved[key]?.note || '';
+        const note = document.createElement('small'); note.className = 'text-info ms-1'; note.textContent = current.note || '';
         pin.addEventListener('click', async event => {
             event.stopPropagation();
-            const next = notes(); const basis = next[key] || saved[key] || {}; next[key] = { ...basis, pinned: !basis.pinned }; saveNotes(next);
-            pin.innerHTML = spriteIcon(next[key].pinned ? 'pin-fill' : 'pin');
-            pin.classList.toggle('is-pinned', next[key].pinned); entry.classList.toggle('activity-pinned', next[key].pinned);
-            try { await persistAnnotation(data, next[key]); } catch (error) { window.showToast?.(error.message, 'danger'); }
+            const next = { ...current, pinned: !current.pinned }; remember(next);
+            pin.innerHTML = spriteIcon(next.pinned ? 'pin-fill' : 'pin');
+            pin.classList.toggle('is-pinned', next.pinned); entry.classList.toggle('activity-pinned', next.pinned);
+            try { await persistAnnotation(data, next); } catch (error) { window.showToast?.(error.message, 'danger'); }
         });
         annotate.addEventListener('click', async event => {
-            event.stopPropagation(); const next = notes();
-            const value = window.prompt('Event annotation:', next[key]?.note || ''); if (value === null) return;
-            next[key] = { ...(next[key] || {}), note: value.slice(0, 280) }; saveNotes(next); note.textContent = next[key].note;
-            try { await persistAnnotation(data, next[key]); } catch (error) { window.showToast?.(error.message, 'danger'); }
+            event.stopPropagation();
+            const value = window.prompt('Event annotation:', current.note || ''); if (value === null) return;
+            const next = { ...current, note: value.slice(0, 280) }; remember(next); note.textContent = next.note;
+            try { await persistAnnotation(data, next); } catch (error) { window.showToast?.(error.message, 'danger'); }
         });
-        entry.classList.toggle('activity-pinned', Boolean(saved[key]?.pinned)); controls.append(pin, annotate, note); (entry.querySelector('.d-flex') || entry).append(controls);
+        entry.classList.toggle('activity-pinned', Boolean(current.pinned)); controls.append(pin, annotate, note); (entry.querySelector('.d-flex') || entry).append(controls);
         entry.hidden = !matches(data);
         entry.dataset.requestId = data.request_id || '';
+        // Rows evicted from the bounded activity list must not stay reachable
+        // through this map (with their handlers and closures).
+        state.rendered.forEach((_value, row) => { if (!row.isConnected) state.rendered.delete(row); });
         state.rendered.set(entry, data);
     }
+    purgeNotes({ keepCurrent: true });
     function init() {
         const panel = document.getElementById('activity-controls'); if (!panel || panel.dataset.init) return; panel.dataset.init = 'true';
         state.seen.clear();

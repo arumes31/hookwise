@@ -63,6 +63,9 @@ def rbac_schema_state(engine: Any) -> Dict[str, Any]:
             "fehlende_tabellen": fehlende_tabellen,
             "fehlende_spalten": fehlende_spalten,
             "fehlende_indizes": fehlende_indizes,
+            # Fehlende Indizes sind Drift, aber kein Grund, vorhandene
+            # Rollenzuweisungen zu ignorieren: lesbar sind die Daten trotzdem.
+            "daten_lesbar": not fehlende_tabellen and not fehlende_spalten and "user" in tabellen,
             "vollstaendig": (
                 not fehlende_tabellen and not fehlende_spalten and not fehlende_indizes and "user" in tabellen
             ),
@@ -75,6 +78,7 @@ def rbac_schema_state(engine: Any) -> Dict[str, Any]:
             "fehlende_tabellen": set(),
             "fehlende_spalten": set(),
             "fehlende_indizes": set(),
+            "daten_lesbar": False,
             "vollstaendig": False,
         }
 
@@ -139,8 +143,10 @@ def seed_builtin_roles() -> int:
     from ..extensions import db
     from ..models import RbacRole, RbacRolePermission
     from .catalog import ROLE_PRESETS
+    from .resolver import epoch_in_transaktion_erhoehen
 
     geaendert = 0
+    rechte_geaendert = False
     for schluessel, vorgabe in ROLE_PRESETS.items():
         rolle = RbacRole.query.filter_by(key=schluessel).first()
         if rolle is None:
@@ -165,7 +171,12 @@ def seed_builtin_roles() -> int:
             for recht in sorted(soll):
                 db.session.add(RbacRolePermission(role_id=rolle.id, permission=recht))
             geaendert += 1
+            rechte_geaendert = True
 
+    if rechte_geaendert:
+        # Gleiche Transaktion wie der Rechtetausch: eine Sitzung mit einem
+        # entzogenen Recht darf es keinen einzigen Request laenger nutzen.
+        epoch_in_transaktion_erhoehen()
     if geaendert:
         db.session.commit()
     return geaendert
@@ -178,13 +189,15 @@ def bootstrap(app: Any) -> None:
     if not app.config.get("RBAC_SCHEMA_BOOTSTRAP", True):
         with app.app_context():
             zustand = rbac_schema_state(db.engine)
-        app.config["RBAC_SCHEMA_OK"] = bool(zustand["vollstaendig"])
+        app.config["RBAC_SCHEMA_OK"] = bool(zustand["daten_lesbar"])
         return
 
     with app.app_context():
         zustand = ensure_rbac_schema(db.engine)
-        app.config["RBAC_SCHEMA_OK"] = bool(zustand["vollstaendig"])
-        if zustand["vollstaendig"]:
+        app.config["RBAC_SCHEMA_OK"] = bool(zustand["daten_lesbar"])
+        if zustand["fehlende_indizes"] and zustand["daten_lesbar"]:
+            _logger.warning("RBAC-Schema: Indizes fehlen (%s); Rechte werden trotzdem aus der DB aufgeloest", zustand)
+        if zustand["daten_lesbar"]:
             try:
                 seed_builtin_roles()
             except Exception:  # pragma: no cover

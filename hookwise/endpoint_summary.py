@@ -44,17 +44,22 @@ def _tags(config: WebhookConfig) -> list[str]:
     return [tag.name for tag in config.tags[:12]]
 
 
-def _token_suffix_matches(config: WebhookConfig, suffix: str) -> bool:
+def _token_suffix_matches(config: WebhookConfig, suffix: str, *, may_compare_secret: bool) -> bool:
     """Endung ab 4 Zeichen bis zum ganzen Token (Nutzer fuegen oft den
     kompletten Wert ein). Erst der Last4-Hinweis in konstanter Zeit, bei
-    laengerer Eingabe zusaetzlich die echte Token-Endung -- ebenfalls in
-    konstanter Zeit, damit die Suche kein Orakel ueber fremde Tokens wird."""
+    laengerer Eingabe zusaetzlich die echte Token-Endung -- aber nur fuer
+    Aufrufer mit ``secret:reveal``.
+
+    Ohne dieses Recht bleibt die Suche beim gespeicherten Last4-Hinweis: jeder
+    Vergleich gegen weitere, verborgene Zeichen waere ein Orakel, mit dem sich
+    das Token Zeichen fuer Zeichen rekonstruieren liesse -- konstante
+    Vergleichszeit hilft dagegen nicht, das Ergebnis selbst verraet es."""
     if not suffix or not _TOKEN_SUFFIX.fullmatch(suffix):
         return False
     hint = config.bearer_token_last4 or ""
     if len(hint) != 4 or not hmac.compare_digest(hint, suffix[-4:]):
         return False
-    if len(suffix) == 4:
+    if len(suffix) == 4 or not may_compare_secret:
         return True
     # bearer_token liegt verschluesselt in der DB. Entschluesselt wird NUR,
     # wenn der Last4-Hinweis schon getroffen hat -- also fuer hoechstens eine
@@ -196,7 +201,18 @@ def _register() -> None:
             .all()
         )
         suffix = request.args.get("token_suffix", "").strip()
-        matches = [config.id for config in configs if _token_suffix_matches(config, suffix)] if suffix else []
+        from .rbac.resolver import has_permission
+
+        may_compare_secret = has_permission("secret:reveal")
+        matches = (
+            [
+                config.id
+                for config in configs
+                if _token_suffix_matches(config, suffix, may_compare_secret=may_compare_secret)
+            ]
+            if suffix
+            else []
+        )
         return jsonify(
             {
                 "generated_at": datetime.now(timezone.utc).isoformat(),

@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import CustomerWebhook, CustomerWebhookDelivery, WebhookConfig, WebhookLog
-from ..utils import decrypt_string, ensure_encrypted, mask_secrets, resolve_jsonpath, resolve_monitor_name
+from ..utils import decrypt_string, ensure_encrypted, is_sensitive_key, resolve_jsonpath, resolve_monitor_name
 from .routing import evaluate_routing
 
 MAX_ATTEMPTS = 5
@@ -286,23 +286,30 @@ def _company_resolution(config: Any, data: dict[str, Any]) -> tuple[str | None, 
     return (str(company).strip() or None, "resolved") if company else (None, "tenant_unmapped")
 
 
-def _sanitized_alert(data: Any) -> Any:
-    """Do not forward CIPP identity headers or its private ingress URL metadata."""
-    if isinstance(data, list):
-        return [_sanitized_alert(item) for item in data]
-    if not isinstance(data, dict):
+_FORWARD_REDACTED_KEYS = frozenset({"cookie", "set-cookie", "postexecutionresults", "headers"})
+_FORWARD_MAX_DEPTH = 64
+
+
+def _sanitized_alert(data: Any, _depth: int = 0) -> Any:
+    """Do not forward secrets, CIPP identity headers or its private ingress URL metadata.
+
+    Secret masking and forwarding redaction happen in one traversal that copies
+    each container exactly once; subtrees nested deeper than the budget are
+    redacted instead of walked.
+    """
+    if not isinstance(data, (dict, list)):
         return data
-    sanitized = mask_secrets(data)
-    for key, value in sanitized.items():
-        if key.lower().startswith("x-ms-client-principal") or key.lower() in (
-            "cookie",
-            "set-cookie",
-            "postexecutionresults",
-            "headers",
-        ):
+    if _depth >= _FORWARD_MAX_DEPTH:
+        return "***"
+    if isinstance(data, list):
+        return [_sanitized_alert(item, _depth + 1) for item in data]
+    sanitized: dict[Any, Any] = {}
+    for key, value in data.items():
+        lowered = str(key).lower()
+        if is_sensitive_key(key) or lowered.startswith("x-ms-client-principal") or lowered in _FORWARD_REDACTED_KEYS:
             sanitized[key] = "***"
         else:
-            sanitized[key] = _sanitized_alert(value)
+            sanitized[key] = _sanitized_alert(value, _depth + 1)
     return sanitized
 
 

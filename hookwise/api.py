@@ -9,6 +9,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from typing import Any, Dict, Tuple, cast
+from urllib.parse import urlsplit
 
 from flask import Response, current_app, flash, jsonify, redirect, render_template, request, url_for
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
@@ -23,6 +24,7 @@ from .tasks import MAX_LOG_RETENTION_DAYS, celery, cw_client, process_webhook_ta
 from .utils import (
     CIPP_APP_CERTIFICATE_EXCLUDE_REDIS_KEY,
     auth_required,
+    bounded_jsonpath_allowed,
     log_audit,
     log_to_web,
     mask_secrets,
@@ -177,6 +179,32 @@ def _format_history_response(counts_by_group: dict[str, dict[str, int]], period:
     return history_data
 
 
+_DEBUG_MAX_MAPPING_ENTRIES = 50
+_DEBUG_RESULT_BUDGET = 256 * 1024
+_DEBUG_PREVIEW_CHARS = 200
+_DEBUG_PATH_REJECTED = "JSONPath skipped: diagnostics accept up to 256 characters and one recursive descent ('..')."
+
+
+def _preview(value: Any) -> str:
+    """Truncate a value for the diagnostic step log."""
+    text = str(value)
+    return text if len(text) <= _DEBUG_PREVIEW_CHARS else f"{text[:_DEBUG_PREVIEW_CHARS]}… ({len(text)} chars)"
+
+
+def _redacted_destination(url: str) -> str:
+    """Show only scheme and host of a credential-bearing URL."""
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "configured"
+    host = parts.hostname or ""
+    if not parts.scheme or not host:
+        return "configured"
+    return f"{parts.scheme}://{host}/…"
+
+
 def _register() -> None:
     """Register API, history, health, and administration routes."""
     from .routes import main_bp
@@ -186,6 +214,11 @@ def _register() -> None:
     @main_bp.route("/api/activity/history")
     @auth_required
     def get_activity_history() -> Any:
+        from .rbac.resolver import has_permission
+
+        # Same policy as the live feed: stored webhook payloads belong to
+        # history:read; dashboard readers receive the activity metadata only.
+        include_payloads = has_permission("history:read")
         logs = (
             WebhookLog.query.options(joinedload(WebhookLog.config))  # type: ignore[arg-type]
             .order_by(WebhookLog.created_at.desc())
@@ -224,8 +257,8 @@ def _register() -> None:
                     level = "success"
                 # Removed the dead 'skipped' action branch as it's handled by log.status
 
-            payload_data = {"raw": log.payload}
-            if log.payload and log.payload.startswith(("{", "[")):
+            payload_data: Any = {"raw": log.payload} if include_payloads else None
+            if include_payloads and log.payload and log.payload.startswith(("{", "[")):
                 try:
                     payload_data = mask_secrets(json.loads(log.payload))
                 except json.JSONDecodeError, TypeError:
@@ -326,6 +359,18 @@ def _register() -> None:
         if fehlt := routen_recht_fehlt():
             return jsonify({"error": f"Missing permission: {fehlt}", "required": fehlt}), 403
         log_entry = WebhookLog.query.get_or_404(log_id)
+        from .history_ops import endpoint_accepts_replay
+
+        if not endpoint_accepts_replay(log_entry.config_id):
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "The endpoint is paused or archived; resume it before replaying.",
+                    }
+                ),
+                409,
+            )
         try:
             data = json.loads(log_entry.payload)
             request_id = f"replay_{int(time.time())}_{secrets.token_hex(4)}_{log_entry.request_id[:8]}"[:100]
@@ -829,7 +874,11 @@ def _register() -> None:
             "settings.html",
             log_retention_days=retention,
             master_api_key_configured=_master_api_key_configured(),
-            health_webhook=health_webhook,
+            # The full URL carries the receiver's credential (a Discord webhook
+            # token); the page only shows where alerts go. A blank field keeps
+            # the stored URL on save.
+            health_webhook_configured=bool(health_webhook),
+            health_webhook_destination=_redacted_destination(health_webhook),
             cipp_app_certificate_exclude_names=cipp_app_certificate_exclude_names,
         )
 
@@ -945,8 +994,13 @@ def _register() -> None:
         data: Dict[str, Any], config_data: Dict[str, Any], results: Dict[str, Any], steps: list
     ) -> None:
         trigger_field = config_data.get("trigger_field", "heartbeat.status")
-        actual_val = str(resolve_jsonpath(data, trigger_field))
-        steps.append(f"Trigger field '{trigger_field}' resolved to: '{actual_val}'")
+        if not bounded_jsonpath_allowed(trigger_field):
+            steps.append(_DEBUG_PATH_REJECTED)
+            results["alert_type"] = "GENERIC"
+            steps.append(f"Alert type determined as: {results['alert_type']}")
+            return
+        actual_val = str(resolve_jsonpath(data, trigger_field, bounded=True))
+        steps.append(f"Trigger field '{_preview(trigger_field)}' resolved to: '{_preview(actual_val)}'")
 
         open_val = config_data.get("open_value", "0")
         close_val = config_data.get("close_value", "1")
@@ -966,11 +1020,22 @@ def _register() -> None:
         if mapping_str:
             try:
                 mapping = json.loads(mapping_str)
-                for field, path in mapping.items():
-                    val = resolve_jsonpath(data, path)
+                if len(mapping) > _DEBUG_MAX_MAPPING_ENTRIES:
+                    steps.append(f"Only the first {_DEBUG_MAX_MAPPING_ENTRIES} mapping entries are previewed.")
+                budget = _DEBUG_RESULT_BUDGET
+                for field, path in list(mapping.items())[:_DEBUG_MAX_MAPPING_ENTRIES]:
+                    if not bounded_jsonpath_allowed(path):
+                        steps.append(f"Mapping '{_preview(field)}': {_DEBUG_PATH_REJECTED}")
+                        continue
+                    val = resolve_jsonpath(data, path, bounded=True)
                     if val is not None:
-                        results[field] = str(val)
-                        steps.append(f"Mapped '{field}' using '{path}' -> '{val}'")
+                        text = str(val)
+                        budget -= len(str(field)) + len(text)
+                        if budget < 0:
+                            steps.append("Preview size limit reached; remaining mappings were not evaluated.")
+                            break
+                        results[field] = text
+                        steps.append(f"Mapped '{_preview(field)}' using '{_preview(path)}' -> '{_preview(text)}'")
             except Exception:
                 current_app.logger.exception("Failed to parse debug JSON mapping")
                 steps.append("Error parsing JSON Mapping")
@@ -986,7 +1051,10 @@ def _register() -> None:
                     path = rule.get("path")
                     regex = rule.get("regex")
                     if path and regex:
-                        val = str(resolve_jsonpath(data, path))
+                        if not bounded_jsonpath_allowed(path):
+                            steps.append(f"Rule {i + 1}: {_DEBUG_PATH_REJECTED}")
+                            continue
+                        val = str(resolve_jsonpath(data, path, bounded=True))
                         if _routing_regex_matches(str(regex), val):
                             steps.append(f"Rule {i + 1} matched: '{regex}' on '{path}' (value: '{val}')")
                             overrides = rule.get("overrides", {})

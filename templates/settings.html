@@ -53,11 +53,12 @@
                                 Discord
                             </span>
                             <input type="url" class="form-control bg-dark border-secondary text-light"
-                                id="health_webhook" name="health_webhook" value="{{ health_webhook }}"
-                                placeholder="https://discord.com/api/webhooks/...">
+                                id="health_webhook" name="health_webhook" value="" autocomplete="off"
+                                placeholder="{{ ('Configured: ' ~ health_webhook_destination) if health_webhook_configured else 'https://discord.com/api/webhooks/...' }}">
                         </div>
                         <div class="form-text text-light opacity-50">Notifications for system service outages (Redis,
-                            DB, Worker).</div>
+                            DB, Worker).{% if health_webhook_configured %} A webhook URL is configured; it is not shown
+                            because it contains a credential. Leave the field blank to keep it.{% endif %}</div>
                     </div>
 
                     <div class="mb-4">

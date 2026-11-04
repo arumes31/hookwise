@@ -53,16 +53,49 @@ _MAPPED_KEYS = {
     "configuration_ip": "ip_addresses",
     "configuration_name": "names",
 }
-_TEXT_LABEL_PATTERNS = (
-    (
-        "device_identifiers",
-        re.compile(r"^\s*(?:[-*]\s*)?(?:device id|device identifier)\s*[:=]\s*(.{1,128})\s*$", re.I),
-    ),
-    ("serial_numbers", re.compile(r"^\s*(?:[-*]\s*)?(?:serial|serial number|s/n)\s*[:=]\s*(.{1,128})\s*$", re.I)),
-    ("mac_addresses", re.compile(r"^\s*(?:[-*]\s*)?(?:mac|mac address)\s*[:=]\s*(.{1,128})\s*$", re.I)),
-    ("tag_numbers", re.compile(r"^\s*(?:[-*]\s*)?(?:asset tag|tag number)\s*[:=]\s*(.{1,128})\s*$", re.I)),
-    ("names", re.compile(r"^\s*(?:[-*]\s*)?(?:hostname|host name|configuration name)\s*[:=]\s*(.{1,128})\s*$", re.I)),
-)
+# "Label: value" lines in ticket text. Parsed directly (label, separator,
+# trimmed value) instead of with backtracking expressions, so rejecting a long
+# line costs one linear scan.
+_TEXT_LABELS = {
+    "device id": "device_identifiers",
+    "device identifier": "device_identifiers",
+    "serial": "serial_numbers",
+    "serial number": "serial_numbers",
+    "s/n": "serial_numbers",
+    "mac": "mac_addresses",
+    "mac address": "mac_addresses",
+    "asset tag": "tag_numbers",
+    "tag number": "tag_numbers",
+    "hostname": "names",
+    "host name": "names",
+    "configuration name": "names",
+}
+_MAX_TEXT_LABEL_LENGTH = max(len(label) for label in _TEXT_LABELS)
+#: Lines longer than this cannot hold a label plus a 128-character value.
+MAX_TEXT_LINE_LENGTH = 512
+
+
+def _parse_text_label(line: str) -> tuple[str, str] | None:
+    """Return (field, value) for a recognised "Label: value" line."""
+    if len(line) > MAX_TEXT_LINE_LENGTH:
+        return None
+    text = line.strip()
+    if text[:1] in ("-", "*"):
+        text = text[1:].lstrip()
+    separators = [index for index in (text.find(":"), text.find("=")) if index >= 0]
+    if not separators:
+        return None
+    separator = min(separators)
+    label = text[:separator].strip().lower()
+    if len(label) > _MAX_TEXT_LABEL_LENGTH:
+        return None
+    field = _TEXT_LABELS.get(label)
+    if field is None:
+        return None
+    value = text[separator + 1 :].strip()
+    if not value or len(value) > MAX_IDENTITY_LENGTH:
+        return None
+    return field, value
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,17 +295,17 @@ def _discover_text_values(text: Any) -> dict[str, list[int | str]]:
     if not isinstance(text, str):
         return discovered
     for line in text[:MAX_TEXT_LENGTH].splitlines()[:MAX_TEXT_TOKENS]:
-        for field, pattern in _TEXT_LABEL_PATTERNS:
-            if len(discovered.get(field, ())) >= MAX_CANDIDATES_PER_KIND:
-                continue
-            match = pattern.fullmatch(line)
-            if match:
-                for candidate in _normalized_values(field, match.group(1)):
-                    values = discovered.setdefault(field, [])
-                    if candidate not in values:
-                        values.append(candidate)
-                    if len(values) >= MAX_CANDIDATES_PER_KIND:
-                        break
+        parsed = _parse_text_label(line)
+        if parsed is None:
+            continue
+        field, raw_value = parsed
+        if len(discovered.get(field, ())) >= MAX_CANDIDATES_PER_KIND:
+            continue
+        for candidate in _normalized_values(field, raw_value):
+            values = discovered.setdefault(field, [])
+            if candidate not in values:
+                values.append(candidate)
+            if len(values) >= MAX_CANDIDATES_PER_KIND:
                 break
     return discovered
 

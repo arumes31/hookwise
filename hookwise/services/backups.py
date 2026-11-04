@@ -1,6 +1,7 @@
 """Versioned, authenticated configuration backup and restore service."""
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -13,6 +14,13 @@ from .tenant_mappings import bump_mapping_cache_revision
 
 BACKUP_FORMAT = "hookwise-config"
 BACKUP_VERSION = 2
+# Purpose envelope inside the Fernet plaintext. Backups and stored credentials
+# share the encryption key; the prefix (with its newline, which no credential
+# may contain) keeps a backup token from being accepted as a credential.
+BACKUP_PURPOSE_PREFIX = b"hookwise-config-backup\n"
+# Identifiers end up in URLs and HTML attributes; restore accepts only the
+# alphabet the application itself generates (token_urlsafe and UUIDs).
+_RESTORED_ID = re.compile(r"[A-Za-z0-9_-]+")
 MAX_BACKUP_BYTES = 5 * 1024 * 1024
 MAX_CONFIGS = 10_000
 CONFIG_FIELDS = {
@@ -145,7 +153,7 @@ def export_backup() -> bytes:
         ],
     }
     raw = json.dumps(document, separators=(",", ":"), sort_keys=True).encode()
-    return get_fernet().encrypt(raw)
+    return get_fernet().encrypt(BACKUP_PURPOSE_PREFIX + raw)
 
 
 def parse_backup(raw: bytes) -> dict[str, Any]:
@@ -156,7 +164,11 @@ def parse_backup(raw: bytes) -> dict[str, Any]:
             decoded = json.loads(raw)
             document = {"format": "legacy", "version": 1, "configs": decoded} if isinstance(decoded, list) else decoded
         else:
-            document = json.loads(get_fernet().decrypt(raw))
+            plaintext = get_fernet().decrypt(raw)
+            # Backups written before the purpose envelope carry bare JSON.
+            if plaintext.startswith(BACKUP_PURPOSE_PREFIX):
+                plaintext = plaintext[len(BACKUP_PURPOSE_PREFIX) :]
+            document = json.loads(plaintext)
     except (InvalidToken, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise BackupValidationError("Backup authentication or JSON validation failed") from exc
     if not isinstance(document, dict):
@@ -168,6 +180,47 @@ def parse_backup(raw: bytes) -> dict[str, Any]:
     if not isinstance(configs, list) or len(configs) > MAX_CONFIGS:
         raise BackupValidationError("Backup contains an invalid configuration list")
     return document
+
+
+def _valid_restored_id(value: Any, maximum: int) -> bool:
+    return isinstance(value, str) and 1 <= len(value) <= maximum and bool(_RESTORED_ID.fullmatch(value))
+
+
+def _credential_from_other_purpose(plaintext: str) -> bool:
+    """Whether a decrypted credential is really another kind of HookWise ciphertext.
+
+    Configuration backups decrypt to the purpose envelope (current) or to a
+    bare backup document (legacy: an object with ``version`` and ``configs``,
+    or the oldest format, a list of configuration records).
+    """
+    if plaintext.startswith(BACKUP_PURPOSE_PREFIX.decode()):
+        return True
+    stripped = plaintext.lstrip()
+    if not stripped.startswith(("{", "[")):
+        return False
+    try:
+        document = json.loads(stripped)
+    except ValueError:
+        return False
+    # Only the shape of a configuration backup counts; a credential that merely
+    # happens to be JSON stays acceptable.
+    if isinstance(document, list):
+        return all(isinstance(item, dict) and "id" in item for item in document) and bool(document)
+    return (
+        isinstance(document, dict)
+        and document.get("version") in (1, BACKUP_VERSION)
+        and isinstance(document.get("configs"), list)
+    )
+
+
+def _restored_credential(value: Any) -> str:
+    """Decrypt one restored credential and reject cross-purpose ciphertext."""
+    if not isinstance(value, str):
+        raise ValueError("Invalid credential")
+    plaintext = decrypt_string(value)
+    if len(plaintext) > 2048 or "\r" in plaintext or "\n" in plaintext or _credential_from_other_purpose(plaintext):
+        raise ValueError("Invalid credential")
+    return plaintext
 
 
 def _bounded(field: str, value: Any) -> int:
@@ -190,8 +243,19 @@ def restore_backup(document: dict[str, Any]) -> int:
     for record in configs:
         if not isinstance(record, dict) or not isinstance(record.get("id"), str) or not record["id"]:
             raise BackupValidationError("Every configuration requires a non-empty string id")
-        if len(record["id"]) > 64 or set(record) - (CONFIG_FIELDS | {"id", "tags"}):
+        if not _valid_restored_id(record["id"], 64):
+            raise BackupValidationError("Configuration ids may only contain letters, digits, '-' and '_'")
+        if set(record) - (CONFIG_FIELDS | {"id", "tags"}):
             raise BackupValidationError("Configuration contains unsupported fields")
+        for credential_field in ("bearer_token", "hmac_secret"):
+            stored = record.get(credential_field)
+            if isinstance(stored, str) and stored:
+                try:
+                    plaintext = decrypt_string(stored)
+                except ValueError:
+                    continue
+                if _credential_from_other_purpose(plaintext):
+                    raise BackupValidationError("Configuration credentials are invalid")
         if not isinstance(record.get("name"), str) or not 1 <= len(record["name"]) <= 100:
             raise BackupValidationError("Every configuration requires a valid name")
         if any(field in record and not isinstance(record[field], bool) for field in BOOLEAN_FIELDS):
@@ -321,6 +385,8 @@ def _restore_customer_webhooks(records: Any) -> None:
         for field, maximum in (("id", 36), ("config_id", 64), ("company_id", 50), ("name", 100)):
             if not isinstance(record[field], str) or not 1 <= len(record[field].strip()) <= maximum:
                 raise BackupValidationError(f"Customer webhook {field} is invalid")
+        if not _valid_restored_id(record["id"], 36) or not _valid_restored_id(record["config_id"], 64):
+            raise BackupValidationError("Customer webhook ids may only contain letters, digits, '-' and '_'")
         if record["id"] in seen:
             raise BackupValidationError("Duplicate customer webhook id")
         seen.add(record["id"])
@@ -346,11 +412,7 @@ def _restore_customer_webhooks(records: Any) -> None:
             for field in ("bearer_token", "signing_secret", "pagerduty_routing_key"):
                 value = record[field]
                 if value is not None:
-                    if not isinstance(value, str):
-                        raise ValueError("Invalid credential")
-                    value = decrypt_string(value)
-                    if len(value) > 2048 or "\r" in value or "\n" in value:
-                        raise ValueError("Invalid credential")
+                    _restored_credential(value)
         except ValueError as exc:
             raise BackupValidationError("Customer webhook target, path or credentials are invalid") from exc
         hook = CustomerWebhook.query.filter_by(id=record["id"]).with_for_update().first()

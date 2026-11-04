@@ -51,6 +51,36 @@ def _otp_verbrauchen(user_id: str, otp: str) -> bool | None:
         return None
 
 
+_OTP_FAILURE_LIMIT = 10
+_OTP_FAILURE_WINDOW_SECONDS = 15 * 60
+
+
+def _otp_failure_key(user_id: str) -> str:
+    return f"hookwise:otp_failures:{user_id}"
+
+
+def _otp_budget_exhausted(user_id: str) -> bool:
+    """Per-account OTP failure budget, independent of the caller's IP or session."""
+    from .extensions import redis_client
+
+    try:
+        raw = redis_client.get(_otp_failure_key(user_id))
+        return raw is not None and int(raw) >= _OTP_FAILURE_LIMIT
+    except Exception:
+        return False
+
+
+def _otp_failure_record(user_id: str) -> None:
+    from .extensions import redis_client
+
+    try:
+        key = _otp_failure_key(user_id)
+        redis_client.incr(key)
+        redis_client.expire(key, _OTP_FAILURE_WINDOW_SECONDS)
+    except Exception:
+        current_app.logger.warning("Unable to record a failed 2FA attempt")
+
+
 def _pending_secret_lesen() -> str | None:
     """Read the half-finished TOTP seed back out of the session.
 
@@ -114,6 +144,14 @@ def _register_login_routes(bp: Any) -> None:
                     flash("Invalid username or password", "danger")
                     return render_template("login.html", entra_ready=entra_ready)
 
+                if user and _otp_budget_exhausted(str(user.id)):
+                    # Too many wrong codes for this account: the challenge ends
+                    # and the password has to be entered again.
+                    session.pop("pending_user_id", None)
+                    log_audit("login_2fa_locked", None, f"2FA attempts exhausted for user {user.username}")
+                    flash("Too many invalid codes. Sign in again later.", "danger")
+                    return render_template("login.html", entra_ready=entra_ready), 429
+
                 if user and otp_secret and otp and pyotp.TOTP(otp_secret).verify(otp, valid_window=1):
                     otp_status = _otp_verbrauchen(str(user.id), otp)
                     if otp_status is None:
@@ -147,6 +185,8 @@ def _register_login_routes(bp: Any) -> None:
                     flash("Two-factor authentication is unavailable. Contact an administrator.", "danger")
                     return render_template("login.html", entra_ready=entra_ready), 503
 
+                if user:
+                    _otp_failure_record(str(user.id))
                 log_audit("login_2fa_failed", None, f"Failed 2FA attempt for pending user {pending_user_id}")
                 flash("Invalid 2FA code", "danger")
                 return render_template("login.html", step="2fa", entra_ready=entra_ready)
