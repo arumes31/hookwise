@@ -429,10 +429,24 @@ def register_user_routes(main_bp: Blueprint, handlers: Mapping[str, Callable[...
         passwort = (request.get_json(silent=True) or {}).get("password") or ""
         if len(passwort) < 8:
             return jsonify({"status": "error", "message": "Password needs at least 8 characters."}), 400
+        from .user_sessions import SessionRevocationError, revoke_all_user_sessions
+
         nutzer.password_hash = generate_password_hash(passwort)
         db.session.commit()
         log_audit("user_password_reset", None, f"Password reset for {nutzer.username}")
-        _sitzungen_beenden(user_id)
+        try:
+            # A password reset that leaves old sessions alive is no reset.
+            revoke_all_user_sessions(user_id)
+        except SessionRevocationError:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Password was changed, but existing sessions could not be signed out. Retry.",
+                    }
+                ),
+                503,
+            )
         return jsonify({"status": "success"})
 
     @main_bp.route("/api/users/<user_id>/mfa", methods=["DELETE"])

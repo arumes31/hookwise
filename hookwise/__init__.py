@@ -399,6 +399,12 @@ def _init_db_data(app: Flask, *, reset_password: bool = False) -> None:
                 db.session.add(admin)
                 db.session.commit()
             elif reset_password and not check_password_hash(admin.password_hash, gui_password):
+                # Sessions authenticated with the old password must not survive
+                # the reset; abort (without changing the password) if the
+                # registry cannot prove the revocation.
+                from .user_sessions import revoke_all_user_sessions
+
+                revoke_all_user_sessions(str(admin.id))
                 admin.password_hash = generate_password_hash(gui_password)
                 db.session.commit()
                 _logger.warning("Admin password reset to GUI_PASSWORD on explicit request.")

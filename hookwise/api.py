@@ -996,6 +996,9 @@ def _register() -> None:
         trigger_field = config_data.get("trigger_field", "heartbeat.status")
         if not bounded_jsonpath_allowed(trigger_field):
             steps.append(_DEBUG_PATH_REJECTED)
+            results["alert_type"] = "GENERIC"
+            steps.append(f"Alert type determined as: {results['alert_type']}")
+            return
         actual_val = str(resolve_jsonpath(data, trigger_field, bounded=True))
         steps.append(f"Trigger field '{_preview(trigger_field)}' resolved to: '{_preview(actual_val)}'")
 
@@ -1027,7 +1030,7 @@ def _register() -> None:
                     val = resolve_jsonpath(data, path, bounded=True)
                     if val is not None:
                         text = str(val)
-                        budget -= len(text)
+                        budget -= len(str(field)) + len(text)
                         if budget < 0:
                             steps.append("Preview size limit reached; remaining mappings were not evaluated.")
                             break

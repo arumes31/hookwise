@@ -43,7 +43,7 @@ _connections_lock = threading.Lock()
 _sweeper_started = False
 
 
-def connection_room(user_id: Any, session_id: Any, *, rbac_mode: str) -> str | None:
+def connection_room(user_id: Any, session_id: Any, *, rbac_mode: str, started_at: Any = None) -> str | None:
     """Room an established connection may stay in, or ``None`` to disconnect it.
 
     Unlike the handshake this runs without a request: it re-reads the account,
@@ -53,12 +53,14 @@ def connection_room(user_id: Any, session_id: Any, *, rbac_mode: str) -> str | N
     """
     from .models import User
     from .rbac.resolver import resolve_permissions
-    from .user_sessions import session_revoked
+    from .user_sessions import session_revoked, session_superseded
 
     user = User.query.get(user_id) if user_id else None
     if user is None or not user.aktiv:
         return None
     if session_id and session_revoked(str(session_id)):
+        return None
+    if session_superseded(str(user_id), str(session_id) if session_id else None, started_at):
         return None
     if rbac_mode == "off":
         return LIVE_PAYLOAD_ROOM
@@ -80,7 +82,9 @@ def revalidate_connections(app: Any) -> None:
         rbac_mode = app.config.get("RBAC_ENFORCE", "on")
         for sid, entry in snapshot.items():
             try:
-                room = connection_room(entry["user_id"], entry["session_id"], rbac_mode=rbac_mode)
+                room = connection_room(
+                    entry["user_id"], entry["session_id"], rbac_mode=rbac_mode, started_at=entry.get("started_at")
+                )
             except Exception:
                 _logger.exception("Live feed revalidation failed; disconnecting socket")
                 room = None
@@ -113,6 +117,7 @@ def _register_connection(room: str) -> None:
         _connections[request.sid] = {  # type: ignore[attr-defined]
             "user_id": session.get("user_id"),
             "session_id": session.get("session_id"),
+            "started_at": session.get("session_started_at"),
             "room": room,
         }
         start = not _sweeper_started and not current_app.config.get("TESTING")

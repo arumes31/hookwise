@@ -12,6 +12,7 @@ _SESSION_PREFIX = "hookwise:user-session:"
 _USER_SET_PREFIX = "hookwise:user-sessions:"
 _REVOKED_PREFIX = "hookwise:revoked-session:"
 _ACCOUNT_REVOKED_PREFIX = "hookwise:user-sessions-revoked-at:"
+_ACCOUNT_REVOKED_BY_PREFIX = "hookwise:user-sessions-revoked-by:"
 _SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
 _TOUCH_INTERVAL_SECONDS = 60
 # Revocation state must outlive every cookie the signer still accepts, plus a
@@ -211,6 +212,24 @@ def session_revoked(session_id: str) -> bool:
     return bool(client.get(_revoked_key(session_id)))
 
 
+def session_superseded(user_id: str, session_id: str | None, started_at: Any) -> bool:
+    """Whether an account-wide revocation happened after this session authenticated.
+
+    Same comparison as for HTTP requests; the session that performed the
+    revocation ("sign out everywhere else") is exempt.
+    """
+    revoked_at = _account_revoked_at(user_id)
+    if revoked_at is None:
+        return False
+    if session_id:
+        revoker = _redis().get(f"{_ACCOUNT_REVOKED_BY_PREFIX}{user_id}")
+        if revoker is not None and _decode(revoker) == str(session_id):
+            return False
+    if not isinstance(started_at, (int, float)):
+        return True
+    return float(started_at) < revoked_at
+
+
 def list_user_sessions(user_id: str) -> list[dict[str, Any]]:
     """List live sessions for one owner and remove stale set members."""
     records: list[dict[str, Any]] = []
@@ -300,6 +319,7 @@ def revoke_other_sessions(user_id: str, current_session_id: str) -> int:
         # never knew about (legacy cookies without a session ID) and cookies
         # whose registry record later disappears.
         revoked_at = _mark_account_revoked(client, user_id)
+        client.setex(f"{_ACCOUNT_REVOKED_BY_PREFIX}{user_id}", _retention_seconds(), current_session_id or "-")
         if current_session_id and str(session.get("session_id") or "") == current_session_id:
             session[SESSION_STARTED_AT] = revoked_at
         if not client.get(_account_revoked_key(user_id)):

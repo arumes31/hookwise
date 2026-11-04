@@ -189,8 +189,9 @@ def _valid_restored_id(value: Any, maximum: int) -> bool:
 def _credential_from_other_purpose(plaintext: str) -> bool:
     """Whether a decrypted credential is really another kind of HookWise ciphertext.
 
-    Configuration backups (current and legacy) decrypt to JSON documents; no
-    credential HookWise stores is a JSON object or array.
+    Configuration backups decrypt to the purpose envelope (current) or to a
+    bare backup document (legacy: an object with ``version`` and ``configs``,
+    or the oldest format, a list of configuration records).
     """
     if plaintext.startswith(BACKUP_PURPOSE_PREFIX.decode()):
         return True
@@ -198,9 +199,18 @@ def _credential_from_other_purpose(plaintext: str) -> bool:
     if not stripped.startswith(("{", "[")):
         return False
     try:
-        return isinstance(json.loads(stripped), (dict, list))
+        document = json.loads(stripped)
     except ValueError:
         return False
+    # Only the shape of a configuration backup counts; a credential that merely
+    # happens to be JSON stays acceptable.
+    if isinstance(document, list):
+        return all(isinstance(item, dict) and "id" in item for item in document) and bool(document)
+    return (
+        isinstance(document, dict)
+        and document.get("version") in (1, BACKUP_VERSION)
+        and isinstance(document.get("configs"), list)
+    )
 
 
 def _restored_credential(value: Any) -> str:

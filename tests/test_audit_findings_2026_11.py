@@ -248,10 +248,12 @@ def test_backup_token_cannot_be_restored_as_a_credential(audit_app):
     assert parse_backup(token)["format"] == "hookwise-config"
     with pytest.raises(ValueError):
         _restored_credential(token.decode())
-    legacy = get_fernet().encrypt(b'{"format":"hookwise-config","configs":[]}').decode()
+    legacy = get_fernet().encrypt(b'{"format":"hookwise-config","version":2,"configs":[]}').decode()
     with pytest.raises(ValueError):
         _restored_credential(legacy)
     assert _restored_credential(encrypt_string("plain-token")) == "plain-token"
+    # A credential that merely happens to be JSON is still accepted.
+    assert _restored_credential(encrypt_string('{"k":"v"}')) == '{"k":"v"}'
 
 
 def test_restore_rejects_identifiers_outside_the_generated_alphabet(audit_app):
@@ -305,7 +307,7 @@ def test_replay_is_refused_for_an_archived_endpoint(audit_app):
 
 
 # ------------------------------------------------------------- bootstrap
-def test_routine_admin_bootstrap_does_not_overwrite_a_changed_password(audit_app, monkeypatch):
+def test_routine_admin_bootstrap_does_not_overwrite_a_changed_password(audit_app, monkeypatch, session_redis):
     monkeypatch.setenv("GUI_PASSWORD", "bootstrap-password")
     with audit_app.app_context():
         db.session.add(User(username="admin", password_hash=generate_password_hash("changed"), role="admin"))
@@ -330,6 +332,7 @@ def test_failure_alert_does_not_read_the_receiver_body():
 
 
 def test_force_https_ignores_a_raw_forwarded_proto_header(monkeypatch):
+    monkeypatch.delenv("USE_PROXY", raising=False)
     monkeypatch.setenv("FORCE_HTTPS", "true")
     monkeypatch.setenv("HTTPS_ORIGIN", "https://hookwise.example.com")
     app = create_app()
@@ -356,3 +359,17 @@ def test_login_is_throttled_for_signed_in_browsers(audit_app):
     with audit_app.test_request_context("/login", method="POST"):
         session["user_id"] = "someone"
         assert header_whitelist() is False
+
+
+def test_live_socket_loses_access_after_account_wide_revocation(audit_app, session_redis):
+    from hookwise.live_feed import connection_room
+
+    user_id = _account(audit_app, "socket-user", role="admin")
+    started = time.time() - 50
+    with audit_app.app_context():
+        assert connection_room(user_id, "sock-a", rbac_mode="off", started_at=started) is not None
+        session_redis.values[f"hookwise:user-sessions-revoked-at:{user_id}"] = repr(time.time())
+        session_redis.values[f"hookwise:user-sessions-revoked-by:{user_id}"] = "sock-b"
+        assert connection_room(user_id, "sock-a", rbac_mode="off", started_at=started) is None
+        # The session that performed "sign out everywhere else" keeps its socket.
+        assert connection_room(user_id, "sock-b", rbac_mode="off", started_at=started) is not None
