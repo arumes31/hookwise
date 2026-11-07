@@ -46,7 +46,6 @@ Thumbs.db
 
 # test
 *.exe
-CHANGELOG.md
 # Scratch / Tools
 report*.json
 flask_report.json
@@ -67,3 +66,5 @@ graphify-out/
 .pytest*
 .pytest
 .ruff_cache
+
+docs/
