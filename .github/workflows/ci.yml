@@ -1,11 +1,16 @@
 name: CI
 
+# Pushes to main/dev/tags run this through ghcr.yml's reusable `quality`
+# call (which gates publishing), so there is no separate push trigger here.
 on:
   workflow_call:
-  push:
-    branches: [ main, dev ]
   pull_request:
     branches: [ main, dev ]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
 
 permissions:
   contents: read

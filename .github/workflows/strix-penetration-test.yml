@@ -2,6 +2,7 @@ name: strix-penetration-test
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 # Read-only by default; only the comment job below gets a write scope.
@@ -15,7 +16,7 @@ concurrency:
 jobs:
   security-scan:
     name: Strix (advisory)
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 90
@@ -141,7 +142,9 @@ jobs:
     # write-capable token. Runs for every same-repo PR scan (the scan job is
     # skipped for forks), including ones that produced no result, so an older
     # comment is never left looking current.
-    if: always() && github.event_name == 'pull_request' && needs.security-scan.result != 'skipped'
+    # Same-repo drafts are skipped by the scan; still update the comment so an
+    # older result is never left looking current.
+    if: always() && github.event_name == 'pull_request' && (needs.security-scan.result != 'skipped' || (github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 5

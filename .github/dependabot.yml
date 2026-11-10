@@ -5,12 +5,20 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # One PR per week instead of one per package (each runs CI, integration,
+    # image build and the AI reviewers).
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   - package-ecosystem: "docker"
     directory: "/"
