@@ -142,7 +142,9 @@ jobs:
     # write-capable token. Runs for every same-repo PR scan (the scan job is
     # skipped for forks), including ones that produced no result, so an older
     # comment is never left looking current.
-    if: always() && github.event_name == 'pull_request' && needs.security-scan.result != 'skipped'
+    # Same-repo drafts are skipped by the scan; still update the comment so an
+    # older result is never left looking current.
+    if: always() && github.event_name == 'pull_request' && (needs.security-scan.result != 'skipped' || (github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 5

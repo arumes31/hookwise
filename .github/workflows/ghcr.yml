@@ -24,11 +24,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # On pull requests the standalone CI workflow already runs these gates, so
-  # they are only re-run here for pushes that can publish an image.
+  # Standalone CI already gates PRs into main/dev, so the gates only re-run
+  # here for pushes that can publish an image and PRs into other branches.
   quality:
     name: Required quality gates
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || !contains(fromJSON('["main","dev"]'), github.base_ref)
     uses: ./.github/workflows/ci.yml
 
   build-and-push:
