@@ -6,6 +6,11 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ '**' ]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
 
 env:
@@ -19,13 +24,17 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # On pull requests the standalone CI workflow already runs these gates, so
+  # they are only re-run here for pushes that can publish an image.
   quality:
     name: Required quality gates
+    if: github.event_name != 'pull_request'
     uses: ./.github/workflows/ci.yml
 
   build-and-push:
     name: Build and scan candidate
     needs: quality
+    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.quality.result) }}
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
