@@ -45,7 +45,7 @@ dev = [
     "pip-audit",
     "pytest==9.1.1",
     "ruff==0.17.1",
-    "types-requests==2.33.0.20260906",
+    "types-requests==2.33.0.20261030",
 ]
 # Browser and full-stack tests in tests/integration (CI job: integration.yml).
 integration = [
