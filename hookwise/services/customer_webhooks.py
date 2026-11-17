@@ -386,7 +386,10 @@ def evaluate_customer_webhook(webhook: CustomerWebhook, data: dict[str, Any]) ->
                 "für Meldungen ohne Score den Score-Filter deaktivieren.",
                 company_id,
             )
-        numeric = [(numeric_score(match.value), match.context.value) for match in found]
+        # ``match.context`` holds the object containing the matched field. It is
+        # unset only for a bare root path, which ``validate_score_path`` already
+        # rejects, so this guard just fails closed for any unvalidated path.
+        numeric = [(numeric_score(match.value), match.context.value) for match in found if match.context is not None]
         if not any(score is not None for score, _ in numeric):
             return blocked(
                 "score_invalid", "Die gefundenen Score-Werte sind nicht numerisch (z. B. Severity).", company_id
@@ -409,7 +412,7 @@ def evaluate_customer_webhook(webhook: CustomerWebhook, data: dict[str, Any]) ->
         recognized = [
             (severity, match.context.value)
             for match in severity_matches
-            if (severity := normalize_severity(match.value)) is not None
+            if (severity := normalize_severity(match.value)) is not None and match.context is not None
         ]
         if not recognized:
             return blocked(
@@ -455,7 +458,7 @@ def evaluate_customer_webhook(webhook: CustomerWebhook, data: dict[str, Any]) ->
         recognized_statuses = [
             (status, match.context.value)
             for match in status_matches
-            if (status := normalize_incident_status(match.value)) is not None
+            if (status := normalize_incident_status(match.value)) is not None and match.context is not None
         ]
         if not recognized_statuses:
             return blocked(
