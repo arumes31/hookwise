@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM python:3.14.8-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS builder
+FROM python:3.15.1-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN pip install --upgrade pip \
     && pip check
 
 # Stage 2: Runtime
-FROM python:3.14.8-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS runtime
+FROM python:3.15.1-slim@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS runtime
 # CI varies this value so cached builds still fetch current Debian security fixes.
 ARG RUNTIME_APT_REFRESH=local
 
